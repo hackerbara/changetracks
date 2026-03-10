@@ -1082,7 +1082,7 @@ export async function handleProposeChange(
       await initHashline();
       const rerecordLines = modifiedText.split('\n');
       const allSettledRerecord = rerecordLines.map(l => settledLine(l));
-      if (viewResolved === 'review' || viewResolved === 'changes') {
+      if (viewResolved === 'changes') {
         // Re-record with committed hashes for chained committed-view edits
         const committedResult = computeCommittedView(modifiedText);
         const newHashes = committedResult.lines.map(cl => ({
@@ -1091,6 +1091,14 @@ export async function handleProposeChange(
           settled: computeSettledLineHash(cl.rawLineNum - 1, rerecordLines[cl.rawLineNum - 1], allSettledRerecord),
           committed: cl.hash,
           rawLineNum: cl.rawLineNum,
+        }));
+        state.rerecordAfterWrite(filePath, modifiedText, newHashes);
+      } else if (viewResolved === 'review') {
+        // Review view shows raw line numbers to agents — re-record with raw coordinates
+        const newHashes = rerecordLines.map((line, i) => ({
+          line: i + 1,
+          raw: computeLineHash(i, line, rerecordLines),
+          settled: computeSettledLineHash(i, line, allSettledRerecord),
         }));
         state.rerecordAfterWrite(filePath, modifiedText, newHashes);
       } else if (viewResolved === 'settled') {
@@ -1281,14 +1289,6 @@ async function handleCompactProposeChange(
     );
   }
 
-  // Comment ops should use respond_to_thread
-  if (parsed.type === 'comment') {
-    return errorResult(
-      'Comment ops (>>) should use respond_to_thread, not propose_change.',
-      'VALIDATION_ERROR',
-    );
-  }
-
   // Normalize escape sequences in new content
   parsed = { ...parsed, newText: normalizeContentPayload(parsed.newText) };
 
@@ -1457,7 +1457,7 @@ async function handleCompactProposeChange(
   const level = config.protocol?.level ?? 2;
 
   let modifiedText: string;
-  let changeType: 'ins' | 'del' | 'sub' | 'highlight';
+  let changeType: 'ins' | 'del' | 'sub' | 'highlight' | 'comment';
 
   const ts = nowTimestamp();
   const authorAt = author.startsWith('@') ? author : `@${author}`;
@@ -1535,6 +1535,17 @@ async function handleCompactProposeChange(
 
       modifiedText = fileContent.slice(0, absPos) + inlineMarkup + fileContent.slice(absEnd);
     }
+  } else if (parsed.type === 'comment') {
+    // Standalone comment: insert comment markup at end of target line.
+    // No text matching needed — appends at the end of the target line.
+    changeType = 'comment';
+    const commentText = parsed.reasoning ?? '';
+    const inlineMarkup = level === 2
+      ? `{>>${commentText}<<}[^${changeId}]`
+      : `{>>${commentText}<<}${l1Comment('comment')}`;
+
+    // Append at end of the target line (endOffset points to end of line content, before \n)
+    modifiedText = fileContent.slice(0, target.endOffset) + inlineMarkup + fileContent.slice(target.endOffset);
   } else {
     // Highlight: wrap target text with highlight markup
     changeType = 'highlight';
@@ -1556,7 +1567,8 @@ async function handleCompactProposeChange(
   // Append footnote for level 2
   if (level === 2) {
     const footnoteHeader = generateFootnoteDefinition(changeId, changeType, author);
-    const reasonLine = reasoning
+    // For comments, the text is already inline ({>>text<<}) — don't duplicate it in the footnote.
+    const reasonLine = reasoning && changeType !== 'comment'
       ? `\n    @${author} ${ts.raw}: ${reasoning}`
       : '';
     const footnoteBlock = footnoteHeader + reasonLine;
@@ -1575,7 +1587,7 @@ async function handleCompactProposeChange(
 
   let viewProjection: ViewProjection | undefined;
 
-  if (compactViewResolved === 'review' || compactViewResolved === 'changes') {
+  if (compactViewResolved === 'changes') {
     // Re-record with committed hashes for chained committed-view edits
     const committedResult = computeCommittedView(modifiedText);
     const newHashes = committedResult.lines.map(cl => ({
@@ -1587,7 +1599,7 @@ async function handleCompactProposeChange(
     }));
     state.rerecordAfterWrite(filePath, modifiedText, newHashes);
 
-    // Build rawToView map for affected_lines projection (changes/review view)
+    // Build rawToView map for affected_lines projection (changes view)
     const rawToViewMap = new Map<number, { viewLine: number; viewHash: string; viewContent: string }>();
     for (const cl of committedResult.lines) {
       rawToViewMap.set(cl.rawLineNum, {
@@ -1597,6 +1609,15 @@ async function handleCompactProposeChange(
       });
     }
     viewProjection = { view: 'changes', rawToView: rawToViewMap };
+  } else if (compactViewResolved === 'review') {
+    // Review view shows raw line numbers to agents — re-record with raw coordinates
+    const newHashes = rerecordLines.map((line, i) => ({
+      line: i + 1,
+      raw: computeLineHash(i, line, rerecordLines),
+      settled: computeSettledLineHash(i, line, allSettledRerecord),
+    }));
+    state.rerecordAfterWrite(filePath, modifiedText, newHashes);
+    // No viewProjection needed: review view uses raw line numbers (identity mapping)
   } else if (compactViewResolved === 'settled') {
     // Re-record with settled hashes for chained settled-view edits
     const settledResult = computeSettledView(modifiedText);

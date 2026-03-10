@@ -3,6 +3,7 @@ import * as path from 'node:path';
 import { errorResult } from '../shared/error-result.js';
 import { optionalStrArg } from '../args.js';
 import { replaceUnique } from '../file-ops.js';
+import { isFileInScope } from '../config.js';
 import { ConfigResolver } from '../config-resolver.js';
 
 /** CriticMarkup opening delimiters (insertion, deletion, substitution). */
@@ -95,7 +96,18 @@ export async function handleRawEdit(
     }
 
     const filePath = resolver.resolveFilePath(file);
-    const projectDir = resolver.resolveDir();
+    const { config, projectDir } = await resolver.forFile(filePath);
+
+    if (!isFileInScope(filePath, config, projectDir)) {
+      return errorResult('File is outside the configured tracking scope.');
+    }
+
+    const policyMode = config.policy?.mode ?? 'safety-net';
+    if (policyMode === 'strict') {
+      return errorResult(
+        'Raw edit denied: project policy is strict. Raw edits bypass CriticMarkup tracking and are not allowed in strict mode. Use propose_change instead.'
+      );
+    }
 
     let fileContent: string;
     try {

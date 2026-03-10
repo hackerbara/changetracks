@@ -5,14 +5,9 @@ import { optionalStrArg } from '../args.js';
 import { resolveAuthor } from '../author.js';
 import { isFileInScope } from '../config.js';
 import { ConfigResolver } from '../config-resolver.js';
-import { findFootnoteBlock, findDiscussionInsertionIndex, countFootnoteHeadersWithStatus, initHashline, nowTimestamp } from '@changetracks/core';
+import { findFootnoteBlock, findDiscussionInsertionIndex, countFootnoteHeadersWithStatus, initHashline, nowTimestamp, applyReview, VALID_DECISIONS, type Decision } from '@changetracks/core';
 import { SessionState } from '../state.js';
 import { rerecordState } from '../state-utils.js';
-import {
-  applyReview,
-  type Decision,
-  VALID_DECISIONS,
-} from './review-change.js';
 import { settleAcceptedChanges, settleRejectedChanges } from './settle.js';
 import { computeAffectedLines, type AffectedLineEntry } from './propose-utils.js';
 

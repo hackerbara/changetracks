@@ -3935,6 +3935,11 @@ import * as path3 from "node:path";
 function pendingPath(projectDir) {
   return path3.join(projectDir, ".changetracks", "pending.json");
 }
+async function atomicWriteJson(filePath, data) {
+  const tmpPath = filePath + ".tmp." + process.pid;
+  await fs2.writeFile(tmpPath, JSON.stringify(data, null, 2), "utf-8");
+  await fs2.rename(tmpPath, filePath);
+}
 async function readPendingEdits(projectDir) {
   try {
     const raw = await fs2.readFile(pendingPath(projectDir), "utf-8");
@@ -3948,7 +3953,7 @@ async function appendPendingEdit(projectDir, edit) {
   await fs2.mkdir(path3.dirname(filePath), { recursive: true });
   const existing = await readPendingEdits(projectDir);
   existing.push(edit);
-  await fs2.writeFile(filePath, JSON.stringify(existing, null, 2), "utf-8");
+  await atomicWriteJson(filePath, existing);
 }
 
 // src/core/edit-tracker.ts

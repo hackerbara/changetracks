@@ -11,12 +11,10 @@
 import * as vscode from 'vscode';
 import { ChangeNode, ChangeType } from '@changetracks/core';
 import { ViewMode } from './view-mode';
-import { typeLabel, CHANGE_COLORS } from './visual-semantics';
+import { typeLabel } from './visual-semantics';
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
-const MAX_PREVIEW_LENGTH = 60;
-const ELLIPSIS = '\u2026';
 const REFRESH_DEBOUNCE_MS = 80;
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -35,6 +33,7 @@ export interface ChangeCardData {
     author: string;
     status: string;
     colorClass: string;
+    replyCount: number;
 }
 
 export interface ReviewPanelContext {
@@ -47,7 +46,7 @@ export interface ReviewPanelContext {
 
 // ── Color class mapping ──────────────────────────────────────────────────────
 
-function colorClassForType(type: ChangeType): string {
+export function colorClassForType(type: ChangeType): string {
     switch (type) {
         case ChangeType.Insertion: return 'insertion';
         case ChangeType.Deletion: return 'deletion';
@@ -55,6 +54,62 @@ function colorClassForType(type: ChangeType): string {
         case ChangeType.Highlight: return 'highlight';
         case ChangeType.Comment: return 'comment';
     }
+}
+
+// ── Change preview extraction ───────────────────────────────────────────────
+
+const MAX_PREVIEW_LENGTH = 60;
+const ELLIPSIS = '\u2026';
+
+/** Extract preview text from a ChangeNode for display in cards. */
+export function getChangePreview(change: ChangeNode, text: string): string {
+    let raw: string;
+    switch (change.type) {
+        case ChangeType.Substitution:
+            raw = [change.originalText ?? '', change.modifiedText ?? '']
+                .filter(Boolean)
+                .join(' \u2192 ');
+            break;
+        case ChangeType.Insertion:
+            raw = change.modifiedText ?? '';
+            break;
+        case ChangeType.Deletion:
+            raw = change.originalText ?? '';
+            break;
+        case ChangeType.Comment:
+            raw = change.metadata?.comment
+                ?? change.originalText
+                ?? '';
+            break;
+        case ChangeType.Highlight:
+            raw = change.originalText ?? '';
+            break;
+        default:
+            raw = text
+                .slice(change.contentRange.start, change.contentRange.end)
+                .replace(/\s+/g, ' ')
+                .trim();
+    }
+    raw = raw.replace(/\s+/g, ' ').trim();
+    if (raw.length <= MAX_PREVIEW_LENGTH) {
+        return raw || '(empty)';
+    }
+    return raw.slice(0, MAX_PREVIEW_LENGTH).trim() + ELLIPSIS;
+}
+
+// ── Card data builder ───────────────────────────────────────────────────────
+
+/** Build ChangeCardData[] from parsed ChangeNodes. */
+export function buildCardData(changes: ChangeNode[], text: string): ChangeCardData[] {
+    return changes.map(c => ({
+        id: c.id,
+        type: typeLabel(c.type),
+        text: getChangePreview(c, text),
+        author: c.metadata?.author ?? '',
+        status: (c.metadata?.status ?? c.inlineMetadata?.status ?? c.status ?? 'proposed').toLowerCase(),
+        colorClass: colorClassForType(c.type),
+        replyCount: c.metadata?.discussion?.length ?? 0,
+    }));
 }
 
 // ── Provider ─────────────────────────────────────────────────────────────────
@@ -171,14 +226,7 @@ export class ReviewPanelProvider implements vscode.WebviewViewProvider, vscode.D
             vscode.window.activeTextEditor?.document.languageId === 'markdown' ||
             vscode.window.visibleTextEditors.some(e => e.document.languageId === 'markdown');
 
-        const cards: ChangeCardData[] = changes.map(c => ({
-            id: c.id,
-            type: typeLabel(c.type),
-            text: this.getChangePreview(c, text),
-            author: c.metadata?.author ?? '',
-            status: c.metadata?.status ?? c.inlineMetadata?.status ?? c.status ?? 'proposed',
-            colorClass: colorClassForType(c.type),
-        }));
+        const cards = buildCardData(changes, text);
 
         return {
             trackingEnabled: this.ctx.trackingMode,
@@ -186,41 +234,6 @@ export class ReviewPanelProvider implements vscode.WebviewViewProvider, vscode.D
             changes: cards,
             hasActiveMarkdownEditor: hasActiveMarkdownEditor ?? false,
         };
-    }
-
-    private getChangePreview(change: ChangeNode, text: string): string {
-        let raw: string;
-        switch (change.type) {
-            case ChangeType.Substitution:
-                raw = [change.originalText ?? '', change.modifiedText ?? '']
-                    .filter(Boolean)
-                    .join(' \u2192 ');
-                break;
-            case ChangeType.Insertion:
-                raw = change.modifiedText ?? '';
-                break;
-            case ChangeType.Deletion:
-                raw = change.originalText ?? '';
-                break;
-            case ChangeType.Comment:
-                raw = change.metadata?.comment
-                    ?? change.originalText
-                    ?? '';
-                break;
-            case ChangeType.Highlight:
-                raw = change.originalText ?? '';
-                break;
-            default:
-                raw = text
-                    .slice(change.contentRange.start, change.contentRange.end)
-                    .replace(/\s+/g, ' ')
-                    .trim();
-        }
-        raw = raw.replace(/\s+/g, ' ').trim();
-        if (raw.length <= MAX_PREVIEW_LENGTH) {
-            return raw || '(empty)';
-        }
-        return raw.slice(0, MAX_PREVIEW_LENGTH).trim() + ELLIPSIS;
     }
 
     private updateContent(): void {
@@ -268,7 +281,7 @@ export function generateReviewHtml(state: ReviewPanelState, nonce: string): stri
                     <span class="status-badge ${c.status}">${escapeHtml(c.status)}</span>
                 </div>
                 <div class="card-text">${escapeHtml(c.text)}</div>
-                ${c.author ? `<div class="card-author">${escapeHtml(c.author)}</div>` : ''}
+                ${c.author ? `<div class="card-meta"><span class="card-author">${escapeHtml(c.author)}</span>${c.replyCount > 0 ? `<span class="card-replies">\uD83D\uDCAC ${c.replyCount}</span>` : ''}</div>` : (c.replyCount > 0 ? `<div class="card-meta"><span class="card-replies">\uD83D\uDCAC ${c.replyCount}</span></div>` : '')}
                 <div class="card-actions">
                     <button class="icon-btn accept-btn" data-action="acceptChange" data-id="${escapeHtml(c.id)}" title="Accept">\u2713</button>
                     <button class="icon-btn reject-btn" data-action="rejectChange" data-id="${escapeHtml(c.id)}" title="Reject">\u2717</button>
@@ -441,11 +454,11 @@ export function generateReviewHtml(state: ReviewPanelState, nonce: string): stri
         .change-card:focus {
             outline: 1px solid var(--vscode-focusBorder);
         }
-        .change-card.insertion { border-left-color: ${CHANGE_COLORS.insertion.dark}; }
-        .change-card.deletion  { border-left-color: ${CHANGE_COLORS.deletion.dark}; }
-        .change-card.substitution { border-left-color: #64B5F6; }
-        .change-card.highlight { border-left-color: #ffeb3b; }
-        .change-card.comment   { border-left-color: #64b5f6; }
+        .change-card.insertion { border-left-color: var(--vscode-gitDecoration-addedResourceForeground, #66BB6A); }
+        .change-card.deletion  { border-left-color: var(--vscode-gitDecoration-deletedResourceForeground, #EF5350); }
+        .change-card.substitution { border-left-color: var(--vscode-gitDecoration-modifiedResourceForeground, #64B5F6); }
+        .change-card.highlight { border-left-color: var(--vscode-editorWarning-foreground, #FDD835); }
+        .change-card.comment   { border-left-color: var(--vscode-gitDecoration-modifiedResourceForeground, #64B5F6); }
 
         .card-header {
             display: flex;
@@ -461,11 +474,11 @@ export function generateReviewHtml(state: ReviewPanelState, nonce: string): stri
             border-radius: 2px;
             background: rgba(128,128,128,0.15);
         }
-        .type-badge.insertion { color: ${CHANGE_COLORS.insertion.dark}; }
-        .type-badge.deletion  { color: ${CHANGE_COLORS.deletion.dark}; }
-        .type-badge.substitution { color: #64B5F6; }
-        .type-badge.highlight { color: #ffeb3b; }
-        .type-badge.comment   { color: #64b5f6; }
+        .type-badge.insertion { color: var(--vscode-gitDecoration-addedResourceForeground, #66BB6A); }
+        .type-badge.deletion  { color: var(--vscode-gitDecoration-deletedResourceForeground, #EF5350); }
+        .type-badge.substitution { color: var(--vscode-gitDecoration-modifiedResourceForeground, #64B5F6); }
+        .type-badge.highlight { color: var(--vscode-editorWarning-foreground, #FDD835); }
+        .type-badge.comment   { color: var(--vscode-gitDecoration-modifiedResourceForeground, #64B5F6); }
 
         .status-badge {
             font-size: 9px;
@@ -474,8 +487,8 @@ export function generateReviewHtml(state: ReviewPanelState, nonce: string): stri
             background: rgba(128,128,128,0.1);
             color: var(--vscode-descriptionForeground);
         }
-        .status-badge.accepted { color: ${CHANGE_COLORS.insertion.dark}; }
-        .status-badge.rejected { color: ${CHANGE_COLORS.deletion.dark}; }
+        .status-badge.accepted { color: var(--vscode-gitDecoration-addedResourceForeground, #66BB6A); }
+        .status-badge.rejected { color: var(--vscode-gitDecoration-deletedResourceForeground, #EF5350); }
 
         .card-text {
             font-size: 12px;
@@ -483,10 +496,19 @@ export function generateReviewHtml(state: ReviewPanelState, nonce: string): stri
             word-break: break-word;
             color: var(--vscode-foreground);
         }
+        .card-meta {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-top: 2px;
+        }
         .card-author {
             font-size: 10px;
             color: var(--vscode-descriptionForeground);
-            margin-top: 2px;
+        }
+        .card-replies {
+            font-size: 10px;
+            color: var(--vscode-descriptionForeground);
         }
         .card-actions {
             position: absolute;
@@ -515,8 +537,8 @@ export function generateReviewHtml(state: ReviewPanelState, nonce: string): stri
         .icon-btn:hover {
             background: var(--vscode-button-hoverBackground, rgba(128,128,128,0.4));
         }
-        .accept-btn:hover { color: ${CHANGE_COLORS.insertion.dark}; }
-        .reject-btn:hover { color: ${CHANGE_COLORS.deletion.dark}; }
+        .accept-btn:hover { color: var(--vscode-gitDecoration-addedResourceForeground, #66BB6A); }
+        .reject-btn:hover { color: var(--vscode-gitDecoration-deletedResourceForeground, #EF5350); }
 
         /* ── Empty state / overlay ────────────────────── */
         .empty-changes {

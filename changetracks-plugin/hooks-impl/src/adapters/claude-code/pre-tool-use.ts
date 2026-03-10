@@ -28,7 +28,8 @@ export interface PreToolUseResult {
  * Delegates policy decisions to core/policy-engine.ts.
  */
 export async function handlePreToolUse(input: HookInput): Promise<PreToolUseResult> {
-  const { tool_name, tool_input, cwd } = input;
+  const { tool_name: rawToolName, tool_input, cwd } = input;
+  const tool_name = rawToolName?.toLowerCase() ?? '';
 
   // read_tracked_file is read-only — always pass through
   if (tool_name === 'read_tracked_file') {
@@ -36,7 +37,7 @@ export async function handlePreToolUse(input: HookInput): Promise<PreToolUseResu
   }
 
   // Handle Read tool — redirect to read_tracked_file in strict mode
-  if (tool_name === 'Read') {
+  if (tool_name === 'read') {
     const filePath = (tool_input?.file_path as string) ?? '';
     if (!filePath || !cwd) {
       return {};
@@ -71,7 +72,7 @@ export async function handlePreToolUse(input: HookInput): Promise<PreToolUseResu
   }
 
   // Only handle Edit and Write tools beyond this point
-  if (tool_name !== 'Edit' && tool_name !== 'Write') {
+  if (tool_name !== 'edit' && tool_name !== 'write') {
     return {};
   }
 
@@ -91,7 +92,7 @@ export async function handlePreToolUse(input: HookInput): Promise<PreToolUseResu
   const newText = (tool_input.new_string as string) ?? (tool_input.content as string) ?? '';
 
   const decision = evaluateRawEdit(filePath, config, projectDir, {
-    checkFileExists: tool_name === 'Write',
+    checkFileExists: tool_name === 'write',
   });
 
   if (decision.action === 'allow') {
@@ -119,7 +120,7 @@ export async function handlePreToolUse(input: HookInput): Promise<PreToolUseResu
         await initHashline();
       }
       hint = formatRedirect({
-        toolName: tool_name as 'Edit' | 'Write',
+        toolName: (tool_name === 'edit' ? 'Edit' : 'Write') as 'Edit' | 'Write',
         filePath: path.relative(projectDir, filePath),
         oldText: oldText,
         newText: newText,

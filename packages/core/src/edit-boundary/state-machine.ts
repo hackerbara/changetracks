@@ -138,8 +138,8 @@ function flush(state: EditBoundaryState): { effects: Effect[]; clearedState: Edi
       changeType,
       offset: buf.anchorOffset,
       length: changeType === 'insertion' ? buf.currentText.length :
-              changeType === 'deletion' ? buf.originalText.length :
-              buf.originalText.length,
+              changeType === 'deletion' ? 0 :
+              buf.currentText.length,
       currentText: buf.currentText,
       originalText: buf.originalText,
       scId: buf.scId,

@@ -16,3 +16,4 @@ esbuild.mjs
 .test-single-commit
 .test-non-git-annotate/**
 docs/**
+coverage/**

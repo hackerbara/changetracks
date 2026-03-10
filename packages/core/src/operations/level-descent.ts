@@ -2,40 +2,41 @@
  * Level descent (compaction): L2 → L1 (footnote to adjacent comment), L1 → L0 (remove adjacent comment).
  */
 import { CriticMarkupParser } from '../parser/parser.js';
+import { findFootnoteBlock, parseFootnoteHeader } from '../footnote-utils.js';
 
 /**
- * Finds the footnote definition block for changeId (header line + indented body) and returns
- * the header fields plus the range [start, end] of the block in text.
+ * Finds the footnote definition block for changeId and returns the header fields
+ * plus byte-offset range [start, end] in text. Wraps the canonical findFootnoteBlock
+ * and parseFootnoteHeader from footnote-utils.
  */
-function findFootnoteBlock(
+function findFootnoteBlockWithOffsets(
   text: string,
   changeId: string,
 ): { author: string; date: string; type: string; status: string; start: number; end: number } | null {
-  const idPattern = changeId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const defLineRe = new RegExp(`^\\[\\^${idPattern}\\]:\\s+(?:(@\\S+)\\s+\\|\\s+)?(\\S+)\\s+\\|\\s+(\\S+)\\s+\\|\\s+(\\S+)`);
-  const lines = text.split(/\r?\n/);
-  let lineStartOffset = 0;
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    const match = line.match(defLineRe);
-    if (match) {
-      const author = match[1] ?? '';
-      const date = match[2];
-      const type = match[3];
-      const status = match[4];
-      let endLineIndex = i + 1;
-      while (endLineIndex < lines.length && /^[\t ]/.test(lines[endLineIndex])) {
-        endLineIndex++;
-      }
-      let blockEndOffset = lineStartOffset + line.length;
-      for (let j = i + 1; j < endLineIndex; j++) {
-        blockEndOffset += lines[j].length + 1;
-      }
-      return { author, date, type, status, start: lineStartOffset, end: blockEndOffset };
-    }
-    lineStartOffset += line.length + 1;
+  const lines = text.split('\n');
+  const block = findFootnoteBlock(lines, changeId);
+  if (!block) return null;
+
+  const header = parseFootnoteHeader(block.headerContent);
+
+  // Compute byte offsets from line indices
+  let start = 0;
+  for (let i = 0; i < block.headerLine; i++) {
+    start += lines[i].length + 1; // +1 for \n
   }
-  return null;
+  let end = start + lines[block.headerLine].length;
+  for (let j = block.headerLine + 1; j <= block.blockEnd; j++) {
+    end += 1 + lines[j].length; // +1 for \n before this line
+  }
+
+  return {
+    author: header?.author ? `@${header.author}` : '',
+    date: header?.date ?? '',
+    type: header?.type ?? '',
+    status: header?.status ?? '',
+    start,
+    end,
+  };
 }
 
 /**
@@ -51,7 +52,7 @@ export function compactToLevel1(text: string, changeId: string): string {
   const refStr = `[^${changeId}]`;
   const refIndex = text.indexOf(refStr, change.range.start);
   if (refIndex === -1) return text;
-  const block = findFootnoteBlock(text, changeId);
+  const block = findFootnoteBlockWithOffsets(text, changeId);
   if (!block) return text;
   const authorPart = block.author ? `${block.author}|` : '';
   const comment = `{>>${authorPart}${block.date}|${block.type}|${block.status}<<}`;
@@ -85,7 +86,16 @@ export function compactToLevel0(text: string, changeIndex: number): string {
   if (changeIndex < 0 || changeIndex >= changes.length) return text;
   const change = changes[changeIndex];
   if (change.level !== 1) return text;
-  const commentOpen = text.indexOf('{>>', change.range.start);
-  if (commentOpen === -1) return text;
-  return text.slice(0, commentOpen) + text.slice(change.range.end);
+  // The metadata comment is the last {>>...<<} block in the change range,
+  // ending at change.range.end.  Search backwards from the end to find
+  // the correct {>> opening — avoids accidentally removing a user-facing
+  // comment that precedes the metadata comment (e.g. on highlights).
+  const closeTag = '<<}';
+  const openTag = '{>>';
+  const commentCloseEnd = change.range.end;
+  const commentCloseStart = commentCloseEnd - closeTag.length;
+  if (text.substring(commentCloseStart, commentCloseEnd) !== closeTag) return text;
+  const commentOpenStart = text.lastIndexOf(openTag, commentCloseStart - 1);
+  if (commentOpenStart === -1 || commentOpenStart < change.range.start) return text;
+  return text.slice(0, commentOpenStart) + text.slice(commentCloseEnd);
 }

@@ -26,7 +26,8 @@ export interface PostToolUseResult {
 export async function handlePostToolUse(
   input: HookInput,
 ): Promise<{ logged: boolean }> {
-  const { tool_name, tool_input, session_id, cwd } = input;
+  const { tool_name: rawToolName, tool_input, session_id, cwd } = input;
+  const tool_name = rawToolName?.toLowerCase() ?? '';
 
   if (!cwd || !tool_input) {
     return { logged: false };
@@ -45,7 +46,7 @@ export async function handlePostToolUse(
   }
 
   // Log raw Read calls on tracked files as audit entries
-  if (tool_name === 'Read') {
+  if (tool_name === 'read') {
     const filePath = (tool_input.file_path as string) ?? '';
     if (!filePath) {
       return { logged: false };
@@ -62,7 +63,7 @@ export async function handlePostToolUse(
   }
 
   // Only handle Edit and Write tools
-  if (tool_name !== 'Edit' && tool_name !== 'Write') {
+  if (tool_name !== 'edit' && tool_name !== 'write') {
     return { logged: false };
   }
 
@@ -88,7 +89,7 @@ export async function handlePostToolUse(
   // Wraps the file with tracking header + creation footnote as a side effect,
   // then continues to the normal edit-logging path (safety-net batch processing).
   let creationWrapped = false;
-  if (tool_name === 'Write' && config.policy.creation_tracking !== 'none') {
+  if (tool_name === 'write' && config.policy.creation_tracking !== 'none') {
     try {
       const content = await fs.readFile(filePath, 'utf-8');
       const TRACKING_HEADER = '<!-- ctrcks.com/v1: tracked -->';
@@ -105,8 +106,8 @@ export async function handlePostToolUse(
         await fs.writeFile(filePath, wrapped, 'utf-8');
         creationWrapped = true;
       }
-    } catch {
-      // File read/write failure — proceed to normal logging
+    } catch (err) {
+      process.stderr.write(`changetracks: creation tracking failed for ${filePath}: ${err}\n`);
     }
   }
 
@@ -137,8 +138,8 @@ export async function handlePostToolUse(
         );
       }
     }
-  } catch {
-    // File read failure — proceed without context
+  } catch (err) {
+    process.stderr.write(`changetracks: context capture failed for ${filePath}: ${err}\n`);
   }
 
   await logEdit(

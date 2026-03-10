@@ -96,7 +96,7 @@ export function registerCommentCommands(
                 const maxId = scanMaxCtId(text);
                 const newId = `ct-${maxId + 1}`;
                 const typeLabel = change.type.toLowerCase();
-                const closingOffset = change.range.end - 3;
+                const closingOffset = change.range.end;
 
                 const footnoteRef = `[^${newId}]`;
                 const footnoteDef = `\n\n[^${newId}]: @${author} | ${date} | ${typeLabel} | proposed`;

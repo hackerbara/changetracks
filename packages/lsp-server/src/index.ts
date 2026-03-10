@@ -12,3 +12,4 @@ export * from './notifications/decoration-data';
 export * from './notifications/pending-edit';
 export * from './notifications/view-mode';
 export * from './pending-edit-manager';
+export * from './capabilities/code-lens';

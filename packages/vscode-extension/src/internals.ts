@@ -50,6 +50,21 @@ export { getPreviousVersion } from './git-integration';
 export { annotateFromGit } from './annotate-command';
 export { ExtensionController } from './controller';
 
+// DOCX preview
+export { buildAnnotationCards } from './docx/annotation-extractor';
+export type { AnnotationCard } from './docx/annotation-extractor';
+export { renderMarkdownToHtml } from './docx/docx-preview-renderer';
+export { buildLoadingHtml, buildErrorHtml, buildChoiceHtml, buildPreviewHtml } from './docx/docx-preview-html';
+export type { ImportStats, PreviewHtmlOptions } from './docx/docx-preview-html';
+
+// Review panel
+export { generateReviewHtml, colorClassForType, getChangePreview, buildCardData } from './review-panel';
+export type { ChangeCardData, ReviewPanelState } from './review-panel';
+
+// Thread data builders (pure functions, no VS Code API dependency at runtime)
+export { buildCommentsForChange, buildThreadDataForChanges } from './thread-data';
+export type { CommentData, ThreadData } from './thread-data';
+
 // Decoration cache helpers and optimistic range transform (used by @fast ORT1 tests).
 // All live in range-transform.ts — no vscode or vscode-languageclient dependency —
 // so @fast tier tests can import them without a full VS Code environment.

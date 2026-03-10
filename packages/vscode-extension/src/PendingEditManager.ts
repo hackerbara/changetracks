@@ -32,10 +32,11 @@ export class PendingEditManager {
     private isMerging: boolean = false;
     private asyncOperationLock: Promise<void> = Promise.resolve();
     private moveContext: { parentId: number; childSuffix: string } | null = null;
+    private pendingUri: string | null = null;
 
     constructor(
         private readonly applyEdit: (range: vscode.Range, newText: string, setFlag: (val: boolean) => void) => Promise<void>,
-        private readonly getDocument: () => vscode.TextDocument,
+        private readonly getDocument: (uri?: string) => vscode.TextDocument | null,
         private readonly workspace: {
             parse: (text: string, languageId?: string) => { getChanges: () => Array<{ id: string; type: string; level: number; range: { start: number; end: number }; contentRange: { start: number; end: number }; modifiedText?: string; originalText?: string }> };
         },
@@ -103,13 +104,17 @@ export class PendingEditManager {
         this.moveContext = ctx;
     }
 
+    public get pauseThresholdMs(): number {
+        return this.state.config.pauseThresholdMs;
+    }
+
     // ── Query Methods ────────────────────────────────────────────────────
 
     public getPendingOverlay(uri: string): PendingOverlay | null {
         const buf = this.state.pending;
         if (!buf) { return null; }
-        const doc = this.getDocument();
-        if (doc.uri.toString() !== uri) { return null; }
+        const doc = this.getDocument(this.pendingUri ?? undefined);
+        if (!doc || doc.uri.toString() !== uri) { return null; }
         return {
             range: { start: buf.anchorOffset, end: buf.anchorOffset + buf.currentText.length },
             text: buf.currentText,
@@ -159,11 +164,18 @@ export class PendingEditManager {
         } else {
             event = { type: 'substitution', offset, oldText: deletedText!, newText: text };
         }
+        const prevPending = this.state.pending;
         const { newState, effects } = processEvent(this.state, event, {
             now,
             allocateScId: () => this.consumeScId() ?? '',
         });
         this.state = newState;
+
+        // Capture the document URI when a new pending buffer is created
+        if (this.state.pending && !prevPending) {
+            const doc = this.getDocument();
+            this.pendingUri = doc ? doc.uri.toString() : null;
+        }
 
         if (effects.some(e => e.type === 'crystallize' || e.type === 'mergeAdjacent')) {
             return this.executeEffectsAsync(effects);
@@ -184,6 +196,22 @@ export class PendingEditManager {
 
         this.log('flush: captured pending edit');
         await this.executeEffectsAsync(effects);
+    }
+
+    /**
+     * Abandon any pending edit without crystallizing.
+     * Used when tracking is toggled off mid-edit — the text is already
+     * in the document as plain characters; we just discard the buffer.
+     */
+    public abandon(): void {
+        this.cancelTimer();
+        this.state = { ...this.state, pending: null };
+        this.pendingUri = null;
+        this.log('abandon: discarded pending edit (tracking toggled off)');
+    }
+
+    public clear(): void {
+        this.abandon();
     }
 
     public dispose(): void {
@@ -265,7 +293,12 @@ export class PendingEditManager {
      * - substitution:  {~~originalText~>currentText~~}
      */
     private async executeCrystallize(effect: Extract<EditBoundaryEffect, { type: 'crystallize' }>): Promise<void> {
-        const doc = this.getDocument();
+        const doc = this.getDocument(this.pendingUri ?? undefined);
+        if (!doc) {
+            this.log('crystallize: document no longer visible, abandoning');
+            this.pendingUri = null;
+            return;
+        }
         const text = doc.getText();
         const scId = effect.scId || undefined;
         const scIdSuffix = scId ? `[^${scId}]` : '';
@@ -309,6 +342,8 @@ export class PendingEditManager {
         if (scId && this.onChangeTracked) {
             await this.onChangeTracked(scId, effect.changeType);
         }
+
+        this.pendingUri = null;
     }
 
     private scheduleTimer(ms: number): void {
@@ -350,7 +385,12 @@ export class PendingEditManager {
      * Apply a multi-line insertion with one {++...++} per line (newline splitting).
      */
     private async applyNewlineSplitInsertion(offset: number, text: string): Promise<void> {
-        const doc = this.getDocument();
+        const doc = this.getDocument(this.pendingUri ?? undefined);
+        if (!doc) {
+            this.log('newlineSplitInsertion: document no longer visible, abandoning');
+            this.pendingUri = null;
+            return;
+        }
         const currentText = doc.getText();
         const searchStart = Math.max(0, offset - 50);
         const pastedTextStart = currentText.indexOf(text, searchStart);
@@ -399,7 +439,11 @@ export class PendingEditManager {
     }
 
     private async _performMerge(newChangeOffset: number): Promise<void> {
-        const doc = this.getDocument();
+        const doc = this.getDocument(this.pendingUri ?? undefined);
+        if (!doc) {
+            this.log('mergeAdjacent: document no longer visible, skipping');
+            return;
+        }
         const text = doc.getText();
         const virtualDoc = this.workspace.parse(text, doc.languageId);
         const changes = virtualDoc.getChanges();

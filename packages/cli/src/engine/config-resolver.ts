@@ -1,6 +1,6 @@
 import * as path from 'node:path';
 import * as fs from 'node:fs/promises';
-import { existsSync, watch, type FSWatcher } from 'node:fs';
+import { existsSync, realpathSync, watch, type FSWatcher } from 'node:fs';
 import { loadConfig, DEFAULT_CONFIG, type ChangeTracksConfig } from './config.js';
 
 interface CachedProject {
@@ -92,16 +92,49 @@ export class ConfigResolver {
   /**
    * Resolve a file path argument from a tool call.
    *
-   * If absolute, returns as-is. If relative, resolves against the most
-   * recently discovered project directory, or the fallback directory.
+   * Resolves relative paths against the inferred project root, then validates
+   * that the final resolved path (after symlink resolution) stays within the
+   * project boundary. Rejects paths that escape the project directory.
    */
   resolveFilePath(file: string): string {
+    const projectRoot = this.inferProjectRoot(file);
+
+    let resolved: string;
     if (path.isAbsolute(file)) {
-      return file;
+      resolved = path.resolve(file);
+    } else {
+      resolved = path.resolve(projectRoot, file);
     }
 
-    // For relative paths, use a stable project anchor.
-    // Prefer: host-provided session roots (MCP) > last discovered project root > fallback/PWD discovery.
+    if (!this.lastProjectDir) {
+      this.lastProjectDir = projectRoot;
+    }
+
+    // Resolve symlinks to prevent symlink-based boundary escapes.
+    // If the file doesn't exist yet (new file creation), resolve the
+    // parent directory's realpath and append the basename.
+    const realResolved = this.resolveRealPath(resolved);
+
+    // Boundary check: the resolved real path must be within the project root.
+    // Resolve the project root's realpath too, in case it's itself a symlink.
+    const realProjectRoot = this.resolveRealPath(projectRoot);
+    const normalizedRoot = realProjectRoot.endsWith(path.sep) ? realProjectRoot : realProjectRoot + path.sep;
+
+    if (!realResolved.startsWith(normalizedRoot) && realResolved !== realProjectRoot) {
+      throw new Error(
+        `Path "${file}" resolves to "${realResolved}" which is outside the project root "${realProjectRoot}". ` +
+        'File operations are restricted to the project directory for security.'
+      );
+    }
+
+    return realResolved;
+  }
+
+  /**
+   * Infer the project root directory using the standard fallback chain.
+   * Used by resolveFilePath for both absolute and relative path validation.
+   */
+  private inferProjectRoot(file: string): string {
     const firstSessionRoot = this.sessionRoots[0];
     const inferredProject =
       firstSessionRoot ||
@@ -111,15 +144,47 @@ export class ConfigResolver {
 
     if (!inferredProject) {
       throw new Error(
-        `Cannot resolve relative path "${file}" because project root is unknown. ` +
+        `Cannot resolve path "${file}" because project root is unknown. ` +
         'Use an absolute path or set CHANGETRACKS_PROJECT_DIR to the workspace root.'
       );
     }
 
-    if (!this.lastProjectDir) {
-      this.lastProjectDir = inferredProject;
+    return inferredProject;
+  }
+
+  /**
+   * Resolve a path to its real filesystem path (following symlinks).
+   * If the path doesn't exist, resolves the nearest existing ancestor
+   * and appends the remaining segments — this supports new file creation
+   * within the project boundary.
+   */
+  private resolveRealPath(filePath: string): string {
+    try {
+      return realpathSync(filePath);
+    } catch {
+      // File doesn't exist yet. Walk up to find the nearest existing ancestor,
+      // resolve its realpath, then append the remaining path segments.
+      const segments: string[] = [];
+      let current = filePath;
+
+      while (true) {
+        const parent = path.dirname(current);
+        if (parent === current) {
+          // Reached filesystem root without finding an existing path.
+          // Return the original normalized path as-is.
+          return path.resolve(filePath);
+        }
+        segments.unshift(path.basename(current));
+        current = parent;
+
+        try {
+          const realParent = realpathSync(current);
+          return path.join(realParent, ...segments);
+        } catch {
+          // This ancestor doesn't exist either, keep walking up.
+        }
+      }
     }
-    return path.resolve(inferredProject, file);
   }
 
   /**

@@ -7,7 +7,6 @@ import { createLanguageClient, setDecorationDataHandler, setViewModeChangedHandl
 import { LanguageClient } from 'vscode-languageclient/node';
 import { annotateFromGit } from './annotate-command';
 import { MoveCodeLensProvider } from './move-code-lens';
-import { AcceptRejectCodeLensProvider } from './accept-reject-code-lens';
 import { ReviewPanelProvider } from './review-panel';
 import { SettingsPanelProvider } from './settings-panel';
 import { ProjectStatusModel } from './project-status';
@@ -261,7 +260,7 @@ export function activate(context: vscode.ExtensionContext) {
     // Wrapped in try/catch: ChangeComments constructor creates a CommentController
     // and subscribes to multiple events. A failure here must NOT prevent the rest.
     try {
-        changeComments = new ChangeComments(controller, () => vscode.window.activeTextEditor?.document);
+        changeComments = new ChangeComments(controller, () => vscode.window.activeTextEditor?.document, () => controller.viewMode);
         context.subscriptions.push(changeComments);
         controller.setChangeComments(changeComments);
     } catch (err: any) {
@@ -286,7 +285,7 @@ export function activate(context: vscode.ExtensionContext) {
     // Command modules (Phase 4)
     registerChangeCommands(context, controller, statusModel);
     registerCommentCommands(context, controller, changeComments);
-    registerTestCommands(context, controller, () => client);
+    registerTestCommands(context, controller, () => client, changeComments as any);
     registerSetupCommands(context);
 
     context.subscriptions.push(
@@ -295,12 +294,6 @@ export function activate(context: vscode.ExtensionContext) {
             { language: 'markdown' },
             new MoveCodeLensProvider(controller.getChangesForDocument.bind(controller))
         ),
-        // CodeLens provider for Accept/Reject on every change
-        vscode.languages.registerCodeLensProvider(
-            { language: 'markdown' },
-            new AcceptRejectCodeLensProvider(controller.getChangesForDocument.bind(controller))
-        ),
-
         // Test-only: keep cursor position in sync on every selection change.
         // Enables Playwright tests to read cursor line without command palette.
         vscode.window.onDidChangeTextEditorSelection((e) => {

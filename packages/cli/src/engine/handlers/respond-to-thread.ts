@@ -1,11 +1,10 @@
 import * as fs from 'node:fs/promises';
-import * as path from 'node:path';
 import { errorResult } from '../shared/error-result.js';
 import { optionalStrArg } from '../args.js';
 import { resolveAuthor } from '../author.js';
 import { isFileInScope } from '../config.js';
 import { ConfigResolver } from '../config-resolver.js';
-import { findFootnoteBlock, findDiscussionInsertionIndex, nowTimestamp } from '@changetracks/core';
+import { computeReplyEdit } from '@changetracks/core';
 import { SessionState } from '../state.js';
 
 /**
@@ -107,22 +106,7 @@ export async function handleRespondToThread(
       return errorResult(`File not found or unreadable: ${msg}`);
     }
 
-    // 5. Find footnote block for change_id
-    const lines = fileContent.split('\n');
-    const block = findFootnoteBlock(lines, changeId);
-
-    if (!block) {
-      return errorResult(
-        `Change "${changeId}" not found in file "${filePath}".`
-      );
-    }
-
-    // 6. Determine the insertion point within the footnote block.
-    // Discussion entries go after metadata and existing discussion,
-    // but before approval/resolution lines.
-    const insertionIdx = findDiscussionInsertionIndex(lines, block.headerLine, block.blockEnd) + 1;
-
-    // 7. Format the response line(s)
+    // 5. Resolve author
     const { author, error: authorError } = resolveAuthor(
       args.author as string | undefined,
       config,
@@ -131,16 +115,22 @@ export async function handleRespondToThread(
     if (authorError) {
       return errorResult(authorError.message);
     }
-    const ts = nowTimestamp();
-    const formattedLines = formatResponseLines(author, ts.raw, response, label);
 
-    // 8. Insert the response line(s)
-    lines.splice(insertionIdx, 0, ...formattedLines);
+    // 6. Delegate pure computation to core
+    const result = computeReplyEdit(fileContent, changeId, {
+      text: response,
+      author,
+      label,
+    });
 
-    // 9. Write back to disk
-    await fs.writeFile(filePath, lines.join('\n'), 'utf-8');
+    if (result.isError) {
+      return errorResult(result.error);
+    }
 
-    // 10. Return success
+    // 7. Write back to disk
+    await fs.writeFile(filePath, result.text, 'utf-8');
+
+    // 8. Return success
     return {
       content: [
         {
@@ -158,39 +148,4 @@ export async function handleRespondToThread(
   }
 }
 
-/**
- * Formats a discussion response into one or more lines with proper indentation.
- *
- * Top-level discussion entries use 4-space indent:
- *   `    @author date: message`
- *   `    @author date [label]: message`
- *
- * Multi-line responses use 6-space indent for continuation lines:
- *   `    @author date: first line`
- *   `      second line`
- *   `      third line`
- */
-function formatResponseLines(
-  author: string,
-  date: string,
-  response: string,
-  label?: string
-): string[] {
-  const responseLines = response.split('\n');
-  const indent = '    '; // 4 spaces for top-level discussion
-  const continuationIndent = '      '; // 6 spaces for continuation
-
-  // Format the first line with author/date prefix
-  const labelPart = label ? ` [${label}]` : '';
-  const firstLine = `${indent}@${author} ${date}${labelPart}: ${responseLines[0]}`;
-
-  const result = [firstLine];
-
-  // Add continuation lines with extra indent
-  for (let i = 1; i < responseLines.length; i++) {
-    result.push(`${continuationIndent}${responseLines[i]}`);
-  }
-
-  return result;
-}
 

@@ -1,8 +1,8 @@
 import * as vscode from 'vscode';
-import { ChangeNode, ChangeType, ChangeStatus } from '@changetracks/core';
+import { ChangeNode, ChangeStatus } from '@changetracks/core';
 import type { ExtensionController } from './controller';
 import { coreRangeToVscode, offsetToPosition, positionToOffset } from './converters';
-import { typeLabel } from './visual-semantics';
+import { typeLabel, typeLabelCapitalized } from './visual-semantics';
 
 const REFRESH_THREADS_DEBOUNCE_MS = 100;
 
@@ -28,7 +28,8 @@ export class ChangeComments implements vscode.Disposable {
 
   constructor(
     private controller: ExtensionController,
-    private getDocument: () => vscode.TextDocument | undefined
+    private getDocument: () => vscode.TextDocument | undefined,
+    private getViewMode?: () => string | undefined
   ) {
     this.commentController = vscode.comments.createCommentController(
       'changetracks',
@@ -66,12 +67,30 @@ export class ChangeComments implements vscode.Disposable {
       })
     );
 
-    // When cursor moves into a change that has a comment thread, expand that thread so the comment opens by default.
-    // isCommentReplyActive is cleared inside expandThreadForChangeAtCursor when cursor leaves a change region,
-    // and in thread disposal paths — NOT on every selection event (which races with keystroke processing).
+    // When cursor moves into a change that has a comment thread, expand that thread — but only when
+    // commentsExpandedByDefault is true. Without this gate, scrolling through documents with many
+    // commented changes causes peek widgets to flash open on every selection change event.
+    // isCommentReplyActive is still cleared when cursor leaves a change region regardless of setting.
     this.disposables.push(
       vscode.window.onDidChangeTextEditorSelection(() => {
-        this.expandThreadForChangeAtCursor();
+        if (this.getCommentsExpandedByDefault()) {
+          this.expandThreadForChangeAtCursor();
+        } else {
+          // Still clear the flag when cursor leaves change region
+          const doc = this.getDocument();
+          const editor = vscode.window.activeTextEditor;
+          if (doc && editor && editor.document === doc) {
+            const text = doc.getText();
+            const cursorOffset = positionToOffset(text, editor.selection.active);
+            const changes = this.controller.getChangesForDocument(doc);
+            const change = changes.find(
+              (c) => cursorOffset >= c.contentRange.start && cursorOffset < c.contentRange.end
+            );
+            if (!change || change.level < 1) {
+              this.isCommentReplyActive = false;
+            }
+          }
+        }
       })
     );
   }
@@ -90,8 +109,8 @@ export class ChangeComments implements vscode.Disposable {
     const change = changes.find(
       (c) => cursorOffset >= c.contentRange.start && cursorOffset < c.contentRange.end
     );
-    if (!change || change.level < 2) {
-      // Cursor is outside any footnoted change — no comment widget should be active
+    if (!change || change.level < 1) {
+      // Cursor is outside any L1/L2 change — no comment widget should be active
       this.isCommentReplyActive = false;
       return;
     }
@@ -147,8 +166,8 @@ export class ChangeComments implements vscode.Disposable {
    */
   private contentRangeToPeekRange(text: string, contentRange: { start: number; end: number }): vscode.Range {
     const endPos = offsetToPosition(text, contentRange.end);
-    const startOfLastLine = new vscode.Position(endPos.line, 0);
-    return new vscode.Range(startOfLastLine, endPos);
+    const lineEnd = new vscode.Position(endPos.line, Number.MAX_SAFE_INTEGER);
+    return new vscode.Range(lineEnd, lineEnd);
   }
 
   /** Get the change ID associated with a CommentThread. */
@@ -179,6 +198,18 @@ export class ChangeComments implements vscode.Disposable {
     const doc = this.getDocument();
     if (!doc) return;
 
+    // Hide all threads in Final/Original clean preview modes
+    const viewMode = this.getViewMode?.();
+    if (viewMode === 'settled' || viewMode === 'raw') {
+      // Dispose all threads for clean preview
+      for (const [id, thread] of this.threads) {
+        thread.dispose();
+        this.threads.delete(id);
+      }
+      this.isCommentReplyActive = false;
+      return;
+    }
+
     const changes = this.controller.getChangesForDocument(doc);
     const text = doc.getText();
 
@@ -186,8 +217,8 @@ export class ChangeComments implements vscode.Disposable {
     const activeIds = new Set<string>();
 
     for (const change of changes) {
-      // Only create threads for footnoted changes (Level 2: ct-N id). Level 1 has inline metadata but no footnote/thread.
-      if (change.level < 2) continue;
+      // Create threads for all L1/L2 changes. L0 (bare markup, no metadata) gets no thread.
+      if (change.level < 1) continue;
 
       activeIds.add(change.id);
       const range = this.contentRangeToPeekRange(text, change.contentRange);
@@ -215,7 +246,8 @@ export class ChangeComments implements vscode.Disposable {
         // Create new thread
         const thread = this.commentController.createCommentThread(doc.uri, range, this.buildComments(change));
         thread.contextValue = 'changetracksThread';
-        thread.label = `[^${change.id}]`;
+        const author = change.metadata?.author ?? change.inlineMetadata?.author ?? 'unknown';
+        thread.label = `${typeLabelCapitalized(change.type)} by ${author}`;
         thread.canReply = true;
         thread.state = vscode.CommentThreadState.Unresolved;
         thread.collapsibleState = defaultCollapsibleState;
@@ -245,15 +277,17 @@ export class ChangeComments implements vscode.Disposable {
     const statusLabel = change.status === ChangeStatus.Accepted ? 'accepted'
       : change.status === ChangeStatus.Rejected ? 'rejected' : 'proposed';
     const tLabel = typeLabel(change.type);
-    const summary = meta?.comment
-      ? `**${tLabel}** · ${statusLabel}\n\n${meta.comment}`
-      : `**${tLabel}** · ${statusLabel}`;
+    const body = new vscode.MarkdownString(`**${tLabel}** · ${statusLabel}`);
+    if (meta?.comment) {
+      body.appendMarkdown('\n\n');
+      body.appendText(meta.comment);
+    }
 
     comments.push({
       author: {
-        name: meta?.author ?? 'unknown',
+        name: meta?.author ?? change.inlineMetadata?.author ?? 'unknown',
       },
-      body: new vscode.MarkdownString(summary),
+      body,
       mode: vscode.CommentMode.Preview,
       timestamp: meta?.date ? new Date(meta.date) : undefined,
     });
@@ -261,10 +295,12 @@ export class ChangeComments implements vscode.Disposable {
     // Discussion entries from footnote
     if (meta?.discussion) {
       for (const entry of meta.discussion) {
-        const label = entry.label ? `**${entry.label}:** ` : '';
+        const entryBody = new vscode.MarkdownString();
+        if (entry.label) { entryBody.appendMarkdown('**'); entryBody.appendText(entry.label); entryBody.appendMarkdown(':** '); }
+        entryBody.appendText(entry.text);
         comments.push({
           author: { name: entry.author },
-          body: new vscode.MarkdownString(`${label}${entry.text}`),
+          body: entryBody,
           mode: vscode.CommentMode.Preview,
           timestamp: entry.timestamp?.sortable
             ? new Date(entry.timestamp.sortable)
@@ -273,7 +309,62 @@ export class ChangeComments implements vscode.Disposable {
       }
     }
 
+    // Approval entries from footnote
+    if (meta?.approvals) {
+      for (const approval of meta.approvals) {
+        const approvalBody = new vscode.MarkdownString();
+        approvalBody.appendText('Approved');
+        if (approval.reason) {
+          approvalBody.appendText(`: ${approval.reason}`);
+        }
+        comments.push({
+          author: { name: approval.author },
+          body: approvalBody,
+          mode: vscode.CommentMode.Preview,
+          timestamp: approval.timestamp?.sortable
+            ? new Date(approval.timestamp.sortable)
+            : approval.date ? new Date(approval.date) : undefined,
+        });
+      }
+    }
+
+    // Rejection entries from footnote
+    if (meta?.rejections) {
+      for (const rejection of meta.rejections) {
+        const rejectionBody = new vscode.MarkdownString();
+        rejectionBody.appendText('Rejected');
+        if (rejection.reason) {
+          rejectionBody.appendText(`: ${rejection.reason}`);
+        }
+        comments.push({
+          author: { name: rejection.author },
+          body: rejectionBody,
+          mode: vscode.CommentMode.Preview,
+          timestamp: rejection.timestamp?.sortable
+            ? new Date(rejection.timestamp.sortable)
+            : rejection.date ? new Date(rejection.date) : undefined,
+        });
+      }
+    }
+
     return comments;
+  }
+
+  /**
+   * Return serializable metadata for all active comment threads.
+   * Used by the _testGetCommentThreads bridge command.
+   */
+  getAllThreadData(): Array<{ changeId: string; state: string; commentCount: number; label: string }> {
+    const result: Array<{ changeId: string; state: string; commentCount: number; label: string }> = [];
+    for (const [changeId, thread] of this.threads) {
+      result.push({
+        changeId,
+        state: thread.state === vscode.CommentThreadState.Resolved ? 'resolved' : 'unresolved',
+        commentCount: thread.comments.length,
+        label: thread.label ?? '',
+      });
+    }
+    return result;
   }
 
   dispose(): void {

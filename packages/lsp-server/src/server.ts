@@ -25,13 +25,20 @@ import {
   DocumentLink,
   WorkspaceEdit,
   TextEdit,
-  DidChangeWatchedFilesNotification
+  DidChangeWatchedFilesNotification,
+  CodeLensRefreshRequest
 } from 'vscode-languageserver/node';
 import * as fs from 'fs';
 import * as path from 'path';
 import { TextDocument } from 'vscode-languageserver-textdocument';
-import { Workspace, VirtualDocument, ChangeNode, ChangeType, ChangeStatus, annotateMarkdown, annotateSidecar, SIDECAR_BLOCK_MARKER, VIEW_NAMES } from '@changetracks/core';
-import type { ViewName } from '@changetracks/core';
+import {
+  Workspace, VirtualDocument, ChangeNode, ChangeType, ChangeStatus,
+  annotateMarkdown, annotateSidecar, SIDECAR_BLOCK_MARKER, VIEW_NAMES,
+  applyReview, computeAmendEdits, computeSupersedeResult, computeReplyEdit,
+  computeResolutionEdit, computeUnresolveEdit, compactToLevel1, compactToLevel0,
+  CriticMarkupParser, findFootnoteBlock, parseFootnoteHeader,
+} from '@changetracks/core';
+import type { ViewName, Decision } from '@changetracks/core';
 import { getWorkspaceRoot, getPreviousVersion, PreviousVersionResult } from './git';
 import { createHover } from './capabilities/hover';
 import { createCodeLenses } from './capabilities/code-lens';
@@ -203,6 +210,16 @@ export class ChangetracksServer {
     // Section 11: getChanges request — on-demand bootstrap when extension cache is empty
     this.connection.onRequest('changetracks/getChanges', this.handleGetChanges.bind(this));
 
+    // Phase 2: Lifecycle operation custom requests (2A-2G)
+    this.connection.onRequest('changetracks/getProjectConfig', this.handleGetProjectConfig.bind(this));
+    this.connection.onRequest('changetracks/reviewChange', this.handleReviewChange.bind(this));
+    this.connection.onRequest('changetracks/replyToThread', this.handleReplyToThread.bind(this));
+    this.connection.onRequest('changetracks/amendChange', this.handleAmendChange.bind(this));
+    this.connection.onRequest('changetracks/supersedeChange', this.handleSupersedeChange.bind(this));
+    this.connection.onRequest('changetracks/resolveThread', this.handleResolveThread.bind(this));
+    this.connection.onRequest('changetracks/unresolveThread', this.handleUnresolveThread.bind(this));
+    this.connection.onRequest('changetracks/compactChange', this.handleCompactChange.bind(this));
+
     // Tracking event handler - receives individual edit events from client
     this.connection.onNotification('changetracks/trackingEvent', (params: {
       textDocument: { uri: string };
@@ -308,6 +325,9 @@ export class ChangetracksServer {
         this.semanticTokenRefreshTimeout = setTimeout(() => {
           this.semanticTokenRefreshTimeout = null;
           this.connection.languages.semanticTokens.refresh();
+          this.connection.sendRequest(CodeLensRefreshRequest.type).catch(() => {
+            // Client does not support workspace/codeLens/refresh — safe to ignore
+          });
         }, 50);
       } catch (err) {
         this.connection.console.error(`changetracks/setViewMode handler error: ${err}`);
@@ -635,7 +655,8 @@ export class ChangetracksServer {
         return [];
       }
       const changes = this.getMergedChanges(uri);
-      return createCodeLenses(changes, text);
+      const viewMode = this.getViewMode(uri);
+      return createCodeLenses(changes, text, viewMode);
     } catch (err) {
       this.connection.console.error(`handleCodeLens error: ${err}`);
       return [];
@@ -837,6 +858,270 @@ export class ChangetracksServer {
     }
     const changes = this.getMergedChanges(uri);
     return { changes };
+  }
+
+  // ─── Phase 2: Lifecycle operation helpers ───────────────────────────────────
+
+  /**
+   * Get document text from cache or TextDocuments manager.
+   */
+  private getDocumentText(uri: string): string | undefined {
+    return this.textCache.get(uri) ?? this.documents.get(uri)?.getText();
+  }
+
+  /**
+   * Create a full-document replacement TextEdit (LSP Range-based).
+   * Replaces the entire document content with newText.
+   */
+  private fullDocumentEdit(uri: string, newText: string): TextEdit {
+    const text = this.getDocumentText(uri) ?? '';
+    const lines = text.split('\n');
+    const lastLine = lines.length - 1;
+    const lastChar = lines[lastLine].length;
+    return TextEdit.replace(
+      { start: { line: 0, character: 0 }, end: { line: lastLine, character: lastChar } },
+      newText
+    );
+  }
+
+  /**
+   * Apply a core TextEdit (offset-based) to a string and return the result.
+   */
+  private applyCoreTextEdit(text: string, edit: { offset: number; length: number; newText: string }): string {
+    return text.slice(0, edit.offset) + edit.newText + text.slice(edit.offset + edit.length);
+  }
+
+  // ─── Phase 2: Lifecycle operation handlers (2A–2G) ─────────────────────────
+
+  /**
+   * 2A: changetracks/getProjectConfig
+   * Returns project configuration for reason requirements and reviewer identity.
+   */
+  public handleGetProjectConfig(): {
+    reasonRequired: { human: boolean; agent: boolean };
+    reviewerIdentity: string | undefined;
+  } {
+    return {
+      reasonRequired: { human: false, agent: true },
+      reviewerIdentity: this.reviewerIdentity,
+    };
+  }
+
+  /**
+   * 2B: changetracks/reviewChange
+   * Apply a review decision (approve/reject/request_changes) to a tracked change.
+   */
+  public handleReviewChange(params: {
+    uri: string;
+    changeId: string;
+    decision: Decision;
+    reason?: string;
+    author?: string;
+  }): { edit: TextEdit } | { error: string } {
+    try {
+      const text = this.getDocumentText(params.uri);
+      if (!text) return { error: 'Document not found' };
+      const author = params.author ?? this.reviewerIdentity ?? '';
+      const result = applyReview(text, params.changeId, params.decision, params.reason ?? '', author);
+      if ('error' in result) return { error: result.error };
+      return { edit: this.fullDocumentEdit(params.uri, result.updatedContent) };
+    } catch (err) {
+      this.connection.console.error(`handleReviewChange error: ${err}`);
+      return { error: `Review change failed: ${err}` };
+    }
+  }
+
+  /**
+   * 2C: changetracks/replyToThread
+   * Add a discussion reply to a change's footnote thread.
+   */
+  public handleReplyToThread(params: {
+    uri: string;
+    changeId: string;
+    text: string;
+    author?: string;
+    label?: string;
+  }): { edit: TextEdit } | { error: string } {
+    try {
+      const docText = this.getDocumentText(params.uri);
+      if (!docText) return { error: 'Document not found' };
+      const author = params.author ?? this.reviewerIdentity ?? '';
+      const result = computeReplyEdit(docText, params.changeId, {
+        text: params.text,
+        author,
+        label: params.label,
+      });
+      if (result.isError) return { error: result.error };
+      return { edit: this.fullDocumentEdit(params.uri, result.text) };
+    } catch (err) {
+      this.connection.console.error(`handleReplyToThread error: ${err}`);
+      return { error: `Reply to thread failed: ${err}` };
+    }
+  }
+
+  /**
+   * 2D: changetracks/amendChange
+   * Amend a proposed change's inline text or reasoning.
+   */
+  public handleAmendChange(params: {
+    uri: string;
+    changeId: string;
+    newText: string;
+    reason?: string;
+    author?: string;
+  }): { edit: TextEdit } | { error: string } {
+    try {
+      const docText = this.getDocumentText(params.uri);
+      if (!docText) return { error: 'Document not found' };
+      const author = params.author ?? this.reviewerIdentity ?? '';
+      const result = computeAmendEdits(docText, params.changeId, {
+        newText: params.newText,
+        reason: params.reason,
+        author,
+      });
+      if (result.isError) return { error: result.error };
+      return { edit: this.fullDocumentEdit(params.uri, result.text) };
+    } catch (err) {
+      this.connection.console.error(`handleAmendChange error: ${err}`);
+      return { error: `Amend change failed: ${err}` };
+    }
+  }
+
+  /**
+   * 2E: changetracks/supersedeChange
+   * Reject a proposed change and propose a replacement, with cross-references.
+   */
+  public handleSupersedeChange(params: {
+    uri: string;
+    changeId: string;
+    newText: string;
+    reason?: string;
+    author?: string;
+    oldText?: string;
+    insertAfter?: string;
+  }): { edit: TextEdit; newChangeId: string } | { error: string } {
+    try {
+      const docText = this.getDocumentText(params.uri);
+      if (!docText) return { error: 'Document not found' };
+      const author = params.author ?? this.reviewerIdentity ?? '';
+      const result = computeSupersedeResult(docText, params.changeId, {
+        newText: params.newText,
+        oldText: params.oldText,
+        reason: params.reason,
+        author,
+        insertAfter: params.insertAfter,
+      });
+      if (result.isError) return { error: result.error };
+      return {
+        edit: this.fullDocumentEdit(params.uri, result.text),
+        newChangeId: result.newChangeId,
+      };
+    } catch (err) {
+      this.connection.console.error(`handleSupersedeChange error: ${err}`);
+      return { error: `Supersede change failed: ${err}` };
+    }
+  }
+
+  /**
+   * 2F: changetracks/resolveThread
+   * Mark a change's discussion thread as resolved.
+   */
+  public handleResolveThread(params: {
+    uri: string;
+    changeId: string;
+    author?: string;
+  }): { edit: TextEdit } | { error: string } {
+    try {
+      const docText = this.getDocumentText(params.uri);
+      if (!docText) return { error: 'Document not found' };
+      const author = params.author ?? this.reviewerIdentity ?? '';
+      const coreEdit = computeResolutionEdit(docText, params.changeId, { author });
+      if (!coreEdit) return { error: `Cannot resolve ${params.changeId}` };
+      const newText = this.applyCoreTextEdit(docText, coreEdit);
+      return { edit: this.fullDocumentEdit(params.uri, newText) };
+    } catch (err) {
+      this.connection.console.error(`handleResolveThread error: ${err}`);
+      return { error: `Resolve thread failed: ${err}` };
+    }
+  }
+
+  /**
+   * 2F (unresolve): changetracks/unresolveThread
+   * Remove the resolved status from a change's discussion thread.
+   */
+  public handleUnresolveThread(params: {
+    uri: string;
+    changeId: string;
+  }): { edit: TextEdit } | { error: string } {
+    try {
+      const docText = this.getDocumentText(params.uri);
+      if (!docText) return { error: 'Document not found' };
+      const coreEdit = computeUnresolveEdit(docText, params.changeId);
+      if (!coreEdit) return { error: `Cannot unresolve ${params.changeId}` };
+      const newText = this.applyCoreTextEdit(docText, coreEdit);
+      return { edit: this.fullDocumentEdit(params.uri, newText) };
+    } catch (err) {
+      this.connection.console.error(`handleUnresolveThread error: ${err}`);
+      return { error: `Unresolve thread failed: ${err}` };
+    }
+  }
+
+  /**
+   * 2G: changetracks/compactChange
+   * Compact a settled change by descending its metadata level.
+   * Default: L2 → L1. With `fully: true`: L2 → L0.
+   */
+  public handleCompactChange(params: {
+    uri: string;
+    changeId: string;
+    fully?: boolean;
+  }): { edit: TextEdit } | { error: string } {
+    try {
+      const docText = this.getDocumentText(params.uri);
+      if (!docText) return { error: 'Document not found' };
+
+      // Guard: only compact changes that are accepted or rejected (settled)
+      const lines = docText.split('\n');
+      const block = findFootnoteBlock(lines, params.changeId);
+      if (!block) return { error: `Change "${params.changeId}" not found in file` };
+      const header = parseFootnoteHeader(lines[block.headerLine]);
+      if (!header) return { error: `Malformed metadata for change "${params.changeId}"` };
+      if (header.status === 'proposed') {
+        return { error: `Cannot compact proposed change "${params.changeId}". Only accepted or rejected changes can be compacted.` };
+      }
+
+      // L2 → L1
+      let result = compactToLevel1(docText, params.changeId);
+      if (result === docText) {
+        return { error: `Could not compact "${params.changeId}" to Level 1` };
+      }
+
+      // If fully requested, also L1 → L0
+      // After L2→L1 the footnote ref is gone, so we locate the change by
+      // finding the L1 change whose range contains the original markup offset.
+      if (params.fully) {
+        const refPattern = `[^${params.changeId}]`;
+        const refPos = docText.indexOf(refPattern);
+
+        const parser = new CriticMarkupParser();
+        const doc = parser.parse(result);
+        const changes = doc.getChanges();
+        const idx = changes.findIndex((c) =>
+          c.level === 1 && refPos >= c.range.start && refPos <= c.range.end
+        );
+        if (idx >= 0) {
+          const l0Result = compactToLevel0(result, idx);
+          if (l0Result !== result) {
+            result = l0Result;
+          }
+        }
+      }
+
+      return { edit: this.fullDocumentEdit(params.uri, result) };
+    } catch (err) {
+      this.connection.console.error(`handleCompactChange error: ${err}`);
+      return { error: `Compact change failed: ${err}` };
+    }
   }
 }
 

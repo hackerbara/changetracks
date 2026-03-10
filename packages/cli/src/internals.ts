@@ -20,6 +20,7 @@ export {
   formatThreadLines,
   formatAnsiWithThreads,
   isGitDiffDriverInvocation,
+  handleDiff,
 } from './commands/diff.js';
 export type { ThreadEntry, DiffOptions } from './commands/diff.js';
 

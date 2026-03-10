@@ -390,14 +390,19 @@ export function astToMarkup(
       case 'Subscript':
         return `~${renderInlineContent(node.c)}~`;
       case 'SmallCaps':
-        return renderInlineContent(node.c);
+        return `<span style="font-variant:small-caps">${renderInlineContent(node.c)}</span>`;
       case 'Quoted':
         if (node.c[0].t === 'DoubleQuote') {
           return `\u201c${renderInlineContent(node.c[1])}\u201d`;
         }
         return `\u2018${renderInlineContent(node.c[1])}\u2019`;
       case 'Span': {
-        return renderInlineContent(getSpanContent(node));
+        const spanClasses = getSpanClasses(node);
+        const inner = renderInlineContent(getSpanContent(node));
+        if (spanClasses.includes('underline')) {
+          return `<u>${inner}</u>`;
+        }
+        return inner;
       }
       case 'RawInline':
         return node.c[1];

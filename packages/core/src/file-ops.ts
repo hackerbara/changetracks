@@ -535,6 +535,11 @@ export function findUniqueMatch(
     : 'Tried: exact match only (no normalizer), whitespace-collapsed match, view-surface match, settled-text match.';
   const preview = target.length > 80 ? target.slice(0, 80) + '...' : target;
 
+  // Haystack context for diagnostics: first 200 chars + line count
+  const haystackPreview = text.length > 200 ? text.slice(0, 200) + '...' : text;
+  const haystackLineCount = text.split('\n').length;
+  const searchedInLine = `Searched in (${haystackLineCount} line${haystackLineCount === 1 ? '' : 's'}, first 200 chars): "${haystackPreview}"`;
+
   // Diagnostic confusable detection (ADR-061)
   // After all levels fail, check if confusable normalization would produce a match.
   // This is diagnostic ONLY -- never used for actual matching or writing.
@@ -548,14 +553,14 @@ export function findUniqueMatch(
       ? diagnosticResult.matchedText.slice(0, 80) + '...'
       : diagnosticResult.matchedText;
     throw new Error(
-      `Text not found in document.\n${hint}\n\n` +
+      `Text not found in document.\n${hint}\n${searchedInLine}\n\n` +
       `Unicode mismatch detected -- your text would match with character substitution:\n${diffLines}\n\n` +
       `Copy the exact text from file for retry:\n  "${diagPreview}"`
     );
   }
 
   throw new Error(
-    `Text not found in document.\n${hint}\nInput (first 80 chars): "${preview}"\nHint: Re-read the file for current content, or use LINE:HASH addressing.`
+    `Text not found in document.\n${hint}\nInput (first 80 chars): "${preview}"\n${searchedInLine}\nHint: Re-read the file for current content, or use LINE:HASH addressing.`
   );
 }
 

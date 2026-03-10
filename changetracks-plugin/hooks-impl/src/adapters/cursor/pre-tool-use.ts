@@ -26,12 +26,12 @@ function getOldNewText(toolInput: Record<string, unknown>): { oldText: string; n
 }
 
 export async function handlePreToolUse(input: HookInput): Promise<CursorPreToolUseResponse> {
-  const toolName = input.tool_name ?? '';
+  const toolName = (input.tool_name ?? '').toLowerCase();
   const isWriteLike =
-    toolName === 'Write' ||
-    toolName === 'Edit' ||
-    toolName === 'MultiEdit' ||
-    toolName === 'ApplyPatch';
+    toolName === 'write' ||
+    toolName === 'edit' ||
+    toolName === 'multiedit' ||
+    toolName === 'applypatch';
 
   if (!isWriteLike) {
     return { decision: 'allow' };
@@ -59,7 +59,7 @@ export async function handlePreToolUse(input: HookInput): Promise<CursorPreToolU
   const { oldText, newText } = getOldNewText(toolInput);
 
   const decision = evaluateRawEdit(filePath, config, projectDir, {
-    checkFileExists: toolName === 'Write',
+    checkFileExists: toolName === 'write',
   });
 
   if (decision.action === 'deny') {

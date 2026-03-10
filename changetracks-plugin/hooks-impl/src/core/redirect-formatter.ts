@@ -64,7 +64,7 @@ Use read_tracked_file to get current content and LINE:HASH coordinates.`;
 
   const oldLines = oldText.split('\n');
   if (oldLines.length > 1) {
-    const endLineIdx = lineIdx + oldLines.length - 1;
+    const endLineIdx = Math.min(lineIdx + oldLines.length - 1, lines.length - 1);
     const endHash = computeLineHash(endLineIdx, lines[endLineIdx], lines);
     return `This file is tracked (strict mode, compact). Your edit spans lines ${lineNum}-${endLineIdx + 1}:
 

@@ -1,6 +1,7 @@
 import { ChangeNode, ChangeType, TextEdit } from '../model/types.js';
 import { FOOTNOTE_DEF_STATUS } from '../footnote-patterns.js';
 import { nowTimestamp } from '../timestamp.js';
+import { findFootnoteBlock, findReviewInsertionIndex } from '../footnote-utils.js';
 
 /**
  * Separated text + footnote ref parts from an accept/reject operation.
@@ -77,9 +78,10 @@ const KNOWN_STATUSES = new Set(['proposed', 'accepted', 'rejected', 'pending']);
 export function computeFootnoteStatusEdits(
   text: string,
   changeIds: string[],
-  newStatus: 'accepted' | 'rejected'
+  newStatus: 'accepted' | 'rejected' | 'request-changes'
 ): TextEdit[] {
   if (changeIds.length === 0) return [];
+  if (newStatus === 'request-changes') return [];
 
   const idSet = new Set(changeIds.filter(id => id !== ''));
   if (idSet.size === 0) return [];
@@ -114,58 +116,6 @@ export interface ApprovalLineOptions {
   reason?: string;
 }
 
-function findFootnoteBlock(lines: string[], changeId: string): { headerLine: number; blockEnd: number } | null {
-  for (let i = 0; i < lines.length; i++) {
-    if (lines[i].startsWith(`[^${changeId}]:`)) {
-      let end = i;
-      let j = i + 1;
-      while (j < lines.length) {
-        if (lines[j].startsWith('[^ct-')) break;
-        if (lines[j].startsWith('    ')) {
-          end = j;
-          j++;
-          continue;
-        }
-        if (lines[j].trim() === '') {
-          let k = j + 1;
-          let hasMore = false;
-          while (k < lines.length && !lines[k].startsWith('[^ct-')) {
-            if (lines[k].startsWith('    ')) {
-              hasMore = true;
-              break;
-            }
-            if (lines[k].trim() !== '') break;
-            k++;
-          }
-          if (hasMore) {
-            j++;
-            continue;
-          }
-          break;
-        }
-        break;
-      }
-      return { headerLine: i, blockEnd: end };
-    }
-  }
-  return null;
-}
-
-function isResolutionLine(trimmed: string): boolean {
-  return trimmed.startsWith('resolved') || trimmed.startsWith('open --') || trimmed.startsWith('open ') || trimmed === 'open';
-}
-
-function findReviewInsertionIndex(lines: string[], headerLine: number, blockEnd: number): number {
-  let insertAfter = headerLine;
-  for (let i = headerLine + 1; i <= blockEnd; i++) {
-    const trimmed = lines[i].trim();
-    if (trimmed === '') continue;
-    if (isResolutionLine(trimmed)) return i - 1;
-    insertAfter = i;
-  }
-  return insertAfter;
-}
-
 /**
  * Returns a TextEdit that inserts one `approved:` or `rejected:` line into the
  * footnote block for the given change ID, or null if the block is not found.
@@ -174,14 +124,16 @@ function findReviewInsertionIndex(lines: string[], headerLine: number, blockEnd:
 export function computeApprovalLineEdit(
   text: string,
   changeId: string,
-  newStatus: 'accepted' | 'rejected',
+  newStatus: 'accepted' | 'rejected' | 'request-changes',
   opts: ApprovalLineOptions
 ): TextEdit | null {
   const lines = text.split('\n');
   const block = findFootnoteBlock(lines, changeId);
   if (!block) return null;
 
-  const keyword = newStatus === 'accepted' ? 'approved:' : 'rejected:';
+  const keyword = newStatus === 'accepted' ? 'approved:'
+    : newStatus === 'rejected' ? 'rejected:'
+    : 'request-changes:';
   const date = opts.date ?? nowTimestamp().raw;
   const reasonPart = opts.reason !== undefined && opts.reason !== '' ? ` "${opts.reason}"` : '';
   const line = `    ${keyword} @${opts.author} ${date}${reasonPart}`;

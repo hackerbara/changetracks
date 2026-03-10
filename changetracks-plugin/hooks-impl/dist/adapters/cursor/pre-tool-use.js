@@ -4002,8 +4002,8 @@ function getOldNewText(toolInput) {
   return { oldText, newText };
 }
 async function handlePreToolUse(input) {
-  const toolName = input.tool_name ?? "";
-  const isWriteLike = toolName === "Write" || toolName === "Edit" || toolName === "MultiEdit" || toolName === "ApplyPatch";
+  const toolName = (input.tool_name ?? "").toLowerCase();
+  const isWriteLike = toolName === "write" || toolName === "edit" || toolName === "multiedit" || toolName === "applypatch";
   if (!isWriteLike) {
     return { decision: "allow" };
   }
@@ -4025,7 +4025,7 @@ async function handlePreToolUse(input) {
   const config = await loadConfig(projectDir);
   const { oldText, newText } = getOldNewText(toolInput);
   const decision = evaluateRawEdit(filePath, config, projectDir, {
-    checkFileExists: toolName === "Write"
+    checkFileExists: toolName === "write"
   });
   if (decision.action === "deny") {
     return {

@@ -1,6 +1,6 @@
 import { CriticMarkupParser, ChangeNode, ChangeType } from '@changetracks/core';
 import { buildReplacements, PreviewOptions } from './replacements';
-import { escapeHtml } from './escape-html';
+import { escapeHtml, sanitizeContentHtml } from './escape-html';
 
 // CriticMarkup opening delimiters
 const CRITIC_MARKERS = ['{++', '{--', '{~~', '{==', '{>>'];
@@ -24,20 +24,20 @@ function fenceChangeToHtml(change: ChangeNode, src: string): string {
     switch (change.type) {
         case ChangeType.Insertion: {
             const text = change.modifiedText ?? src.slice(change.contentRange.start, change.contentRange.end);
-            return `<ins class="ct-ins ${sc}">${escapeHtml(text)}</ins>`;
+            return `<ins class="ct-ins ${sc}">${sanitizeContentHtml(text)}</ins>`;
         }
         case ChangeType.Deletion: {
             const text = change.originalText ?? src.slice(change.contentRange.start, change.contentRange.end);
-            return `<del class="ct-del ${sc}">${escapeHtml(text)}</del>`;
+            return `<del class="ct-del ${sc}">${sanitizeContentHtml(text)}</del>`;
         }
         case ChangeType.Substitution: {
             const original = change.originalText ?? '';
             const modified = change.modifiedText ?? '';
-            return `<del class="ct-sub-del ${sc}">${escapeHtml(original)}</del><ins class="ct-sub-ins ${sc}">${escapeHtml(modified)}</ins>`;
+            return `<del class="ct-sub-del ${sc}">${sanitizeContentHtml(original)}</del><ins class="ct-sub-ins ${sc}">${sanitizeContentHtml(modified)}</ins>`;
         }
         case ChangeType.Highlight: {
             const text = change.originalText ?? src.slice(change.contentRange.start, change.contentRange.end);
-            return `<mark class="ct-hl">${escapeHtml(text)}</mark>`;
+            return `<mark class="ct-hl">${sanitizeContentHtml(text)}</mark>`;
         }
         case ChangeType.Comment: {
             const comment = change.metadata?.comment ?? src.slice(change.contentRange.start, change.contentRange.end);

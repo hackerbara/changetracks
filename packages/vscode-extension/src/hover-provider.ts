@@ -27,29 +27,23 @@ export function registerHoverProvider(
                 _token: vscode.CancellationToken
             ): vscode.ProviderResult<vscode.Hover> {
                 const text = document.getText();
-                const isTracked = document.languageId === 'markdown'
-                    && /<!--\s*ctrcks\.com\/v1:\s*tracked\s*-->/.test(text);
                 const offset = positionToOffset(text, position);
                 const changes = controller.getChangesForDocument(document);
                 const change = changes.find(
                     (c) => offset >= c.range.start && offset < c.range.end
                 );
                 if (!change) {
-                    // No change at position: show add-comment discoverability (tracked files only)
-                    if (isTracked) {
-                        const hint = new vscode.MarkdownString();
-                        hint.appendMarkdown('**ChangeTracks:** Select text, then right-click → *Add Comment* (or **Alt+Cmd+/**) to leave a comment.');
-                        return new vscode.Hover(hint);
-                    }
+                    // No change at position — no hover hint.
+                    // Add Comment is discoverable via right-click menu and Alt+Cmd+/.
                     return null;
                 }
                 // Level 1: show inline metadata (author, date, status) in hover
                 if (change.inlineMetadata) {
                     const md = new vscode.MarkdownString();
-                    if (change.inlineMetadata.author) md.appendMarkdown(`**Author:** ${change.inlineMetadata.author}\n\n`);
-                    if (change.inlineMetadata.date) md.appendMarkdown(`**Date:** ${change.inlineMetadata.date}\n\n`);
-                    if (change.inlineMetadata.status) md.appendMarkdown(`**Status:** ${change.inlineMetadata.status}\n\n`);
-                    if (change.inlineMetadata.freeText) md.appendMarkdown(`**Note:** ${change.inlineMetadata.freeText}\n\n`);
+                    if (change.inlineMetadata.author) { md.appendMarkdown('**Author:** '); md.appendText(change.inlineMetadata.author); md.appendMarkdown('\n\n'); }
+                    if (change.inlineMetadata.date) { md.appendMarkdown('**Date:** '); md.appendText(change.inlineMetadata.date); md.appendMarkdown('\n\n'); }
+                    if (change.inlineMetadata.status) { md.appendMarkdown('**Status:** '); md.appendText(change.inlineMetadata.status); md.appendMarkdown('\n\n'); }
+                    if (change.inlineMetadata.freeText) { md.appendMarkdown('**Note:** '); md.appendText(change.inlineMetadata.freeText); md.appendMarkdown('\n\n'); }
                     const content = md.value.trim();
                     if (content) return new vscode.Hover(md);
                 }
@@ -60,22 +54,17 @@ export function registerHoverProvider(
                         const author = change.metadata?.author ?? change.inlineMetadata?.author;
                         const date = change.metadata?.date ?? change.inlineMetadata?.date;
                         const status = change.metadata?.status ?? change.inlineMetadata?.status ?? change.status;
-                        if (author) md.appendMarkdown(`**Author:** ${author}\n\n`);
-                        if (date) md.appendMarkdown(`**Date:** ${date}\n\n`);
-                        if (status) md.appendMarkdown(`**Status:** ${status}\n\n`);
+                        if (author) { md.appendMarkdown('**Author:** '); md.appendText(author); md.appendMarkdown('\n\n'); }
+                        if (date) { md.appendMarkdown('**Date:** '); md.appendText(date); md.appendMarkdown('\n\n'); }
+                        if (status) { md.appendMarkdown('**Status:** '); md.appendText(status); md.appendMarkdown('\n\n'); }
                         const first = change.metadata.discussion[0];
-                        md.appendMarkdown(`${first.text}`);
+                        md.appendText(first.text);
                         if (change.metadata.discussion.length > 1) {
                             md.appendMarkdown(`\n\n*+${change.metadata.discussion.length - 1} more replies*`);
                         }
                         return new vscode.Hover(md);
                     }
-                    // No discussion either: show add-comment hint (tracked files only)
-                    if (isTracked) {
-                        const hint = new vscode.MarkdownString();
-                        hint.appendMarkdown('**ChangeTracks:** Right-click → *Add Comment* to add a comment here, or **Alt+Cmd+/**.');
-                        return new vscode.Hover(hint);
-                    }
+                    // No comment or discussion — no hover hint.
                     return null;
                 }
                 const commentText = change.metadata.comment;
@@ -84,7 +73,8 @@ export function registerHoverProvider(
                         ? 'Comment'
                         : 'Reason';
                 const markdown = new vscode.MarkdownString();
-                markdown.appendMarkdown(`**${label}:** ${commentText}`);
+                markdown.appendMarkdown(`**${label}:** `);
+                markdown.appendText(commentText);
                 return new vscode.Hover(markdown);
             }
         }

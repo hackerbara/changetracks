@@ -36,6 +36,7 @@ export type {
   InitializeParams,
   InitializeResult,
   WorkspaceEdit,
+  TextEdit,
   CodeLens,
   Command,
   Diagnostic,

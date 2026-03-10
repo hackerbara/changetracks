@@ -1,6 +1,6 @@
 import { ChangeNode, ChangeType, ChangeStatus, Approval, Revision, DiscussionComment, Resolution, findCodeZones, CodeZone } from '@changetracks/core';
 import { PreviewAuthorColorMap } from './author-colors';
-import { escapeHtml } from './escape-html';
+import { escapeHtml, sanitizeContentHtml } from './escape-html';
 
 export interface PreviewOptions {
     showFootnotes: boolean;
@@ -251,6 +251,9 @@ function changeToReplacement(change: ChangeNode, src: string, options: PreviewOp
     const sc = statusClass(change.status);
     const badge = refBadgeSuffix(change);
 
+    // Bidirectional linking attribute for annotation sidebar
+    const pairAttr = ` data-ct-pair="ct-pair-${change.range.start}"`;
+
     // Move operations get dedicated classes with directional labels
     if (change.moveRole === 'from') {
         const content = src.slice(change.contentRange.start, change.contentRange.end);
@@ -263,7 +266,7 @@ function changeToReplacement(change: ChangeNode, src: string, options: PreviewOp
         return {
             start: change.range.start,
             end: change.range.end,
-            html: `<del class="ct-move-from ${sc}">${escapeHtml(content)}</del>${badge}${annotation}${label}`,
+            html: `<del class="ct-move-from ${sc}"${pairAttr}>${escapeHtml(content)}</del>${badge}${annotation}${label}`,
         };
     }
     if (change.moveRole === 'to') {
@@ -274,7 +277,7 @@ function changeToReplacement(change: ChangeNode, src: string, options: PreviewOp
             ? `<a class="ct-move-label" href="#ct-fn-ref-${escapeAttr(pairedId)}" title="moved from ${escapeAttr(pairedId)}">&#x2190; moved here</a> `
             : '<span class="ct-move-label">&#x2190; moved here</span> ';
         const annotation = buildAnchorAnnotation(change, options.metadataDetail);
-        const moveToIns = injectAuthorColor(`<ins class="ct-move-to ${sc}">${escapeHtml(content)}</ins>`, change, options, authorMap);
+        const moveToIns = injectAuthorColor(`<ins class="ct-move-to ${sc}"${pairAttr}>${sanitizeContentHtml(content)}</ins>`, change, options, authorMap);
         return {
             start: change.range.start,
             end: change.range.end,
@@ -286,7 +289,7 @@ function changeToReplacement(change: ChangeNode, src: string, options: PreviewOp
         case ChangeType.Insertion: {
             const content = change.modifiedText ?? src.slice(change.contentRange.start, change.contentRange.end);
             const annotation = buildAnchorAnnotation(change, options.metadataDetail);
-            const insHtml = injectAuthorColor(`<ins class="ct-ins ${sc}">${escapeHtml(content)}</ins>`, change, options, authorMap);
+            const insHtml = injectAuthorColor(`<ins class="ct-ins ${sc}"${pairAttr}>${sanitizeContentHtml(content)}</ins>`, change, options, authorMap);
             return {
                 start: change.range.start,
                 end: change.range.end,
@@ -300,7 +303,7 @@ function changeToReplacement(change: ChangeNode, src: string, options: PreviewOp
             return {
                 start: change.range.start,
                 end: change.range.end,
-                html: `<del class="ct-del ${sc}">${escapeHtml(content)}</del>${badge}${annotation}`,
+                html: `<del class="ct-del ${sc}"${pairAttr}>${sanitizeContentHtml(content)}</del>${badge}${annotation}`,
             };
         }
         case ChangeType.Substitution: {
@@ -308,11 +311,11 @@ function changeToReplacement(change: ChangeNode, src: string, options: PreviewOp
             const modified = change.modifiedText ?? '';
             const annotation = buildAnchorAnnotation(change, options.metadataDetail);
             // Author color applies only to the insertion side; deletion side stays fixed red
-            const insHtml = injectAuthorColor(`<ins class="ct-sub-ins ${sc}">${escapeHtml(modified)}</ins>`, change, options, authorMap);
+            const insHtml = injectAuthorColor(`<ins class="ct-sub-ins ${sc}">${sanitizeContentHtml(modified)}</ins>`, change, options, authorMap);
             return {
                 start: change.range.start,
                 end: change.range.end,
-                html: `<del class="ct-sub-del ${sc}">${escapeHtml(original)}</del>${insHtml}${badge}${annotation}`,
+                html: `<del class="ct-sub-del ${sc}"${pairAttr}>${sanitizeContentHtml(original)}</del>${insHtml}${badge}${annotation}`,
             };
         }
         case ChangeType.Highlight: {
@@ -320,7 +323,8 @@ function changeToReplacement(change: ChangeNode, src: string, options: PreviewOp
             // They mark "what is being discussed", not "what changed".
             const content = change.originalText ?? src.slice(change.contentRange.start, change.contentRange.end);
             const annotation = buildAnchorAnnotation(change, options.metadataDetail);
-            const markHtml = `<mark class="ct-hl">${escapeHtml(content)}</mark>`;
+
+            const markHtml = `<mark class="ct-hl"${pairAttr}>${sanitizeContentHtml(content)}</mark>`;
             return {
                 start: change.range.start,
                 end: change.range.end,
@@ -333,10 +337,21 @@ function changeToReplacement(change: ChangeNode, src: string, options: PreviewOp
             }
             const comment = change.metadata?.comment ?? src.slice(change.contentRange.start, change.contentRange.end);
             const annotation = buildAnchorAnnotation(change, options.metadataDetail);
+
+            // For comments preceded by an adjacent Highlight, use the highlight's
+            // range.start for pairId consistency so both elements share the same
+            // ct-pair identifier for bidirectional sidebar linking.
+            let commentPairAttr = pairAttr;
+            const idx = allChanges.indexOf(change);
+            const prev = idx > 0 ? allChanges[idx - 1] : undefined;
+            if (prev && prev.type === ChangeType.Highlight && change.range.start === prev.range.end) {
+                commentPairAttr = ` data-ct-pair="ct-pair-${prev.range.start}"`;
+            }
+
             return {
                 start: change.range.start,
                 end: change.range.end,
-                html: `<span class="ct-comment" title="${escapeHtml(comment)}">&#x1F4AC;</span>${badge}${annotation}`,
+                html: `<span class="ct-comment"${commentPairAttr} title="${escapeHtml(comment)}">&#x1F4AC;</span>${badge}${annotation}`,
             };
         }
         default:
@@ -381,12 +396,11 @@ function renderFootnoteHeader(id: string): string {
 }
 
 /**
- * Finds footnote definition blocks ([^ct-N]: ...) and wraps them
- * in a styled <section> panel. Only active when showFootnotes is true.
+ * Finds footnote definition blocks ([^ct-N]: ...). When showFootnotes
+ * is true, wraps them in a styled <section> panel. When false, strips
+ * the entire block by replacing it with empty string.
  */
 function footnoteDefinitionReplacements(src: string, changes: ChangeNode[], options: PreviewOptions): Replacement[] {
-    if (!options.showFootnotes) return [];
-
     const replacements: Replacement[] = [];
     const defRegex = /^(\[\^(ct-\d+(?:\.\d+)?)\]:[ \t]*)(.*)/gm;
     let match: RegExpExecArray | null;
@@ -415,6 +429,11 @@ function footnoteDefinitionReplacements(src: string, changes: ChangeNode[], opti
 
     const panelStart = definitions[0].start;
     const panelEnd = definitions[definitions.length - 1].end;
+
+    // When showFootnotes is false, strip the entire definition block
+    if (!options.showFootnotes) {
+        return [{ start: panelStart, end: panelEnd, html: '' }];
+    }
 
     let html = '<section class="ct-footnotes">\n';
     for (const def of definitions) {
@@ -488,7 +507,12 @@ export function buildReplacements(src: string, changes: ChangeNode[], options: P
     // Footnote ref replacements (inline [^ct-N] badges)
     for (const r of footnoteRefReplacements(src)) {
         if (!isInCodeZone(r.start, r.end, codeZones)) {
-            replacements.push(r);
+            if (options.showFootnotes) {
+                replacements.push(r);
+            } else {
+                // Strip refs entirely when footnotes are hidden
+                replacements.push({ start: r.start, end: r.end, html: '' });
+            }
         }
     }
 

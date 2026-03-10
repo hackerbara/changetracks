@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { ChangeNode, ChangeType, VirtualDocument } from '@changetracks/core';
+import { ChangeNode, ChangeStatus, ChangeType, VirtualDocument } from '@changetracks/core';
 import { ViewMode } from './view-mode';
 import { EditorPort } from './view/EditorPort';
 import { offsetToPosition } from './converters';
@@ -47,6 +47,8 @@ export class EditorDecorator {
     private activeHighlightObj: vscode.TextEditorDecorationType;
     private moveFromObj: vscode.TextEditorDecorationType;
     private moveToObj: vscode.TextEditorDecorationType;
+    private settledRefObj: vscode.TextEditorDecorationType;
+    private settledDimObj: vscode.TextEditorDecorationType;
 
     private style: 'foreground' | 'background';
     private authorColors: 'auto' | 'always' | 'never';
@@ -62,48 +64,66 @@ export class EditorDecorator {
             // Foreground mode: colored text, no background tinting (popular editor style)
             // CSS injection via textDecoration for maximum specificity over semantic tokens
             this.insertionObj = vscode.window.createTextEditorDecorationType({
-                light: { textDecoration: 'none; color: #1E824C' },
-                dark: { textDecoration: 'none; color: #66BB6A' }
+                light: { textDecoration: 'underline dotted #1E824C40; color: #1E824C' },
+                dark: { textDecoration: 'underline dotted #66BB6A40; color: #66BB6A' },
+                overviewRulerColor: '#66BB6A80',
+                overviewRulerLane: vscode.OverviewRulerLane.Left
             });
 
             this.deletionObj = vscode.window.createTextEditorDecorationType({
                 light: { textDecoration: 'line-through; color: #C0392B' },
-                dark: { textDecoration: 'line-through; color: #EF5350' }
+                dark: { textDecoration: 'line-through; color: #EF5350' },
+                overviewRulerColor: '#EF535080',
+                overviewRulerLane: vscode.OverviewRulerLane.Left
             });
 
             this.substitutionOriginalObj = vscode.window.createTextEditorDecorationType({
                 light: { textDecoration: 'line-through; color: #C0392B' },
-                dark: { textDecoration: 'line-through; color: #EF5350' }
+                dark: { textDecoration: 'line-through; color: #EF5350' },
+                overviewRulerColor: '#FFB74D80',
+                overviewRulerLane: vscode.OverviewRulerLane.Left
             });
 
             this.substitutionModifiedObj = vscode.window.createTextEditorDecorationType({
                 light: { textDecoration: 'none; color: #1E824C' },
-                dark: { textDecoration: 'none; color: #66BB6A' }
+                dark: { textDecoration: 'none; color: #66BB6A' },
+                overviewRulerColor: '#FFB74D80',
+                overviewRulerLane: vscode.OverviewRulerLane.Left
             });
         } else {
             // Background mode: background tinting (legacy behavior)
             // CSS injection via textDecoration moves background to view-lines layer
             this.insertionObj = vscode.window.createTextEditorDecorationType({
-                textDecoration: 'none; background-color: rgba(0,255,0,0.2); color: inherit'
+                textDecoration: 'none; background-color: rgba(0,255,0,0.2); color: inherit',
+                overviewRulerColor: '#66BB6A80',
+                overviewRulerLane: vscode.OverviewRulerLane.Left
             });
 
             this.deletionObj = vscode.window.createTextEditorDecorationType({
-                textDecoration: 'line-through; background-color: rgba(255,0,0,0.2); opacity: 0.6'
+                textDecoration: 'line-through; background-color: rgba(255,0,0,0.2); opacity: 0.6',
+                overviewRulerColor: '#EF535080',
+                overviewRulerLane: vscode.OverviewRulerLane.Left
             });
 
             this.substitutionOriginalObj = vscode.window.createTextEditorDecorationType({
-                textDecoration: 'line-through; background-color: rgba(255,0,0,0.15); color: rgba(255,50,50,1); opacity: 0.7'
+                textDecoration: 'line-through; background-color: rgba(255,0,0,0.15); color: rgba(255,50,50,1); opacity: 0.7',
+                overviewRulerColor: '#FFB74D80',
+                overviewRulerLane: vscode.OverviewRulerLane.Left
             });
 
             this.substitutionModifiedObj = vscode.window.createTextEditorDecorationType({
-                textDecoration: 'underline; background-color: rgba(0,255,0,0.15); color: rgba(50,255,50,1)'
+                textDecoration: 'underline; background-color: rgba(0,255,0,0.15); color: rgba(50,255,50,1)',
+                overviewRulerColor: '#FFB74D80',
+                overviewRulerLane: vscode.OverviewRulerLane.Left
             });
         }
 
         // Shared decoration types (unchanged across modes)
         // CSS injection for highlight and comment to override semantic tokens
         this.highlightObj = vscode.window.createTextEditorDecorationType({
-            textDecoration: 'none; background-color: rgba(255,255,0,0.3)'
+            textDecoration: 'none; background-color: rgba(255,255,0,0.3)',
+            overviewRulerColor: '#FFFF0080',
+            overviewRulerLane: vscode.OverviewRulerLane.Left
         });
 
         this.commentObj = vscode.window.createTextEditorDecorationType({
@@ -127,7 +147,6 @@ export class EditorDecorator {
             }
         });
 
-        // Phase B will apply this; for now just create and dispose
         this.activeHighlightObj = vscode.window.createTextEditorDecorationType({
             backgroundColor: 'rgba(100, 149, 237, 0.08)'
         });
@@ -139,7 +158,9 @@ export class EditorDecorator {
             after: {
                 contentText: ' \u2934',
                 color: 'rgba(108, 52, 131, 0.6)',
-            }
+            },
+            overviewRulerColor: '#CE93D880',
+            overviewRulerLane: vscode.OverviewRulerLane.Left
         });
 
         this.moveToObj = vscode.window.createTextEditorDecorationType({
@@ -148,7 +169,22 @@ export class EditorDecorator {
             after: {
                 contentText: ' \u2935',
                 color: 'rgba(108, 52, 131, 0.6)',
-            }
+            },
+            overviewRulerColor: '#CE93D880',
+            overviewRulerLane: vscode.OverviewRulerLane.Left
+        });
+
+        // Settled (accepted/rejected) changes: dimmed + italic to create visual
+        // triage hierarchy — "already resolved" vs "needs attention" (proposed)
+        this.settledDimObj = vscode.window.createTextEditorDecorationType({
+            opacity: '0.5',
+            fontStyle: 'italic',
+        });
+
+        // Settled ref: dimmed metadata reference [^ct-N], not an active change
+        this.settledRefObj = vscode.window.createTextEditorDecorationType({
+            light: { textDecoration: 'none; color: rgba(128, 128, 128, 0.6); font-style: italic' },
+            dark: { textDecoration: 'none; color: rgba(160, 160, 160, 0.5); font-style: italic' }
         });
     }
 
@@ -246,6 +282,8 @@ export class EditorDecorator {
         const activeHighlights: vscode.DecorationOptions[] = [];
         const moveFroms: vscode.DecorationOptions[] = [];
         const moveTos: vscode.DecorationOptions[] = [];
+        const settledRefs: vscode.DecorationOptions[] = [];
+        const settledDims: vscode.DecorationOptions[] = [];
 
         const cursorPos = editor.selection.active;
 
@@ -287,6 +325,8 @@ export class EditorDecorator {
             const contentRange = toRange(change.contentRange);
 
             const isCursorInChange = this.isPositionInRange(cursorPos, contentRange);
+            const isCursorOnChangeLine = fullRange.start.line <= cursorPos.line
+                && cursorPos.line <= fullRange.end.line;
             const author = change.metadata?.author ?? change.inlineMetadata?.author;
 
             // Active highlight: when cursor is inside a change, add a subtle background
@@ -387,7 +427,6 @@ export class EditorDecorator {
                         const separatorEnd = offsetToPosition(text || '', change.modifiedRange.start);
                         const closeDelimiterStart = offsetToPosition(text || '', change.modifiedRange.end);
                         const originalRange = toRange(change.originalRange);
-                        const modifiedRange = toRange(change.modifiedRange);
 
                         if (isFinalMode) {
                             // Final: show new text only — hide {~~, old text, ~>, and ~~}
@@ -433,6 +472,23 @@ export class EditorDecorator {
                 return;
             }
 
+            // Settled refs: accepted/rejected changes preserved as [^ct-N] references
+            // Visible only when showCriticMarkup is enabled, styled as neutral metadata
+            if (change.settled) {
+                if (!showCriticMarkup) {
+                    hiddens.push({ range: fullRange });
+                    return;
+                }
+                // Neutral metadata styling — not type-colored
+                settledRefs.push({ range: contentRange });
+                // Dim settled (accepted/rejected) changes to visually distinguish
+                // them from proposed changes that still need attention
+                if (change.status === ChangeStatus.Accepted || change.status === ChangeStatus.Rejected) {
+                    settledDims.push({ range: contentRange });
+                }
+                return;
+            }
+
             // ─── All Markup / Simple mode: existing decoration logic ───
 
             // Move-first check: when a change has moveRole, use purple move decoration
@@ -440,22 +496,31 @@ export class EditorDecorator {
             if (change.moveRole === 'from') {
                 if (showMarkup) {
                     pushMoveFrom({ range: fullRange });
-                } else if (cursorRevealMode && isCursorInChange) {
-                    this.revealDelimiters(fullRange, contentRange, unfoldedDelimiters);
+                } else if (isCursorOnChangeLine) {
+                    if (cursorRevealMode && isCursorInChange) {
+                        this.revealDelimiters(fullRange, contentRange, unfoldedDelimiters);
+                    } else {
+                        this.hideDelimiters(fullRange, contentRange, hiddens);
+                    }
                     pushMoveFrom({ range: contentRange });
                 } else {
-                    this.hideDelimiters(fullRange, contentRange, hiddens);
-                    pushMoveFrom({ range: contentRange });
+                    // Settled-base: move-from is a deletion — hide entirely
+                    hiddens.push({ range: fullRange });
                 }
             } else if (change.moveRole === 'to') {
                 if (showMarkup) {
                     pushMoveTo({ range: fullRange });
-                } else if (cursorRevealMode && isCursorInChange) {
-                    this.revealDelimiters(fullRange, contentRange, unfoldedDelimiters);
+                } else if (isCursorOnChangeLine) {
+                    if (cursorRevealMode && isCursorInChange) {
+                        this.revealDelimiters(fullRange, contentRange, unfoldedDelimiters);
+                    } else {
+                        this.hideDelimiters(fullRange, contentRange, hiddens);
+                    }
                     pushMoveTo({ range: contentRange });
                 } else {
+                    // Settled-base: move-to is an insertion — show as plain text
                     this.hideDelimiters(fullRange, contentRange, hiddens);
-                    pushMoveTo({ range: contentRange });
+                    // NO pushMoveTo — content shows as plain text
                 }
             } else if (change.type === ChangeType.Insertion) {
                 const reasonHover = change.metadata?.comment
@@ -463,12 +528,18 @@ export class EditorDecorator {
                     : undefined;
                 if (showMarkup) {
                     pushInsertion({ range: fullRange, hoverMessage: reasonHover });
-                } else if (cursorRevealMode && isCursorInChange) {
-                    this.revealDelimiters(fullRange, contentRange, unfoldedDelimiters);
+                } else if (isCursorOnChangeLine) {
+                    // Cursor on this line — reveal with coloring
+                    if (cursorRevealMode && isCursorInChange) {
+                        this.revealDelimiters(fullRange, contentRange, unfoldedDelimiters);
+                    } else {
+                        this.hideDelimiters(fullRange, contentRange, hiddens);
+                    }
                     pushInsertion({ range: contentRange, hoverMessage: reasonHover });
                 } else {
+                    // Settled-base: insertion shows as plain text, just hide delimiters
                     this.hideDelimiters(fullRange, contentRange, hiddens);
-                    pushInsertion({ range: contentRange, hoverMessage: reasonHover });
+                    // NO pushInsertion — content shows as plain text
                 }
             }
             else if (change.type === ChangeType.Deletion) {
@@ -477,12 +548,17 @@ export class EditorDecorator {
                     : undefined;
                 if (showMarkup) {
                     pushDeletion({ range: fullRange, hoverMessage: reasonHover });
-                } else if (cursorRevealMode && isCursorInChange) {
-                    this.revealDelimiters(fullRange, contentRange, unfoldedDelimiters);
+                } else if (isCursorOnChangeLine) {
+                    // Cursor on this line — reveal with coloring
+                    if (cursorRevealMode && isCursorInChange) {
+                        this.revealDelimiters(fullRange, contentRange, unfoldedDelimiters);
+                    } else {
+                        this.hideDelimiters(fullRange, contentRange, hiddens);
+                    }
                     pushDeletion({ range: contentRange, hoverMessage: reasonHover });
                 } else {
-                    this.hideDelimiters(fullRange, contentRange, hiddens);
-                    pushDeletion({ range: contentRange, hoverMessage: reasonHover });
+                    // Settled-base: hide entire deletion
+                    hiddens.push({ range: fullRange });
                 }
             }
             else if (change.type === ChangeType.Substitution) {
@@ -504,33 +580,44 @@ export class EditorDecorator {
                         const separatorEnd = offsetToPosition(text || '', change.modifiedRange.start);
                         const closeDelimiterStart = offsetToPosition(text || '', change.modifiedRange.end);
 
-                        if (cursorRevealMode && isCursorInChange) {
-                            unfoldedDelimiters.push({
-                                range: new vscode.Range(fullRange.start, openDelimiterEnd)
-                            });
-                            unfoldedDelimiters.push({
-                                range: new vscode.Range(separatorStart, separatorEnd)
-                            });
-                            unfoldedDelimiters.push({
-                                range: new vscode.Range(closeDelimiterStart, fullRange.end)
-                            });
+                        if (isCursorOnChangeLine) {
+                            // Cursor on this line — reveal with coloring
+                            if (cursorRevealMode && isCursorInChange) {
+                                // Cursor inside: unfold delimiters
+                                unfoldedDelimiters.push({
+                                    range: new vscode.Range(fullRange.start, openDelimiterEnd)
+                                });
+                                unfoldedDelimiters.push({
+                                    range: new vscode.Range(separatorStart, separatorEnd)
+                                });
+                                unfoldedDelimiters.push({
+                                    range: new vscode.Range(closeDelimiterStart, fullRange.end)
+                                });
+                            } else {
+                                // Cursor on same line but not inside (or CM OFF): hide delimiters
+                                hiddens.push({
+                                    range: new vscode.Range(fullRange.start, openDelimiterEnd)
+                                });
+                                hiddens.push({
+                                    range: new vscode.Range(separatorStart, separatorEnd)
+                                });
+                                hiddens.push({
+                                    range: new vscode.Range(closeDelimiterStart, fullRange.end)
+                                });
+                            }
                             pushSubOriginal({ range: originalRange, hoverMessage: reasonHover });
                             pushSubModified({ range: modifiedRange, hoverMessage: reasonHover });
                         } else {
+                            // Settled-base: show only new text as plain, hide everything else
+                            // Hide {~~ and original text and ~> (start through separator end)
                             hiddens.push({
-                                range: new vscode.Range(fullRange.start, openDelimiterEnd)
+                                range: new vscode.Range(fullRange.start, separatorEnd)
                             });
-                            hiddens.push({
-                                range: new vscode.Range(separatorStart, separatorEnd)
-                            });
+                            // Hide closing delimiter ~~}
                             hiddens.push({
                                 range: new vscode.Range(closeDelimiterStart, fullRange.end)
                             });
-                            // Use actual originalRange and modifiedRange directly.
-                            // The view-lines layer handles the visual shift when delimiters
-                            // are hidden via display:none — no overlay alignment needed.
-                            pushSubOriginal({ range: originalRange, hoverMessage: reasonHover });
-                            pushSubModified({ range: modifiedRange, hoverMessage: reasonHover });
+                            // NO pushSubOriginal/pushSubModified — new text shows as plain
                         }
                     }
                 }
@@ -568,13 +655,19 @@ export class EditorDecorator {
                         range: fullRange,
                         hoverMessage
                     });
-                } else if (cursorRevealMode && isCursorInChange) {
-                    this.revealDelimiters(fullRange, contentRange, unfoldedDelimiters);
+                } else if (isCursorOnChangeLine) {
+                    // Cursor on this line — reveal with coloring
+                    if (cursorRevealMode && isCursorInChange) {
+                        this.revealDelimiters(fullRange, contentRange, unfoldedDelimiters);
+                    } else {
+                        this.hideDelimiters(fullRange, contentRange, hiddens);
+                    }
                     pushHighlight({
                         range: contentRange,
                         hoverMessage
                     });
                 } else {
+                    // Settled-base: highlights stay visible (subtle highlight, hide delimiters)
                     if (change.metadata?.comment) {
                         // Highlight with attached comment: hide 3 non-overlapping ranges
                         if (!fullRange.start.isEqual(contentRange.start)) {
@@ -628,17 +721,26 @@ export class EditorDecorator {
                         range: fullRange,
                         hoverMessage
                     });
-                } else if (cursorRevealMode && isCursorInChange) {
-                    this.revealDelimiters(fullRange, contentRange, unfoldedDelimiters);
-                    pushComment({
-                        range: contentRange,
-                        hoverMessage
-                    });
+                } else if (isCursorOnChangeLine) {
+                    // Cursor on this line
+                    if (cursorRevealMode && isCursorInChange) {
+                        // Cursor inside: unfold delimiters, show comment styling
+                        this.revealDelimiters(fullRange, contentRange, unfoldedDelimiters);
+                        pushComment({
+                            range: contentRange,
+                            hoverMessage
+                        });
+                    } else {
+                        // Cursor on same line but not inside (or CM OFF): hide, show icon
+                        hiddens.push({ range: fullRange });
+                        commentIcons.push({
+                            range: new vscode.Range(fullRange.start, fullRange.start),
+                            hoverMessage
+                        });
+                    }
                 } else {
-                    hiddens.push({
-                        range: fullRange
-                    });
-
+                    // Settled-base: hide entirely, keep comment icon
+                    hiddens.push({ range: fullRange });
                     commentIcons.push({
                         range: new vscode.Range(fullRange.start, fullRange.start),
                         hoverMessage
@@ -654,7 +756,12 @@ export class EditorDecorator {
         editor.setDecorations(this.substitutionModifiedObj, substitutionModifieds);
         editor.setDecorations(this.highlightObj, highlights);
         editor.setDecorations(this.commentObj, comments);
-        if (hiddens.length === 0 && this.hadHiddenRanges) {
+        // Only dispose/recreate hiddenObj to flush CSS cache when a document that
+        // actually has changes transitions to a mode with no hidden ranges (e.g.
+        // settled→review). Skip the guard for empty-change editors (comment threads)
+        // because disposing the shared decoration type would remove display:none
+        // from the main document editor too.
+        if (hiddens.length === 0 && this.hadHiddenRanges && changes.length > 0) {
             this.hiddenObj.dispose();
             this.hiddenObj = vscode.window.createTextEditorDecorationType({
                 textDecoration: 'none; display: none;'
@@ -670,6 +777,8 @@ export class EditorDecorator {
         editor.setDecorations(this.activeHighlightObj, activeHighlights);
         editor.setDecorations(this.moveFromObj, moveFroms);
         editor.setDecorations(this.moveToObj, moveTos);
+        editor.setDecorations(this.settledRefObj, settledRefs);
+        editor.setDecorations(this.settledDimObj, settledDims);
 
         // Clear all known per-author decoration types, then apply current ones.
         // Without this, switching from a mode that renders author colors (review/changes)
@@ -796,6 +905,8 @@ export class EditorDecorator {
         this.activeHighlightObj.dispose();
         this.moveFromObj.dispose();
         this.moveToObj.dispose();
+        this.settledRefObj.dispose();
+        this.settledDimObj.dispose();
 
         // Dispose all dynamic per-author decoration types
         this.authorDecorationTypes.forEach(type => type.dispose());

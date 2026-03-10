@@ -132,7 +132,7 @@ The compact protocol (LINE:HASH coordinates + edit DSL) is an experimental mode 
 
 Without tool instruction overhead, the compact protocol completes **3× faster** with **6.5× fewer tokens** than baseline file editing. These results vary by agent, model, and task — treat them as directional rather than guaranteed.
 
-Full benchmark suite and methodology: [`packages/benchmarks/`](packages/benchmarks/) | Detailed results: [`docs/public/how-changetracks-is-benchmarked.md`](docs/public/how-changetracks-is-benchmarked.md)
+**Deep dive:** [Tool-Shaping Benchmarks](docs/public/tool-shaping-benchmarks.md) — how three editing surfaces compare across 400+ benchmark runs | **Methodology:** [How ChangeTracks Is Benchmarked](docs/public/how-changetracks-is-benchmarked.md) | **Source:** [`packages/benchmarks/`](packages/benchmarks/)
 
 ## Configuration
 
@@ -186,6 +186,11 @@ Builds all packages (core → cli → lsp-server → extension → mcp-server �
 
 - [Glossary](docs/public/glossary.md) — Term definitions
 - [Format Specification](docs/public/changetracks-format.md) — Formal spec
+
+### Benchmarks
+
+- [Tool-Shaping Benchmarks](docs/public/tool-shaping-benchmarks.md) — Three editing surfaces compared across 400+ runs: token counts, tool calls, and what broke
+- [How ChangeTracks Is Benchmarked](docs/public/how-changetracks-is-benchmarked.md) — Methodology, agent harness, scoring
 
 ### Perspectives
 

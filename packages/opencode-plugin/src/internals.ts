@@ -32,3 +32,15 @@ export {
   clearAllEdits,
 } from './pending.js';
 export type { PendingEdit } from './pending.js';
+
+// hooks (tool.execute.before, tool.execute.after, stop)
+export { toolExecuteBeforeHook } from './hooks/tool-execute-before.js';
+export { toolExecuteAfterHook } from './hooks/tool-execute-after.js';
+export { stopHook } from './hooks/stop.js';
+
+// plugin-level config (.opencode/changetracks.json opt-out)
+export { loadOpencodePluginConfig } from './opencode-plugin-config.js';
+export type { ChangeTracksOpencodeConfig } from './opencode-plugin-config.js';
+
+// HookContext type
+export type { HookContext } from './types/opencode-plugin.js';

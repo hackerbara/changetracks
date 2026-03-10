@@ -4,12 +4,10 @@ import { optionalStrArg, strArg } from '../args.js';
 import { resolveAuthor } from '../author.js';
 import { isFileInScope } from '../config.js';
 import { ConfigResolver } from '../config-resolver.js';
-import { findFootnoteBlock, parseFootnoteHeader, countFootnoteHeadersWithStatus } from '@changetracks/core';
-import { applyProposeChange, appendFootnote } from '../file-ops.js';
+import { computeSupersedeResult, countFootnoteHeadersWithStatus } from '@changetracks/core';
 import { toRelativePath } from '../path-utils.js';
 import { SessionState } from '../state.js';
 import { rerecordState } from '../state-utils.js';
-import { applyReview, type Decision } from './review-change.js';
 import { settleRejectedChanges } from './settle.js';
 import { normalizeContentPayload } from '../content-normalizer.js';
 
@@ -133,98 +131,46 @@ export async function handleSupersedeChange(
       return errorResult(authorError.message);
     }
 
-    // 5. Verify the old change exists and is in proposed status
-    const lines = fileContent.split('\n');
-    const block = findFootnoteBlock(lines, changeId);
-    if (!block) {
-      return errorResult(`Change "${changeId}" not found in file.`);
-    }
-
-    const header = parseFootnoteHeader(lines[block.headerLine]);
-    if (!header) {
-      return errorResult(
-        `Malformed metadata for change "${changeId}". Expected format: @author | date | type | status`
-      );
-    }
-
-    if (header.status === 'accepted') {
-      return errorResult(
-        `Cannot supersede change "${changeId}": it is already accepted. Only proposed changes can be superseded.`
-      );
-    }
-    if (header.status === 'rejected') {
-      return errorResult(
-        `Cannot supersede change "${changeId}": it is already rejected. Only proposed changes can be superseded.`
-      );
-    }
-    if (header.status !== 'proposed') {
-      return errorResult(
-        `Cannot supersede change "${changeId}": unexpected status "${header.status}". Only proposed changes can be superseded.`
-      );
-    }
-
-    // 6. Reject the old change
-    const rejectResult = applyReview(
-      fileContent,
-      changeId,
-      'reject' as Decision,
-      reasoning ?? `Superseded by new change`,
+    // 5. Delegate pure computation to core (reject + propose + cross-link)
+    const result = computeSupersedeResult(fileContent, changeId, {
+      newText,
+      oldText,
+      reason: reasoning,
       author,
-    );
+      insertAfter: insertAfter ?? undefined,
+    });
 
-    if ('error' in rejectResult) {
-      return errorResult(`Failed to reject old change: ${rejectResult.error}`);
+    if (result.isError) {
+      return errorResult(result.error);
     }
 
-    fileContent = rejectResult.updatedContent;
+    fileContent = result.text;
 
-    // 7. Settle the rejected change if auto_on_reject is enabled
+    // 6. Settle rejected changes if auto_on_reject is enabled (policy decision)
     if (config.settlement.auto_on_reject) {
       const { settledContent } = settleRejectedChanges(fileContent);
       fileContent = settledContent;
     }
 
-    // 8. Get next ID for the new change
-    const newChangeId = state.getNextId(filePath, fileContent);
-
-    // 9. Apply the new proposed change
-    const result = applyProposeChange({
-      text: fileContent,
-      oldText,
-      newText,
-      changeId: newChangeId,
-      author,
-      reasoning,
-      insertAfter: insertAfter ?? undefined,
-    });
-    fileContent = result.modifiedText;
-
-    // 10. Add `supersedes: ct-N` to the new change's footnote
-    const modifiedLines = fileContent.split('\n');
-    const newBlock = findFootnoteBlock(modifiedLines, newChangeId);
-    if (newBlock) {
-      // Insert supersedes line right after the header
-      const supersedesLine = `    supersedes: ${changeId}`;
-      modifiedLines.splice(newBlock.headerLine + 1, 0, supersedesLine);
-      fileContent = modifiedLines.join('\n');
-    }
-
-    // 11. Write back to disk
+    // 7. Write back to disk
     await fs.writeFile(filePath, fileContent, 'utf-8');
     await rerecordState(state, filePath, fileContent, config);
 
-    // 12. Build response
+    // 8. Build response
     const relativePath = toRelativePath(projectDir, filePath);
     const footnoteCount = (fileContent.match(/^\[\^ct-\d+(?:\.\d+)?\]:/gm) || []).length;
     const proposedCount = countFootnoteHeadersWithStatus(fileContent, 'proposed');
     const acceptedCount = countFootnoteHeadersWithStatus(fileContent, 'accepted');
     const rejectedCount = countFootnoteHeadersWithStatus(fileContent, 'rejected');
 
+    // Derive change type from old_text/new_text
+    const changeType = oldText === '' ? 'ins' : newText === '' ? 'del' : 'sub';
+
     const responseData: Record<string, unknown> = {
       old_change_id: changeId,
-      new_change_id: newChangeId,
+      new_change_id: result.newChangeId,
       file: relativePath,
-      type: result.changeType,
+      type: changeType,
       supersedes: changeId,
       document_state: {
         total_changes: footnoteCount,

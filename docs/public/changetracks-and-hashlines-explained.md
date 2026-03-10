@@ -156,6 +156,8 @@ A blog post called "[The Harness Problem](https://blog.can.ac/2026/02/12/the-har
 └─────────────────────────────────────────────────────┘
 ```
 
+For measured results across 400+ benchmark runs — token counts, tool calls, and what broke — see [Tool-Shaping Benchmarks](tool-shaping-benchmarks.md).
+
 ---
 
 ## Part 3: Hashlines — Give Every Line an Address

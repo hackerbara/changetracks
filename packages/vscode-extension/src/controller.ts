@@ -1,8 +1,8 @@
 import * as vscode from 'vscode';
 import type { PendingOverlay } from '@changetracks/core';
-import { Workspace, VirtualDocument, ChangeNode, ChangeType, ChangeStatus, scanMaxCtId, generateFootnoteDefinition, computeApprovalLineEdit, computeFootnoteArchiveLineEdit, compactToLevel1, compactToLevel0, SIDECAR_BLOCK_MARKER, nowTimestamp, appendFootnote } from '@changetracks/core';
+import { Workspace, VirtualDocument, ChangeNode, ChangeType, ChangeStatus, scanMaxCtId, generateFootnoteDefinition, computeApprovalLineEdit, computeFootnoteArchiveLineEdit, computeFootnoteStatusEdits, compactToLevel1, compactToLevel0, SIDECAR_BLOCK_MARKER, nowTimestamp, appendFootnote } from '@changetracks/core';
 import { EditorDecorator } from './decorator';
-import { ViewMode, VIEW_MODES, nextViewMode, resolveViewName } from './view-mode';
+import { ViewMode, VIEW_MODES, VIEW_MODE_LABELS, nextViewMode, resolveViewName } from './view-mode';
 import { offsetToPosition, positionToOffset, coreEditToVscode, coreRangeToVscode } from './converters';
 import { formatReply } from './footnote-writer';
 import { getCachedDecorationData, invalidateDecorationCache, setCachedDecorationData, transformCachedDecorations } from './lsp-client';
@@ -20,6 +20,7 @@ export class ExtensionController {
     private nextScIdMap: Map<string, number> = new Map(); // Per-document ct-ID counter for Level 1 tracking
     private documentStates = new Map<string, { tracking: { enabled: boolean; source: string }; viewMode: string }>();
     private pendingCut: { text: string; timestamp: number; moveId: number } | null = null;
+    private userTrackingOverrides = new Map<string, boolean>(); // Per-document user toggle override
     private localParseHotPath: boolean = false;
     private lastActiveEditorUri: string | undefined;
     private changeComments: { isCommentReplyActive: boolean; disposeThreadsForUri?(uri: vscode.Uri): void } | null = null;
@@ -36,6 +37,7 @@ export class ExtensionController {
     } | null = null;
     private unconfirmedEditTimer: ReturnType<typeof setTimeout> | null = null;
     private static readonly EDIT_CONFIRMATION_TIMEOUT_MS = 50;
+    private viewModeStatusBar: vscode.StatusBarItem;
     public readonly workspace: Workspace;
     private decorator: EditorDecorator;
     private _onDidChangeChanges = new vscode.EventEmitter<vscode.Uri[]>();
@@ -188,7 +190,18 @@ export class ExtensionController {
                     }
                 }
             },
-            () => vscode.window.activeTextEditor!.document,
+            (uri?: string) => {
+                if (uri) {
+                    for (const editor of vscode.window.visibleTextEditors) {
+                        if (editor.document.uri.toString() === uri) {
+                            return editor.document;
+                        }
+                    }
+                    // Document no longer visible — return null to abandon crystallize
+                    return null;
+                }
+                return vscode.window.activeTextEditor?.document ?? null;
+            },
             this.workspace,
             // allocateScId callback -- returns next ct-ID for the active document
             () => {
@@ -249,6 +262,14 @@ export class ExtensionController {
         this.setContextKey('changetracks:trackingEnabled', this._trackingMode);
         this.setContextKey('changetracks:viewMode', this._viewMode);
 
+        // Status bar item: persistent view mode indicator
+        this.viewModeStatusBar = vscode.window.createStatusBarItem(
+            vscode.StatusBarAlignment.Right, 100
+        );
+        this.viewModeStatusBar.command = 'changetracks.toggleView';
+        this.viewModeStatusBar.tooltip = 'ChangeTracks: Click to cycle view mode';
+        this.updateViewModeStatusBar();
+
         // Listen to active editor changes
         vscode.window.onDidChangeActiveTextEditor(editor => {
             if (editor) {
@@ -257,6 +278,12 @@ export class ExtensionController {
                     return; // Same editor re-fired (sidebar toggle) — skip
                 }
                 this.lastActiveEditorUri = docUri;
+                // Show/hide view mode status bar based on file type
+                if (this.isSupported(editor.document)) {
+                    this.viewModeStatusBar.show();
+                } else {
+                    this.viewModeStatusBar.hide();
+                }
                 try {
                     this.updateChangeAtCursorContext(editor);
                     // Initialize shadow for new editor
@@ -266,11 +293,18 @@ export class ExtensionController {
                     this.updateDecorations(editor);
                     // Read tracking state from file header for immediate panel sync
                     if (editor.document.languageId === 'markdown') {
-                        const text = editor.document.getText();
-                        const headerMatch = text.match(/^<!--\s*ctrcks\.com\/v1:\s*(tracked|untracked)\s*-->/m);
-                        if (headerMatch) {
-                            this._trackingMode = headerMatch[1] === 'tracked';
-                            this.setContextKey('changetracks:trackingEnabled', this._trackingMode);
+                        const override = this.userTrackingOverrides.get(docUri);
+                        if (override !== undefined) {
+                            // User explicitly toggled — honour their choice
+                            this._trackingMode = override;
+                            this.setContextKey('changetracks:trackingEnabled', override);
+                        } else {
+                            const text = editor.document.getText();
+                            const headerMatch = text.match(/^<!--\s*ctrcks\.com\/v1:\s*(tracked|untracked)\s*-->/m);
+                            if (headerMatch) {
+                                this._trackingMode = headerMatch[1] === 'tracked';
+                                this.setContextKey('changetracks:trackingEnabled', this._trackingMode);
+                            }
                         }
                     }
                 } catch (err: any) {
@@ -291,6 +325,7 @@ export class ExtensionController {
                 const docUri = activeEditor.document.uri.toString();
                 this.documentShadow.set(docUri, activeEditor.document.getText());
                 this.updateChangeAtCursorContext(activeEditor);
+                this.viewModeStatusBar.show();
             } else {
                 this.setContextKey('changetracks:changeAtCursor', false);
                 for (const editor of vscode.window.visibleTextEditors) {
@@ -318,6 +353,13 @@ export class ExtensionController {
             // BUG 5 fix: Don't track undo/redo — VS Code manages the undo stack.
             if (event.reason === vscode.TextDocumentChangeReason.Undo ||
                 event.reason === vscode.TextDocumentChangeReason.Redo) {
+                // Abandon any pending tracked edit — undo/redo invalidates the buffer
+                this.pendingEditManager.abandon();
+                this.unconfirmedTrackedEdit = null;
+                if (this.unconfirmedEditTimer) {
+                    clearTimeout(this.unconfirmedEditTimer);
+                    this.unconfirmedEditTimer = null;
+                }
                 this.documentShadow.set(docUri, editor.document.getText());
                 if (this.localParseHotPath) {
                     this.scheduleDecorationUpdate(editor);
@@ -360,8 +402,19 @@ export class ExtensionController {
                     const shadowSnapshot = this.documentShadow.get(docUri) ?? editor.document.getText();
                     if (this.unconfirmedTrackedEdit) {
                         getOutputChannel()?.appendLine(
-                            '[tracking] Overwriting previous unconfirmed edit (rapid typing — only latest keystroke processed)'
+                            '[tracking] Flushing previous unconfirmed edit before accepting new one'
                         );
+                        const prev = this.unconfirmedTrackedEdit;
+                        this.unconfirmedTrackedEdit = null;
+                        // Restore the shadow to the previous edit's snapshot so handleTrackedEdits
+                        // can correctly compute deleted/substituted text
+                        this.documentShadow.set(docUri, prev.shadowSnapshot);
+                        try {
+                            await this.handleTrackedEdits(prev.event, prev.editor);
+                        } finally {
+                            // Restore shadow to current state before proceeding
+                            this.documentShadow.set(docUri, editor.document.getText());
+                        }
                     }
                     this.unconfirmedTrackedEdit = { event, editor, shadowSnapshot };
 
@@ -499,6 +552,7 @@ export class ExtensionController {
             this.documentShadow.delete(uri);
             this.nextScIdMap.delete(uri);
             this.documentStates.delete(uri);
+            this.userTrackingOverrides.delete(uri);
             invalidateDecorationCache(uri);
             this.changeComments?.disposeThreadsForUri?.(doc.uri);
         }, null, context.subscriptions);
@@ -680,7 +734,7 @@ export class ExtensionController {
                 return;
             }
 
-            const virtualDoc = this.getVirtualDocumentFor(uri, text, languageId);
+            const virtualDoc = this.getVirtualDocumentFor(uri, text, languageId, true);
 
             this.decorator.decorate(editor, virtualDoc, this._viewMode, text, this._showCriticMarkup);
             // Do not notify here: notify only from handleDecorationDataUpdate and getChanges bootstrap.
@@ -700,7 +754,7 @@ export class ExtensionController {
             return [];
         }
         const uri = doc.uri.toString();
-        const virtualDoc = this.getVirtualDocumentFor(uri, doc.getText(), doc.languageId);
+        const virtualDoc = this.getVirtualDocumentFor(uri, doc.getText(), doc.languageId, true);
         return virtualDoc.getChanges();
     }
 
@@ -739,8 +793,17 @@ export class ExtensionController {
         this._trackingMode = !this._trackingMode;
         this.setContextKey('changetracks:trackingEnabled', this._trackingMode);
 
+        // Record user's explicit choice — trumps LSP documentState and header reads
+        const docUri = editor.document.uri.toString();
+        this.userTrackingOverrides.set(docUri, this._trackingMode);
+
+        // When turning tracking OFF, abandon any pending edit to prevent
+        // the pause timer from crystallizing text after tracking is disabled
+        if (!this._trackingMode) {
+            this.pendingEditManager.abandon();
+        }
+
         if (this._trackingMode && editor) {
-            const docUri = editor.document.uri.toString();
             const docText = editor.document.getText();
             this.documentShadow.set(docUri, docText);
             const maxId = scanMaxCtId(docText);
@@ -776,10 +839,13 @@ export class ExtensionController {
      */
     public setDocumentState(uri: string, state: { tracking: { enabled: boolean; source: string }; viewMode: string }): void {
         this.documentStates.set(uri, state);
-        // Update local tracking state for active document
+        // Update local tracking state for active document —
+        // BUT skip if user has explicitly toggled (their choice trumps LSP resolution)
         if (uri === vscode.window.activeTextEditor?.document.uri.toString()) {
-            this._trackingMode = state.tracking.enabled;
-            this.setContextKey('changetracks:trackingEnabled', state.tracking.enabled);
+            if (!this.userTrackingOverrides.has(uri)) {
+                this._trackingMode = state.tracking.enabled;
+                this.setContextKey('changetracks:trackingEnabled', state.tracking.enabled);
+            }
         }
         this.scheduleNotifyChanges();
     }
@@ -790,6 +856,8 @@ export class ExtensionController {
      */
     public isTrackingEnabled(uri?: string): boolean {
         if (uri) {
+            const override = this.userTrackingOverrides.get(uri);
+            if (override !== undefined) return override;
             const state = this.documentStates.get(uri);
             if (state) return state.tracking.enabled;
         }
@@ -820,7 +888,13 @@ export class ExtensionController {
         // Phase 5: Fire change event so panel refreshes when view mode changes
         this.scheduleNotifyChanges();
 
-        vscode.window.showInformationMessage(`ChangeTracks View: ${mode}`);
+        vscode.window.showInformationMessage(`ChangeTracks View: ${VIEW_MODE_LABELS[mode]}`);
+        this.updateViewModeStatusBar();
+    }
+
+    private updateViewModeStatusBar(): void {
+        const label = VIEW_MODE_LABELS[this._viewMode];
+        this.viewModeStatusBar.text = `$(eye) ${label}`;
     }
 
     public cycleViewMode() {
@@ -856,7 +930,7 @@ export class ExtensionController {
         }
         const text = editor.document.getText();
         const uri = editor.document.uri.toString();
-        const virtualDoc = this.getVirtualDocumentFor(uri, text, editor.document.languageId);
+        const virtualDoc = this.getVirtualDocumentFor(uri, text, editor.document.languageId, true);
         const cursorOffset = positionToOffset(text, editor.selection.active);
         const change = this.workspace.changeAtOffset(virtualDoc, cursorOffset);
         this.setContextKey('changetracks:changeAtCursor', change !== null);
@@ -1126,14 +1200,23 @@ export class ExtensionController {
         }
 
         if (event.contentChanges.length !== 1) {
-            // Multi-change edit (paste or autocomplete) - treat as paste-like operation
-            // Flush any pending edit first
-            getOutputChannel()?.appendLine(`[tracking] multi-change guard: ${event.contentChanges.length} changes, flushing pending`);
+            getOutputChannel()?.appendLine(
+                `[tracking] multi-change: ${event.contentChanges.length} changes, processing individually`
+            );
             await this.pendingEditManager.flush();
-
-            // Note: The actual multi-change has already been applied to the document
-            // We could wrap it here, but for now just ensure pending edits are flushed
-            // Shadow updated by caller
+            const shadow = this.documentShadow.get(docUri) ?? '';
+            const sorted = [...event.contentChanges].sort((a, b) => b.rangeOffset - a.rangeOffset);
+            for (const change of sorted) {
+                if (change.rangeLength === 0 && change.text.length > 0) {
+                    this.pendingEditManager.handleEdit('insertion', change.rangeOffset, change.text);
+                } else if (change.text.length === 0 && change.rangeLength > 0) {
+                    const deletedText = shadow.substring(change.rangeOffset, change.rangeOffset + change.rangeLength);
+                    this.pendingEditManager.handleEdit('deletion', change.rangeOffset, '', deletedText);
+                } else if (change.text.length > 0 && change.rangeLength > 0) {
+                    const oldText = shadow.substring(change.rangeOffset, change.rangeOffset + change.rangeLength);
+                    this.pendingEditManager.handleEdit('substitution', change.rangeOffset, change.text, oldText);
+                }
+            }
             return;
         }
 
@@ -1146,6 +1229,8 @@ export class ExtensionController {
         const changeKind = isInsertion ? 'insertion' : isDeletion ? 'deletion' : isSubstitution ? 'substitution' : 'unknown';
         const escapedText = change.text.replace(/\n/g, '\\n').replace(/\r/g, '\\r');
         getOutputChannel()?.appendLine(`[tracking] handleTrackedEdits: ${changeKind} '${escapedText}' rangeLen=${change.rangeLength} at ${change.range.start.line}:${change.range.start.character}`);
+
+
 
         // Don't track CriticMarkup syntax (prevents double-wrapping)
         if (this.isCriticMarkupSyntax(change.text)) {
@@ -1421,7 +1506,7 @@ export class ExtensionController {
         const text = doc.getText();
         const languageId = doc.languageId;
         const uriStr = uri.toString();
-        const virtualDoc = this.getVirtualDocumentFor(uriStr, text, languageId);
+        const virtualDoc = this.getVirtualDocumentFor(uriStr, text, languageId, true);
         const changes = virtualDoc.getChanges();
         if (changes.length === 0) return;
         if (!await this.confirmBulkAction('Accept', changes.length)) return;
@@ -1452,7 +1537,7 @@ export class ExtensionController {
         const text = doc.getText();
         const languageId = doc.languageId;
         const uriStr = uri.toString();
-        const virtualDoc = this.getVirtualDocumentFor(uriStr, text, languageId);
+        const virtualDoc = this.getVirtualDocumentFor(uriStr, text, languageId, true);
         const changes = virtualDoc.getChanges();
         if (changes.length === 0) return;
         if (!await this.confirmBulkAction('Reject', changes.length)) return;
@@ -1705,6 +1790,10 @@ export class ExtensionController {
         edits: { offset: number; length: number; newText: string }[],
         changes?: ChangeNode[]
     ): void {
+        // Update footnote header status field (proposed → accepted/rejected)
+        const statusEdits = computeFootnoteStatusEdits(text, changeIds, status);
+        edits.push(...statusEdits);
+
         const reviewer = this.getReviewerIdentity();
         if (reviewer) {
             const date = nowTimestamp().raw;
@@ -1827,6 +1916,7 @@ export class ExtensionController {
         this._onDidChangeChanges.dispose();
         this.decorator.dispose();
         this.pendingEditManager.dispose();
+        this.viewModeStatusBar.dispose();
 
         // Clean up Maps/Sets to prevent memory leaks on extension restart
         this.documentShadow.clear();

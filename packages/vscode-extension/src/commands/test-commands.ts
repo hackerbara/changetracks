@@ -4,7 +4,10 @@ import * as fs from 'fs';
 import * as os from 'os';
 import type { ExtensionController } from '../controller';
 import type { LanguageClient } from 'vscode-languageclient/node';
-import { getCachedDecorationData } from '../lsp-client';
+import type { ChangeComments } from '../change-comments';
+import { ChangeType } from '@changetracks/core';
+import { getCachedDecorationData, invalidateDecorationCache } from '../lsp-client';
+import { typeLabel } from '../visual-semantics';
 
 function testDocPath(): string {
     const id = process.env.CHANGETRACKS_TEST_INSTANCE_ID;
@@ -15,7 +18,8 @@ function testDocPath(): string {
 export function registerTestCommands(
     context: vscode.ExtensionContext,
     controller: ExtensionController,
-    getClient: () => LanguageClient | undefined
+    getClient: () => LanguageClient | undefined,
+    changeComments?: ChangeComments
 ): void {
     context.subscriptions.push(
         vscode.commands.registerCommand('changetracks._testReadConfig', () => {
@@ -115,20 +119,69 @@ export function registerTestCommands(
                     fs.writeFileSync(statePath, JSON.stringify({ ok: false, error: 'no active editor', timestamp: Date.now() }));
                     return;
                 }
-                // Temporarily suppress tracking during reset
+                // Full state reset BEFORE editor.edit() — critical ordering.
+                // editor.edit() fires onDidChangeTextEditorSelection synchronously
+                // during execution, which triggers cursor-move flush in the controller.
+                // If there's a stale pending edit from a previous scenario, that flush
+                // would crystallize it into the freshly-reset document. So we must:
+                // 1. Disable tracking (prevents cursor-move flush guard at controller.ts:491)
+                // 2. Abandon pending edits (nothing left to flush)
+                // 3. Clear unconfirmed edits (prevents selection-confirmation gate)
+                // 4. Set isApplyingTrackedEdit (prevents text change handler)
+                // THEN call editor.edit().
+                const uri = editor.document.uri.toString();
+
+                // Step 1: Disable tracking to prevent cursor-move flush
+                (controller as any)._trackingMode = false;
+                vscode.commands.executeCommand('setContext', 'changetracks:trackingEnabled', false);
+
+                // Step 2: Clear pending edit buffer
+                (controller as any).pendingEditManager?.abandon?.();
+
+                // Step 3: Clear unconfirmed tracked edit
+                (controller as any).unconfirmedTrackedEdit = null;
+                if ((controller as any).unconfirmedEditTimer) {
+                    clearTimeout((controller as any).unconfirmedEditTimer);
+                    (controller as any).unconfirmedEditTimer = null;
+                }
+
+                // Step 4: Clear user tracking overrides (prevents stale state leaking)
+                (controller as any).userTrackingOverrides?.delete?.(uri);
+
+                // Step 5: Suppress tracking handler during edit
+                let editSuccess = false;
                 (controller as any).isApplyingTrackedEdit = true;
                 try {
                     const fullRange = new vscode.Range(
                         editor.document.positionAt(0),
                         editor.document.positionAt(editor.document.getText().length)
                     );
-                    await editor.edit(eb => eb.replace(fullRange, input.content));
-                    // Move cursor to start
+                    editSuccess = await editor.edit(eb => eb.replace(fullRange, input.content));
+
+                    // Set tracking state based on content
+                    const isTracked = input.content.includes('ctrcks.com/v1: tracked');
+                    (controller as any)._trackingMode = isTracked;
+                    vscode.commands.executeCommand('setContext', 'changetracks:trackingEnabled', isTracked);
+
+                    // Move cursor (safe — pending edits already cleared)
                     editor.selection = new vscode.Selection(0, 0, 0, 0);
+
+                    // Invalidate decoration cache
+                    invalidateDecorationCache(uri);
+
+                    // Reset document shadow
+                    (controller as any).documentShadow?.set(uri, input.content);
+
+                    // Reset ct-ID counter for this document
+                    (controller as any).nextScIdMap?.delete?.(uri);
                 } finally {
                     (controller as any).isApplyingTrackedEdit = false;
                 }
-                fs.writeFileSync(statePath, JSON.stringify({ ok: true, timestamp: Date.now() }));
+                fs.writeFileSync(statePath, JSON.stringify({
+                    ok: true,
+                    editSuccess,
+                    timestamp: Date.now(),
+                }));
             } catch (err: any) {
                 fs.writeFileSync(statePath, JSON.stringify({ ok: false, error: err.message, timestamp: Date.now() }));
             }
@@ -176,6 +229,88 @@ export function registerTestCommands(
             }
             fs.writeFileSync(statePath, JSON.stringify({ ready: false, timeout: true, uri, timestamp: Date.now() }));
         }),
+        vscode.commands.registerCommand('changetracks._testPositionCursor', async () => {
+            const inputPath = path.join(os.tmpdir(), 'changetracks-test-position-cursor-input.json');
+            const statePath = path.join(os.tmpdir(), 'changetracks-test-position-cursor.json');
+            try {
+                const input = JSON.parse(fs.readFileSync(inputPath, 'utf8'));
+                const editor = vscode.window.activeTextEditor;
+                if (!editor) {
+                    fs.writeFileSync(statePath, JSON.stringify({ ok: false, error: 'no active editor', timestamp: Date.now() }));
+                    return;
+                }
+                const text = editor.document.getText();
+                const idx = text.indexOf(input.target);
+                if (idx < 0) {
+                    fs.writeFileSync(statePath, JSON.stringify({ ok: false, error: 'target not found', target: input.target, textLen: text.length, timestamp: Date.now() }));
+                    return;
+                }
+                let offset: number;
+                if (input.position === 'before') {
+                    offset = idx;
+                } else {
+                    offset = idx + input.target.length;
+                }
+                const pos = editor.document.positionAt(offset);
+                editor.selection = new vscode.Selection(pos, pos);
+                editor.revealRange(new vscode.Range(pos, pos));
+                fs.writeFileSync(statePath, JSON.stringify({ ok: true, line: pos.line + 1, col: pos.character + 1, timestamp: Date.now() }));
+            } catch (err: any) {
+                fs.writeFileSync(statePath, JSON.stringify({ ok: false, error: err.message, timestamp: Date.now() }));
+            }
+        }),
+        vscode.commands.registerCommand('changetracks._testSelectText', async () => {
+            const inputPath = path.join(os.tmpdir(), 'changetracks-test-select-text-input.json');
+            const statePath = path.join(os.tmpdir(), 'changetracks-test-select-text.json');
+            try {
+                const input = JSON.parse(fs.readFileSync(inputPath, 'utf8'));
+                const editor = vscode.window.activeTextEditor;
+                if (!editor) {
+                    fs.writeFileSync(statePath, JSON.stringify({ ok: false, error: 'no active editor', timestamp: Date.now() }));
+                    return;
+                }
+                const text = editor.document.getText();
+                const idx = text.indexOf(input.target);
+                if (idx < 0) {
+                    fs.writeFileSync(statePath, JSON.stringify({ ok: false, error: 'target not found', target: input.target, timestamp: Date.now() }));
+                    return;
+                }
+                const startPos = editor.document.positionAt(idx);
+                const endPos = editor.document.positionAt(idx + input.target.length);
+                editor.selection = new vscode.Selection(startPos, endPos);
+                editor.revealRange(new vscode.Range(startPos, endPos));
+                fs.writeFileSync(statePath, JSON.stringify({ ok: true, timestamp: Date.now() }));
+            } catch (err: any) {
+                fs.writeFileSync(statePath, JSON.stringify({ ok: false, error: err.message, timestamp: Date.now() }));
+            }
+        }),
+        vscode.commands.registerCommand('changetracks._testSelectAndReplace', async () => {
+            const inputPath = path.join(os.tmpdir(), 'changetracks-test-select-replace-input.json');
+            const statePath = path.join(os.tmpdir(), 'changetracks-test-select-replace.json');
+            try {
+                const input = JSON.parse(fs.readFileSync(inputPath, 'utf8'));
+                const editor = vscode.window.activeTextEditor;
+                if (!editor) {
+                    fs.writeFileSync(statePath, JSON.stringify({ ok: false, error: 'no active editor', timestamp: Date.now() }));
+                    return;
+                }
+                const text = editor.document.getText();
+                const idx = text.indexOf(input.target);
+                if (idx < 0) {
+                    fs.writeFileSync(statePath, JSON.stringify({ ok: false, error: 'target not found', target: input.target, timestamp: Date.now() }));
+                    return;
+                }
+                const startPos = editor.document.positionAt(idx);
+                const endPos = editor.document.positionAt(idx + input.target.length);
+                // Set selection — typing will be done via DOM keyboard by the test step
+                editor.selection = new vscode.Selection(startPos, endPos);
+                // Reveal so the selected text is visible
+                editor.revealRange(new vscode.Range(startPos, endPos));
+                fs.writeFileSync(statePath, JSON.stringify({ ok: true, timestamp: Date.now() }));
+            } catch (err: any) {
+                fs.writeFileSync(statePath, JSON.stringify({ ok: false, error: err.message, timestamp: Date.now() }));
+            }
+        }),
         vscode.commands.registerCommand('changetracks._testExecuteCommand', async () => {
             const inputPath = path.join(os.tmpdir(), 'changetracks-test-exec-input.json');
             const statePath = path.join(os.tmpdir(), 'changetracks-test-exec.json');
@@ -191,6 +326,103 @@ export function registerTestCommands(
                 fs.writeFileSync(statePath, JSON.stringify({ ok: true, command: commandId, timestamp: Date.now() }));
             } catch (err: any) {
                 fs.writeFileSync(statePath, JSON.stringify({ ok: false, error: err.message, timestamp: Date.now() }));
+            }
+        }),
+        // Task 0A: Get comment thread metadata
+        vscode.commands.registerCommand('changetracks._testGetCommentThreads', () => {
+            const statePath = path.join(os.tmpdir(), 'changetracks-test-comment-threads.json');
+            try {
+                const threads = changeComments?.getAllThreadData?.() ?? [];
+                fs.writeFileSync(statePath, JSON.stringify({
+                    threads,
+                    count: threads.length,
+                    timestamp: Date.now(),
+                }));
+            } catch (err: any) {
+                fs.writeFileSync(statePath, JSON.stringify({ threads: [], count: 0, error: err.message, timestamp: Date.now() }));
+            }
+        }),
+        // Task 0B: Get CodeLens items
+        vscode.commands.registerCommand('changetracks._testGetCodeLensItems', async () => {
+            const statePath = path.join(os.tmpdir(), 'changetracks-test-codelens.json');
+            try {
+                const editor = vscode.window.activeTextEditor;
+                if (!editor) {
+                    fs.writeFileSync(statePath, JSON.stringify({ items: [], count: 0, error: 'no active editor', timestamp: Date.now() }));
+                    return;
+                }
+                const uri = editor.document.uri;
+                const lenses = await vscode.commands.executeCommand<vscode.CodeLens[]>(
+                    'vscode.executeCodeLensProvider', uri
+                );
+                fs.writeFileSync(statePath, JSON.stringify({
+                    items: (lenses ?? []).map(l => ({
+                        line: l.range.start.line + 1,
+                        title: l.command?.title ?? '',
+                        command: l.command?.command ?? '',
+                    })),
+                    count: lenses?.length ?? 0,
+                    timestamp: Date.now(),
+                }));
+            } catch (err: any) {
+                fs.writeFileSync(statePath, JSON.stringify({ items: [], count: 0, error: err.message, timestamp: Date.now() }));
+            }
+        }),
+        // Task 0C: Get review panel card data
+        vscode.commands.registerCommand('changetracks._testGetReviewPanelCards', () => {
+            const statePath = path.join(os.tmpdir(), 'changetracks-test-review-panel-cards.json');
+            try {
+                const editor = vscode.window.activeTextEditor;
+                const doc = editor?.document.languageId === 'markdown' ? editor.document : undefined;
+                if (!doc) {
+                    fs.writeFileSync(statePath, JSON.stringify({ cards: [], count: 0, error: 'no active markdown editor', timestamp: Date.now() }));
+                    return;
+                }
+                const changes = controller.getChangesForDocument(doc);
+                const text = doc.getText();
+                const MAX_PREVIEW = 60;
+                const cards = changes.map(c => {
+                    let preview: string;
+                    switch (c.type) {
+                        case ChangeType.Substitution:
+                            preview = [c.originalText ?? '', c.modifiedText ?? ''].filter(Boolean).join(' \u2192 ');
+                            break;
+                        case ChangeType.Insertion:
+                            preview = c.modifiedText ?? '';
+                            break;
+                        case ChangeType.Deletion:
+                            preview = c.originalText ?? '';
+                            break;
+                        case ChangeType.Comment:
+                            preview = c.metadata?.comment ?? c.originalText ?? '';
+                            break;
+                        case ChangeType.Highlight:
+                            preview = c.originalText ?? '';
+                            break;
+                        default:
+                            preview = text.slice(c.contentRange.start, c.contentRange.end).replace(/\s+/g, ' ').trim();
+                    }
+                    preview = preview.replace(/\s+/g, ' ').trim();
+                    if (preview.length > MAX_PREVIEW) {
+                        preview = preview.slice(0, MAX_PREVIEW).trim() + '\u2026';
+                    }
+                    if (!preview) preview = '(empty)';
+                    return {
+                        changeId: c.id,
+                        type: typeLabel(c.type),
+                        status: (c.metadata?.status ?? c.inlineMetadata?.status ?? c.status ?? 'proposed').toLowerCase(),
+                        author: c.metadata?.author ?? c.inlineMetadata?.author ?? '',
+                        textPreview: preview,
+                        replyCount: c.metadata?.discussion?.length ?? 0,
+                    };
+                });
+                fs.writeFileSync(statePath, JSON.stringify({
+                    cards,
+                    count: cards.length,
+                    timestamp: Date.now(),
+                }));
+            } catch (err: any) {
+                fs.writeFileSync(statePath, JSON.stringify({ cards: [], count: 0, error: err.message, timestamp: Date.now() }));
             }
         })
     );

@@ -59,7 +59,7 @@ export class CriticMarkupParser {
   // Level 2 line patterns
   private static readonly APPROVAL_RE = /^(approved|rejected|request-changes):\s+(@\S+)\s+(\S+)(?:\s+"([^"]*)")?$/;
   private static readonly DISCUSSION_RE = /^(@\S+)\s+(\S+)(?:\s+\[([^\]]+)\])?:\s*(.*)$/;
-  private static readonly RESOLVED_RE = /^resolved\s+(@\S+)\s+(\S+)(?::\s*(.*))?$/;
+  private static readonly RESOLVED_RE = /^resolved:?\s+(@\S+)\s+(\S+)(?::\s*(.*))?$/;
   private static readonly OPEN_RE = /^open(?:\s+--\s+(.*))?$/;
   private static readonly REVISION_RE = /^(r\d+)\s+(@\S+)\s+(\S+):\s+"([^"]*)"$/;
   private static readonly CONTEXT_RE = /^context:\s+"([^"]*)"$/;

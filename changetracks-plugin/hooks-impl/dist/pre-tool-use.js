@@ -3068,6 +3068,31 @@ var require_picomatch4 = __commonJS({
   }
 });
 
+// ../../packages/core/dist-esm/config/index.js
+function parseProjectConfig(raw) {
+  const review = raw?.review;
+  const reasonRaw = review?.reason_required;
+  if (!reasonRaw || typeof reasonRaw !== "object") {
+    return { reasonRequired: { ...DEFAULT_REASON_REQUIREMENT } };
+  }
+  return {
+    reasonRequired: {
+      human: typeof reasonRaw.human === "boolean" ? reasonRaw.human : DEFAULT_REASON_REQUIREMENT.human,
+      agent: typeof reasonRaw.agent === "boolean" ? reasonRaw.agent : DEFAULT_REASON_REQUIREMENT.agent
+    }
+  };
+}
+var DEFAULT_REASON_REQUIREMENT;
+var init_config = __esm({
+  "../../packages/core/dist-esm/config/index.js"() {
+    "use strict";
+    DEFAULT_REASON_REQUIREMENT = {
+      human: false,
+      agent: true
+    };
+  }
+});
+
 // ../../packages/core/dist-esm/timestamp.js
 function normalizeHour(hour, ampm) {
   if (!ampm)
@@ -4074,11 +4099,139 @@ var init_parser = __esm({
     CriticMarkupParser.FOOTNOTE_DEF = FOOTNOTE_DEF_STRICT;
     CriticMarkupParser.APPROVAL_RE = /^(approved|rejected|request-changes):\s+(@\S+)\s+(\S+)(?:\s+"([^"]*)")?$/;
     CriticMarkupParser.DISCUSSION_RE = /^(@\S+)\s+(\S+)(?:\s+\[([^\]]+)\])?:\s*(.*)$/;
-    CriticMarkupParser.RESOLVED_RE = /^resolved\s+(@\S+)\s+(\S+)(?::\s*(.*))?$/;
+    CriticMarkupParser.RESOLVED_RE = /^resolved:?\s+(@\S+)\s+(\S+)(?::\s*(.*))?$/;
     CriticMarkupParser.OPEN_RE = /^open(?:\s+--\s+(.*))?$/;
     CriticMarkupParser.REVISION_RE = /^(r\d+)\s+(@\S+)\s+(\S+):\s+"([^"]*)"$/;
     CriticMarkupParser.CONTEXT_RE = /^context:\s+"([^"]*)"$/;
     CriticMarkupParser.REASON_RE = /^reason:\s+(.+)$/;
+  }
+});
+
+// ../../packages/core/dist-esm/footnote-utils.js
+function countFootnoteHeadersWithStatus(content, status) {
+  const lines = content.split("\n");
+  let count = 0;
+  for (const line of lines) {
+    const m = line.match(FOOTNOTE_HEADER_STATUS_RE);
+    if (m && m[1] === status)
+      count++;
+  }
+  return count;
+}
+function findFootnoteBlock(lines, changeId) {
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].startsWith(`[^${changeId}]:`)) {
+      let end = i;
+      let j = i + 1;
+      while (j < lines.length) {
+        if (lines[j].startsWith("[^ct-"))
+          break;
+        if (lines[j].startsWith("    ")) {
+          end = j;
+          j++;
+          continue;
+        }
+        if (lines[j].trim() === "") {
+          let k = j + 1;
+          let hasMore = false;
+          while (k < lines.length && !lines[k].startsWith("[^ct-")) {
+            if (lines[k].startsWith("    ")) {
+              hasMore = true;
+              break;
+            }
+            if (lines[k].trim() !== "")
+              break;
+            k++;
+          }
+          if (hasMore) {
+            j++;
+            continue;
+          }
+          break;
+        }
+        break;
+      }
+      return { headerLine: i, blockEnd: end, headerContent: lines[i] };
+    }
+  }
+  return null;
+}
+function parseFootnoteHeader(headerLine) {
+  const colonIdx = headerLine.indexOf(":");
+  if (colonIdx === -1)
+    return null;
+  const content = headerLine.slice(colonIdx + 1).trim();
+  const parts = content.split("|").map((p) => p.trim());
+  if (parts.length < 4)
+    return null;
+  return {
+    author: parts[0].replace(/^@/, ""),
+    date: parts[1],
+    type: parts[2],
+    status: parts[3]
+  };
+}
+function findDiscussionInsertionIndex(lines, headerLine, blockEnd) {
+  let insertAfter = headerLine;
+  for (let i = headerLine + 1; i <= blockEnd; i++) {
+    const trimmed = lines[i].trim();
+    if (trimmed === "")
+      continue;
+    if (isApprovalOrResolutionLine(trimmed)) {
+      return i - 1;
+    }
+    insertAfter = i;
+  }
+  return insertAfter;
+}
+function findReviewInsertionIndex(lines, headerLine, blockEnd) {
+  let insertAfter = headerLine;
+  for (let i = headerLine + 1; i <= blockEnd; i++) {
+    const trimmed = lines[i].trim();
+    if (trimmed === "")
+      continue;
+    if (isResolutionLine(trimmed)) {
+      return i - 1;
+    }
+    insertAfter = i;
+  }
+  return insertAfter;
+}
+function findChildFootnoteIds(lines, parentId) {
+  const prefix = `[^${parentId}.`;
+  const children = [];
+  for (const line of lines) {
+    if (line.startsWith(prefix)) {
+      const closeBracket = line.indexOf("]:");
+      if (closeBracket !== -1) {
+        children.push(line.slice(2, closeBracket));
+      }
+    }
+  }
+  return children;
+}
+function resolveChangeById(fileContent, changeId) {
+  const lines = fileContent.split("\n");
+  const footnoteBlock = findFootnoteBlock(lines, changeId);
+  const refPattern = `[^${changeId}]`;
+  const refIndex = fileContent.indexOf(refPattern);
+  const inlineRefOffset = refIndex !== -1 && fileContent[refIndex + refPattern.length] !== ":" ? refIndex : null;
+  if (!footnoteBlock && inlineRefOffset === null) {
+    return null;
+  }
+  return { footnoteBlock, inlineRefOffset };
+}
+function isApprovalOrResolutionLine(trimmed) {
+  return trimmed.startsWith("approved:") || trimmed.startsWith("rejected:") || trimmed.startsWith("request-changes:") || trimmed.startsWith("resolved") || trimmed.startsWith("open --") || trimmed.startsWith("open ") || trimmed === "open";
+}
+function isResolutionLine(trimmed) {
+  return trimmed.startsWith("resolved") || trimmed.startsWith("open --") || trimmed.startsWith("open ") || trimmed === "open";
+}
+var FOOTNOTE_HEADER_STATUS_RE;
+var init_footnote_utils = __esm({
+  "../../packages/core/dist-esm/footnote-utils.js"() {
+    "use strict";
+    FOOTNOTE_HEADER_STATUS_RE = /^\[\^ct-\d+(?:\.\d+)?\]:.*\|\s*(\S+)\s*$/;
   }
 });
 
@@ -4128,6 +4281,8 @@ function computeReject(change) {
 function computeFootnoteStatusEdits(text, changeIds, newStatus) {
   if (changeIds.length === 0)
     return [];
+  if (newStatus === "request-changes")
+    return [];
   const idSet = new Set(changeIds.filter((id) => id !== ""));
   if (idSet.size === 0)
     return [];
@@ -4152,65 +4307,12 @@ function computeFootnoteStatusEdits(text, changeIds, newStatus) {
   }
   return edits;
 }
-function findFootnoteBlock(lines, changeId) {
-  for (let i = 0; i < lines.length; i++) {
-    if (lines[i].startsWith(`[^${changeId}]:`)) {
-      let end = i;
-      let j = i + 1;
-      while (j < lines.length) {
-        if (lines[j].startsWith("[^ct-"))
-          break;
-        if (lines[j].startsWith("    ")) {
-          end = j;
-          j++;
-          continue;
-        }
-        if (lines[j].trim() === "") {
-          let k = j + 1;
-          let hasMore = false;
-          while (k < lines.length && !lines[k].startsWith("[^ct-")) {
-            if (lines[k].startsWith("    ")) {
-              hasMore = true;
-              break;
-            }
-            if (lines[k].trim() !== "")
-              break;
-            k++;
-          }
-          if (hasMore) {
-            j++;
-            continue;
-          }
-          break;
-        }
-        break;
-      }
-      return { headerLine: i, blockEnd: end };
-    }
-  }
-  return null;
-}
-function isResolutionLine(trimmed) {
-  return trimmed.startsWith("resolved") || trimmed.startsWith("open --") || trimmed.startsWith("open ") || trimmed === "open";
-}
-function findReviewInsertionIndex(lines, headerLine, blockEnd) {
-  let insertAfter = headerLine;
-  for (let i = headerLine + 1; i <= blockEnd; i++) {
-    const trimmed = lines[i].trim();
-    if (trimmed === "")
-      continue;
-    if (isResolutionLine(trimmed))
-      return i - 1;
-    insertAfter = i;
-  }
-  return insertAfter;
-}
 function computeApprovalLineEdit(text, changeId, newStatus, opts) {
   const lines = text.split("\n");
   const block = findFootnoteBlock(lines, changeId);
   if (!block)
     return null;
-  const keyword = newStatus === "accepted" ? "approved:" : "rejected:";
+  const keyword = newStatus === "accepted" ? "approved:" : newStatus === "rejected" ? "rejected:" : "request-changes:";
   const date = opts.date ?? nowTimestamp().raw;
   const reasonPart = opts.reason !== void 0 && opts.reason !== "" ? ` "${opts.reason}"` : "";
   const line = `    ${keyword} @${opts.author} ${date}${reasonPart}`;
@@ -4237,8 +4339,72 @@ var init_accept_reject = __esm({
     init_types();
     init_footnote_patterns();
     init_timestamp();
+    init_footnote_utils();
     FOOTNOTE_STATUS_RE = FOOTNOTE_DEF_STATUS;
     KNOWN_STATUSES = /* @__PURE__ */ new Set(["proposed", "accepted", "rejected", "pending"]);
+  }
+});
+
+// ../../packages/core/dist-esm/operations/resolution.js
+function computeResolutionEdit(text, changeId, opts) {
+  const lines = text.split("\n");
+  const block = findFootnoteBlock(lines, changeId);
+  if (!block)
+    return null;
+  const date = opts.date ?? nowTimestamp().raw;
+  const author = opts.author.startsWith("@") ? opts.author : `@${opts.author}`;
+  const line = `    resolved: ${author} ${date}`;
+  const offset = lines.slice(0, block.blockEnd + 1).join("\n").length;
+  return { offset, length: 0, newText: "\n" + line };
+}
+function computeUnresolveEdit(text, changeId) {
+  const lines = text.split("\n");
+  const block = findFootnoteBlock(lines, changeId);
+  if (!block)
+    return null;
+  for (let i = block.headerLine + 1; i <= block.blockEnd; i++) {
+    const trimmed = lines[i].trim();
+    if (trimmed.startsWith("resolved:") || trimmed.startsWith("resolved ")) {
+      const linesBefore = lines.slice(0, i).join("\n");
+      const lineOffset2 = linesBefore.length;
+      const lineLength = lines[i].length + 1;
+      return { offset: lineOffset2, length: lineLength, newText: "" };
+    }
+  }
+  return null;
+}
+var init_resolution = __esm({
+  "../../packages/core/dist-esm/operations/resolution.js"() {
+    "use strict";
+    init_footnote_utils();
+    init_timestamp();
+  }
+});
+
+// ../../packages/core/dist-esm/operations/reply.js
+function computeReplyEdit(docText, changeId, opts) {
+  const lines = docText.split("\n");
+  const block = findFootnoteBlock(lines, changeId);
+  if (!block) {
+    return { isError: true, error: `Footnote not found for ${changeId}` };
+  }
+  const date = opts.date ?? nowTimestamp().raw;
+  const labelPart = opts.label ? ` [${opts.label}]` : "";
+  const replyLines = opts.text.split("\n");
+  const indent = "    ";
+  const continuationIndent = "      ";
+  const firstLine = `${indent}@${opts.author} ${date}${labelPart}: ${replyLines[0]}`;
+  const continuationLines = replyLines.slice(1).map((l) => `${continuationIndent}${l}`);
+  const newLines = [firstLine, ...continuationLines];
+  const insertIndex = findDiscussionInsertionIndex(lines, block.headerLine, block.blockEnd) + 1;
+  lines.splice(insertIndex, 0, ...newLines);
+  return { isError: false, text: lines.join("\n") };
+}
+var init_reply = __esm({
+  "../../packages/core/dist-esm/operations/reply.js"() {
+    "use strict";
+    init_footnote_utils();
+    init_timestamp();
   }
 });
 
@@ -4329,6 +4495,1393 @@ var init_comment = __esm({
   }
 });
 
+// ../../packages/core/dist-esm/text-normalizer.js
+function defaultNormalizer(text) {
+  return text.normalize("NFKC");
+}
+function normalizedIndexOf(text, target, normalizer, startFrom) {
+  const norm = normalizer ?? defaultNormalizer;
+  const normalizedText = norm(text);
+  const normalizedTarget = norm(target);
+  return normalizedText.indexOf(normalizedTarget, startFrom ?? 0);
+}
+function collapseWhitespace(text) {
+  return text.replace(/\s+/g, " ");
+}
+function buildWhitespaceCollapseMap(original) {
+  const map = [];
+  let oi = 0;
+  while (oi < original.length) {
+    if (/\s/.test(original[oi])) {
+      map.push(oi);
+      while (oi < original.length && /\s/.test(original[oi])) {
+        oi++;
+      }
+    } else {
+      map.push(oi);
+      oi++;
+    }
+  }
+  map.push(oi);
+  return map;
+}
+function whitespaceCollapsedFind(text, target, startFrom) {
+  const collapsedText = collapseWhitespace(text);
+  const collapsedTarget = collapseWhitespace(target);
+  if (collapsedTarget.length === 0)
+    return null;
+  const map = buildWhitespaceCollapseMap(text);
+  let collapsedStartFrom = 0;
+  if (startFrom !== void 0 && startFrom > 0) {
+    for (let ci = 0; ci < map.length; ci++) {
+      if (map[ci] >= startFrom) {
+        collapsedStartFrom = ci;
+        break;
+      }
+    }
+  }
+  const collapsedIdx = collapsedText.indexOf(collapsedTarget, collapsedStartFrom);
+  if (collapsedIdx === -1)
+    return null;
+  const originalStart = map[collapsedIdx];
+  const collapsedEnd = collapsedIdx + collapsedTarget.length;
+  const originalEnd = map[collapsedEnd];
+  return {
+    index: originalStart,
+    length: originalEnd - originalStart,
+    originalText: text.slice(originalStart, originalEnd)
+  };
+}
+function whitespaceCollapsedIsAmbiguous(text, target) {
+  const first = whitespaceCollapsedFind(text, target);
+  if (!first)
+    return false;
+  const second = whitespaceCollapsedFind(text, target, first.index + 1);
+  return second !== null;
+}
+function unicodeName(codepoint) {
+  return UNICODE_NAMES[codepoint] ?? `U+${codepoint.toString(16).toUpperCase().padStart(4, "0")}`;
+}
+function diagnosticConfusableNormalize(text) {
+  let result = text;
+  for (const [codepoint, entry] of CONFUSABLE_MAP) {
+    const char = String.fromCodePoint(codepoint);
+    result = result.split(char).join(entry.replacement);
+  }
+  return result;
+}
+function findConfusableDifferences(agentText, fileText) {
+  const diffs = [];
+  const len = Math.min(agentText.length, fileText.length);
+  for (let i = 0; i < len; i++) {
+    if (agentText[i] !== fileText[i]) {
+      const agentCp = agentText.codePointAt(i);
+      const fileCp = fileText.codePointAt(i);
+      diffs.push({
+        position: i,
+        agentChar: agentText[i],
+        fileChar: fileText[i],
+        agentCodepoint: agentCp,
+        fileCodepoint: fileCp,
+        agentName: unicodeName(agentCp),
+        fileName: unicodeName(fileCp)
+      });
+    }
+  }
+  return diffs;
+}
+function tryDiagnosticConfusableMatch(documentText, target) {
+  const normDoc = diagnosticConfusableNormalize(documentText);
+  const normTarget = diagnosticConfusableNormalize(target);
+  const normIdx = normDoc.indexOf(normTarget);
+  if (normIdx === -1)
+    return null;
+  if (normDoc.indexOf(normTarget, normIdx + 1) !== -1)
+    return null;
+  const matchedText = documentText.slice(normIdx, normIdx + target.length);
+  const diffs = findConfusableDifferences(target, matchedText);
+  return diffs.length > 0 ? { matchedText, differences: diffs } : null;
+}
+var CONFUSABLE_MAP, UNICODE_NAMES;
+var init_text_normalizer = __esm({
+  "../../packages/core/dist-esm/text-normalizer.js"() {
+    "use strict";
+    CONFUSABLE_MAP = /* @__PURE__ */ new Map([
+      [8216, { replacement: "'", name: "LEFT SINGLE QUOTATION MARK" }],
+      [8217, { replacement: "'", name: "RIGHT SINGLE QUOTATION MARK" }],
+      [8218, { replacement: "'", name: "SINGLE LOW-9 QUOTATION MARK" }],
+      [8220, { replacement: '"', name: "LEFT DOUBLE QUOTATION MARK" }],
+      [8221, { replacement: '"', name: "RIGHT DOUBLE QUOTATION MARK" }],
+      [8222, { replacement: '"', name: "DOUBLE LOW-9 QUOTATION MARK" }],
+      [8212, { replacement: "-", name: "EM DASH" }],
+      [8211, { replacement: "-", name: "EN DASH" }]
+    ]);
+    UNICODE_NAMES = {
+      32: "SPACE",
+      45: "HYPHEN-MINUS",
+      34: "QUOTATION MARK",
+      39: "APOSTROPHE",
+      46: "FULL STOP",
+      8216: "LEFT SINGLE QUOTATION MARK",
+      8217: "RIGHT SINGLE QUOTATION MARK",
+      8218: "SINGLE LOW-9 QUOTATION MARK",
+      8220: "LEFT DOUBLE QUOTATION MARK",
+      8221: "RIGHT DOUBLE QUOTATION MARK",
+      8222: "DOUBLE LOW-9 QUOTATION MARK",
+      8211: "EN DASH",
+      8212: "EM DASH"
+    };
+  }
+});
+
+// ../../packages/core/dist-esm/hashline-cleanup.js
+function stripHashlinePrefixes(lines) {
+  if (lines.length === 0)
+    return lines;
+  const nonEmptyLines = lines.filter((l) => l.length > 0);
+  if (nonEmptyLines.length === 0)
+    return lines;
+  const hashlineCount = nonEmptyLines.filter((l) => HASHLINE_PREFIX.test(l)).length;
+  if (hashlineCount >= nonEmptyLines.length / 2) {
+    return lines.map((l) => l.replace(HASHLINE_PREFIX, ""));
+  }
+  const diffCount = nonEmptyLines.filter((l) => DIFF_ADD_PREFIX.test(l)).length;
+  if (diffCount >= nonEmptyLines.length / 2) {
+    return lines.map((l) => l.replace(DIFF_ADD_PREFIX, ""));
+  }
+  return lines;
+}
+function detectNoOp(oldContent, newContent) {
+  const normalize = (text) => text.replace(/\s+/g, " ").trim();
+  return normalize(oldContent) === normalize(newContent);
+}
+function relocateHashRef(ref, fileLines, computeHash) {
+  if (fileLines.length === 0)
+    return null;
+  const lineIdx = ref.line - 1;
+  if (lineIdx >= 0 && lineIdx < fileLines.length) {
+    const currentHash = computeHash(lineIdx, fileLines[lineIdx], fileLines);
+    if (currentHash.toLowerCase() === ref.hash.toLowerCase()) {
+      return null;
+    }
+  }
+  const hashToLine = /* @__PURE__ */ new Map();
+  const duplicateHashes = /* @__PURE__ */ new Set();
+  for (let i = 0; i < fileLines.length; i++) {
+    const h = computeHash(i, fileLines[i], fileLines).toLowerCase();
+    if (duplicateHashes.has(h))
+      continue;
+    if (hashToLine.has(h)) {
+      duplicateHashes.add(h);
+      hashToLine.delete(h);
+    } else {
+      hashToLine.set(h, i + 1);
+    }
+  }
+  const targetHash = ref.hash.toLowerCase();
+  const newLine = hashToLine.get(targetHash);
+  if (newLine === void 0) {
+    return null;
+  }
+  return { relocated: true, newLine };
+}
+function equalsIgnoringWhitespace(a, b) {
+  return a.replace(/\s+/g, "") === b.replace(/\s+/g, "");
+}
+function stripBoundaryEcho(fileLines, startLine, endLine, newLines) {
+  if (newLines.length === 0)
+    return newLines;
+  const originalSpan = endLine - startLine + 1;
+  if (newLines.length <= originalSpan)
+    return newLines;
+  let result = [...newLines];
+  const beforeIdx = startLine - 2;
+  if (beforeIdx >= 0 && result.length > 0) {
+    if (equalsIgnoringWhitespace(result[0], fileLines[beforeIdx])) {
+      result = result.slice(1);
+    }
+  }
+  const afterIdx = endLine;
+  if (afterIdx < fileLines.length && result.length > 0) {
+    if (equalsIgnoringWhitespace(result[result.length - 1], fileLines[afterIdx])) {
+      result = result.slice(0, -1);
+    }
+  }
+  return result;
+}
+var HASHLINE_PREFIX, DIFF_ADD_PREFIX;
+var init_hashline_cleanup = __esm({
+  "../../packages/core/dist-esm/hashline-cleanup.js"() {
+    "use strict";
+    HASHLINE_PREFIX = /^\d+:[0-9a-zA-Z]{1,16}\|/;
+    DIFF_ADD_PREFIX = /^\+(?!\+)/;
+  }
+});
+
+// ../../packages/core/dist-esm/footnote-parser.js
+function parseFootnotes(content) {
+  const lines = content.split("\n");
+  const footnotes = /* @__PURE__ */ new Map();
+  for (let i = 0; i < lines.length; i++) {
+    const match = lines[i].match(FOOTNOTE_DEF_LENIENT);
+    if (!match)
+      continue;
+    const info = {
+      id: match[1],
+      author: `@${match[2]}`,
+      date: match[3],
+      timestamp: parseTimestamp(match[3]),
+      type: match[4],
+      status: match[5],
+      reason: "",
+      replyCount: 0,
+      startLine: i,
+      endLine: i
+    };
+    let j = i + 1;
+    while (j < lines.length && (lines[j].match(/^\s+\S/) || lines[j].match(/^\s*$/))) {
+      if (lines[j].match(/^\s*$/)) {
+        let k = j + 1;
+        while (k < lines.length && lines[k].match(/^\s*$/))
+          k++;
+        if (k < lines.length && lines[k].match(/^\s+\S/)) {
+          j++;
+          continue;
+        }
+        break;
+      }
+      if (RE_THREAD_REPLY.test(lines[j])) {
+        info.replyCount++;
+      } else {
+        const metaMatch = lines[j].match(RE_FOOTNOTE_META);
+        if (metaMatch && metaMatch[1] === "reason") {
+          info.reason = metaMatch[2];
+        }
+      }
+      info.endLine = j;
+      j++;
+    }
+    footnotes.set(info.id, info);
+  }
+  return footnotes;
+}
+var RE_THREAD_REPLY, RE_FOOTNOTE_META;
+var init_footnote_parser = __esm({
+  "../../packages/core/dist-esm/footnote-parser.js"() {
+    "use strict";
+    init_footnote_patterns();
+    init_timestamp();
+    RE_THREAD_REPLY = /^\s+@\S+\s+\d{4}-\d{2}-\d{2}(?:[T ]\d{1,2}:\d{2}(?::\d{2})?(?:\s?[AaPp][Mm])?Z?)?:/;
+    RE_FOOTNOTE_META = /^\s+(\w+):\s*(.*)/;
+  }
+});
+
+// ../../packages/core/dist-esm/renderers/view-builder-utils.js
+function buildDeliberationHeader(options) {
+  const { footnotes } = options;
+  let proposed = 0, accepted = 0, rejected = 0, threadCount = 0;
+  const authorSet = /* @__PURE__ */ new Set();
+  for (const fn of footnotes.values()) {
+    if (fn.status === "proposed")
+      proposed++;
+    else if (fn.status === "accepted")
+      accepted++;
+    else if (fn.status === "rejected")
+      rejected++;
+    if (fn.replyCount > 0)
+      threadCount++;
+    if (fn.author)
+      authorSet.add(fn.author);
+  }
+  return {
+    filePath: options.filePath,
+    trackingStatus: options.trackingStatus,
+    protocolMode: options.protocolMode,
+    defaultView: options.defaultView,
+    viewPolicy: options.viewPolicy,
+    counts: { proposed, accepted, rejected },
+    authors: [...authorSet].sort(),
+    threadCount,
+    lineRange: options.lineRange
+  };
+}
+function buildLineRefMap(lines) {
+  const map = /* @__PURE__ */ new Map();
+  for (let i = 0; i < lines.length; i++) {
+    const refs = /* @__PURE__ */ new Set();
+    for (const match of lines[i].matchAll(REF_EXTRACT_RE)) {
+      refs.add(match[1]);
+    }
+    if (refs.size > 0)
+      map.set(i, refs);
+  }
+  return map;
+}
+function findFootnoteSectionRange(footnotes) {
+  if (footnotes.size === 0)
+    return null;
+  let min = Infinity;
+  let max = -Infinity;
+  for (const fn of footnotes.values()) {
+    if (fn.startLine < min)
+      min = fn.startLine;
+    if (fn.endLine > max)
+      max = fn.endLine;
+  }
+  return [min, max];
+}
+var REF_EXTRACT_RE;
+var init_view_builder_utils = __esm({
+  "../../packages/core/dist-esm/renderers/view-builder-utils.js"() {
+    "use strict";
+    REF_EXTRACT_RE = /\[\^(ct-\d+(?:\.\d+)?)\]/g;
+  }
+});
+
+// ../../packages/core/dist-esm/view-surface.js
+function buildViewSurfaceMap(raw) {
+  const toRaw = [];
+  let surface = "";
+  let i = 0;
+  while (i < raw.length) {
+    const slice = raw.slice(i);
+    const refMatch = slice.match(/^\[\^ct-\d+(?:\.\d+)?\]/);
+    if (refMatch) {
+      i += refMatch[0].length;
+      continue;
+    }
+    toRaw.push(i);
+    surface += raw[i];
+    i++;
+  }
+  toRaw.push(i);
+  return { surface, toRaw };
+}
+function viewAwareFind(raw, target) {
+  const { surface, toRaw } = buildViewSurfaceMap(raw);
+  const cleanTarget = target.replace(/\[\^?ct-\d+(?:\.\d+)?\]/g, "");
+  const searchTarget = cleanTarget || target;
+  const firstIdx = surface.indexOf(searchTarget);
+  if (firstIdx === -1)
+    return null;
+  const secondIdx = surface.indexOf(searchTarget, firstIdx + 1);
+  if (secondIdx !== -1)
+    return null;
+  const rawStart = toRaw[firstIdx];
+  const rawEnd = toRaw[firstIdx + searchTarget.length];
+  const rawLength = rawEnd - rawStart;
+  return {
+    index: rawStart,
+    length: rawLength,
+    rawText: raw.slice(rawStart, rawEnd)
+  };
+}
+var init_view_surface = __esm({
+  "../../packages/core/dist-esm/view-surface.js"() {
+    "use strict";
+  }
+});
+
+// ../../packages/core/dist-esm/file-ops.js
+function level1Comment(author, changeType) {
+  const ts = nowTimestamp();
+  const authorPrefixed = author.startsWith("@") ? author : `@${author}`;
+  return `{>>${authorPrefixed}|${ts.raw}|${changeType}|proposed<<}`;
+}
+function containsCriticMarkup(text) {
+  return /\{\+\+|\{--|\{~~|\{==|\{>>/.test(text);
+}
+function isCodeFenceLine(line) {
+  return line.trim().startsWith("```");
+}
+function checkCriticMarkupOverlap(text, matchStart, matchLength) {
+  const parser = new CriticMarkupParser();
+  const doc = parser.parse(text);
+  const changes = doc.getChanges();
+  const footnotes = parseFootnotes(text);
+  for (const node of changes) {
+    const fnInfo = footnotes.get(node.id);
+    if (fnInfo) {
+      const s = fnInfo.status.toLowerCase();
+      if (s === "accepted")
+        node.status = ChangeStatus.Accepted;
+      else if (s === "rejected")
+        node.status = ChangeStatus.Rejected;
+    }
+  }
+  const matchEnd = matchStart + matchLength;
+  for (const node of changes) {
+    if (node.settled || node.status !== ChangeStatus.Proposed)
+      continue;
+    const spanStart = node.range.start;
+    const spanEnd = node.range.end;
+    if (matchStart < spanEnd && matchEnd > spanStart) {
+      const changeId = node.level >= 2 ? node.id : void 0;
+      let changeType;
+      switch (node.type) {
+        case ChangeType.Insertion:
+          changeType = "ins";
+          break;
+        case ChangeType.Deletion:
+          changeType = "del";
+          break;
+        case ChangeType.Substitution:
+          changeType = "sub";
+          break;
+        case ChangeType.Highlight:
+          changeType = "highlight";
+          break;
+        case ChangeType.Comment:
+          changeType = "comment";
+          break;
+        default:
+          changeType = "unknown";
+          break;
+      }
+      return { changeId, changeType, spanStart, spanEnd };
+    }
+  }
+  return null;
+}
+function guardOverlap(text, matchStart, matchLength) {
+  const overlap = checkCriticMarkupOverlap(text, matchStart, matchLength);
+  if (overlap) {
+    const idRef = overlap.changeId ? ` (${overlap.changeId})` : "";
+    throw new Error(`Target text overlaps with proposed change${idRef}. The matched text falls inside a ${overlap.changeType} change at positions ${overlap.spanStart}-${overlap.spanEnd}. Use amend_change to modify your own proposed change, or review_changes to accept/reject it.`);
+  }
+}
+function stripRefsFromContent(text) {
+  const refs = [];
+  const cleaned = text.replace(/\[\^ct-\d+(?:\.\d+)?\]/g, (match) => {
+    refs.push(match);
+    return "";
+  });
+  return { cleaned, refs };
+}
+function stripCriticMarkupWithMap(text) {
+  const settled = [];
+  const toRaw = [];
+  const markupRanges = [];
+  let i = 0;
+  while (i < text.length) {
+    if (text[i] === "[" && text[i + 1] === "^" && text.startsWith("ct-", i + 2)) {
+      const closeIdx = text.indexOf("]", i + 2);
+      if (closeIdx !== -1 && /^\[\^ct-\d+(?:\.\d+)?\]$/.test(text.slice(i, closeIdx + 1)) && text[closeIdx + 1] !== ":") {
+        markupRanges.push({ rawStart: i, rawEnd: closeIdx + 1 });
+        i = closeIdx + 1;
+        continue;
+      }
+    }
+    if (text[i] === "{" && i + 2 < text.length) {
+      const twoChar = text[i + 1] + text[i + 2];
+      if (twoChar === "++") {
+        const end = text.indexOf("++}", i + 3);
+        if (end !== -1) {
+          const constructStart = i;
+          const contentStart = i + 3;
+          const contentEnd = end;
+          const constructEnd = end + 3;
+          markupRanges.push({ rawStart: constructStart, rawEnd: constructEnd });
+          for (let j = contentStart; j < contentEnd; j++) {
+            settled.push(text[j]);
+            toRaw.push(j);
+          }
+          i = constructEnd;
+          continue;
+        }
+      }
+      if (twoChar === "--") {
+        const end = text.indexOf("--}", i + 3);
+        if (end !== -1) {
+          const constructEnd = end + 3;
+          markupRanges.push({ rawStart: i, rawEnd: constructEnd });
+          i = constructEnd;
+          continue;
+        }
+      }
+      if (twoChar === "~~") {
+        const end = text.indexOf("~~}", i + 3);
+        if (end !== -1) {
+          const arrow = text.indexOf("~>", i + 3);
+          if (arrow !== -1 && arrow < end) {
+            const constructStart = i;
+            const newStart = arrow + 2;
+            const newEnd = end;
+            const constructEnd = end + 3;
+            markupRanges.push({ rawStart: constructStart, rawEnd: constructEnd });
+            for (let j = newStart; j < newEnd; j++) {
+              settled.push(text[j]);
+              toRaw.push(j);
+            }
+            i = constructEnd;
+            continue;
+          }
+        }
+      }
+      if (twoChar === "==") {
+        const end = text.indexOf("==}", i + 3);
+        if (end !== -1) {
+          const constructStart = i;
+          const contentStart = i + 3;
+          const contentEnd = end;
+          const constructEnd = end + 3;
+          markupRanges.push({ rawStart: constructStart, rawEnd: constructEnd });
+          for (let j = contentStart; j < contentEnd; j++) {
+            settled.push(text[j]);
+            toRaw.push(j);
+          }
+          i = constructEnd;
+          continue;
+        }
+      }
+      if (twoChar === ">>") {
+        const end = text.indexOf("<<}", i + 3);
+        if (end !== -1) {
+          const constructEnd = end + 3;
+          markupRanges.push({ rawStart: i, rawEnd: constructEnd });
+          i = constructEnd;
+          continue;
+        }
+      }
+    }
+    settled.push(text[i]);
+    toRaw.push(i);
+    i++;
+  }
+  return { settled: settled.join(""), toRaw, markupRanges };
+}
+function stripCriticMarkup(text) {
+  return stripCriticMarkupWithMap(text).settled;
+}
+function findUniqueMatch(text, target, normalizer) {
+  const firstIdx = text.indexOf(target);
+  if (firstIdx !== -1) {
+    const secondIdx = text.indexOf(target, firstIdx + 1);
+    if (secondIdx !== -1) {
+      throw new Error(`Text "${target}" found multiple times (ambiguous). Provide more context to uniquely identify the location.`);
+    }
+    return {
+      index: firstIdx,
+      length: target.length,
+      originalText: target,
+      wasNormalized: false
+    };
+  }
+  if (text.includes("[^ct-") || target.includes("[^ct-") || target.includes("[ct-")) {
+    const cleanTarget = target.replace(/\[\^?ct-\d+(?:\.\d+)?\]/g, "");
+    const viewMatch = viewAwareFind(text, cleanTarget);
+    if (viewMatch) {
+      return {
+        index: viewMatch.index,
+        length: viewMatch.length,
+        originalText: viewMatch.rawText,
+        wasNormalized: true
+      };
+    }
+  }
+  if (normalizer) {
+    const normalizedText = normalizer(text);
+    const normalizedTarget = normalizer(target);
+    const normIdx = normalizedText.indexOf(normalizedTarget);
+    if (normIdx !== -1) {
+      const normSecondIdx = normalizedText.indexOf(normalizedTarget, normIdx + 1);
+      if (normSecondIdx !== -1) {
+        throw new Error(`Text "${target}" found multiple times after normalization (ambiguous). Provide more context to uniquely identify the location.`);
+      }
+      const originalText = text.slice(normIdx, normIdx + target.length);
+      return {
+        index: normIdx,
+        length: target.length,
+        originalText,
+        wasNormalized: true
+      };
+    }
+  }
+  {
+    const wsMatch = whitespaceCollapsedFind(text, target);
+    if (wsMatch !== null) {
+      if (whitespaceCollapsedIsAmbiguous(text, target)) {
+        throw new Error(`Text "${target}" found multiple times after whitespace collapsing (ambiguous). Provide more context to uniquely identify the location.`);
+      }
+      return {
+        index: wsMatch.index,
+        length: wsMatch.length,
+        originalText: wsMatch.originalText,
+        wasNormalized: true
+      };
+    }
+  }
+  if (containsCriticMarkup(text)) {
+    const { settled, toRaw, markupRanges } = stripCriticMarkupWithMap(text);
+    const settledIdx = settled.indexOf(target);
+    if (settledIdx !== -1) {
+      const settledSecondIdx = settled.indexOf(target, settledIdx + 1);
+      if (settledSecondIdx !== -1) {
+        throw new Error(`Text "${target}" found multiple times in settled text (ambiguous). Provide more context to uniquely identify the location.`);
+      }
+      const settledEnd = settledIdx + target.length - 1;
+      let rawStart = toRaw[settledIdx];
+      let rawEnd = toRaw[settledEnd] + 1;
+      let expanded = true;
+      while (expanded) {
+        expanded = false;
+        for (const range of markupRanges) {
+          if (range.rawStart < rawEnd && range.rawEnd > rawStart) {
+            if (range.rawStart < rawStart) {
+              rawStart = range.rawStart;
+              expanded = true;
+            }
+            if (range.rawEnd > rawEnd) {
+              rawEnd = range.rawEnd;
+              expanded = true;
+            }
+          }
+        }
+      }
+      for (const range of markupRanges) {
+        if (range.rawStart === rawEnd && /^\[\^ct-/.test(text.slice(range.rawStart))) {
+          rawEnd = range.rawEnd;
+        }
+      }
+      return {
+        index: rawStart,
+        length: rawEnd - rawStart,
+        originalText: target,
+        // Return the settled text as originalText for clean CriticMarkup
+        wasNormalized: true,
+        wasSettledMatch: true
+      };
+    }
+  }
+  const hint = normalizer ? "Tried: exact match, normalized match (NFKC), whitespace-collapsed match, view-surface match, settled-text match." : "Tried: exact match only (no normalizer), whitespace-collapsed match, view-surface match, settled-text match.";
+  const preview = target.length > 80 ? target.slice(0, 80) + "..." : target;
+  const haystackPreview = text.length > 200 ? text.slice(0, 200) + "..." : text;
+  const haystackLineCount = text.split("\n").length;
+  const searchedInLine = `Searched in (${haystackLineCount} line${haystackLineCount === 1 ? "" : "s"}, first 200 chars): "${haystackPreview}"`;
+  const diagnosticResult = tryDiagnosticConfusableMatch(text, target);
+  if (diagnosticResult) {
+    const diffLines2 = diagnosticResult.differences.map((d) => `  Position ${d.position}: you sent ${d.agentName} (U+${d.agentCodepoint.toString(16).toUpperCase().padStart(4, "0")}), file has ${d.fileName} (U+${d.fileCodepoint.toString(16).toUpperCase().padStart(4, "0")})`).join("\n");
+    const diagPreview = diagnosticResult.matchedText.length > 80 ? diagnosticResult.matchedText.slice(0, 80) + "..." : diagnosticResult.matchedText;
+    throw new Error(`Text not found in document.
+${hint}
+${searchedInLine}
+
+Unicode mismatch detected -- your text would match with character substitution:
+${diffLines2}
+
+Copy the exact text from file for retry:
+  "${diagPreview}"`);
+  }
+  throw new Error(`Text not found in document.
+${hint}
+Input (first 80 chars): "${preview}"
+${searchedInLine}
+Hint: Re-read the file for current content, or use LINE:HASH addressing.`);
+}
+function replaceUnique(text, target, replacement, normalizer) {
+  const match = findUniqueMatch(text, target, normalizer);
+  return text.slice(0, match.index) + replacement + text.slice(match.index + match.length);
+}
+function contentZoneText(fullText) {
+  const footnotes = parseFootnotes(fullText);
+  if (footnotes.size === 0)
+    return fullText;
+  const codeZones = findCodeZones(fullText);
+  const lines = fullText.split("\n");
+  const lineOffsets = new Array(lines.length);
+  let cumOffset = 0;
+  for (let i = 0; i < lines.length; i++) {
+    lineOffsets[i] = cumOffset;
+    cumOffset += lines[i].length + 1;
+  }
+  for (const [id, fn] of footnotes) {
+    const fnCharOffset = lineOffsets[fn.startLine];
+    if (codeZones.some((z) => fnCharOffset >= z.start && fnCharOffset < z.end)) {
+      footnotes.delete(id);
+    }
+  }
+  const range = findFootnoteSectionRange(footnotes);
+  if (!range)
+    return fullText;
+  return fullText.slice(0, lineOffsets[range[0]]);
+}
+function applyProposeChange(params) {
+  const { text, oldText, newText, changeId, author, reasoning, insertAfter, level = 2 } = params;
+  if (oldText === "" && newText === "") {
+    throw new Error("Both oldText and newText are empty \u2014 nothing to change.");
+  }
+  let changeType;
+  let inlineMarkup;
+  let modifiedBody;
+  const refSuffix = level === 2 ? `[^${changeId}]` : "";
+  if (oldText === "") {
+    changeType = "ins";
+    if (!insertAfter) {
+      throw new Error("Insertion requires an insertAfter anchor to locate where to insert.");
+    }
+    const insPad = /^[+\-~]/.test(newText) ? " " : "";
+    inlineMarkup = `{++${insPad}${newText}++}${refSuffix}${level === 1 ? level1Comment(author, "ins") : ""}`;
+    let anchorIndex = text.indexOf(insertAfter);
+    let anchorLength = insertAfter.length;
+    if (anchorIndex === -1) {
+      anchorIndex = normalizedIndexOf(text, insertAfter, defaultNormalizer);
+    }
+    if (anchorIndex === -1) {
+      const wsMatch = whitespaceCollapsedFind(text, insertAfter);
+      if (wsMatch !== null) {
+        anchorIndex = wsMatch.index;
+        anchorLength = wsMatch.length;
+      }
+    }
+    if (anchorIndex === -1) {
+      throw new Error(`insertAfter anchor not found in text: "${insertAfter}"`);
+    }
+    guardOverlap(text, anchorIndex, anchorLength);
+    const insertPos = anchorIndex + anchorLength;
+    const charBefore = insertPos > 0 ? text[insertPos - 1] : "\n";
+    const needsNewlineBefore = charBefore !== "\n";
+    const isBlockContent = /^[-#>*\d]/.test(newText) || newText.includes("\n");
+    const prefix = needsNewlineBefore && isBlockContent ? "\n" : "";
+    modifiedBody = text.slice(0, insertPos) + prefix + inlineMarkup + text.slice(insertPos);
+  } else if (newText === "") {
+    changeType = "del";
+    const searchText = contentZoneText(text);
+    const match = findUniqueMatch(searchText, oldText, defaultNormalizer);
+    if (!match.wasSettledMatch) {
+      guardOverlap(text, match.index, match.length);
+    }
+    const actualOldText = match.originalText;
+    const { cleaned: cleanedOld, refs: preservedRefs } = stripRefsFromContent(actualOldText);
+    const delPad = /^[+\-~]/.test(cleanedOld) ? " " : "";
+    inlineMarkup = `{--${delPad}${cleanedOld}--}${refSuffix}${preservedRefs.join("")}${level === 1 ? level1Comment(author, "del") : ""}`;
+    modifiedBody = text.slice(0, match.index) + inlineMarkup + text.slice(match.index + match.length);
+  } else {
+    changeType = "sub";
+    const searchText = contentZoneText(text);
+    const match = findUniqueMatch(searchText, oldText, defaultNormalizer);
+    if (!match.wasSettledMatch) {
+      guardOverlap(text, match.index, match.length);
+    }
+    const actualOldText = match.originalText;
+    const { cleaned: cleanedOld, refs: preservedRefs } = stripRefsFromContent(actualOldText);
+    const subPad = /^[+\-~]/.test(cleanedOld) ? " " : "";
+    inlineMarkup = `{~~${subPad}${cleanedOld}~>${newText}~~}${refSuffix}${preservedRefs.join("")}${level === 1 ? level1Comment(author, "sub") : ""}`;
+    modifiedBody = text.slice(0, match.index) + inlineMarkup + text.slice(match.index + match.length);
+  }
+  if (level === 1) {
+    return { modifiedText: modifiedBody, changeType };
+  }
+  const footnoteHeader = generateFootnoteDefinition(changeId, changeType, author);
+  const reasonLine = reasoning ? `
+    @${author} ${nowTimestamp().raw}: ${reasoning}` : "";
+  const footnoteBlock = footnoteHeader + reasonLine;
+  const modifiedText = appendFootnote(modifiedBody, footnoteBlock);
+  return { modifiedText, changeType };
+}
+function extractLineRange(fileLines, startLine, endLine) {
+  if (startLine < 1 || startLine > fileLines.length) {
+    throw new Error(`start_line ${startLine} is out of range (file has ${fileLines.length} lines)`);
+  }
+  if (endLine < startLine || endLine > fileLines.length) {
+    throw new Error(`end_line ${endLine} is out of range (file has ${fileLines.length} lines, start_line is ${startLine})`);
+  }
+  let startOffset = 0;
+  for (let i = 0; i < startLine - 1; i++) {
+    startOffset += fileLines[i].length + 1;
+  }
+  const extractedLines = fileLines.slice(startLine - 1, endLine);
+  const content = extractedLines.join("\n");
+  const endOffset = startOffset + content.length;
+  return { content, startOffset, endOffset };
+}
+function appendFootnote(text, footnoteBlock) {
+  if (!text.includes("[^ct-")) {
+    return text + footnoteBlock;
+  }
+  const lines = text.split("\n");
+  let lastFootnoteEnd = -1;
+  let inCodeFence = false;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (isCodeFenceLine(line)) {
+      inCodeFence = !inCodeFence;
+      continue;
+    }
+    if (inCodeFence)
+      continue;
+    if (line.startsWith("[^ct-")) {
+      lastFootnoteEnd = i;
+      let j = i + 1;
+      while (j < lines.length && lines[j].startsWith("    ")) {
+        lastFootnoteEnd = j;
+        j++;
+      }
+    }
+  }
+  if (lastFootnoteEnd === -1) {
+    return text + footnoteBlock;
+  }
+  const before = lines.slice(0, lastFootnoteEnd + 1).join("\n");
+  const after = lines.slice(lastFootnoteEnd + 1).join("\n");
+  const block = footnoteBlock.startsWith("\n") ? footnoteBlock : "\n\n" + footnoteBlock;
+  const separator = "";
+  if (after.length > 0) {
+    return before + separator + block + "\n" + after;
+  }
+  return before + separator + block;
+}
+function applySingleOperation(params) {
+  const { fileContent, oldText, newText, changeId, author, reasoning, insertAfter, afterLine, startLine, endLine } = params;
+  if (oldText === "" && newText === "") {
+    throw new Error("Both oldText and newText are empty \u2014 nothing to change.");
+  }
+  const fileLines = fileContent.split("\n");
+  if (afterLine !== void 0 && oldText === "") {
+    const changeType = "ins";
+    let cleanedNewText = newText;
+    const newTextLines = cleanedNewText.split("\n");
+    const strippedLines = stripHashlinePrefixes(newTextLines);
+    cleanedNewText = strippedLines.join("\n");
+    const insPad = /^[+\-~]/.test(cleanedNewText) ? " " : "";
+    const inlineMarkup = `{++${insPad}${cleanedNewText}++}[^${changeId}]`;
+    const footnoteHeader = generateFootnoteDefinition(changeId, changeType, author);
+    const reasonLine = reasoning ? `
+    @${author} ${nowTimestamp().raw}: ${reasoning}` : "";
+    const footnoteBlock = footnoteHeader + reasonLine;
+    const insertPos = fileLines.slice(0, afterLine).join("\n").length;
+    let modifiedText = fileContent.slice(0, insertPos) + "\n" + inlineMarkup + fileContent.slice(insertPos);
+    modifiedText = appendFootnote(modifiedText, footnoteBlock);
+    const affectedEnd = Math.min(modifiedText.split("\n").length, afterLine + 3);
+    return { modifiedText, changeType, affectedStartLine: afterLine, affectedEndLine: affectedEnd };
+  }
+  if (startLine !== void 0) {
+    const effectiveEndLine = endLine ?? startLine;
+    const extracted = extractLineRange(fileLines, startLine, effectiveEndLine);
+    let cleanedNewText = newText;
+    let newTextLines = cleanedNewText.split("\n");
+    newTextLines = stripHashlinePrefixes(newTextLines);
+    newTextLines = stripBoundaryEcho(fileLines, startLine, effectiveEndLine, newTextLines);
+    cleanedNewText = newTextLines.join("\n");
+    let modifiedBody;
+    let changeType;
+    if (oldText !== "") {
+      const match = findUniqueMatch(contentZoneText(extracted.content), oldText, defaultNormalizer);
+      const absPos = extracted.startOffset + match.index;
+      guardOverlap(fileContent, absPos, match.length);
+      const actualOldText = match.originalText;
+      const { cleaned: cleanedOldText, refs: preservedRefs } = stripRefsFromContent(actualOldText);
+      changeType = cleanedNewText === "" ? "del" : "sub";
+      const pad = /^[+\-~]/.test(cleanedOldText) ? " " : "";
+      const inlineMarkup = changeType === "del" ? `{--${pad}${cleanedOldText}--}[^${changeId}]${preservedRefs.join("")}` : `{~~${pad}${cleanedOldText}~>${cleanedNewText}~~}[^${changeId}]${preservedRefs.join("")}`;
+      const absEnd = absPos + match.length;
+      modifiedBody = fileContent.slice(0, absPos) + inlineMarkup + fileContent.slice(absEnd);
+    } else {
+      const { cleaned: cleanedExtracted, refs: preservedRefs } = stripRefsFromContent(extracted.content);
+      changeType = cleanedNewText === "" ? "del" : "sub";
+      const pad = /^[+\-~]/.test(cleanedExtracted) ? " " : "";
+      const inlineMarkup = changeType === "del" ? `{--${pad}${cleanedExtracted}--}[^${changeId}]${preservedRefs.join("")}` : `{~~${pad}${cleanedExtracted}~>${cleanedNewText}~~}[^${changeId}]${preservedRefs.join("")}`;
+      modifiedBody = fileContent.slice(0, extracted.startOffset) + inlineMarkup + fileContent.slice(extracted.endOffset);
+    }
+    const footnoteHeader = generateFootnoteDefinition(changeId, changeType, author);
+    const reasonLine = reasoning ? `
+    @${author} ${nowTimestamp().raw}: ${reasoning}` : "";
+    const modifiedText = appendFootnote(modifiedBody, footnoteHeader + reasonLine);
+    const affectedEnd = Math.min(modifiedText.split("\n").length, effectiveEndLine + 5);
+    return { modifiedText, changeType, affectedStartLine: startLine, affectedEndLine: affectedEnd };
+  }
+  const applied = applyProposeChange({
+    text: fileContent,
+    oldText,
+    newText,
+    changeId,
+    author,
+    reasoning,
+    insertAfter
+  });
+  const lines = applied.modifiedText.split("\n");
+  let matchLine = 1;
+  for (let i = 0; i < lines.length; i++) {
+    if (/\{\+\+|\{--|\{~~|\{==/.test(lines[i])) {
+      matchLine = i + 1;
+      break;
+    }
+  }
+  return {
+    modifiedText: applied.modifiedText,
+    changeType: applied.changeType,
+    affectedStartLine: Math.max(1, matchLine - 2),
+    affectedEndLine: Math.min(lines.length, matchLine + 5)
+  };
+}
+var init_file_ops = __esm({
+  "../../packages/core/dist-esm/file-ops.js"() {
+    "use strict";
+    init_footnote_generator();
+    init_timestamp();
+    init_text_normalizer();
+    init_hashline_cleanup();
+    init_parser();
+    init_types();
+    init_footnote_parser();
+    init_view_builder_utils();
+    init_code_zones();
+    init_view_surface();
+  }
+});
+
+// ../../packages/core/dist-esm/operations/ensure-l2.js
+function changeTypeToAbbrev(type) {
+  switch (type) {
+    case ChangeType.Insertion:
+      return "ins";
+    case ChangeType.Deletion:
+      return "del";
+    case ChangeType.Substitution:
+      return "sub";
+    case ChangeType.Highlight:
+      return "hig";
+    case ChangeType.Comment:
+      return "com";
+  }
+}
+function ensureL2(text, changeOffset, opts) {
+  if (opts.existingId) {
+    return { text, changeId: opts.existingId, promoted: false };
+  }
+  const parser = new CriticMarkupParser();
+  const doc = parser.parse(text);
+  const changes = doc.getChanges();
+  const change = changes.find((c) => c.range.start <= changeOffset && changeOffset < c.range.end);
+  if (!change) {
+    return { text, changeId: "", promoted: false };
+  }
+  if (change.level !== 0) {
+    return { text, changeId: change.id, promoted: false };
+  }
+  const maxId = scanMaxCtId(text);
+  const nextId = `ct-${maxId + 1}`;
+  const typeAbbrev = changeTypeToAbbrev(change.type) ?? opts.type;
+  const insertPos = change.range.end;
+  const withRef = text.slice(0, insertPos) + `[^${nextId}]` + text.slice(insertPos);
+  const footnoteDef = generateFootnoteDefinition(nextId, typeAbbrev, opts.author);
+  const result = appendFootnote(withRef, footnoteDef);
+  return { text: result, changeId: nextId, promoted: true };
+}
+var init_ensure_l2 = __esm({
+  "../../packages/core/dist-esm/operations/ensure-l2.js"() {
+    "use strict";
+    init_parser();
+    init_types();
+    init_footnote_generator();
+    init_file_ops();
+  }
+});
+
+// ../../packages/core/dist-esm/operations/apply-review.js
+function decisionToKeyword(decision) {
+  switch (decision) {
+    case "approve":
+      return "approved:";
+    case "reject":
+      return "rejected:";
+    case "request_changes":
+      return "request-changes:";
+  }
+}
+function changeTypeToAbbrev2(type) {
+  switch (type) {
+    case ChangeType.Insertion:
+      return "ins";
+    case ChangeType.Deletion:
+      return "del";
+    case ChangeType.Substitution:
+      return "sub";
+    case ChangeType.Highlight:
+      return "hig";
+    case ChangeType.Comment:
+      return "com";
+  }
+}
+function promoteLevel0ToLevel2(fileContent, changeId, author) {
+  const parser = new CriticMarkupParser();
+  const doc = parser.parse(fileContent);
+  const changes = doc.getChanges();
+  const change = changes.find((c) => c.id === changeId);
+  if (!change) {
+    return null;
+  }
+  if (change.level !== 0) {
+    return null;
+  }
+  const typeAbbrev = changeTypeToAbbrev2(change.type);
+  const result = ensureL2(fileContent, change.range.start, { author, type: typeAbbrev });
+  if (!result.promoted) {
+    return null;
+  }
+  return result.text;
+}
+function applyReview(fileContent, changeId, decision, reasoning, author) {
+  let lines = fileContent.split("\n");
+  let block = findFootnoteBlock(lines, changeId);
+  if (!block) {
+    const promoted = promoteLevel0ToLevel2(fileContent, changeId, author);
+    if (!promoted) {
+      return { error: `Change "${changeId}" not found in file.` };
+    }
+    fileContent = promoted;
+    lines = fileContent.split("\n");
+    block = findFootnoteBlock(lines, changeId);
+    if (!block) {
+      return { error: `Change "${changeId}" not found in file after promotion attempt.` };
+    }
+  }
+  const header = parseFootnoteHeader(lines[block.headerLine]);
+  if (!header) {
+    return {
+      error: `Malformed metadata for change "${changeId}". Expected format: @author | date | type | status`
+    };
+  }
+  const currentStatus = header.status;
+  if (decision === "approve" && currentStatus === "accepted") {
+    return {
+      updatedContent: fileContent,
+      result: { change_id: changeId, decision, status_updated: false, reason: "already_accepted" }
+    };
+  }
+  if (decision === "reject" && currentStatus === "rejected") {
+    return {
+      updatedContent: fileContent,
+      result: { change_id: changeId, decision, status_updated: false, reason: "already_rejected" }
+    };
+  }
+  const keyword = decisionToKeyword(decision);
+  const ts = nowTimestamp();
+  const reviewLine = `    ${keyword} @${author} ${ts.raw} "${reasoning}"`;
+  const insertAfterIdx = findReviewInsertionIndex(lines, block.headerLine, block.blockEnd);
+  lines.splice(insertAfterIdx + 1, 0, reviewLine);
+  let statusUpdated = false;
+  let reason;
+  if (decision === "approve" && currentStatus === "proposed") {
+    lines[block.headerLine] = lines[block.headerLine].replace(/\|\s*proposed\s*$/, "| accepted");
+    statusUpdated = true;
+  } else if (decision === "reject" && currentStatus === "proposed") {
+    lines[block.headerLine] = lines[block.headerLine].replace(/\|\s*proposed\s*$/, "| rejected");
+    statusUpdated = true;
+  } else if (decision === "reject" && currentStatus === "accepted") {
+    lines[block.headerLine] = lines[block.headerLine].replace(/\|\s*accepted\s*$/, "| rejected");
+    statusUpdated = true;
+  } else if (decision === "request_changes") {
+    reason = "request_changes_no_status_change";
+  }
+  let cascadedChildren;
+  if (statusUpdated && (decision === "approve" || decision === "reject")) {
+    const childIds = findChildFootnoteIds(lines, changeId);
+    if (childIds.length > 0) {
+      cascadedChildren = [];
+      const targetStatus = decision === "approve" ? "accepted" : "rejected";
+      for (const childId of childIds) {
+        const childBlock = findFootnoteBlock(lines, childId);
+        if (!childBlock)
+          continue;
+        const childHeader = parseFootnoteHeader(lines[childBlock.headerLine]);
+        if (!childHeader)
+          continue;
+        if (childHeader.status !== "proposed")
+          continue;
+        lines[childBlock.headerLine] = lines[childBlock.headerLine].replace(/\|\s*proposed\s*$/, `| ${targetStatus}`);
+        const childInsertIdx = findReviewInsertionIndex(lines, childBlock.headerLine, childBlock.blockEnd);
+        const childReviewLine = `    ${keyword} @${author} ${ts.raw} "${reasoning}" (cascaded from ${changeId})`;
+        lines.splice(childInsertIdx + 1, 0, childReviewLine);
+        cascadedChildren.push(childId);
+      }
+      if (cascadedChildren.length === 0)
+        cascadedChildren = void 0;
+    }
+  }
+  const result = { change_id: changeId, decision, status_updated: statusUpdated };
+  if (reason) {
+    result.reason = reason;
+  }
+  if (cascadedChildren) {
+    result.cascaded_children = cascadedChildren;
+  }
+  return {
+    updatedContent: lines.join("\n"),
+    result
+  };
+}
+var VALID_DECISIONS;
+var init_apply_review = __esm({
+  "../../packages/core/dist-esm/operations/apply-review.js"() {
+    "use strict";
+    init_parser();
+    init_types();
+    init_footnote_utils();
+    init_timestamp();
+    init_ensure_l2();
+    VALID_DECISIONS = ["approve", "reject", "request_changes"];
+  }
+});
+
+// ../../packages/core/dist-esm/operations/amend.js
+function computeAmendEdits(text, changeId, opts) {
+  const { newText, oldText, reason, author } = opts;
+  const resolved = resolveChangeById(text, changeId);
+  if (!resolved || !resolved.footnoteBlock) {
+    return { isError: true, error: `Change ${changeId} not found in file` };
+  }
+  const parsedHeader = parseFootnoteHeader(resolved.footnoteBlock.headerContent);
+  if (!parsedHeader) {
+    return { isError: true, error: `Change ${changeId} not found in file` };
+  }
+  const statusStr = parsedHeader.status;
+  let status;
+  if (statusStr === "accepted") {
+    status = ChangeStatus.Accepted;
+  } else if (statusStr === "rejected") {
+    status = ChangeStatus.Rejected;
+  } else {
+    status = ChangeStatus.Proposed;
+  }
+  if (status !== ChangeStatus.Proposed) {
+    return {
+      isError: true,
+      error: `Cannot amend a ${statusStr} change. Only proposed changes can be amended.`
+    };
+  }
+  const changeAuthor = parsedHeader.author.replace(/^@/, "");
+  const resolvedAuthorNorm = author.replace(/^@/, "");
+  if (changeAuthor && resolvedAuthorNorm !== changeAuthor) {
+    return {
+      isError: true,
+      error: `Cannot amend change ${changeId}: you (${author}) are not the original author (${changeAuthor}). Use supersede_change to propose an alternative.`
+    };
+  }
+  const parser = new CriticMarkupParser();
+  const doc = parser.parse(text);
+  const change = doc.getChanges().find((c) => c.id === changeId);
+  if (!change) {
+    return { isError: true, error: `Change ${changeId} not found in file` };
+  }
+  const changeType = change.type;
+  const currentProposed = changeType === ChangeType.Substitution || changeType === ChangeType.Insertion || changeType === ChangeType.Comment ? change.modifiedText ?? "" : "";
+  if ((changeType === ChangeType.Substitution || changeType === ChangeType.Insertion || changeType === ChangeType.Comment) && newText === "") {
+    return { isError: true, error: "new_text is required for amend (substitution, insertion, or comment)." };
+  }
+  if (changeType === ChangeType.Deletion || changeType === ChangeType.Highlight) {
+    if (newText.length > 0) {
+      return {
+        isError: true,
+        error: "Deletion changes cannot be amended inline (the deleted text is fixed). To amend reasoning, pass reasoning without new_text. To target different text, reject this change and propose a new one."
+      };
+    }
+  } else {
+    if (CRITIC_DELIMITER_RE.test(newText)) {
+      return { isError: true, error: "new_text cannot contain CriticMarkup delimiters" };
+    }
+    if (changeType === ChangeType.Insertion && newText === "") {
+      return { isError: true, error: "Cannot amend an insertion to empty text. Use reject to remove the change." };
+    }
+    if (newText === currentProposed && !reason) {
+      return { isError: true, error: "new_text is identical to current proposed text and no reasoning provided; nothing to amend" };
+    }
+  }
+  const reasoningOnly = newText === currentProposed;
+  if (oldText && changeType !== ChangeType.Substitution) {
+    return {
+      isError: true,
+      error: "old_text scope expansion is only supported for substitution changes."
+    };
+  }
+  const originalMarkup = text.slice(change.range.start, change.range.end);
+  const refs = originalMarkup.match(/\[\^ct-[\d.]+\]/g) ?? [];
+  const refString = refs.join("");
+  let newMarkup;
+  let previousText = "";
+  let inlineUpdated = false;
+  let expandedStart;
+  let expandedEnd;
+  if (reasoningOnly) {
+    newMarkup = originalMarkup;
+    inlineUpdated = false;
+  } else {
+    switch (changeType) {
+      case ChangeType.Substitution: {
+        if (oldText) {
+          const currentOriginal = change.originalText ?? "";
+          if (!oldText.includes(currentOriginal)) {
+            return {
+              isError: true,
+              error: `old_text must contain the original substitution text "${currentOriginal}" as a substring.`
+            };
+          }
+          const prefixIdx = oldText.indexOf(currentOriginal);
+          const prefix = oldText.slice(0, prefixIdx);
+          const suffix = oldText.slice(prefixIdx + currentOriginal.length);
+          const rawBefore = text.slice(change.range.start - prefix.length, change.range.start);
+          if (rawBefore !== prefix) {
+            return {
+              isError: true,
+              error: `old_text context does not match: expected "${prefix}" before the markup but found "${rawBefore}"`
+            };
+          }
+          const rawAfter = text.slice(change.range.end, change.range.end + suffix.length);
+          if (rawAfter !== suffix) {
+            return {
+              isError: true,
+              error: `old_text context does not match: expected "${suffix}" after the markup but found "${rawAfter}"`
+            };
+          }
+          expandedStart = change.range.start - prefix.length;
+          expandedEnd = change.range.end + suffix.length;
+          newMarkup = `{~~${oldText}~>${newText}~~}${refString}`;
+        } else {
+          newMarkup = `{~~${change.originalText ?? ""}~>${newText}~~}${refString}`;
+        }
+        previousText = change.modifiedText ?? "";
+        inlineUpdated = true;
+        break;
+      }
+      case ChangeType.Insertion:
+        newMarkup = `{++${newText}++}${refString}`;
+        previousText = change.modifiedText ?? "";
+        inlineUpdated = true;
+        break;
+      case ChangeType.Comment:
+        newMarkup = `{>>${newText}<<}${refString}`;
+        previousText = change.modifiedText ?? "";
+        inlineUpdated = true;
+        break;
+      case ChangeType.Deletion:
+      case ChangeType.Highlight:
+        newMarkup = originalMarkup;
+        inlineUpdated = false;
+        break;
+      default:
+        return { isError: true, error: `Unsupported change type for amend: ${changeType}` };
+    }
+  }
+  const replaceStart = expandedStart ?? change.range.start;
+  const replaceEnd = expandedEnd ?? change.range.end;
+  let modifiedContent = text.slice(0, replaceStart) + newMarkup + text.slice(replaceEnd);
+  const lines = modifiedContent.split("\n");
+  const block = findFootnoteBlock(lines, changeId);
+  if (!block) {
+    return { isError: true, error: `Change metadata for ${changeId} not found in file` };
+  }
+  const ts = opts.date ?? nowTimestamp().raw;
+  const authorWithAt = author.startsWith("@") ? author : `@${author}`;
+  const reasonLine = `    revised ${authorWithAt} ${ts}: ${reason ?? "amended proposed text"}`;
+  const insertIdx = findDiscussionInsertionIndex(lines, block.headerLine, block.blockEnd);
+  const toInsert = [reasonLine];
+  if (previousText.length > 0) {
+    const truncated = previousText.length > 100 ? previousText.slice(0, 100) + "..." : previousText;
+    toInsert.push(`    previous: "${truncated.replace(/"/g, '\\"')}"`);
+  }
+  lines.splice(insertIdx + 1, 0, ...toInsert);
+  modifiedContent = lines.join("\n");
+  return {
+    isError: false,
+    text: modifiedContent,
+    changeId,
+    previousText,
+    inlineUpdated
+  };
+}
+var CRITIC_DELIMITER_RE;
+var init_amend = __esm({
+  "../../packages/core/dist-esm/operations/amend.js"() {
+    "use strict";
+    init_parser();
+    init_types();
+    init_footnote_utils();
+    init_timestamp();
+    CRITIC_DELIMITER_RE = /\{\+\+|\{--|\{~~|\{==|\{>>/;
+  }
+});
+
+// ../../packages/core/dist-esm/operations/supersede.js
+function computeSupersedeResult(text, changeId, opts) {
+  const { newText, oldText = "", reason, author, insertAfter } = opts;
+  const lines = text.split("\n");
+  const block = findFootnoteBlock(lines, changeId);
+  if (!block) {
+    return { isError: true, error: `Change "${changeId}" not found in file.` };
+  }
+  const header = parseFootnoteHeader(lines[block.headerLine]);
+  if (!header) {
+    return {
+      isError: true,
+      error: `Malformed metadata for change "${changeId}". Expected format: @author | date | type | status`
+    };
+  }
+  if (header.status === "accepted") {
+    return {
+      isError: true,
+      error: `Cannot supersede change "${changeId}": it is already accepted. Only proposed changes can be superseded.`
+    };
+  }
+  if (header.status === "rejected") {
+    return {
+      isError: true,
+      error: `Cannot supersede change "${changeId}": it is already rejected. Only proposed changes can be superseded.`
+    };
+  }
+  if (header.status !== "proposed") {
+    return {
+      isError: true,
+      error: `Cannot supersede change "${changeId}": unexpected status "${header.status}". Only proposed changes can be superseded.`
+    };
+  }
+  const rejectResult = applyReview(text, changeId, "reject", reason ?? "Superseded by new change", author);
+  if ("error" in rejectResult) {
+    return { isError: true, error: `Failed to reject old change: ${rejectResult.error}` };
+  }
+  let fileContent = rejectResult.updatedContent;
+  const maxId = scanMaxCtId(fileContent);
+  const newChangeId = `ct-${maxId + 1}`;
+  const proposeOldText = oldText;
+  const proposeResult = applyProposeChange({
+    text: fileContent,
+    oldText: proposeOldText,
+    newText,
+    changeId: newChangeId,
+    author,
+    reasoning: reason,
+    insertAfter
+  });
+  fileContent = proposeResult.modifiedText;
+  const modifiedLines = fileContent.split("\n");
+  const newBlock = findFootnoteBlock(modifiedLines, newChangeId);
+  if (newBlock) {
+    const supersedesLine = `    supersedes: ${changeId}`;
+    modifiedLines.splice(newBlock.headerLine + 1, 0, supersedesLine);
+    fileContent = modifiedLines.join("\n");
+  }
+  const updatedLines = fileContent.split("\n");
+  const origBlock = findFootnoteBlock(updatedLines, changeId);
+  if (origBlock) {
+    const supersededByLine = `    superseded-by: ${newChangeId}`;
+    updatedLines.splice(origBlock.headerLine + 1, 0, supersededByLine);
+    fileContent = updatedLines.join("\n");
+  }
+  return {
+    isError: false,
+    text: fileContent,
+    newChangeId,
+    originalChangeId: changeId
+  };
+}
+var init_supersede = __esm({
+  "../../packages/core/dist-esm/operations/supersede.js"() {
+    "use strict";
+    init_footnote_utils();
+    init_apply_review();
+    init_file_ops();
+    init_footnote_generator();
+  }
+});
+
 // ../../packages/core/dist-esm/operations/level-promotion.js
 function promoteToLevel1(text, changeIndex, metadataString) {
   const parser = new CriticMarkupParser();
@@ -4398,32 +5951,28 @@ var init_level_promotion = __esm({
 });
 
 // ../../packages/core/dist-esm/operations/level-descent.js
-function findFootnoteBlock2(text, changeId) {
-  const idPattern = changeId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const defLineRe = new RegExp(`^\\[\\^${idPattern}\\]:\\s+(?:(@\\S+)\\s+\\|\\s+)?(\\S+)\\s+\\|\\s+(\\S+)\\s+\\|\\s+(\\S+)`);
-  const lines = text.split(/\r?\n/);
-  let lineStartOffset = 0;
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    const match = line.match(defLineRe);
-    if (match) {
-      const author = match[1] ?? "";
-      const date = match[2];
-      const type = match[3];
-      const status = match[4];
-      let endLineIndex = i + 1;
-      while (endLineIndex < lines.length && /^[\t ]/.test(lines[endLineIndex])) {
-        endLineIndex++;
-      }
-      let blockEndOffset = lineStartOffset + line.length;
-      for (let j = i + 1; j < endLineIndex; j++) {
-        blockEndOffset += lines[j].length + 1;
-      }
-      return { author, date, type, status, start: lineStartOffset, end: blockEndOffset };
-    }
-    lineStartOffset += line.length + 1;
+function findFootnoteBlockWithOffsets(text, changeId) {
+  const lines = text.split("\n");
+  const block = findFootnoteBlock(lines, changeId);
+  if (!block)
+    return null;
+  const header = parseFootnoteHeader(block.headerContent);
+  let start = 0;
+  for (let i = 0; i < block.headerLine; i++) {
+    start += lines[i].length + 1;
   }
-  return null;
+  let end = start + lines[block.headerLine].length;
+  for (let j = block.headerLine + 1; j <= block.blockEnd; j++) {
+    end += 1 + lines[j].length;
+  }
+  return {
+    author: header?.author ? `@${header.author}` : "",
+    date: header?.date ?? "",
+    type: header?.type ?? "",
+    status: header?.status ?? "",
+    start,
+    end
+  };
 }
 function compactToLevel1(text, changeId) {
   const parser = new CriticMarkupParser();
@@ -4436,7 +5985,7 @@ function compactToLevel1(text, changeId) {
   const refIndex = text.indexOf(refStr, change.range.start);
   if (refIndex === -1)
     return text;
-  const block = findFootnoteBlock2(text, changeId);
+  const block = findFootnoteBlockWithOffsets(text, changeId);
   if (!block)
     return text;
   const authorPart = block.author ? `${block.author}|` : "";
@@ -4461,15 +6010,22 @@ function compactToLevel0(text, changeIndex) {
   const change = changes[changeIndex];
   if (change.level !== 1)
     return text;
-  const commentOpen = text.indexOf("{>>", change.range.start);
-  if (commentOpen === -1)
+  const closeTag = "<<}";
+  const openTag = "{>>";
+  const commentCloseEnd = change.range.end;
+  const commentCloseStart = commentCloseEnd - closeTag.length;
+  if (text.substring(commentCloseStart, commentCloseEnd) !== closeTag)
     return text;
-  return text.slice(0, commentOpen) + text.slice(change.range.end);
+  const commentOpenStart = text.lastIndexOf(openTag, commentCloseStart - 1);
+  if (commentOpenStart === -1 || commentOpenStart < change.range.start)
+    return text;
+  return text.slice(0, commentOpenStart) + text.slice(commentCloseEnd);
 }
 var init_level_descent = __esm({
   "../../packages/core/dist-esm/operations/level-descent.js"() {
     "use strict";
     init_parser();
+    init_footnote_utils();
   }
 });
 
@@ -5711,145 +7267,6 @@ var init_tracking_header = __esm({
   }
 });
 
-// ../../packages/core/dist-esm/text-normalizer.js
-function defaultNormalizer(text) {
-  return text.normalize("NFKC");
-}
-function normalizedIndexOf(text, target, normalizer, startFrom) {
-  const norm = normalizer ?? defaultNormalizer;
-  const normalizedText = norm(text);
-  const normalizedTarget = norm(target);
-  return normalizedText.indexOf(normalizedTarget, startFrom ?? 0);
-}
-function collapseWhitespace(text) {
-  return text.replace(/\s+/g, " ");
-}
-function buildWhitespaceCollapseMap(original) {
-  const map = [];
-  let oi = 0;
-  while (oi < original.length) {
-    if (/\s/.test(original[oi])) {
-      map.push(oi);
-      while (oi < original.length && /\s/.test(original[oi])) {
-        oi++;
-      }
-    } else {
-      map.push(oi);
-      oi++;
-    }
-  }
-  map.push(oi);
-  return map;
-}
-function whitespaceCollapsedFind(text, target, startFrom) {
-  const collapsedText = collapseWhitespace(text);
-  const collapsedTarget = collapseWhitespace(target);
-  if (collapsedTarget.length === 0)
-    return null;
-  const map = buildWhitespaceCollapseMap(text);
-  let collapsedStartFrom = 0;
-  if (startFrom !== void 0 && startFrom > 0) {
-    for (let ci = 0; ci < map.length; ci++) {
-      if (map[ci] >= startFrom) {
-        collapsedStartFrom = ci;
-        break;
-      }
-    }
-  }
-  const collapsedIdx = collapsedText.indexOf(collapsedTarget, collapsedStartFrom);
-  if (collapsedIdx === -1)
-    return null;
-  const originalStart = map[collapsedIdx];
-  const collapsedEnd = collapsedIdx + collapsedTarget.length;
-  const originalEnd = map[collapsedEnd];
-  return {
-    index: originalStart,
-    length: originalEnd - originalStart,
-    originalText: text.slice(originalStart, originalEnd)
-  };
-}
-function whitespaceCollapsedIsAmbiguous(text, target) {
-  const first = whitespaceCollapsedFind(text, target);
-  if (!first)
-    return false;
-  const second = whitespaceCollapsedFind(text, target, first.index + 1);
-  return second !== null;
-}
-function unicodeName(codepoint) {
-  return UNICODE_NAMES[codepoint] ?? `U+${codepoint.toString(16).toUpperCase().padStart(4, "0")}`;
-}
-function diagnosticConfusableNormalize(text) {
-  let result = text;
-  for (const [codepoint, entry] of CONFUSABLE_MAP) {
-    const char = String.fromCodePoint(codepoint);
-    result = result.split(char).join(entry.replacement);
-  }
-  return result;
-}
-function findConfusableDifferences(agentText, fileText) {
-  const diffs = [];
-  const len = Math.min(agentText.length, fileText.length);
-  for (let i = 0; i < len; i++) {
-    if (agentText[i] !== fileText[i]) {
-      const agentCp = agentText.codePointAt(i);
-      const fileCp = fileText.codePointAt(i);
-      diffs.push({
-        position: i,
-        agentChar: agentText[i],
-        fileChar: fileText[i],
-        agentCodepoint: agentCp,
-        fileCodepoint: fileCp,
-        agentName: unicodeName(agentCp),
-        fileName: unicodeName(fileCp)
-      });
-    }
-  }
-  return diffs;
-}
-function tryDiagnosticConfusableMatch(documentText, target) {
-  const normDoc = diagnosticConfusableNormalize(documentText);
-  const normTarget = diagnosticConfusableNormalize(target);
-  const normIdx = normDoc.indexOf(normTarget);
-  if (normIdx === -1)
-    return null;
-  if (normDoc.indexOf(normTarget, normIdx + 1) !== -1)
-    return null;
-  const matchedText = documentText.slice(normIdx, normIdx + target.length);
-  const diffs = findConfusableDifferences(target, matchedText);
-  return diffs.length > 0 ? { matchedText, differences: diffs } : null;
-}
-var CONFUSABLE_MAP, UNICODE_NAMES;
-var init_text_normalizer = __esm({
-  "../../packages/core/dist-esm/text-normalizer.js"() {
-    "use strict";
-    CONFUSABLE_MAP = /* @__PURE__ */ new Map([
-      [8216, { replacement: "'", name: "LEFT SINGLE QUOTATION MARK" }],
-      [8217, { replacement: "'", name: "RIGHT SINGLE QUOTATION MARK" }],
-      [8218, { replacement: "'", name: "SINGLE LOW-9 QUOTATION MARK" }],
-      [8220, { replacement: '"', name: "LEFT DOUBLE QUOTATION MARK" }],
-      [8221, { replacement: '"', name: "RIGHT DOUBLE QUOTATION MARK" }],
-      [8222, { replacement: '"', name: "DOUBLE LOW-9 QUOTATION MARK" }],
-      [8212, { replacement: "-", name: "EM DASH" }],
-      [8211, { replacement: "-", name: "EN DASH" }]
-    ]);
-    UNICODE_NAMES = {
-      32: "SPACE",
-      45: "HYPHEN-MINUS",
-      34: "QUOTATION MARK",
-      39: "APOSTROPHE",
-      46: "FULL STOP",
-      8216: "LEFT SINGLE QUOTATION MARK",
-      8217: "RIGHT SINGLE QUOTATION MARK",
-      8218: "SINGLE LOW-9 QUOTATION MARK",
-      8220: "LEFT DOUBLE QUOTATION MARK",
-      8221: "RIGHT DOUBLE QUOTATION MARK",
-      8222: "DOUBLE LOW-9 QUOTATION MARK",
-      8211: "EN DASH",
-      8212: "EM DASH"
-    };
-  }
-});
-
 // ../../node_modules/xxhash-wasm/esm/xxhash-wasm.js
 async function e() {
   return (function(t2) {
@@ -6409,148 +7826,6 @@ var init_hashline_tracked = __esm({
   }
 });
 
-// ../../packages/core/dist-esm/hashline-cleanup.js
-function stripHashlinePrefixes(lines) {
-  if (lines.length === 0)
-    return lines;
-  const nonEmptyLines = lines.filter((l) => l.length > 0);
-  if (nonEmptyLines.length === 0)
-    return lines;
-  const hashlineCount = nonEmptyLines.filter((l) => HASHLINE_PREFIX.test(l)).length;
-  if (hashlineCount >= nonEmptyLines.length / 2) {
-    return lines.map((l) => l.replace(HASHLINE_PREFIX, ""));
-  }
-  const diffCount = nonEmptyLines.filter((l) => DIFF_ADD_PREFIX.test(l)).length;
-  if (diffCount >= nonEmptyLines.length / 2) {
-    return lines.map((l) => l.replace(DIFF_ADD_PREFIX, ""));
-  }
-  return lines;
-}
-function detectNoOp(oldContent, newContent) {
-  const normalize = (text) => text.replace(/\s+/g, " ").trim();
-  return normalize(oldContent) === normalize(newContent);
-}
-function relocateHashRef(ref, fileLines, computeHash) {
-  if (fileLines.length === 0)
-    return null;
-  const lineIdx = ref.line - 1;
-  if (lineIdx >= 0 && lineIdx < fileLines.length) {
-    const currentHash = computeHash(lineIdx, fileLines[lineIdx], fileLines);
-    if (currentHash.toLowerCase() === ref.hash.toLowerCase()) {
-      return null;
-    }
-  }
-  const hashToLine = /* @__PURE__ */ new Map();
-  const duplicateHashes = /* @__PURE__ */ new Set();
-  for (let i = 0; i < fileLines.length; i++) {
-    const h = computeHash(i, fileLines[i], fileLines).toLowerCase();
-    if (duplicateHashes.has(h))
-      continue;
-    if (hashToLine.has(h)) {
-      duplicateHashes.add(h);
-      hashToLine.delete(h);
-    } else {
-      hashToLine.set(h, i + 1);
-    }
-  }
-  const targetHash = ref.hash.toLowerCase();
-  const newLine = hashToLine.get(targetHash);
-  if (newLine === void 0) {
-    return null;
-  }
-  return { relocated: true, newLine };
-}
-function equalsIgnoringWhitespace(a, b) {
-  return a.replace(/\s+/g, "") === b.replace(/\s+/g, "");
-}
-function stripBoundaryEcho(fileLines, startLine, endLine, newLines) {
-  if (newLines.length === 0)
-    return newLines;
-  const originalSpan = endLine - startLine + 1;
-  if (newLines.length <= originalSpan)
-    return newLines;
-  let result = [...newLines];
-  const beforeIdx = startLine - 2;
-  if (beforeIdx >= 0 && result.length > 0) {
-    if (equalsIgnoringWhitespace(result[0], fileLines[beforeIdx])) {
-      result = result.slice(1);
-    }
-  }
-  const afterIdx = endLine;
-  if (afterIdx < fileLines.length && result.length > 0) {
-    if (equalsIgnoringWhitespace(result[result.length - 1], fileLines[afterIdx])) {
-      result = result.slice(0, -1);
-    }
-  }
-  return result;
-}
-var HASHLINE_PREFIX, DIFF_ADD_PREFIX;
-var init_hashline_cleanup = __esm({
-  "../../packages/core/dist-esm/hashline-cleanup.js"() {
-    "use strict";
-    HASHLINE_PREFIX = /^\d+:[0-9a-zA-Z]{1,16}\|/;
-    DIFF_ADD_PREFIX = /^\+(?!\+)/;
-  }
-});
-
-// ../../packages/core/dist-esm/footnote-parser.js
-function parseFootnotes(content) {
-  const lines = content.split("\n");
-  const footnotes = /* @__PURE__ */ new Map();
-  for (let i = 0; i < lines.length; i++) {
-    const match = lines[i].match(FOOTNOTE_DEF_LENIENT);
-    if (!match)
-      continue;
-    const info = {
-      id: match[1],
-      author: `@${match[2]}`,
-      date: match[3],
-      timestamp: parseTimestamp(match[3]),
-      type: match[4],
-      status: match[5],
-      reason: "",
-      replyCount: 0,
-      startLine: i,
-      endLine: i
-    };
-    let j = i + 1;
-    while (j < lines.length && (lines[j].match(/^\s+\S/) || lines[j].match(/^\s*$/))) {
-      if (lines[j].match(/^\s*$/)) {
-        let k = j + 1;
-        while (k < lines.length && lines[k].match(/^\s*$/))
-          k++;
-        if (k < lines.length && lines[k].match(/^\s+\S/)) {
-          j++;
-          continue;
-        }
-        break;
-      }
-      if (RE_THREAD_REPLY.test(lines[j])) {
-        info.replyCount++;
-      } else {
-        const metaMatch = lines[j].match(RE_FOOTNOTE_META);
-        if (metaMatch && metaMatch[1] === "reason") {
-          info.reason = metaMatch[2];
-        }
-      }
-      info.endLine = j;
-      j++;
-    }
-    footnotes.set(info.id, info);
-  }
-  return footnotes;
-}
-var RE_THREAD_REPLY, RE_FOOTNOTE_META;
-var init_footnote_parser = __esm({
-  "../../packages/core/dist-esm/footnote-parser.js"() {
-    "use strict";
-    init_footnote_patterns();
-    init_timestamp();
-    RE_THREAD_REPLY = /^\s+@\S+\s+\d{4}-\d{2}-\d{2}(?:[T ]\d{1,2}:\d{2}(?::\d{2})?(?:\s?[AaPp][Mm])?Z?)?:/;
-    RE_FOOTNOTE_META = /^\s+(\w+):\s*(.*)/;
-  }
-});
-
 // ../../packages/core/dist-esm/committed-text.js
 function resolveStatus(changeId, footnotes) {
   if (!changeId)
@@ -6729,782 +8004,6 @@ var init_committed_text = __esm({
     init_hashline();
     init_critic_regex();
     init_footnote_patterns();
-  }
-});
-
-// ../../packages/core/dist-esm/view-surface.js
-function buildViewSurfaceMap(raw) {
-  const toRaw = [];
-  let surface = "";
-  let i = 0;
-  while (i < raw.length) {
-    const slice = raw.slice(i);
-    const refMatch = slice.match(/^\[\^ct-\d+(?:\.\d+)?\]/);
-    if (refMatch) {
-      i += refMatch[0].length;
-      continue;
-    }
-    toRaw.push(i);
-    surface += raw[i];
-    i++;
-  }
-  toRaw.push(i);
-  return { surface, toRaw };
-}
-function viewAwareFind(raw, target) {
-  const { surface, toRaw } = buildViewSurfaceMap(raw);
-  const cleanTarget = target.replace(/\[\^?ct-\d+(?:\.\d+)?\]/g, "");
-  const searchTarget = cleanTarget || target;
-  const firstIdx = surface.indexOf(searchTarget);
-  if (firstIdx === -1)
-    return null;
-  const secondIdx = surface.indexOf(searchTarget, firstIdx + 1);
-  if (secondIdx !== -1)
-    return null;
-  const rawStart = toRaw[firstIdx];
-  const rawEnd = toRaw[firstIdx + searchTarget.length];
-  const rawLength = rawEnd - rawStart;
-  return {
-    index: rawStart,
-    length: rawLength,
-    rawText: raw.slice(rawStart, rawEnd)
-  };
-}
-var init_view_surface = __esm({
-  "../../packages/core/dist-esm/view-surface.js"() {
-    "use strict";
-  }
-});
-
-// ../../packages/core/dist-esm/renderers/view-builder-utils.js
-function buildDeliberationHeader(options) {
-  const { footnotes } = options;
-  let proposed = 0, accepted = 0, rejected = 0, threadCount = 0;
-  const authorSet = /* @__PURE__ */ new Set();
-  for (const fn of footnotes.values()) {
-    if (fn.status === "proposed")
-      proposed++;
-    else if (fn.status === "accepted")
-      accepted++;
-    else if (fn.status === "rejected")
-      rejected++;
-    if (fn.replyCount > 0)
-      threadCount++;
-    if (fn.author)
-      authorSet.add(fn.author);
-  }
-  return {
-    filePath: options.filePath,
-    trackingStatus: options.trackingStatus,
-    protocolMode: options.protocolMode,
-    defaultView: options.defaultView,
-    viewPolicy: options.viewPolicy,
-    counts: { proposed, accepted, rejected },
-    authors: [...authorSet].sort(),
-    threadCount,
-    lineRange: options.lineRange
-  };
-}
-function buildLineRefMap(lines) {
-  const map = /* @__PURE__ */ new Map();
-  for (let i = 0; i < lines.length; i++) {
-    const refs = /* @__PURE__ */ new Set();
-    for (const match of lines[i].matchAll(REF_EXTRACT_RE)) {
-      refs.add(match[1]);
-    }
-    if (refs.size > 0)
-      map.set(i, refs);
-  }
-  return map;
-}
-function findFootnoteSectionRange(footnotes) {
-  if (footnotes.size === 0)
-    return null;
-  let min = Infinity;
-  let max = -Infinity;
-  for (const fn of footnotes.values()) {
-    if (fn.startLine < min)
-      min = fn.startLine;
-    if (fn.endLine > max)
-      max = fn.endLine;
-  }
-  return [min, max];
-}
-var REF_EXTRACT_RE;
-var init_view_builder_utils = __esm({
-  "../../packages/core/dist-esm/renderers/view-builder-utils.js"() {
-    "use strict";
-    REF_EXTRACT_RE = /\[\^(ct-\d+(?:\.\d+)?)\]/g;
-  }
-});
-
-// ../../packages/core/dist-esm/file-ops.js
-function level1Comment(author, changeType) {
-  const ts = nowTimestamp();
-  const authorPrefixed = author.startsWith("@") ? author : `@${author}`;
-  return `{>>${authorPrefixed}|${ts.raw}|${changeType}|proposed<<}`;
-}
-function containsCriticMarkup(text) {
-  return /\{\+\+|\{--|\{~~|\{==|\{>>/.test(text);
-}
-function isCodeFenceLine(line) {
-  return line.trim().startsWith("```");
-}
-function checkCriticMarkupOverlap(text, matchStart, matchLength) {
-  const parser = new CriticMarkupParser();
-  const doc = parser.parse(text);
-  const changes = doc.getChanges();
-  const footnotes = parseFootnotes(text);
-  for (const node of changes) {
-    const fnInfo = footnotes.get(node.id);
-    if (fnInfo) {
-      const s = fnInfo.status.toLowerCase();
-      if (s === "accepted")
-        node.status = ChangeStatus.Accepted;
-      else if (s === "rejected")
-        node.status = ChangeStatus.Rejected;
-    }
-  }
-  const matchEnd = matchStart + matchLength;
-  for (const node of changes) {
-    if (node.settled || node.status !== ChangeStatus.Proposed)
-      continue;
-    const spanStart = node.range.start;
-    const spanEnd = node.range.end;
-    if (matchStart < spanEnd && matchEnd > spanStart) {
-      const changeId = node.level >= 2 ? node.id : void 0;
-      let changeType;
-      switch (node.type) {
-        case ChangeType.Insertion:
-          changeType = "ins";
-          break;
-        case ChangeType.Deletion:
-          changeType = "del";
-          break;
-        case ChangeType.Substitution:
-          changeType = "sub";
-          break;
-        case ChangeType.Highlight:
-          changeType = "highlight";
-          break;
-        case ChangeType.Comment:
-          changeType = "comment";
-          break;
-        default:
-          changeType = "unknown";
-          break;
-      }
-      return { changeId, changeType, spanStart, spanEnd };
-    }
-  }
-  return null;
-}
-function guardOverlap(text, matchStart, matchLength) {
-  const overlap = checkCriticMarkupOverlap(text, matchStart, matchLength);
-  if (overlap) {
-    const idRef = overlap.changeId ? ` (${overlap.changeId})` : "";
-    throw new Error(`Target text overlaps with proposed change${idRef}. The matched text falls inside a ${overlap.changeType} change at positions ${overlap.spanStart}-${overlap.spanEnd}. Use amend_change to modify your own proposed change, or review_changes to accept/reject it.`);
-  }
-}
-function stripRefsFromContent(text) {
-  const refs = [];
-  const cleaned = text.replace(/\[\^ct-\d+(?:\.\d+)?\]/g, (match) => {
-    refs.push(match);
-    return "";
-  });
-  return { cleaned, refs };
-}
-function stripCriticMarkupWithMap(text) {
-  const settled = [];
-  const toRaw = [];
-  const markupRanges = [];
-  let i = 0;
-  while (i < text.length) {
-    if (text[i] === "[" && text[i + 1] === "^" && text.startsWith("ct-", i + 2)) {
-      const closeIdx = text.indexOf("]", i + 2);
-      if (closeIdx !== -1 && /^\[\^ct-\d+(?:\.\d+)?\]$/.test(text.slice(i, closeIdx + 1)) && text[closeIdx + 1] !== ":") {
-        markupRanges.push({ rawStart: i, rawEnd: closeIdx + 1 });
-        i = closeIdx + 1;
-        continue;
-      }
-    }
-    if (text[i] === "{" && i + 2 < text.length) {
-      const twoChar = text[i + 1] + text[i + 2];
-      if (twoChar === "++") {
-        const end = text.indexOf("++}", i + 3);
-        if (end !== -1) {
-          const constructStart = i;
-          const contentStart = i + 3;
-          const contentEnd = end;
-          const constructEnd = end + 3;
-          markupRanges.push({ rawStart: constructStart, rawEnd: constructEnd });
-          for (let j = contentStart; j < contentEnd; j++) {
-            settled.push(text[j]);
-            toRaw.push(j);
-          }
-          i = constructEnd;
-          continue;
-        }
-      }
-      if (twoChar === "--") {
-        const end = text.indexOf("--}", i + 3);
-        if (end !== -1) {
-          const constructEnd = end + 3;
-          markupRanges.push({ rawStart: i, rawEnd: constructEnd });
-          i = constructEnd;
-          continue;
-        }
-      }
-      if (twoChar === "~~") {
-        const end = text.indexOf("~~}", i + 3);
-        if (end !== -1) {
-          const arrow = text.indexOf("~>", i + 3);
-          if (arrow !== -1 && arrow < end) {
-            const constructStart = i;
-            const newStart = arrow + 2;
-            const newEnd = end;
-            const constructEnd = end + 3;
-            markupRanges.push({ rawStart: constructStart, rawEnd: constructEnd });
-            for (let j = newStart; j < newEnd; j++) {
-              settled.push(text[j]);
-              toRaw.push(j);
-            }
-            i = constructEnd;
-            continue;
-          }
-        }
-      }
-      if (twoChar === "==") {
-        const end = text.indexOf("==}", i + 3);
-        if (end !== -1) {
-          const constructStart = i;
-          const contentStart = i + 3;
-          const contentEnd = end;
-          const constructEnd = end + 3;
-          markupRanges.push({ rawStart: constructStart, rawEnd: constructEnd });
-          for (let j = contentStart; j < contentEnd; j++) {
-            settled.push(text[j]);
-            toRaw.push(j);
-          }
-          i = constructEnd;
-          continue;
-        }
-      }
-      if (twoChar === ">>") {
-        const end = text.indexOf("<<}", i + 3);
-        if (end !== -1) {
-          const constructEnd = end + 3;
-          markupRanges.push({ rawStart: i, rawEnd: constructEnd });
-          i = constructEnd;
-          continue;
-        }
-      }
-    }
-    settled.push(text[i]);
-    toRaw.push(i);
-    i++;
-  }
-  return { settled: settled.join(""), toRaw, markupRanges };
-}
-function stripCriticMarkup(text) {
-  return stripCriticMarkupWithMap(text).settled;
-}
-function findUniqueMatch(text, target, normalizer) {
-  const firstIdx = text.indexOf(target);
-  if (firstIdx !== -1) {
-    const secondIdx = text.indexOf(target, firstIdx + 1);
-    if (secondIdx !== -1) {
-      throw new Error(`Text "${target}" found multiple times (ambiguous). Provide more context to uniquely identify the location.`);
-    }
-    return {
-      index: firstIdx,
-      length: target.length,
-      originalText: target,
-      wasNormalized: false
-    };
-  }
-  if (text.includes("[^ct-") || target.includes("[^ct-") || target.includes("[ct-")) {
-    const cleanTarget = target.replace(/\[\^?ct-\d+(?:\.\d+)?\]/g, "");
-    const viewMatch = viewAwareFind(text, cleanTarget);
-    if (viewMatch) {
-      return {
-        index: viewMatch.index,
-        length: viewMatch.length,
-        originalText: viewMatch.rawText,
-        wasNormalized: true
-      };
-    }
-  }
-  if (normalizer) {
-    const normalizedText = normalizer(text);
-    const normalizedTarget = normalizer(target);
-    const normIdx = normalizedText.indexOf(normalizedTarget);
-    if (normIdx !== -1) {
-      const normSecondIdx = normalizedText.indexOf(normalizedTarget, normIdx + 1);
-      if (normSecondIdx !== -1) {
-        throw new Error(`Text "${target}" found multiple times after normalization (ambiguous). Provide more context to uniquely identify the location.`);
-      }
-      const originalText = text.slice(normIdx, normIdx + target.length);
-      return {
-        index: normIdx,
-        length: target.length,
-        originalText,
-        wasNormalized: true
-      };
-    }
-  }
-  {
-    const wsMatch = whitespaceCollapsedFind(text, target);
-    if (wsMatch !== null) {
-      if (whitespaceCollapsedIsAmbiguous(text, target)) {
-        throw new Error(`Text "${target}" found multiple times after whitespace collapsing (ambiguous). Provide more context to uniquely identify the location.`);
-      }
-      return {
-        index: wsMatch.index,
-        length: wsMatch.length,
-        originalText: wsMatch.originalText,
-        wasNormalized: true
-      };
-    }
-  }
-  if (containsCriticMarkup(text)) {
-    const { settled, toRaw, markupRanges } = stripCriticMarkupWithMap(text);
-    const settledIdx = settled.indexOf(target);
-    if (settledIdx !== -1) {
-      const settledSecondIdx = settled.indexOf(target, settledIdx + 1);
-      if (settledSecondIdx !== -1) {
-        throw new Error(`Text "${target}" found multiple times in settled text (ambiguous). Provide more context to uniquely identify the location.`);
-      }
-      const settledEnd = settledIdx + target.length - 1;
-      let rawStart = toRaw[settledIdx];
-      let rawEnd = toRaw[settledEnd] + 1;
-      let expanded = true;
-      while (expanded) {
-        expanded = false;
-        for (const range of markupRanges) {
-          if (range.rawStart < rawEnd && range.rawEnd > rawStart) {
-            if (range.rawStart < rawStart) {
-              rawStart = range.rawStart;
-              expanded = true;
-            }
-            if (range.rawEnd > rawEnd) {
-              rawEnd = range.rawEnd;
-              expanded = true;
-            }
-          }
-        }
-      }
-      for (const range of markupRanges) {
-        if (range.rawStart === rawEnd && /^\[\^ct-/.test(text.slice(range.rawStart))) {
-          rawEnd = range.rawEnd;
-        }
-      }
-      return {
-        index: rawStart,
-        length: rawEnd - rawStart,
-        originalText: target,
-        // Return the settled text as originalText for clean CriticMarkup
-        wasNormalized: true,
-        wasSettledMatch: true
-      };
-    }
-  }
-  const hint = normalizer ? "Tried: exact match, normalized match (NFKC), whitespace-collapsed match, view-surface match, settled-text match." : "Tried: exact match only (no normalizer), whitespace-collapsed match, view-surface match, settled-text match.";
-  const preview = target.length > 80 ? target.slice(0, 80) + "..." : target;
-  const diagnosticResult = tryDiagnosticConfusableMatch(text, target);
-  if (diagnosticResult) {
-    const diffLines2 = diagnosticResult.differences.map((d) => `  Position ${d.position}: you sent ${d.agentName} (U+${d.agentCodepoint.toString(16).toUpperCase().padStart(4, "0")}), file has ${d.fileName} (U+${d.fileCodepoint.toString(16).toUpperCase().padStart(4, "0")})`).join("\n");
-    const diagPreview = diagnosticResult.matchedText.length > 80 ? diagnosticResult.matchedText.slice(0, 80) + "..." : diagnosticResult.matchedText;
-    throw new Error(`Text not found in document.
-${hint}
-
-Unicode mismatch detected -- your text would match with character substitution:
-${diffLines2}
-
-Copy the exact text from file for retry:
-  "${diagPreview}"`);
-  }
-  throw new Error(`Text not found in document.
-${hint}
-Input (first 80 chars): "${preview}"
-Hint: Re-read the file for current content, or use LINE:HASH addressing.`);
-}
-function replaceUnique(text, target, replacement, normalizer) {
-  const match = findUniqueMatch(text, target, normalizer);
-  return text.slice(0, match.index) + replacement + text.slice(match.index + match.length);
-}
-function contentZoneText(fullText) {
-  const footnotes = parseFootnotes(fullText);
-  if (footnotes.size === 0)
-    return fullText;
-  const codeZones = findCodeZones(fullText);
-  const lines = fullText.split("\n");
-  const lineOffsets = new Array(lines.length);
-  let cumOffset = 0;
-  for (let i = 0; i < lines.length; i++) {
-    lineOffsets[i] = cumOffset;
-    cumOffset += lines[i].length + 1;
-  }
-  for (const [id, fn] of footnotes) {
-    const fnCharOffset = lineOffsets[fn.startLine];
-    if (codeZones.some((z) => fnCharOffset >= z.start && fnCharOffset < z.end)) {
-      footnotes.delete(id);
-    }
-  }
-  const range = findFootnoteSectionRange(footnotes);
-  if (!range)
-    return fullText;
-  return fullText.slice(0, lineOffsets[range[0]]);
-}
-function applyProposeChange(params) {
-  const { text, oldText, newText, changeId, author, reasoning, insertAfter, level = 2 } = params;
-  if (oldText === "" && newText === "") {
-    throw new Error("Both oldText and newText are empty \u2014 nothing to change.");
-  }
-  let changeType;
-  let inlineMarkup;
-  let modifiedBody;
-  const refSuffix = level === 2 ? `[^${changeId}]` : "";
-  if (oldText === "") {
-    changeType = "ins";
-    if (!insertAfter) {
-      throw new Error("Insertion requires an insertAfter anchor to locate where to insert.");
-    }
-    const insPad = /^[+\-~]/.test(newText) ? " " : "";
-    inlineMarkup = `{++${insPad}${newText}++}${refSuffix}${level === 1 ? level1Comment(author, "ins") : ""}`;
-    let anchorIndex = text.indexOf(insertAfter);
-    let anchorLength = insertAfter.length;
-    if (anchorIndex === -1) {
-      anchorIndex = normalizedIndexOf(text, insertAfter, defaultNormalizer);
-    }
-    if (anchorIndex === -1) {
-      const wsMatch = whitespaceCollapsedFind(text, insertAfter);
-      if (wsMatch !== null) {
-        anchorIndex = wsMatch.index;
-        anchorLength = wsMatch.length;
-      }
-    }
-    if (anchorIndex === -1) {
-      throw new Error(`insertAfter anchor not found in text: "${insertAfter}"`);
-    }
-    guardOverlap(text, anchorIndex, anchorLength);
-    const insertPos = anchorIndex + anchorLength;
-    const charBefore = insertPos > 0 ? text[insertPos - 1] : "\n";
-    const needsNewlineBefore = charBefore !== "\n";
-    const isBlockContent = /^[-#>*\d]/.test(newText) || newText.includes("\n");
-    const prefix = needsNewlineBefore && isBlockContent ? "\n" : "";
-    modifiedBody = text.slice(0, insertPos) + prefix + inlineMarkup + text.slice(insertPos);
-  } else if (newText === "") {
-    changeType = "del";
-    const searchText = contentZoneText(text);
-    const match = findUniqueMatch(searchText, oldText, defaultNormalizer);
-    if (!match.wasSettledMatch) {
-      guardOverlap(text, match.index, match.length);
-    }
-    const actualOldText = match.originalText;
-    const { cleaned: cleanedOld, refs: preservedRefs } = stripRefsFromContent(actualOldText);
-    const delPad = /^[+\-~]/.test(cleanedOld) ? " " : "";
-    inlineMarkup = `{--${delPad}${cleanedOld}--}${refSuffix}${preservedRefs.join("")}${level === 1 ? level1Comment(author, "del") : ""}`;
-    modifiedBody = text.slice(0, match.index) + inlineMarkup + text.slice(match.index + match.length);
-  } else {
-    changeType = "sub";
-    const searchText = contentZoneText(text);
-    const match = findUniqueMatch(searchText, oldText, defaultNormalizer);
-    if (!match.wasSettledMatch) {
-      guardOverlap(text, match.index, match.length);
-    }
-    const actualOldText = match.originalText;
-    const { cleaned: cleanedOld, refs: preservedRefs } = stripRefsFromContent(actualOldText);
-    const subPad = /^[+\-~]/.test(cleanedOld) ? " " : "";
-    inlineMarkup = `{~~${subPad}${cleanedOld}~>${newText}~~}${refSuffix}${preservedRefs.join("")}${level === 1 ? level1Comment(author, "sub") : ""}`;
-    modifiedBody = text.slice(0, match.index) + inlineMarkup + text.slice(match.index + match.length);
-  }
-  if (level === 1) {
-    return { modifiedText: modifiedBody, changeType };
-  }
-  const footnoteHeader = generateFootnoteDefinition(changeId, changeType, author);
-  const reasonLine = reasoning ? `
-    @${author} ${nowTimestamp().raw}: ${reasoning}` : "";
-  const footnoteBlock = footnoteHeader + reasonLine;
-  const modifiedText = appendFootnote(modifiedBody, footnoteBlock);
-  return { modifiedText, changeType };
-}
-function extractLineRange(fileLines, startLine, endLine) {
-  if (startLine < 1 || startLine > fileLines.length) {
-    throw new Error(`start_line ${startLine} is out of range (file has ${fileLines.length} lines)`);
-  }
-  if (endLine < startLine || endLine > fileLines.length) {
-    throw new Error(`end_line ${endLine} is out of range (file has ${fileLines.length} lines, start_line is ${startLine})`);
-  }
-  let startOffset = 0;
-  for (let i = 0; i < startLine - 1; i++) {
-    startOffset += fileLines[i].length + 1;
-  }
-  const extractedLines = fileLines.slice(startLine - 1, endLine);
-  const content = extractedLines.join("\n");
-  const endOffset = startOffset + content.length;
-  return { content, startOffset, endOffset };
-}
-function appendFootnote(text, footnoteBlock) {
-  if (!text.includes("[^ct-")) {
-    return text + footnoteBlock;
-  }
-  const lines = text.split("\n");
-  let lastFootnoteEnd = -1;
-  let inCodeFence = false;
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    if (isCodeFenceLine(line)) {
-      inCodeFence = !inCodeFence;
-      continue;
-    }
-    if (inCodeFence)
-      continue;
-    if (line.startsWith("[^ct-")) {
-      lastFootnoteEnd = i;
-      let j = i + 1;
-      while (j < lines.length && lines[j].startsWith("    ")) {
-        lastFootnoteEnd = j;
-        j++;
-      }
-    }
-  }
-  if (lastFootnoteEnd === -1) {
-    return text + footnoteBlock;
-  }
-  const before = lines.slice(0, lastFootnoteEnd + 1).join("\n");
-  const after = lines.slice(lastFootnoteEnd + 1).join("\n");
-  const block = footnoteBlock.startsWith("\n") ? footnoteBlock : "\n\n" + footnoteBlock;
-  const separator = "";
-  if (after.length > 0) {
-    return before + separator + block + "\n" + after;
-  }
-  return before + separator + block;
-}
-function applySingleOperation(params) {
-  const { fileContent, oldText, newText, changeId, author, reasoning, insertAfter, afterLine, startLine, endLine } = params;
-  if (oldText === "" && newText === "") {
-    throw new Error("Both oldText and newText are empty \u2014 nothing to change.");
-  }
-  const fileLines = fileContent.split("\n");
-  if (afterLine !== void 0 && oldText === "") {
-    const changeType = "ins";
-    let cleanedNewText = newText;
-    const newTextLines = cleanedNewText.split("\n");
-    const strippedLines = stripHashlinePrefixes(newTextLines);
-    cleanedNewText = strippedLines.join("\n");
-    const insPad = /^[+\-~]/.test(cleanedNewText) ? " " : "";
-    const inlineMarkup = `{++${insPad}${cleanedNewText}++}[^${changeId}]`;
-    const footnoteHeader = generateFootnoteDefinition(changeId, changeType, author);
-    const reasonLine = reasoning ? `
-    @${author} ${nowTimestamp().raw}: ${reasoning}` : "";
-    const footnoteBlock = footnoteHeader + reasonLine;
-    const insertPos = fileLines.slice(0, afterLine).join("\n").length;
-    let modifiedText = fileContent.slice(0, insertPos) + "\n" + inlineMarkup + fileContent.slice(insertPos);
-    modifiedText = appendFootnote(modifiedText, footnoteBlock);
-    const affectedEnd = Math.min(modifiedText.split("\n").length, afterLine + 3);
-    return { modifiedText, changeType, affectedStartLine: afterLine, affectedEndLine: affectedEnd };
-  }
-  if (startLine !== void 0) {
-    const effectiveEndLine = endLine ?? startLine;
-    const extracted = extractLineRange(fileLines, startLine, effectiveEndLine);
-    let cleanedNewText = newText;
-    let newTextLines = cleanedNewText.split("\n");
-    newTextLines = stripHashlinePrefixes(newTextLines);
-    newTextLines = stripBoundaryEcho(fileLines, startLine, effectiveEndLine, newTextLines);
-    cleanedNewText = newTextLines.join("\n");
-    let modifiedBody;
-    let changeType;
-    if (oldText !== "") {
-      const match = findUniqueMatch(contentZoneText(extracted.content), oldText, defaultNormalizer);
-      const absPos = extracted.startOffset + match.index;
-      guardOverlap(fileContent, absPos, match.length);
-      const actualOldText = match.originalText;
-      const { cleaned: cleanedOldText, refs: preservedRefs } = stripRefsFromContent(actualOldText);
-      changeType = cleanedNewText === "" ? "del" : "sub";
-      const pad = /^[+\-~]/.test(cleanedOldText) ? " " : "";
-      const inlineMarkup = changeType === "del" ? `{--${pad}${cleanedOldText}--}[^${changeId}]${preservedRefs.join("")}` : `{~~${pad}${cleanedOldText}~>${cleanedNewText}~~}[^${changeId}]${preservedRefs.join("")}`;
-      const absEnd = absPos + match.length;
-      modifiedBody = fileContent.slice(0, absPos) + inlineMarkup + fileContent.slice(absEnd);
-    } else {
-      const { cleaned: cleanedExtracted, refs: preservedRefs } = stripRefsFromContent(extracted.content);
-      changeType = cleanedNewText === "" ? "del" : "sub";
-      const pad = /^[+\-~]/.test(cleanedExtracted) ? " " : "";
-      const inlineMarkup = changeType === "del" ? `{--${pad}${cleanedExtracted}--}[^${changeId}]${preservedRefs.join("")}` : `{~~${pad}${cleanedExtracted}~>${cleanedNewText}~~}[^${changeId}]${preservedRefs.join("")}`;
-      modifiedBody = fileContent.slice(0, extracted.startOffset) + inlineMarkup + fileContent.slice(extracted.endOffset);
-    }
-    const footnoteHeader = generateFootnoteDefinition(changeId, changeType, author);
-    const reasonLine = reasoning ? `
-    @${author} ${nowTimestamp().raw}: ${reasoning}` : "";
-    const modifiedText = appendFootnote(modifiedBody, footnoteHeader + reasonLine);
-    const affectedEnd = Math.min(modifiedText.split("\n").length, effectiveEndLine + 5);
-    return { modifiedText, changeType, affectedStartLine: startLine, affectedEndLine: affectedEnd };
-  }
-  const applied = applyProposeChange({
-    text: fileContent,
-    oldText,
-    newText,
-    changeId,
-    author,
-    reasoning,
-    insertAfter
-  });
-  const lines = applied.modifiedText.split("\n");
-  let matchLine = 1;
-  for (let i = 0; i < lines.length; i++) {
-    if (/\{\+\+|\{--|\{~~|\{==/.test(lines[i])) {
-      matchLine = i + 1;
-      break;
-    }
-  }
-  return {
-    modifiedText: applied.modifiedText,
-    changeType: applied.changeType,
-    affectedStartLine: Math.max(1, matchLine - 2),
-    affectedEndLine: Math.min(lines.length, matchLine + 5)
-  };
-}
-var init_file_ops = __esm({
-  "../../packages/core/dist-esm/file-ops.js"() {
-    "use strict";
-    init_footnote_generator();
-    init_timestamp();
-    init_text_normalizer();
-    init_hashline_cleanup();
-    init_parser();
-    init_types();
-    init_footnote_parser();
-    init_view_builder_utils();
-    init_code_zones();
-    init_view_surface();
-  }
-});
-
-// ../../packages/core/dist-esm/footnote-utils.js
-function countFootnoteHeadersWithStatus(content, status) {
-  const lines = content.split("\n");
-  let count = 0;
-  for (const line of lines) {
-    const m = line.match(FOOTNOTE_HEADER_STATUS_RE);
-    if (m && m[1] === status)
-      count++;
-  }
-  return count;
-}
-function findFootnoteBlock3(lines, changeId) {
-  for (let i = 0; i < lines.length; i++) {
-    if (lines[i].startsWith(`[^${changeId}]:`)) {
-      let end = i;
-      let j = i + 1;
-      while (j < lines.length) {
-        if (lines[j].startsWith("[^ct-"))
-          break;
-        if (lines[j].startsWith("    ")) {
-          end = j;
-          j++;
-          continue;
-        }
-        if (lines[j].trim() === "") {
-          let k = j + 1;
-          let hasMore = false;
-          while (k < lines.length && !lines[k].startsWith("[^ct-")) {
-            if (lines[k].startsWith("    ")) {
-              hasMore = true;
-              break;
-            }
-            if (lines[k].trim() !== "")
-              break;
-            k++;
-          }
-          if (hasMore) {
-            j++;
-            continue;
-          }
-          break;
-        }
-        break;
-      }
-      return { headerLine: i, blockEnd: end, headerContent: lines[i] };
-    }
-  }
-  return null;
-}
-function parseFootnoteHeader(headerLine) {
-  const colonIdx = headerLine.indexOf(":");
-  if (colonIdx === -1)
-    return null;
-  const content = headerLine.slice(colonIdx + 1).trim();
-  const parts = content.split("|").map((p) => p.trim());
-  if (parts.length < 4)
-    return null;
-  return {
-    author: parts[0].replace(/^@/, ""),
-    date: parts[1],
-    type: parts[2],
-    status: parts[3]
-  };
-}
-function findDiscussionInsertionIndex(lines, headerLine, blockEnd) {
-  let insertAfter = headerLine;
-  for (let i = headerLine + 1; i <= blockEnd; i++) {
-    const trimmed = lines[i].trim();
-    if (trimmed === "")
-      continue;
-    if (isApprovalOrResolutionLine(trimmed)) {
-      return i - 1;
-    }
-    insertAfter = i;
-  }
-  return insertAfter;
-}
-function findReviewInsertionIndex2(lines, headerLine, blockEnd) {
-  let insertAfter = headerLine;
-  for (let i = headerLine + 1; i <= blockEnd; i++) {
-    const trimmed = lines[i].trim();
-    if (trimmed === "")
-      continue;
-    if (isResolutionLine2(trimmed)) {
-      return i - 1;
-    }
-    insertAfter = i;
-  }
-  return insertAfter;
-}
-function findChildFootnoteIds(lines, parentId) {
-  const prefix = `[^${parentId}.`;
-  const children = [];
-  for (const line of lines) {
-    if (line.startsWith(prefix)) {
-      const closeBracket = line.indexOf("]:");
-      if (closeBracket !== -1) {
-        children.push(line.slice(2, closeBracket));
-      }
-    }
-  }
-  return children;
-}
-function resolveChangeById(fileContent, changeId) {
-  const lines = fileContent.split("\n");
-  const footnoteBlock = findFootnoteBlock3(lines, changeId);
-  const refPattern = `[^${changeId}]`;
-  const refIndex = fileContent.indexOf(refPattern);
-  const inlineRefOffset = refIndex !== -1 && fileContent[refIndex + refPattern.length] !== ":" ? refIndex : null;
-  if (!footnoteBlock && inlineRefOffset === null) {
-    return null;
-  }
-  return { footnoteBlock, inlineRefOffset };
-}
-function isApprovalOrResolutionLine(trimmed) {
-  return trimmed.startsWith("approved:") || trimmed.startsWith("rejected:") || trimmed.startsWith("request-changes:") || trimmed.startsWith("resolved") || trimmed.startsWith("open --") || trimmed.startsWith("open ") || trimmed === "open";
-}
-function isResolutionLine2(trimmed) {
-  return trimmed.startsWith("resolved") || trimmed.startsWith("open --") || trimmed.startsWith("open ") || trimmed === "open";
-}
-var FOOTNOTE_HEADER_STATUS_RE;
-var init_footnote_utils = __esm({
-  "../../packages/core/dist-esm/footnote-utils.js"() {
-    "use strict";
-    FOOTNOTE_HEADER_STATUS_RE = /^\[\^ct-\d+(?:\.\d+)?\]:.*\|\s*(\S+)\s*$/;
   }
 });
 
@@ -8784,7 +9283,7 @@ function flush(state) {
       type: "crystallize",
       changeType,
       offset: buf.anchorOffset,
-      length: changeType === "insertion" ? buf.currentText.length : changeType === "deletion" ? buf.originalText.length : buf.originalText.length,
+      length: changeType === "insertion" ? buf.currentText.length : changeType === "deletion" ? 0 : buf.currentText.length,
       currentText: buf.currentText,
       originalText: buf.originalText,
       scId: buf.scId
@@ -9045,6 +9544,7 @@ __export(dist_esm_exports, {
   SIDECAR_BLOCK_MARKER: () => SIDECAR_BLOCK_MARKER,
   SidecarParser: () => SidecarParser,
   TokenType: () => TokenType,
+  VALID_DECISIONS: () => VALID_DECISIONS,
   VIEW_NAMES: () => VIEW_NAMES,
   VIEW_NAME_ALIASES: () => VIEW_NAME_ALIASES,
   VIEW_NAME_DISPLAY_NAMES: () => VIEW_NAME_DISPLAY_NAMES,
@@ -9055,6 +9555,7 @@ __export(dist_esm_exports, {
   appendFootnote: () => appendFootnote,
   appendOriginal: () => appendOriginal,
   applyProposeChange: () => applyProposeChange,
+  applyReview: () => applyReview,
   applySingleOperation: () => applySingleOperation,
   bufferContainsOffset: () => containsOffset,
   bufferContainsOffsetInclusive: () => containsOffsetInclusive,
@@ -9077,6 +9578,7 @@ __export(dist_esm_exports, {
   compareTimestamps: () => compareTimestamps,
   computeAccept: () => computeAccept,
   computeAcceptParts: () => computeAcceptParts,
+  computeAmendEdits: () => computeAmendEdits,
   computeApprovalLineEdit: () => computeApprovalLineEdit,
   computeCommittedLine: () => computeCommittedLine,
   computeCommittedView: () => computeCommittedView,
@@ -9085,6 +9587,8 @@ __export(dist_esm_exports, {
   computeLineHash: () => computeLineHash,
   computeReject: () => computeReject,
   computeRejectParts: () => computeRejectParts,
+  computeReplyEdit: () => computeReplyEdit,
+  computeResolutionEdit: () => computeResolutionEdit,
   computeSettledLineHash: () => computeSettledLineHash,
   computeSettledReplace: () => computeSettledReplace,
   computeSettledText: () => computeSettledText,
@@ -9092,21 +9596,24 @@ __export(dist_esm_exports, {
   computeSidecarAccept: () => computeSidecarAccept,
   computeSidecarReject: () => computeSidecarReject,
   computeSidecarResolveAll: () => computeSidecarResolveAll,
+  computeSupersedeResult: () => computeSupersedeResult,
+  computeUnresolveEdit: () => computeUnresolveEdit,
   contentZoneText: () => contentZoneText,
   countFootnoteHeadersWithStatus: () => countFootnoteHeadersWithStatus,
   createBuffer: () => createBuffer,
   defaultNormalizer: () => defaultNormalizer,
   detectNoOp: () => detectNoOp,
   diagnosticConfusableNormalize: () => diagnosticConfusableNormalize,
+  ensureL2: () => ensureL2,
   escapeRegex: () => escapeRegex,
   extendBuffer: () => extend,
   extractLineRange: () => extractLineRange,
   findChildFootnoteIds: () => findChildFootnoteIds,
   findCodeZones: () => findCodeZones,
   findDiscussionInsertionIndex: () => findDiscussionInsertionIndex,
-  findFootnoteBlock: () => findFootnoteBlock3,
+  findFootnoteBlock: () => findFootnoteBlock,
   findFootnoteSectionRange: () => findFootnoteSectionRange,
-  findReviewInsertionIndex: () => findReviewInsertionIndex2,
+  findReviewInsertionIndex: () => findReviewInsertionIndex,
   findSidecarBlockStart: () => findSidecarBlockStart,
   findUniqueMatch: () => findUniqueMatch,
   footnoteRefGlobal: () => footnoteRefGlobal,
@@ -9145,6 +9652,7 @@ __export(dist_esm_exports, {
   parseFootnotes: () => parseFootnotes,
   parseLineRef: () => parseLineRef,
   parseOp: () => parseOp,
+  parseProjectConfig: () => parseProjectConfig,
   parseTimestamp: () => parseTimestamp,
   parseTrackingHeader: () => parseTrackingHeader,
   prependOriginal: () => prependOriginal,
@@ -9191,6 +9699,7 @@ __export(dist_esm_exports, {
 var init_dist_esm = __esm({
   "../../packages/core/dist-esm/index.js"() {
     "use strict";
+    init_config();
     init_timestamp();
     init_types();
     init_document();
@@ -9198,10 +9707,16 @@ var init_dist_esm = __esm({
     init_parser();
     init_code_zones();
     init_accept_reject();
+    init_resolution();
+    init_reply();
     init_navigation();
     init_tracking();
     init_comment();
     init_footnote_generator();
+    init_ensure_l2();
+    init_apply_review();
+    init_amend();
+    init_supersede();
     init_level_promotion();
     init_level_descent();
     init_workspace();
@@ -10218,7 +10733,7 @@ Use read_tracked_file to get current content and LINE:HASH coordinates.`;
   const hash = computeLineHash(lineIdx, lines[lineIdx], lines);
   const oldLines = oldText.split("\n");
   if (oldLines.length > 1) {
-    const endLineIdx = lineIdx + oldLines.length - 1;
+    const endLineIdx = Math.min(lineIdx + oldLines.length - 1, lines.length - 1);
     const endHash = computeLineHash(endLineIdx, lines[endLineIdx], lines);
     return `This file is tracked (strict mode, compact). Your edit spans lines ${lineNum}-${endLineIdx + 1}:
 
@@ -10289,11 +10804,12 @@ This provides change metadata, hashline coordinates, and deliberation context.`;
 
 // src/adapters/claude-code/pre-tool-use.ts
 async function handlePreToolUse(input) {
-  const { tool_name, tool_input, cwd } = input;
+  const { tool_name: rawToolName, tool_input, cwd } = input;
+  const tool_name = rawToolName?.toLowerCase() ?? "";
   if (tool_name === "read_tracked_file") {
     return {};
   }
-  if (tool_name === "Read") {
+  if (tool_name === "read") {
     const filePath2 = tool_input?.file_path ?? "";
     if (!filePath2 || !cwd) {
       return {};
@@ -10324,7 +10840,7 @@ async function handlePreToolUse(input) {
     }
     return {};
   }
-  if (tool_name !== "Edit" && tool_name !== "Write") {
+  if (tool_name !== "edit" && tool_name !== "write") {
     return {};
   }
   if (!cwd || !tool_input) {
@@ -10339,7 +10855,7 @@ async function handlePreToolUse(input) {
   const oldText = tool_input.old_string ?? "";
   const newText = tool_input.new_string ?? tool_input.content ?? "";
   const decision = evaluateRawEdit(filePath, config, projectDir, {
-    checkFileExists: tool_name === "Write"
+    checkFileExists: tool_name === "write"
   });
   if (decision.action === "allow") {
     if (decision.agentHint) {
@@ -10362,7 +10878,7 @@ async function handlePreToolUse(input) {
         await initHashline2();
       }
       hint = formatRedirect({
-        toolName: tool_name,
+        toolName: tool_name === "edit" ? "Edit" : "Write",
         filePath: path3.relative(projectDir, filePath),
         oldText,
         newText,

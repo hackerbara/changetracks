@@ -3923,7 +3923,7 @@ CriticMarkupParser.FOOTNOTE_REF = FOOTNOTE_REF_ANCHORED;
 CriticMarkupParser.FOOTNOTE_DEF = FOOTNOTE_DEF_STRICT;
 CriticMarkupParser.APPROVAL_RE = /^(approved|rejected|request-changes):\s+(@\S+)\s+(\S+)(?:\s+"([^"]*)")?$/;
 CriticMarkupParser.DISCUSSION_RE = /^(@\S+)\s+(\S+)(?:\s+\[([^\]]+)\])?:\s*(.*)$/;
-CriticMarkupParser.RESOLVED_RE = /^resolved\s+(@\S+)\s+(\S+)(?::\s*(.*))?$/;
+CriticMarkupParser.RESOLVED_RE = /^resolved:?\s+(@\S+)\s+(\S+)(?::\s*(.*))?$/;
 CriticMarkupParser.OPEN_RE = /^open(?:\s+--\s+(.*))?$/;
 CriticMarkupParser.REVISION_RE = /^(r\d+)\s+(@\S+)\s+(\S+):\s+"([^"]*)"$/;
 CriticMarkupParser.CONTEXT_RE = /^context:\s+"([^"]*)"$/;
@@ -4816,6 +4816,11 @@ import * as path3 from "node:path";
 function pendingPath(projectDir) {
   return path3.join(projectDir, ".changetracks", "pending.json");
 }
+async function atomicWriteJson(filePath, data) {
+  const tmpPath = filePath + ".tmp." + process.pid;
+  await fs2.writeFile(tmpPath, JSON.stringify(data, null, 2), "utf-8");
+  await fs2.rename(tmpPath, filePath);
+}
 async function readPendingEdits(projectDir) {
   try {
     const raw = await fs2.readFile(pendingPath(projectDir), "utf-8");
@@ -4829,7 +4834,7 @@ async function appendPendingEdit(projectDir, edit) {
   await fs2.mkdir(path3.dirname(filePath), { recursive: true });
   const existing = await readPendingEdits(projectDir);
   existing.push(edit);
-  await fs2.writeFile(filePath, JSON.stringify(existing, null, 2), "utf-8");
+  await atomicWriteJson(filePath, existing);
 }
 
 // src/core/edit-tracker.ts
@@ -4871,7 +4876,8 @@ async function logReadAudit(projectDir, sessionId, filePath) {
 
 // src/adapters/claude-code/post-tool-use.ts
 async function handlePostToolUse(input) {
-  const { tool_name, tool_input, session_id, cwd } = input;
+  const { tool_name: rawToolName, tool_input, session_id, cwd } = input;
+  const tool_name = rawToolName?.toLowerCase() ?? "";
   if (!cwd || !tool_input) {
     return { logged: false };
   }
@@ -4884,7 +4890,7 @@ async function handlePostToolUse(input) {
     await logReadAudit(projectDir, session_id ?? "unknown", filePath2);
     return { logged: true };
   }
-  if (tool_name === "Read") {
+  if (tool_name === "read") {
     const filePath2 = tool_input.file_path ?? "";
     if (!filePath2) {
       return { logged: false };
@@ -4899,7 +4905,7 @@ async function handlePostToolUse(input) {
     await logReadAudit(projectDir, session_id ?? "unknown", filePath2);
     return { logged: true };
   }
-  if (tool_name !== "Edit" && tool_name !== "Write") {
+  if (tool_name !== "edit" && tool_name !== "write") {
     return { logged: false };
   }
   const filePath = tool_input.file_path ?? "";
@@ -4914,7 +4920,7 @@ async function handlePostToolUse(input) {
     return { logged: false };
   }
   let creationWrapped = false;
-  if (tool_name === "Write" && config.policy.creation_tracking !== "none") {
+  if (tool_name === "write" && config.policy.creation_tracking !== "none") {
     try {
       const content = await fs3.readFile(filePath, "utf-8");
       const TRACKING_HEADER = "<!-- ctrcks.com/v1: tracked -->";
@@ -4931,7 +4937,9 @@ async function handlePostToolUse(input) {
         await fs3.writeFile(filePath, wrapped, "utf-8");
         creationWrapped = true;
       }
-    } catch {
+    } catch (err) {
+      process.stderr.write(`changetracks: creation tracking failed for ${filePath}: ${err}
+`);
     }
   }
   const oldText = tool_input.old_string ?? "";
@@ -4955,7 +4963,9 @@ async function handlePostToolUse(input) {
         );
       }
     }
-  } catch {
+  } catch (err) {
+    process.stderr.write(`changetracks: context capture failed for ${filePath}: ${err}
+`);
   }
   await logEdit(
     projectDir,

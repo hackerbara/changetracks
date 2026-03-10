@@ -175,6 +175,11 @@ export async function handleProposeBatch(
       return errorResult('changes must be a non-empty array.');
     }
 
+    const MAX_BATCH_SIZE = 100;
+    if (changesRaw.length > MAX_BATCH_SIZE) {
+      return errorResult(`Batch too large: ${changesRaw.length} changes exceeds maximum of ${MAX_BATCH_SIZE}. Split into smaller batches.`);
+    }
+
     // Validate that each element is a non-null object with at least one edit param
     for (let i = 0; i < changesRaw.length; i++) {
       const elem = changesRaw[i];
@@ -461,8 +466,8 @@ export async function handleProposeBatch(
                 startOffset: rangeResult.startOffset + match.index,
                 endOffset: rangeResult.startOffset + match.index + match.length,
               });
-            } catch {
-              // If match fails here, applySingleOperation will catch it later
+            } catch (err) {
+              console.error(`[changetracks] overlap detection: match failed, deferring to apply phase: ${err}`);
             }
           } else {
             // Whole-range target
@@ -563,8 +568,8 @@ export async function handleProposeBatch(
                 startOffset: rangeResult.startOffset + match.index,
                 endOffset: rangeResult.startOffset + match.index + match.length,
               });
-            } catch {
-              // If match fails here, applySingleOperation will catch it later
+            } catch (err) {
+              console.error(`[changetracks] overlap detection: match failed, deferring to apply phase: ${err}`);
             }
           } else {
             const rangeResult = extractLineRange(fileLines, resolved.startLine!, resolved.endLine!);
