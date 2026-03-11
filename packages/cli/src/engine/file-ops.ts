@@ -17,6 +17,7 @@ export {
   stripCriticMarkup,
   checkCriticMarkupOverlap,
   guardOverlap,
+  resolveOverlapWithAuthor,
   stripRefsFromContent,
   contentZoneText,
   type UniqueMatch,
@@ -26,4 +27,5 @@ export {
   type LineRangeResult,
   type ApplySingleOperationParams,
   type ApplySingleOperationResult,
+  type OverlapResolution,
 } from '@changetracks/core';

@@ -53,11 +53,15 @@ export {
   findUniqueMatch, applyProposeChange, applySingleOperation,
   appendFootnote, extractLineRange, replaceUnique,
   stripCriticMarkupWithMap, stripCriticMarkup,
+  stripCriticMarkupToCommittedWithMap,
   checkCriticMarkupOverlap, guardOverlap, stripRefsFromContent,
+  findAllProposedOverlaps, resolveOverlapWithAuthor,
   contentZoneText,
   type UniqueMatch, type ProposeChangeParams, type ProposeChangeResult,
   type CriticMarkupOverlap, type LineRangeResult,
   type ApplySingleOperationParams, type ApplySingleOperationResult,
+  type CommittedMapResult, type MarkupRange,
+  type ProposedOverlap, type OverlapResolution,
 } from './file-ops.js';
 export {
   countFootnoteHeadersWithStatus, findFootnoteBlock, parseFootnoteHeader,
@@ -99,7 +103,6 @@ export {
   type Effect as EditBoundaryEffect, type EditPendingOverlay,
   type SignalType, DEFAULT_EDIT_BOUNDARY_CONFIG,
   isEmpty as isBufferEmpty, bufferEnd, containsOffset as bufferContainsOffset,
-  containsOffsetInclusive as bufferContainsOffsetInclusive,
   extend as extendBuffer, prependOriginal, appendOriginal,
   spliceInsert, spliceDelete, createBuffer,
 } from './edit-boundary/index.js';

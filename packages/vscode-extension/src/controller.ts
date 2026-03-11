@@ -2,8 +2,8 @@ import * as vscode from 'vscode';
 import type { PendingOverlay } from '@changetracks/core';
 import { Workspace, VirtualDocument, ChangeNode, ChangeType, ChangeStatus, scanMaxCtId, generateFootnoteDefinition, computeApprovalLineEdit, computeFootnoteArchiveLineEdit, computeFootnoteStatusEdits, compactToLevel1, compactToLevel0, SIDECAR_BLOCK_MARKER, nowTimestamp, appendFootnote } from '@changetracks/core';
 import { EditorDecorator } from './decorator';
-import { ViewMode, VIEW_MODES, VIEW_MODE_LABELS, nextViewMode, resolveViewName } from './view-mode';
-import { offsetToPosition, positionToOffset, coreEditToVscode, coreRangeToVscode } from './converters';
+import { ViewMode, VIEW_MODE_LABELS, nextViewMode, resolveViewName } from './view-mode';
+import { positionToOffset, coreEditToVscode, coreRangeToVscode } from './converters';
 import { formatReply } from './footnote-writer';
 import { getCachedDecorationData, invalidateDecorationCache, setCachedDecorationData, transformCachedDecorations } from './lsp-client';
 import { PendingEditManager } from './PendingEditManager';
@@ -503,14 +503,6 @@ export class ExtensionController {
                     }
                 }
                 this.updateChangeAtCursorContext(editor);
-                // Flush pending edit on cursor movement when enabled (hard break)
-                if (this.trackingMode && editor.document.languageId === 'markdown') {
-                    const text = editor.document.getText();
-                    const cursorOffset = positionToOffset(text, editor.selection.active);
-                    if (this.pendingEditManager.shouldFlushOnCursorMove(cursorOffset)) {
-                        await this.pendingEditManager.flush();
-                    }
-                }
                 // Section 11: scheduleDecorationUpdate only when cache has data (cursor unfolding)
                 const uri = editor.document.uri.toString();
                 if (getCachedDecorationData(uri)) {

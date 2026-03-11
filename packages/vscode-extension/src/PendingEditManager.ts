@@ -28,7 +28,7 @@ import { getOutputChannel } from './output-channel';
  */
 export class PendingEditManager {
     private state: EditBoundaryState;
-    private pauseTimer: NodeJS.Timeout | null = null;
+    private safetyNetInterval: NodeJS.Timeout | null = null;
     private isMerging: boolean = false;
     private asyncOperationLock: Promise<void> = Promise.resolve();
     private moveContext: { parentId: number; childSuffix: string } | null = null;
@@ -127,19 +127,31 @@ export class PendingEditManager {
         return this.state.pending !== null;
     }
 
-    public shouldFlushOnCursorMove(cursorOffset: number): boolean {
-        const buf = this.state.pending;
-        if (!buf) { return false; }
-        return cursorOffset < buf.anchorOffset || cursorOffset > buf.anchorOffset + buf.currentText.length;
+    public setComposing(isComposing: boolean): void {
+        this.state = { ...this.state, isComposing };
     }
 
-    public setComposing(isComposing: boolean): void {
-        const event: EditEvent = isComposing
-            ? { type: 'compositionStart' }
-            : { type: 'compositionEnd' };
-        const { newState, effects } = processEvent(this.state, event, { now: Date.now() });
-        this.state = newState;
-        this.executeEffectsSync(effects);
+    private startSafetyNet(): void {
+        if (this.safetyNetInterval) return;
+        const initialThreshold = this.state.config.pauseThresholdMs;
+        if (initialThreshold <= 0) return;
+        const checkMs = Math.min(5000, initialThreshold);
+        this.safetyNetInterval = setInterval(() => {
+            const threshold = this.state.config.pauseThresholdMs;
+            if (this.state.pending && !this.state.isComposing && threshold > 0) {
+                const elapsed = Date.now() - this.state.pending.lastEditTime;
+                if (elapsed > threshold) {
+                    this.flush().catch(err => this.logError('Safety-net flush failed', err));
+                }
+            }
+        }, checkMs);
+    }
+
+    private stopSafetyNet(): void {
+        if (this.safetyNetInterval) {
+            clearInterval(this.safetyNetInterval);
+            this.safetyNetInterval = null;
+        }
     }
 
     // ── Public Edit Handlers ─────────────────────────────────────────────
@@ -171,10 +183,15 @@ export class PendingEditManager {
         });
         this.state = newState;
 
-        // Capture the document URI when a new pending buffer is created
+        // Start safety-net when new pending buffer is created
         if (this.state.pending && !prevPending) {
             const doc = this.getDocument();
             this.pendingUri = doc ? doc.uri.toString() : null;
+            this.startSafetyNet();
+        }
+        // Stop safety-net when buffer is consumed
+        if (!this.state.pending && prevPending) {
+            this.stopSafetyNet();
         }
 
         if (effects.some(e => e.type === 'crystallize' || e.type === 'mergeAdjacent')) {
@@ -196,6 +213,9 @@ export class PendingEditManager {
 
         this.log('flush: captured pending edit');
         await this.executeEffectsAsync(effects);
+        if (!this.state.pending) {
+            this.stopSafetyNet();
+        }
     }
 
     /**
@@ -204,7 +224,7 @@ export class PendingEditManager {
      * in the document as plain characters; we just discard the buffer.
      */
     public abandon(): void {
-        this.cancelTimer();
+        this.stopSafetyNet();
         this.state = { ...this.state, pending: null };
         this.pendingUri = null;
         this.log('abandon: discarded pending edit (tracking toggled off)');
@@ -215,10 +235,7 @@ export class PendingEditManager {
     }
 
     public dispose(): void {
-        if (this.pauseTimer) {
-            clearTimeout(this.pauseTimer);
-            this.pauseTimer = null;
-        }
+        this.stopSafetyNet();
     }
 
     // ── Effect Execution ─────────────────────────────────────────────────
@@ -229,12 +246,6 @@ export class PendingEditManager {
     private executeEffectsSync(effects: EditBoundaryEffect[]): void {
         for (const effect of effects) {
             switch (effect.type) {
-                case 'scheduleTimer':
-                    this.scheduleTimer(effect.ms);
-                    break;
-                case 'cancelTimer':
-                    this.cancelTimer();
-                    break;
                 case 'updatePendingOverlay':
                     // Overlay tracked in state.pending — getPendingOverlay() reads from it.
                     break;
@@ -266,12 +277,6 @@ export class PendingEditManager {
                         break;
                     case 'mergeAdjacent':
                         await this.mergeAdjacentChanges(effect.offset);
-                        break;
-                    case 'scheduleTimer':
-                        this.scheduleTimer(effect.ms);
-                        break;
-                    case 'cancelTimer':
-                        this.cancelTimer();
                         break;
                     case 'updatePendingOverlay':
                         break;
@@ -344,30 +349,6 @@ export class PendingEditManager {
         }
 
         this.pendingUri = null;
-    }
-
-    private scheduleTimer(ms: number): void {
-        this.cancelTimer();
-        this.pauseTimer = setTimeout(() => {
-            if (!this.state.isComposing && this.state.pending) {
-                const { newState, effects } = processEvent(
-                    this.state,
-                    { type: 'timerFired' },
-                    { now: Date.now() },
-                );
-                this.state = newState;
-                this.executeEffectsAsync(effects).catch(err => {
-                    this.logError('PendingEditManager timerFired failed', err);
-                });
-            }
-        }, ms);
-    }
-
-    private cancelTimer(): void {
-        if (this.pauseTimer) {
-            clearTimeout(this.pauseTimer);
-            this.pauseTimer = null;
-        }
     }
 
     // ── Private Helpers ──────────────────────────────────────────────────

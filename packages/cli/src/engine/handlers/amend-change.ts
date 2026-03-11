@@ -6,7 +6,6 @@ import { resolveAuthor } from '../author.js';
 import { isFileInScope } from '../config.js';
 import { ConfigResolver } from '../config-resolver.js';
 import { toRelativePath } from '../path-utils.js';
-import { normalizeContentPayload } from '../content-normalizer.js';
 import type { SessionState } from '../state.js';
 import { rerecordState } from '../state-utils.js';
 
@@ -67,7 +66,7 @@ export async function handleAmendChange(
   try {
     const file = args.file as string | undefined;
     const changeId = optionalStrArg(args, 'change_id', 'changeId');
-    const newText = normalizeContentPayload(strArg(args, 'new_text', 'newText'));
+    const newText = strArg(args, 'new_text', 'newText');
     const oldText = optionalStrArg(args, 'old_text', 'oldText');
     const reasoning = optionalStrArg(args, 'reason', 'reason');
 

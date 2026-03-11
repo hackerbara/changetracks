@@ -24,14 +24,6 @@ export function containsOffset(buf: PendingBuffer, offset: number): boolean {
   return offset >= buf.anchorOffset && offset < bufferEnd(buf);
 }
 
-/**
- * Check whether a document offset is at or within the buffer range,
- * inclusive of the end position (for cursor placement after last char).
- */
-export function containsOffsetInclusive(buf: PendingBuffer, offset: number): boolean {
-  return offset >= buf.anchorOffset && offset <= bufferEnd(buf);
-}
-
 // ── Extend (insertion at region end) ─────────────────────────────────
 
 /**

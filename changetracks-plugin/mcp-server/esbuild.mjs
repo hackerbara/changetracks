@@ -26,4 +26,11 @@ await esbuild.build({
   outfile: 'dist/cli.js',
 });
 
-console.log('Bundled mcp-server → dist/index.js, dist/cli.js');
+// Internals entry point (used by tests)
+await esbuild.build({
+  ...shared,
+  entryPoints: ['src/internals.ts'],
+  outfile: 'dist/internals.js',
+});
+
+console.log('Bundled mcp-server → dist/index.js, dist/cli.js, dist/internals.js');

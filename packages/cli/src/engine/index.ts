@@ -40,9 +40,6 @@ export type { TrackingStatus } from './scope.js';
 // ── Path Utilities ──
 export { toRelativePath } from './path-utils.js';
 
-// ── Content Normalizer ──
-export { normalizeContentPayload } from './content-normalizer.js';
-
 // ── Guide Composer ──
 export { composeGuide } from './guide-composer.js';
 

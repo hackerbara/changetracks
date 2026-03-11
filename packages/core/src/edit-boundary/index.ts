@@ -28,7 +28,6 @@ export {
   isEmpty,
   bufferEnd,
   containsOffset,
-  containsOffsetInclusive,
   extend,
   prependOriginal,
   appendOriginal,

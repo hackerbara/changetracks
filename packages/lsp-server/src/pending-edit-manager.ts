@@ -4,7 +4,7 @@
  * Delegates all edit boundary logic to the core state machine
  * (`@changetracks/core/edit-boundary`). Owns one `EditBoundaryState`
  * per document URI, wires LSP events to `EditEvent` types, and
- * interprets effects (crystallize, timer, merge).
+ * interprets effects (crystallize, merge).
  *
  * Public API is identical to the original 455-LOC implementation.
  */
@@ -17,7 +17,6 @@ import {
   type EditEvent,
   type EditBoundaryEffect as Effect,
   DEFAULT_EDIT_BOUNDARY_CONFIG,
-  bufferContainsOffsetInclusive,
 } from '@changetracks/core';
 
 // ── Public types (preserved for backward compatibility) ─────────────
@@ -37,7 +36,7 @@ export type GetDocumentTextCallback = (uri: string) => string | undefined;
 
 export class PendingEditManager {
   private states: Map<string, EditBoundaryState> = new Map();
-  private timers: Map<string, NodeJS.Timeout> = new Map();
+  private safetyNetInterval: NodeJS.Timeout | null = null;
   private _pauseThreshold: number = 2000;
   private isMerging: boolean = false;
 
@@ -86,6 +85,9 @@ export class PendingEditManager {
     const { newState, effects } = processEvent(state, event, { now: Date.now() });
     this.states.set(uri, newState);
     this.executeEffects(uri, effects);
+    if (this.states.get(uri)?.pending) {
+      this.ensureSafetyNet();
+    }
   }
 
   public flush(uri: string): void {
@@ -102,39 +104,58 @@ export class PendingEditManager {
     }
   }
 
-  public shouldFlushOnCursorMove(uri: string, cursorOffset: number): boolean {
-    const state = this.states.get(uri);
-    if (!state?.pending) return false;
-    return !bufferContainsOffsetInclusive(state.pending, cursorOffset);
-  }
-
   public hasPendingEdit(uri: string): boolean {
     const state = this.states.get(uri);
     return state?.pending !== null && state?.pending !== undefined;
   }
 
   /**
-   * Remove a single document's state and cancel its timer.
+   * Remove a single document's state and stop safety-net if no more pending edits.
    * Call when a document is closed to prevent memory leaks.
    */
   public removeDocument(uri: string): void {
-    const timer = this.timers.get(uri);
-    if (timer) {
-      clearTimeout(timer);
-      this.timers.delete(uri);
-    }
     this.states.delete(uri);
+    if (!Array.from(this.states.values()).some(s => s.pending !== null)) {
+      this.stopSafetyNet();
+    }
   }
 
   public dispose(): void {
-    for (const timer of this.timers.values()) {
-      clearTimeout(timer);
-    }
-    this.timers.clear();
+    this.stopSafetyNet();
     this.states.clear();
   }
 
   // ── Internals ───────────────────────────────────────────────────────
+
+  private ensureSafetyNet(): void {
+    if (this.safetyNetInterval) return;
+    const threshold = this._pauseThreshold === Infinity ? 0 : this._pauseThreshold;
+    if (threshold <= 0) return;
+    const checkMs = Math.min(5000, threshold);
+    this.safetyNetInterval = setInterval(() => {
+      const now = Date.now();
+      let anyPending = false;
+      for (const [uri, state] of this.states) {
+        if (state.pending) {
+          anyPending = true;
+          if (state.config.pauseThresholdMs > 0 &&
+              now - state.pending.lastEditTime > state.config.pauseThresholdMs) {
+            this.flush(uri);
+          }
+        }
+      }
+      if (!anyPending) {
+        this.stopSafetyNet();
+      }
+    }, checkMs);
+  }
+
+  private stopSafetyNet(): void {
+    if (this.safetyNetInterval) {
+      clearInterval(this.safetyNetInterval);
+      this.safetyNetInterval = null;
+    }
+  }
 
   private getState(uri: string): EditBoundaryState {
     let state = this.states.get(uri);
@@ -160,12 +181,6 @@ export class PendingEditManager {
       switch (effect.type) {
         case 'crystallize':
           this.handleCrystallize(uri, effect);
-          break;
-        case 'scheduleTimer':
-          this.scheduleTimer(uri, effect.ms);
-          break;
-        case 'cancelTimer':
-          this.cancelTimer(uri);
           break;
         case 'mergeAdjacent':
           this.mergeAdjacentChanges(uri, effect.offset);
@@ -208,26 +223,6 @@ export class PendingEditManager {
       newText: edit.newText,
       anchorOffset,
     });
-  }
-
-  private scheduleTimer(uri: string, ms: number): void {
-    this.cancelTimer(uri);
-    this.timers.set(uri, setTimeout(() => {
-      this.timers.delete(uri);
-      const state = this.states.get(uri);
-      if (!state?.pending) return;
-      const { newState, effects } = processEvent(state, { type: 'timerFired' }, { now: Date.now() });
-      this.states.set(uri, newState);
-      this.executeEffects(uri, effects);
-    }, ms));
-  }
-
-  private cancelTimer(uri: string): void {
-    const timer = this.timers.get(uri);
-    if (timer) {
-      clearTimeout(timer);
-      this.timers.delete(uri);
-    }
   }
 
   /**

@@ -25,15 +25,13 @@ import { computeAffectedLines, type AffectedLineEntry, type ViewProjection } fro
 import { resolveAuthor } from '../author.js';
 import { ConfigResolver } from '../config-resolver.js';
 import { strArg, optionalStrArg } from '../args.js';
-import { applyProposeChange, contentZoneText, extractLineRange, findUniqueMatch, guardOverlap, stripRefsFromContent } from '../file-ops.js';
+import { applyProposeChange, contentZoneText, extractLineRange, findUniqueMatch, guardOverlap, resolveOverlapWithAuthor, stripRefsFromContent } from '../file-ops.js';
 import { toRelativePath } from '../path-utils.js';
 import { resolveTrackingStatus } from '../scope.js';
 import { SessionState, type ViewName } from '../state.js';
 import { parseOp, nowTimestamp } from '@changetracks/core';
 import { resolveAt, parseAt } from '@changetracks/core';
 import { resolveProtocolMode } from '../config.js';
-import { normalizeContentPayload } from '../content-normalizer.js';
-
 export interface ProposeChangeResult {
   content: Array<{ type: 'text'; text: string }>;
   isError?: boolean;
@@ -510,7 +508,7 @@ export async function handleProposeChange(
     // 1. Extract and validate args (accept snake_case and camelCase for text params)
     const file = args.file as string | undefined;
     const oldText = strArg(args, 'old_text', 'oldText');
-    const newText = normalizeContentPayload(strArg(args, 'new_text', 'newText'));
+    const newText = strArg(args, 'new_text', 'newText');
     const reasoning = args.reason as string | undefined;
     const insertAfter = optionalStrArg(args, 'insert_after', 'insertAfter');
     const level = (args.level as 1 | 2 | undefined) ?? 2;
@@ -750,6 +748,7 @@ export async function handleProposeChange(
     let changeType: 'ins' | 'del' | 'sub';
     let affectedLines: AffectedLineEntry[] | undefined;
     let stalenessWarning: string | undefined;
+    const supersededIds: string[] = [];
     const relocations: RelocationEntry[] = [];
     const remaps: AutoRemapResult[] = [];
     const autoRemap = config.hashline.auto_remap ?? true;
@@ -888,14 +887,24 @@ export async function handleProposeChange(
 
         if (oldText !== '') {
           // ─── Hybrid mode: scope old_text search within line range ──
-          const rangeText = extracted.content;
-          const rangeStartOffset = extracted.startOffset;
+          let rangeText = extracted.content;
+          let rangeStartOffset = extracted.startOffset;
 
           // Find old_text within the extracted range content (restrict to content zone)
-          const match = findUniqueMatch(contentZoneText(rangeText), oldText, defaultNormalizer);
-          // Guard: prevent nesting CriticMarkup inside existing markup
-          const absMatchPos = rangeStartOffset + match.index;
-          guardOverlap(fileContent, absMatchPos, match.length);
+          let match = findUniqueMatch(contentZoneText(rangeText), oldText, defaultNormalizer);
+          // Auto-supersede same-author overlaps; throw for different-author overlaps
+          const absMatchPos0 = rangeStartOffset + match.index;
+          const supersedeResult = resolveOverlapWithAuthor(fileContent, absMatchPos0, match.length, author);
+          if (supersedeResult) {
+            fileContent = supersedeResult.settledContent;
+            supersededIds.push(...supersedeResult.supersededIds);
+            // Re-extract and re-match after settlement (offsets shift)
+            const updatedFileLines = fileContent.split('\n');
+            const reExtracted = extractLineRange(updatedFileLines, startLine!, effectiveEndLine);
+            rangeText = reExtracted.content;
+            rangeStartOffset = reExtracted.startOffset;
+            match = findUniqueMatch(contentZoneText(rangeText), oldText, defaultNormalizer);
+          }
           const actualOldText = match.originalText;
           // Strip footnote refs so they don't end up inside CriticMarkup delimiters
           const { cleaned: cleanedOld, refs: preservedRefs } = stripRefsFromContent(actualOldText);
@@ -1132,6 +1141,7 @@ export async function handleProposeChange(
       type: changeType,
       ...(relocations.length > 0 ? { relocated: relocations } : {}),
       ...(remaps.length > 0 ? { remaps } : {}),
+      ...(supersededIds.length > 0 ? { superseded: supersededIds } : {}),
     };
 
     if (affectedLines) {
@@ -1195,7 +1205,7 @@ async function handleRawChanges(
   for (let i = 0; i < changes.length; i++) {
     const change = changes[i]!;
     const oldText = (change.old_text as string) ?? '';
-    const newText = normalizeContentPayload((change.new_text as string) ?? '');
+    const newText = (change.new_text as string) ?? '';
 
     if (oldText === '' && newText === '') {
       return errorResult(
@@ -1288,9 +1298,6 @@ async function handleCompactProposeChange(
       'VALIDATION_ERROR',
     );
   }
-
-  // Normalize escape sequences in new content
-  parsed = { ...parsed, newText: normalizeContentPayload(parsed.newText) };
 
   let fileLines = fileContent.split('\n');
 
@@ -1458,10 +1465,38 @@ async function handleCompactProposeChange(
 
   let modifiedText: string;
   let changeType: 'ins' | 'del' | 'sub' | 'highlight' | 'comment';
+  const supersededIds: string[] = [];
 
   const ts = nowTimestamp();
   const authorAt = author.startsWith('@') ? author : `@${author}`;
   const l1Comment = (ct: string) => level === 1 ? `{>>${authorAt}|${ts.raw}|${ct}|proposed<<}` : '';
+
+  // ─── Auto-supersede same-author overlaps ─────────────────────────────────
+  // Check the full target range for overlapping proposed changes. If all
+  // overlapping proposals are from the same author, reject+settle them
+  // in-memory so the new proposal can be placed cleanly. Different-author
+  // overlaps still throw (same behavior as guardOverlap).
+  // Insertions don't replace text, so no overlap check needed.
+  if (parsed.type !== 'ins' && parsed.type !== 'comment') {
+    const supersedeResult = resolveOverlapWithAuthor(
+      fileContent, target.startOffset, target.endOffset - target.startOffset, author,
+    );
+    if (supersedeResult) {
+      fileContent = supersedeResult.settledContent;
+      fileLines = fileContent.split('\n');
+      supersededIds.push(...supersedeResult.supersededIds);
+      // Re-resolve target after settlement (offsets shift when markup is settled)
+      const rawCoords = parseAt(resolvedAt);
+      const newStartHash = computeLineHash(rawCoords.startLine - 1, fileLines[rawCoords.startLine - 1]!, fileLines);
+      if (rawCoords.startLine === rawCoords.endLine) {
+        resolvedAt = `${rawCoords.startLine}:${newStartHash}`;
+      } else {
+        const newEndHash = computeLineHash(rawCoords.endLine - 1, fileLines[rawCoords.endLine - 1]!, fileLines);
+        resolvedAt = `${rawCoords.startLine}:${newStartHash}-${rawCoords.endLine}:${newEndHash}`;
+      }
+      target = resolveAt(resolvedAt, fileLines);
+    }
+  }
 
   if (parsed.type === 'ins') {
     // Insertion: insert after the target line
@@ -1663,6 +1698,7 @@ async function handleCompactProposeChange(
     change_id: changeId,
     file: relativePath,
     type: changeType,
+    ...(supersededIds.length > 0 ? { superseded: supersededIds } : {}),
     document_state: {
       total_changes: footnoteCount,
       proposed: proposedCount,

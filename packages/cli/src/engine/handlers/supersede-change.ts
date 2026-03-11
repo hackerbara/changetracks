@@ -9,8 +9,6 @@ import { toRelativePath } from '../path-utils.js';
 import { SessionState } from '../state.js';
 import { rerecordState } from '../state-utils.js';
 import { settleRejectedChanges } from './settle.js';
-import { normalizeContentPayload } from '../content-normalizer.js';
-
 /**
  * Tool definition for the supersede_change MCP tool.
  * Atomically rejects an old change and proposes a replacement,
@@ -87,7 +85,7 @@ export async function handleSupersedeChange(
     const file = args.file as string | undefined;
     const changeId = optionalStrArg(args, 'change_id', 'changeId');
     const oldText = strArg(args, 'old_text', 'oldText');
-    const newText = normalizeContentPayload(strArg(args, 'new_text', 'newText'));
+    const newText = strArg(args, 'new_text', 'newText');
     const reasoning = optionalStrArg(args, 'reason', 'reason');
     const insertAfter = optionalStrArg(args, 'insert_after', 'insertAfter');
 

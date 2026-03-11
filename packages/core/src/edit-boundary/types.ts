@@ -17,11 +17,7 @@ export type EditEvent =
   | { type: 'insertion'; offset: number; text: string }
   | { type: 'deletion'; offset: number; deletedText: string }
   | { type: 'substitution'; offset: number; oldText: string; newText: string }
-  | { type: 'cursorMove'; offset: number }
-  | { type: 'timerFired' }
   | { type: 'save' }
-  | { type: 'compositionStart' }
-  | { type: 'compositionEnd' }
   | { type: 'editorSwitch' }
   | { type: 'flush' };
 
@@ -88,8 +84,6 @@ export type Effect =
   | { type: 'crystallize'; changeType: 'insertion' | 'deletion' | 'substitution';
       offset: number; length: number; currentText: string; originalText: string; scId?: string }
   | { type: 'updatePendingOverlay'; overlay: EditPendingOverlay | null }
-  | { type: 'scheduleTimer'; ms: number }
-  | { type: 'cancelTimer' }
   | { type: 'mergeAdjacent'; offset: number };
 
 /**
@@ -114,12 +108,8 @@ export interface EditPendingOverlay {
  * The state machine dispatches on this to decide what to do.
  */
 export type SignalType =
-  | 'hard-break'
-  | 'soft-break'
   | 'extend'
-  | 'extend-backward'
-  | 'extend-forward'
   | 'splice'
-  | 'cursor-within'
-  | 'ignore'
-  | 'new-edit';
+  | 'break'
+  | 'hard-break'
+  | 'ignore';

@@ -1,126 +1,84 @@
-/**
- * Edit Boundary State Machine — Signal Classifier
- *
- * Pure function that classifies an EditEvent + current state into a SignalType.
- * The state machine dispatches on the signal to decide what effects to emit.
- */
-
 import type { EditEvent, EditBoundaryState, SignalType } from './types.js';
-import { bufferEnd, containsOffset, containsOffsetInclusive } from './pending-buffer.js';
+import { bufferEnd, containsOffset } from './pending-buffer.js';
 
 /**
  * Classify an incoming EditEvent against the current state.
  *
  * Classification rules (in priority order):
  *
- * 1. Composition events → ignore (state machine handles isComposing flag)
- * 2. Editor switch, save, explicit flush → hard-break
- * 3. Timer fired → soft-break
- * 4. No pending buffer + edit → new-edit
- * 5. Cursor move outside pending range → hard-break
- * 6. Cursor move within pending range → cursor-within
- * 7. Insertion: newline/paste → hard-break, at end → extend, within → splice
- * 8. Deletion: adjacent before → extend-backward, adjacent after → extend-forward, within → splice
- * 9. Substitution: within range → splice, otherwise → hard-break
- * 10. Edit outside buffer range → hard-break
+ * 1. Control events (save, editorSwitch, flush) → hard-break
+ * 2. During IME composition → ignore
+ * 3. No pending buffer → break (start new buffer)
+ * 4. Newline/paste insertion → break
+ * 5. Insertion at end → extend, within → splice, outside → break
+ * 6. Deletion adjacent → extend, within → splice, outside → break
+ * 7. Substitution within → splice, outside → break
  */
 export function classifySignal(event: EditEvent, state: EditBoundaryState): SignalType {
   const { pending, isComposing } = state;
 
-  // ── 1. Composition events ────────────────────────────────────────────
-  if (event.type === 'compositionStart' || event.type === 'compositionEnd') {
-    return 'ignore';
-  }
-
-  // ── 2. Always-hard-break events ──────────────────────────────────────
+  // 1. Always-hard-break events
   if (event.type === 'editorSwitch' || event.type === 'save' || event.type === 'flush') {
     return 'hard-break';
   }
 
-  // ── 3. Timer ─────────────────────────────────────────────────────────
-  if (event.type === 'timerFired') {
-    return 'soft-break';
-  }
-
-  // ── During IME composition, ignore regular edits ─────────────────────
-  if (isComposing && (event.type === 'insertion' || event.type === 'deletion' || event.type === 'substitution')) {
+  // 2. During IME composition, ignore regular edits
+  if (isComposing) {
     return 'ignore';
   }
 
-  // ── 4. No pending buffer → new edit or cursor move ───────────────────
+  // 3. No pending buffer → break (will create new buffer)
   if (pending === null) {
-    if (event.type === 'cursorMove') {
-      return 'ignore';
-    }
-    return 'new-edit';
+    return 'break';
   }
 
-  // ── From here on, pending buffer exists ──────────────────────────────
+  // ── From here on, pending buffer exists ──
   const end = bufferEnd(pending);
 
-  // ── 5/6. Cursor move ─────────────────────────────────────────────────
-  if (event.type === 'cursorMove') {
-    if (containsOffsetInclusive(pending, event.offset)) {
-      return 'cursor-within';
-    }
-    return 'hard-break';
-  }
-
-  // ── Newline insertion → hard-break (if configured) ───────────────────
+  // 4. Newline insertion → break (if configured)
   if (
     event.type === 'insertion' &&
     state.config.breakOnNewline &&
     event.text.includes('\n')
   ) {
-    return 'hard-break';
+    return 'break';
   }
 
-  // ── Paste detection → hard-break ─────────────────────────────────────
+  // 5. Paste detection → break
   if (
     event.type === 'insertion' &&
     event.text.length >= state.config.pasteMinChars
   ) {
-    return 'hard-break';
+    return 'break';
   }
 
-  // ── 7. Insertion at buffer end → extend ──────────────────────────────
-  if (event.type === 'insertion' && event.offset === end) {
-    return 'extend';
+  // 6. Insertion classification
+  if (event.type === 'insertion') {
+    if (event.offset === end) return 'extend';
+    if (containsOffset(pending, event.offset)) return 'splice';
+    return 'break';
   }
 
-  // ── 7b. Insertion within buffer range → splice ───────────────────────
-  if (event.type === 'insertion' && containsOffset(pending, event.offset)) {
-    return 'splice';
-  }
-
-  // ── 8. Deletion classification ───────────────────────────────────────
+  // 7. Deletion classification
   if (event.type === 'deletion') {
-    // Adjacent before: offset + deletedText.length === anchor → extend-backward
-    if (event.offset + event.deletedText.length === pending.anchorOffset) {
-      return 'extend-backward';
-    }
-    // Adjacent after: offset === end → extend-forward
-    if (event.offset === end) {
-      return 'extend-forward';
-    }
-    // Within buffer range → splice
-    if (containsOffset(pending, event.offset)) {
-      return 'splice';
-    }
-    // Outside → hard-break
-    return 'hard-break';
+    // Adjacent before: backspace just before buffer start
+    if (event.offset + event.deletedText.length === pending.anchorOffset) return 'extend';
+    // Adjacent after: forward-delete at buffer end
+    if (event.offset === end) return 'extend';
+    // Within buffer range
+    if (containsOffset(pending, event.offset)) return 'splice';
+    return 'break';
   }
 
-  // ── 9. Substitution classification ───────────────────────────────────
+  // 8. Substitution classification
   if (event.type === 'substitution') {
-    // Check if substitution range is fully within [anchor, end)
     if (event.offset >= pending.anchorOffset &&
         event.offset + event.oldText.length <= end) {
       return 'splice';
     }
-    return 'hard-break';
+    return 'break';
   }
 
-  // ── 10. Edit outside buffer range → hard-break ───────────────────────
-  return 'hard-break';
+  const _exhaustive: never = event;
+  return _exhaustive;
 }

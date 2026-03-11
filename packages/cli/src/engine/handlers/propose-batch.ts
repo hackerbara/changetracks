@@ -21,7 +21,6 @@ import { SessionState } from '../state.js';
 import { parseOp } from '@changetracks/core';
 import { parseAt } from '@changetracks/core';
 import { resolveProtocolMode } from '../config.js';
-import { normalizeContentPayload } from '../content-normalizer.js';
 import { rerecordState } from '../state-utils.js';
 
 /**
@@ -379,13 +378,12 @@ export async function handleProposeBatch(
         }
 
         const opReasoning = parsedOp.reasoning ?? (op.reason as string | undefined);
-        const normalizedNewText = normalizeContentPayload(parsedOp.newText);
 
         if (parsedOp.type === 'ins') {
           // Insertion: use after_line
           const resolved: ResolvedOp = {
             oldText: '',
-            newText: normalizedNewText,
+            newText: parsedOp.newText,
             reason: opReasoning,
             afterLine: atParsed.startLine,
           };
@@ -448,7 +446,7 @@ export async function handleProposeBatch(
           // to narrow search scope to the target line(s) only
           const resolved: ResolvedOp = {
             oldText: parsedOp.oldText,
-            newText: normalizedNewText,
+            newText: parsedOp.newText,
             reason: opReasoning,
             startLine: resolvedStartLine,
             endLine: resolvedEndLine,
@@ -484,7 +482,7 @@ export async function handleProposeBatch(
 
       // ─── Classic mode: extract old_text/new_text ─────────────────
       const oldText = strArg(op, 'old_text', 'oldText');
-      const newText = normalizeContentPayload(strArg(op, 'new_text', 'newText'));
+      const newText = strArg(op, 'new_text', 'newText');
       const opReasoning = op.reason as string | undefined;
       const insertAfter = optionalStrArg(op, 'insert_after', 'insertAfter');
 

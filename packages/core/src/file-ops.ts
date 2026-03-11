@@ -7,6 +7,8 @@
 
 import { generateFootnoteDefinition } from './operations/footnote-generator.js';
 import { nowTimestamp } from './timestamp.js';
+import { applyReview } from './operations/apply-review.js';
+import { settleRejectedChangesOnly } from './operations/settled-text.js';
 import {
   defaultNormalizer,
   normalizedIndexOf,
@@ -63,6 +65,8 @@ export interface UniqueMatch {
   wasNormalized: boolean;
   /** True when the match was found via settled-text fallback (CriticMarkup stripped). */
   wasSettledMatch?: boolean;
+  /** True when the match was found via committed-text fallback (pending proposals reverted). */
+  wasCommittedMatch?: boolean;
 }
 
 export interface LineRangeResult {
@@ -102,7 +106,7 @@ export interface ApplySingleOperationResult {
 /**
  * CriticMarkup construct range in raw text, used for settled-text position mapping.
  */
-interface MarkupRange {
+export interface MarkupRange {
   rawStart: number;
   rawEnd: number;      // exclusive
 }
@@ -141,6 +145,28 @@ function isCodeFenceLine(line: string): boolean {
 // ─── Overlap detection ──────────────────────────────────────────────────────
 
 /**
+ * Shared helper: parse CriticMarkup and resolve footnote statuses.
+ * Returns the change nodes with status resolved from footnotes, plus the footnote map.
+ */
+function resolveProposedChanges(text: string) {
+  const parser = new CriticMarkupParser();
+  const doc = parser.parse(text);
+  const changes = doc.getChanges();
+
+  const footnotes = parseFootnotes(text);
+  for (const node of changes) {
+    const fnInfo = footnotes.get(node.id);
+    if (fnInfo) {
+      const s = fnInfo.status.toLowerCase();
+      if (s === 'accepted') node.status = ChangeStatus.Accepted;
+      else if (s === 'rejected') node.status = ChangeStatus.Rejected;
+    }
+  }
+
+  return { changes, footnotes };
+}
+
+/**
  * Checks whether the range [matchStart, matchStart + matchLength) overlaps with
  * any existing CriticMarkup construct in `text`.
  *
@@ -156,21 +182,7 @@ export function checkCriticMarkupOverlap(
   matchStart: number,
   matchLength: number,
 ): CriticMarkupOverlap | null {
-  const parser = new CriticMarkupParser();
-  const doc = parser.parse(text);
-  const changes = doc.getChanges();
-
-  // Resolve footnote statuses so the semantic filter can distinguish
-  // proposed vs accepted/rejected changes.
-  const footnotes = parseFootnotes(text);
-  for (const node of changes) {
-    const fnInfo = footnotes.get(node.id);
-    if (fnInfo) {
-      const s = fnInfo.status.toLowerCase();
-      if (s === 'accepted') node.status = ChangeStatus.Accepted;
-      else if (s === 'rejected') node.status = ChangeStatus.Rejected;
-    }
-  }
+  const { changes } = resolveProposedChanges(text);
 
   const matchEnd = matchStart + matchLength;
 
@@ -206,6 +218,62 @@ export function checkCriticMarkupOverlap(
   return null;
 }
 
+export interface ProposedOverlap {
+  changeId?: string;
+  changeType: string;
+  author?: string;
+  spanStart: number;
+  spanEnd: number;
+}
+
+/**
+ * Returns ALL proposed changes that overlap the range [matchStart, matchStart + matchLength).
+ * Unlike checkCriticMarkupOverlap which returns the first overlap, this collects every
+ * overlapping proposed change with its author resolved from footnotes.
+ *
+ * Used by the auto-supersede logic to determine which existing proposals from the same
+ * author should be superseded when a new proposal overlaps them.
+ */
+export function findAllProposedOverlaps(
+  text: string,
+  matchStart: number,
+  matchLength: number,
+): ProposedOverlap[] {
+  const { changes, footnotes } = resolveProposedChanges(text);
+  const matchEnd = matchStart + matchLength;
+  const results: ProposedOverlap[] = [];
+
+  for (const node of changes) {
+    // Same semantic filter as checkCriticMarkupOverlap: only active proposals
+    if (node.settled || node.status !== ChangeStatus.Proposed) continue;
+
+    const spanStart = node.range.start;
+    const spanEnd = node.range.end;
+
+    if (matchStart < spanEnd && matchEnd > spanStart) {
+      const changeId = node.level >= 2 ? node.id : undefined;
+
+      let changeType: string;
+      switch (node.type) {
+        case ChangeType.Insertion: changeType = 'ins'; break;
+        case ChangeType.Deletion: changeType = 'del'; break;
+        case ChangeType.Substitution: changeType = 'sub'; break;
+        case ChangeType.Highlight: changeType = 'highlight'; break;
+        case ChangeType.Comment: changeType = 'comment'; break;
+        default: changeType = 'unknown'; break;
+      }
+
+      // Resolve author from footnote definition
+      const fnInfo = changeId ? footnotes.get(changeId) : undefined;
+      const author = fnInfo?.author;
+
+      results.push({ changeId, changeType, author, spanStart, spanEnd });
+    }
+  }
+
+  return results;
+}
+
 /**
  * Throws an actionable error if the match position overlaps with existing CriticMarkup.
  * Call this after findUniqueMatch returns a result and before wrapping in new markup.
@@ -220,6 +288,77 @@ export function guardOverlap(text: string, matchStart: number, matchLength: numb
       `Use amend_change to modify your own proposed change, or review_changes to accept/reject it.`
     );
   }
+}
+
+// ─── Auto-supersede ──────────────────────────────────────────────────────────
+
+export interface OverlapResolution {
+  settledContent: string;
+  supersededIds: string[];
+}
+
+/**
+ * Resolves overlapping proposed changes when a new proposal is being made.
+ *
+ * Returns null if there are no overlaps (caller should proceed normally).
+ *
+ * If ALL overlapping proposals are from the same author as the new proposal,
+ * auto-supersedes them: marks each as rejected in-memory and settles the
+ * rejected markup, returning cleaned content the caller can write to.
+ *
+ * If ANY overlapping proposal is from a different author, throws the same
+ * error as guardOverlap() — the caller must resolve the conflict manually.
+ *
+ * If no author is provided on the new proposal, throws (cannot verify
+ * ownership, so we fall back to the safe behavior).
+ *
+ * Level 0 changes (bare CriticMarkup without footnotes) have no author
+ * metadata, so they always trigger the conflict path — they cannot be
+ * auto-superseded.
+ */
+export function resolveOverlapWithAuthor(
+  text: string,
+  matchStart: number,
+  matchLength: number,
+  author?: string,
+): OverlapResolution | null {
+  const overlaps = findAllProposedOverlaps(text, matchStart, matchLength);
+  if (overlaps.length === 0) return null;
+
+  // No author on new proposal → can't verify ownership → throw
+  if (!author) {
+    guardOverlap(text, matchStart, matchLength); // will throw
+    return null; // unreachable, satisfies TS
+  }
+
+  // Check if ALL overlapping proposals are from same author
+  const allSameAuthor = overlaps.every(o => o.author === author);
+  if (!allSameAuthor) {
+    guardOverlap(text, matchStart, matchLength); // will throw with first overlap info
+    return null; // unreachable
+  }
+
+  // All same author — reject + settle the overlapping changes
+  const supersededIds = overlaps.map(o => o.changeId).filter((id): id is string => Boolean(id));
+
+  // Reject each overlapping change by updating footnote definitions in-memory
+  let content = text;
+  for (const id of supersededIds) {
+    const result = applyReview(content, id, 'reject', 'Auto-superseded by new proposal', author);
+    if ('updatedContent' in result) {
+      content = result.updatedContent;
+    } else {
+      throw new Error(
+        `Auto-supersede failed: could not reject change ${id}. ` +
+        `${'error' in result ? result.error : 'Unknown error'}`
+      );
+    }
+  }
+
+  // Settle rejected changes (remove the now-rejected markup from the text)
+  const settled = settleRejectedChangesOnly(content);
+
+  return { settledContent: settled.settledContent, supersededIds };
 }
 
 // ─── Ref preservation ────────────────────────────────────────────────────────
@@ -373,6 +512,223 @@ export function stripCriticMarkup(text: string): string {
   return stripCriticMarkupWithMap(text).settled;
 }
 
+export interface CommittedMapResult {
+  /** Text with CriticMarkup resolved using committed (decisions-only) semantics. */
+  committed: string;
+  /** Maps each committed-text character position to its raw-text position. */
+  toRaw: number[];
+  /** Ranges in raw text occupied by CriticMarkup constructs. */
+  markupRanges: MarkupRange[];
+}
+
+/**
+ * Strip CriticMarkup delimiters and footnote refs to produce "committed" text,
+ * along with a character-position mapping from committed back to raw positions
+ * and a list of CriticMarkup construct ranges.
+ *
+ * Committed semantics (decisions-only):
+ * - Accepted insertion: KEEP content
+ * - Accepted deletion: SKIP content
+ * - Accepted substitution: KEEP new text (after ~>)
+ * - Proposed/rejected/unknown insertion: SKIP content (revert — not yet accepted)
+ * - Proposed/rejected/unknown deletion: KEEP content (revert — not yet accepted)
+ * - Proposed/rejected/unknown substitution: KEEP old text (before ~>)
+ * - Highlights: always KEEP content
+ * - Comments: always REMOVE
+ * - Footnote refs: removed
+ *
+ * Level 0 changes (no footnote ref) are treated as proposed.
+ */
+export function stripCriticMarkupToCommittedWithMap(text: string): CommittedMapResult {
+  // Parse footnotes first to look up status for each change ID
+  const footnotes = parseFootnotes(text);
+
+  const committed: string[] = [];
+  const toRaw: number[] = [];
+  const markupRanges: MarkupRange[] = [];
+  let i = 0;
+
+  /**
+   * After a CriticMarkup closing delimiter, check for an immediately following
+   * footnote ref like `[^ct-1]` or `[^ct-2.3]` and return the change ID.
+   * Returns undefined if no ref is found.
+   * Also advances `i` past the ref if one is found (via return value — caller
+   * must update i).
+   */
+  function consumeFootnoteRef(pos: number): { id: string; end: number } | undefined {
+    if (text[pos] !== '[' || text[pos + 1] !== '^' || !text.startsWith('ct-', pos + 2)) {
+      return undefined;
+    }
+    const closeIdx = text.indexOf(']', pos + 2);
+    if (closeIdx === -1) return undefined;
+    const candidate = text.slice(pos, closeIdx + 1);
+    if (!/^\[\^ct-\d+(?:\.\d+)?\]$/.test(candidate)) return undefined;
+    // Don't consume footnote definitions (followed by ':')
+    if (text[closeIdx + 1] === ':') return undefined;
+    const id = text.slice(pos + 2, closeIdx); // e.g. "ct-1"
+    return { id, end: closeIdx + 1 };
+  }
+
+  while (i < text.length) {
+    // Skip footnote refs that appear outside of markup context (inline refs in body)
+    if (text[i] === '[' && text[i + 1] === '^' && text.startsWith('ct-', i + 2)) {
+      const closeIdx = text.indexOf(']', i + 2);
+      if (closeIdx !== -1
+          && /^\[\^ct-\d+(?:\.\d+)?\]$/.test(text.slice(i, closeIdx + 1))
+          && text[closeIdx + 1] !== ':') {
+        markupRanges.push({ rawStart: i, rawEnd: closeIdx + 1 });
+        i = closeIdx + 1;
+        continue;
+      }
+    }
+
+    // Check for CriticMarkup opening delimiter
+    if (text[i] === '{' && i + 2 < text.length) {
+      const twoChar = text[i + 1]! + text[i + 2]!;
+
+      if (twoChar === '++') {
+        // Insertion: {++text++}[^ct-N]
+        const end = text.indexOf('++}', i + 3);
+        if (end !== -1) {
+          const constructStart = i;
+          const contentStart = i + 3;
+          const contentEnd = end;
+          const constructEnd = end + 3;
+
+          // Check for following footnote ref
+          const ref = consumeFootnoteRef(constructEnd);
+          const refEnd = ref ? ref.end : constructEnd;
+          const changeId = ref?.id;
+          const status = changeId ? footnotes.get(changeId)?.status : undefined;
+          const isAccepted = status === 'accepted';
+
+          markupRanges.push({ rawStart: constructStart, rawEnd: refEnd });
+
+          if (isAccepted) {
+            // Keep content
+            for (let j = contentStart; j < contentEnd; j++) {
+              committed.push(text[j]!);
+              toRaw.push(j);
+            }
+          }
+          // else: proposed/rejected/unknown → skip content (revert insertion)
+
+          i = refEnd;
+          continue;
+        }
+      }
+
+      if (twoChar === '--') {
+        // Deletion: {--text--}[^ct-N]
+        const end = text.indexOf('--}', i + 3);
+        if (end !== -1) {
+          const constructStart = i;
+          const contentStart = i + 3;
+          const contentEnd = end;
+          const constructEnd = end + 3;
+
+          const ref = consumeFootnoteRef(constructEnd);
+          const refEnd = ref ? ref.end : constructEnd;
+          const changeId = ref?.id;
+          const status = changeId ? footnotes.get(changeId)?.status : undefined;
+          const isAccepted = status === 'accepted';
+
+          markupRanges.push({ rawStart: constructStart, rawEnd: refEnd });
+
+          if (!isAccepted) {
+            // Keep content (revert deletion — text was not yet removed)
+            for (let j = contentStart; j < contentEnd; j++) {
+              committed.push(text[j]!);
+              toRaw.push(j);
+            }
+          }
+          // else: accepted → skip content (deletion applied)
+
+          i = refEnd;
+          continue;
+        }
+      }
+
+      if (twoChar === '~~') {
+        // Substitution: {~~old~>new~~}[^ct-N]
+        const end = text.indexOf('~~}', i + 3);
+        if (end !== -1) {
+          const arrow = text.indexOf('~>', i + 3);
+          if (arrow !== -1 && arrow < end) {
+            const constructStart = i;
+            const oldStart = i + 3;
+            const oldEnd = arrow;
+            const newStart = arrow + 2;
+            const newEnd = end;
+            const constructEnd = end + 3;
+
+            const ref = consumeFootnoteRef(constructEnd);
+            const refEnd = ref ? ref.end : constructEnd;
+            const changeId = ref?.id;
+            const status = changeId ? footnotes.get(changeId)?.status : undefined;
+            const isAccepted = status === 'accepted';
+
+            markupRanges.push({ rawStart: constructStart, rawEnd: refEnd });
+
+            if (isAccepted) {
+              // Keep new text (substitution applied)
+              for (let j = newStart; j < newEnd; j++) {
+                committed.push(text[j]!);
+                toRaw.push(j);
+              }
+            } else {
+              // Keep old text (revert substitution)
+              for (let j = oldStart; j < oldEnd; j++) {
+                committed.push(text[j]!);
+                toRaw.push(j);
+              }
+            }
+
+            i = refEnd;
+            continue;
+          }
+        }
+      }
+
+      if (twoChar === '==') {
+        // Highlight: {==text==} -> always keep text
+        const end = text.indexOf('==}', i + 3);
+        if (end !== -1) {
+          const constructStart = i;
+          const contentStart = i + 3;
+          const contentEnd = end;
+          const constructEnd = end + 3;
+          markupRanges.push({ rawStart: constructStart, rawEnd: constructEnd });
+          for (let j = contentStart; j < contentEnd; j++) {
+            committed.push(text[j]!);
+            toRaw.push(j);
+          }
+          i = constructEnd;
+          continue;
+        }
+      }
+
+      if (twoChar === '>>') {
+        // Comment: {>>text<<} -> always remove
+        const end = text.indexOf('<<}', i + 3);
+        if (end !== -1) {
+          const constructEnd = end + 3;
+          markupRanges.push({ rawStart: i, rawEnd: constructEnd });
+          i = constructEnd;
+          continue;
+        }
+      }
+    }
+
+    // Plain character: keep as-is
+    committed.push(text[i]!);
+    toRaw.push(i);
+    i++;
+  }
+
+  return { committed: committed.join(''), toRaw, markupRanges };
+}
+
 // ─── Unique matching ────────────────────────────────────────────────────────
 
 /**
@@ -470,7 +826,69 @@ export function findUniqueMatch(
 
   // Level 4: (removed — ref-transparent matching promoted to Level 1.5)
 
-  // Level 5: Settled-text match (strip CriticMarkup, then match)
+  // Level 5: Committed-text match (revert pending proposals, then match)
+  // When the text contains pending (proposed/rejected/unknown) CriticMarkup,
+  // agents targeting original text see it without the pending markup. This
+  // fallback strips pending changes using committed semantics (accepted changes
+  // stay, proposals reverted), matches against that committed text, then maps
+  // the match back to raw positions (expanding to cover complete CriticMarkup
+  // constructs).
+  if (containsCriticMarkup(text)) {
+    const { committed, toRaw, markupRanges } = stripCriticMarkupToCommittedWithMap(text);
+    if (committed !== text) {
+      const committedIdx = committed.indexOf(target);
+      if (committedIdx !== -1) {
+        const committedSecondIdx = committed.indexOf(target, committedIdx + 1);
+        if (committedSecondIdx !== -1) {
+          throw new Error(
+            `Text "${target}" found multiple times in committed text (ambiguous). Provide more context to uniquely identify the location.`
+          );
+        }
+
+        // Map committed match boundaries to raw positions
+        const committedEnd = committedIdx + target.length - 1; // inclusive
+        let rawStart = toRaw[committedIdx]!;
+        let rawEnd = toRaw[committedEnd]! + 1; // exclusive
+
+        // Expand to cover any CriticMarkup constructs that overlap the raw range
+        let expanded = true;
+        while (expanded) {
+          expanded = false;
+          for (const range of markupRanges) {
+            if (range.rawStart < rawEnd && range.rawEnd > rawStart) {
+              // This construct overlaps -- expand the raw range to include it fully
+              if (range.rawStart < rawStart) {
+                rawStart = range.rawStart;
+                expanded = true;
+              }
+              if (range.rawEnd > rawEnd) {
+                rawEnd = range.rawEnd;
+                expanded = true;
+              }
+            }
+          }
+        }
+
+        // Also expand to cover footnote refs adjacent to the raw range
+        // (footnote refs like [^ct-N] follow CriticMarkup constructs with no gap)
+        for (const range of markupRanges) {
+          if (range.rawStart === rawEnd && /^\[\^ct-/.test(text.slice(range.rawStart))) {
+            rawEnd = range.rawEnd;
+          }
+        }
+
+        return {
+          index: rawStart,
+          length: rawEnd - rawStart,
+          originalText: text.slice(rawStart, rawEnd), // Return raw text covering constructs
+          wasNormalized: true,
+          wasCommittedMatch: true,
+        };
+      }
+    }
+  }
+
+  // Level 6: Settled-text match (strip CriticMarkup, then match)
   // When the text contains CriticMarkup, agents reading the "settled" view
   // see text without delimiters. Their proposed old_text targets that view.
   // This fallback strips CriticMarkup and matches against the settled text,
@@ -531,8 +949,8 @@ export function findUniqueMatch(
 
   // Not found at any level
   const hint = normalizer
-    ? 'Tried: exact match, normalized match (NFKC), whitespace-collapsed match, view-surface match, settled-text match.'
-    : 'Tried: exact match only (no normalizer), whitespace-collapsed match, view-surface match, settled-text match.';
+    ? 'Tried: exact match, normalized match (NFKC), whitespace-collapsed match, view-surface match, committed-text match, settled-text match.'
+    : 'Tried: exact match only (no normalizer), whitespace-collapsed match, view-surface match, committed-text match, settled-text match.';
   const preview = target.length > 80 ? target.slice(0, 80) + '...' : target;
 
   // Haystack context for diagnostics: first 200 chars + line count
@@ -698,9 +1116,9 @@ export function applyProposeChange(params: ProposeChangeParams): ProposeChangeRe
     changeType = 'del';
     const searchText = contentZoneText(text);
     const match = findUniqueMatch(searchText, oldText, defaultNormalizer);
-    // Skip overlap guard for settled-text matches -- the match already resolved
+    // Skip overlap guard for settled/committed-text matches -- the match already resolved
     // CriticMarkup and the raw range intentionally covers existing constructs.
-    if (!match.wasSettledMatch) {
+    if (!match.wasSettledMatch && !match.wasCommittedMatch) {
       guardOverlap(text, match.index, match.length);
     }
     const actualOldText = match.originalText;
@@ -715,9 +1133,9 @@ export function applyProposeChange(params: ProposeChangeParams): ProposeChangeRe
     changeType = 'sub';
     const searchText = contentZoneText(text);
     const match = findUniqueMatch(searchText, oldText, defaultNormalizer);
-    // Skip overlap guard for settled-text matches -- the match already resolved
+    // Skip overlap guard for settled/committed-text matches -- the match already resolved
     // CriticMarkup and the raw range intentionally covers existing constructs.
-    if (!match.wasSettledMatch) {
+    if (!match.wasSettledMatch && !match.wasCommittedMatch) {
       guardOverlap(text, match.index, match.length);
     }
     const actualOldText = match.originalText;

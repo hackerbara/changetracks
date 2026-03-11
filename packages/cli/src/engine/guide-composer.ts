@@ -33,6 +33,12 @@ export function composeGuide(config: ChangeTracksConfig): string {
       'Re-read only after review (accept/reject).',
   );
 
+  // --- Self-revision section (always included) ---
+  sections.push(
+    '**Revising proposals**: Re-proposing over your own earlier changes auto-supersedes them. ' +
+    'No need to reject first. The response includes a `superseded` array with the IDs of replaced changes.',
+  );
+
   // --- View section (always included) ---
   sections.push(composeViewSection(config));
 
@@ -67,6 +73,12 @@ function composeProtocolSection(
   lines.push(
     'Group: `propose_change(file, changes=[{at:"3:a1", op:"{~~old~>new~~}{>>reason"}, ...])`',
     'Include enough context in your `op` to disambiguate repeated text on the same line.',
+  );
+  lines.push(
+    'Range replace: `at:"5:a1-20:b3"` + `op:"{~~~>new content~~}"` replaces the entire range.',
+  );
+  lines.push(
+    'Multi-line ops: use real newlines in your op string — the MCP transport handles encoding.',
   );
 
   return lines.join('\n');

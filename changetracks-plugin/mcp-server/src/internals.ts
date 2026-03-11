@@ -60,7 +60,6 @@ export {
 
 export { resolveAuthor } from './author.js';
 export { resolveTrackingStatus } from './scope.js';
-export { normalizeContentPayload } from './content-normalizer.js';
 export { countFootnoteHeadersWithStatus } from './footnote-utils.js';
 export { composeGuide } from './guide-composer.js';
 export { buildViewSurfaceMap, viewAwareFind } from './view-surface.js';
