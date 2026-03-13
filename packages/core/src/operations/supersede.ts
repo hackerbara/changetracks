@@ -101,6 +101,15 @@ export function computeSupersedeResult(
     };
   }
 
+  // Same-author guard: supersede is for different authors. Use amend for own changes.
+  const normalizedAuthor = author.startsWith('@') ? author.slice(1) : author;
+  if (header.author === normalizedAuthor) {
+    return {
+      isError: true,
+      error: `Cannot supersede change "${changeId}": authored by the same author (${author}). Use amend_change to modify your own changes.`,
+    };
+  }
+
   // --- 2. Reject the original change ---
   const rejectResult = applyReview(
     text,

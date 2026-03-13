@@ -1,11 +1,11 @@
 import * as vscode from 'vscode';
 import type { PendingOverlay } from '@changetracks/core';
-import { Workspace, VirtualDocument, ChangeNode, ChangeType, ChangeStatus, scanMaxCtId, generateFootnoteDefinition, computeApprovalLineEdit, computeFootnoteArchiveLineEdit, computeFootnoteStatusEdits, SIDECAR_BLOCK_MARKER, nowTimestamp, appendFootnote } from '@changetracks/core';
+import { Workspace, VirtualDocument, ChangeNode, ChangeType, ChangeStatus, scanMaxCtId, generateFootnoteDefinition, SIDECAR_BLOCK_MARKER, appendFootnote } from '@changetracks/core';
 import { EditorDecorator } from './decorator';
-import { ViewMode, VIEW_MODE_LABELS, nextViewMode, resolveViewName } from './view-mode';
+import { ViewMode, VIEW_MODE_LABELS, nextViewMode, resolveViewName, isChangeVisibleInMode } from './view-mode';
 import { positionToOffset, coreEditToVscode, coreRangeToVscode } from './converters';
 import { formatReply } from './footnote-writer';
-import { getCachedDecorationData, invalidateDecorationCache, setCachedDecorationData, transformCachedDecorations } from './lsp-client';
+import { getCachedDecorationData, invalidateDecorationCache, setCachedDecorationData, transformCachedDecorations, migrateDecorationCache } from './lsp-client';
 import { PendingEditManager } from './PendingEditManager';
 import { getOutputChannel } from './output-channel';
 import { resolveAuthorIdentity } from './author-identity';
@@ -15,6 +15,7 @@ export class ExtensionController {
     private _viewMode: ViewMode;
     private _showCriticMarkup: boolean;
     private isApplyingTrackedEdit: boolean = false;
+    private isSnappingCursor = false;
     private pendingEditManager: PendingEditManager;
     private documentShadow: Map<string, string> = new Map(); // Track previous document state for deletions
     private nextScIdMap: Map<string, number> = new Map(); // Per-document ct-ID counter for Level 1 tracking
@@ -146,34 +147,44 @@ export class ExtensionController {
 
         // Listen for decoration style / author colors configuration changes
         vscode.workspace.onDidChangeConfiguration(event => {
-            if (event.affectsConfiguration('changetracks.decorationStyle') ||
-                event.affectsConfiguration('changetracks.authorColors')) {
-                const cfg = vscode.workspace.getConfiguration('changetracks');
-                const rawNewStyle = cfg.get<string>('decorationStyle', 'foreground');
-                const newStyle = rawNewStyle === 'background' ? 'background' : 'foreground';
-                const rawNewAuthorColors = cfg.get<string>('authorColors', 'auto');
-                const newAuthorColors = (rawNewAuthorColors === 'always' || rawNewAuthorColors === 'never') ? rawNewAuthorColors : 'auto' as const;
-                this.decorator.dispose();
-                this.decorator = new EditorDecorator(newStyle, newAuthorColors);
+            try {
+                if (event.affectsConfiguration('changetracks.decorationStyle') ||
+                    event.affectsConfiguration('changetracks.authorColors')) {
+                    const cfg = vscode.workspace.getConfiguration('changetracks');
+                    const rawNewStyle = cfg.get<string>('decorationStyle', 'foreground');
+                    const newStyle = rawNewStyle === 'background' ? 'background' : 'foreground';
+                    const rawNewAuthorColors = cfg.get<string>('authorColors', 'auto');
+                    const newAuthorColors = (rawNewAuthorColors === 'always' || rawNewAuthorColors === 'never') ? rawNewAuthorColors : 'auto' as const;
+                    const oldDecorator = this.decorator;
+                    try {
+                        this.decorator = new EditorDecorator(newStyle, newAuthorColors);
+                        oldDecorator.dispose();
+                    } catch (err: any) {
+                        this.decorator = oldDecorator; // restore old, don't dispose
+                        getOutputChannel()?.appendLine(`[config] decorator recreation failed: ${err.message}`);
+                    }
 
-                // Re-apply decorations to all visible editors
-                vscode.window.visibleTextEditors.forEach(editor => {
-                    if (this.isSupported(editor.document)) {
-                        this.updateDecorations(editor);
-                    }
-                });
-            }
-            if (event.affectsConfiguration('changetracks.editBoundary')) {
-                const cfg = vscode.workspace.getConfiguration('changetracks');
-                this.applyEditBoundaryConfig(cfg);
-            }
-            if (event.affectsConfiguration('changetracks.showCriticMarkup')) {
-                this._showCriticMarkup = vscode.workspace.getConfiguration('changetracks').get<boolean>('showCriticMarkup', false);
-                vscode.window.visibleTextEditors.forEach(editor => {
-                    if (this.isSupported(editor.document)) {
-                        this.updateDecorations(editor);
-                    }
-                });
+                    // Re-apply decorations to all visible editors
+                    vscode.window.visibleTextEditors.forEach(editor => {
+                        if (this.isSupported(editor.document)) {
+                            this.updateDecorations(editor);
+                        }
+                    });
+                }
+                if (event.affectsConfiguration('changetracks.editBoundary')) {
+                    const cfg = vscode.workspace.getConfiguration('changetracks');
+                    this.applyEditBoundaryConfig(cfg);
+                }
+                if (event.affectsConfiguration('changetracks.showCriticMarkup')) {
+                    this._showCriticMarkup = vscode.workspace.getConfiguration('changetracks').get<boolean>('showCriticMarkup', false);
+                    vscode.window.visibleTextEditors.forEach(editor => {
+                        if (this.isSupported(editor.document)) {
+                            this.updateDecorations(editor);
+                        }
+                    });
+                }
+            } catch (err: any) {
+                getOutputChannel()?.appendLine(`[onDidChangeConfiguration] ${err.message}\n${err.stack}`);
             }
         }, null, context.subscriptions);
 
@@ -354,40 +365,24 @@ export class ExtensionController {
 
         // Listen to document changes for both decorations and tracking mode
         vscode.workspace.onDidChangeTextDocument(async event => {
-            const editor = vscode.window.activeTextEditor;
-            if (!editor || event.document !== editor.document) {
-                return;
-            }
-
-            const docUri = editor.document.uri.toString();
-
-            // BUG 5 fix: Don't track undo/redo — VS Code manages the undo stack.
-            if (event.reason === vscode.TextDocumentChangeReason.Undo ||
-                event.reason === vscode.TextDocumentChangeReason.Redo) {
-                // Abandon any pending tracked edit — undo/redo invalidates the buffer
-                this.pendingEditManager.abandon();
-                this.unconfirmedTrackedEdit = null;
-                if (this.unconfirmedEditTimer) {
-                    clearTimeout(this.unconfirmedEditTimer);
-                    this.unconfirmedEditTimer = null;
+            try {
+                const editor = vscode.window.activeTextEditor;
+                if (!editor || event.document !== editor.document) {
+                    return;
                 }
-                this.documentShadow.set(docUri, editor.document.getText());
-                if (this.localParseHotPath) {
-                    this.scheduleDecorationUpdate(editor);
-                    this.scheduleNotifyChanges([editor.document.uri]);
-                }
-                return;
-            }
 
-            // Selection-confirmation gate: defer handleTrackedEdits until
-            // onDidChangeTextEditorSelection confirms this edit came from editor typing.
-            // Non-editor surfaces (comment widgets, SCM input) don't fire selection events,
-            // so their leaked keystrokes are silently discarded after the timeout.
-            if (this.trackingMode && !this.isApplyingTrackedEdit && editor.document.languageId === 'markdown') {
-                // Layer 1: Comment widget guard — if a comment thread is expanded,
-                // keystrokes belong to the comment input, not the editor.
-                // Must be checked BEFORE the deletion auto-confirm branch.
-                if (this.changeComments?.isAnyThreadExpandedAtCursor()) {
+                const docUri = editor.document.uri.toString();
+
+                // BUG 5 fix: Don't track undo/redo — VS Code manages the undo stack.
+                if (event.reason === vscode.TextDocumentChangeReason.Undo ||
+                    event.reason === vscode.TextDocumentChangeReason.Redo) {
+                    // Abandon any pending tracked edit — undo/redo invalidates the buffer
+                    this.pendingEditManager.abandon();
+                    this.unconfirmedTrackedEdit = null;
+                    if (this.unconfirmedEditTimer) {
+                        clearTimeout(this.unconfirmedEditTimer);
+                        this.unconfirmedEditTimer = null;
+                    }
                     this.documentShadow.set(docUri, editor.document.getText());
                     if (this.localParseHotPath) {
                         this.scheduleDecorationUpdate(editor);
@@ -396,77 +391,97 @@ export class ExtensionController {
                     return;
                 }
 
-                const change = event.contentChanges[0];
-                const isDeletion = change && change.rangeLength > 0 && change.text.length === 0;
-
-                if (isDeletion) {
-                    // BUG 1 fix: Deletions don't move the cursor, so the selection-confirmation
-                    // gate would discard them (no selection event fires within 50ms for forward delete).
-                    // Auto-confirm deletions immediately.
-                    try {
-                        await this.handleTrackedEdits(event, editor);
-                    } finally {
+                // Selection-confirmation gate: defer handleTrackedEdits until
+                // onDidChangeTextEditorSelection confirms this edit came from editor typing.
+                // Non-editor surfaces (comment widgets, SCM input) don't fire selection events,
+                // so their leaked keystrokes are silently discarded after the timeout.
+                if (this.trackingMode && !this.isApplyingTrackedEdit && editor.document.languageId === 'markdown') {
+                    // Layer 1: Comment widget guard — if a comment thread is expanded,
+                    // keystrokes belong to the comment input, not the editor.
+                    // Must be checked BEFORE the deletion auto-confirm branch.
+                    if (this.changeComments?.isAnyThreadExpandedAtCursor()) {
                         this.documentShadow.set(docUri, editor.document.getText());
+                        if (this.localParseHotPath) {
+                            this.scheduleDecorationUpdate(editor);
+                            this.scheduleNotifyChanges([editor.document.uri]);
+                        }
+                        return;
                     }
-                } else {
-                    // Existing gate logic for insertions and substitutions
-                    const shadowSnapshot = this.documentShadow.get(docUri) ?? editor.document.getText();
-                    if (this.unconfirmedTrackedEdit) {
-                        getOutputChannel()?.appendLine(
-                            '[tracking] Flushing previous unconfirmed edit before accepting new one'
-                        );
-                        const prev = this.unconfirmedTrackedEdit;
-                        this.unconfirmedTrackedEdit = null;
-                        // Restore the shadow to the previous edit's snapshot so handleTrackedEdits
-                        // can correctly compute deleted/substituted text
-                        this.documentShadow.set(docUri, prev.shadowSnapshot);
+
+                    const change = event.contentChanges[0];
+                    const isDeletion = change && change.rangeLength > 0 && change.text.length === 0;
+
+                    if (isDeletion) {
+                        // BUG 1 fix: Deletions don't move the cursor, so the selection-confirmation
+                        // gate would discard them (no selection event fires within 50ms for forward delete).
+                        // Auto-confirm deletions immediately.
                         try {
-                            await this.handleTrackedEdits(prev.event, prev.editor);
+                            await this.handleTrackedEdits(event, editor);
                         } finally {
-                            // Restore shadow to current state before proceeding
                             this.documentShadow.set(docUri, editor.document.getText());
                         }
-                    }
-                    this.unconfirmedTrackedEdit = { event, editor, shadowSnapshot };
-
-                    // Safety timeout: discard if no selection event confirms within 50ms
-                    if (this.unconfirmedEditTimer) clearTimeout(this.unconfirmedEditTimer);
-                    this.unconfirmedEditTimer = setTimeout(() => {
+                    } else {
+                        // Existing gate logic for insertions and substitutions
+                        const shadowSnapshot = this.documentShadow.get(docUri) ?? editor.document.getText();
                         if (this.unconfirmedTrackedEdit) {
                             getOutputChannel()?.appendLine(
-                                '[tracking] Discarding unconfirmed edit (no selection event — likely comment widget or non-editor input)'
+                                '[tracking] Flushing previous unconfirmed edit before accepting new one'
                             );
+                            const prev = this.unconfirmedTrackedEdit;
                             this.unconfirmedTrackedEdit = null;
+                            // Restore the shadow to the previous edit's snapshot so handleTrackedEdits
+                            // can correctly compute deleted/substituted text
+                            this.documentShadow.set(docUri, prev.shadowSnapshot);
+                            try {
+                                await this.handleTrackedEdits(prev.event, prev.editor);
+                            } finally {
+                                // Restore shadow to current state before proceeding
+                                this.documentShadow.set(docUri, editor.document.getText());
+                            }
                         }
-                        this.unconfirmedEditTimer = null;
-                    }, ExtensionController.EDIT_CONFIRMATION_TIMEOUT_MS);
+                        this.unconfirmedTrackedEdit = { event, editor, shadowSnapshot };
+
+                        // Safety timeout: discard if no selection event confirms within 50ms
+                        if (this.unconfirmedEditTimer) clearTimeout(this.unconfirmedEditTimer);
+                        this.unconfirmedEditTimer = setTimeout(() => {
+                            if (this.unconfirmedTrackedEdit) {
+                                getOutputChannel()?.appendLine(
+                                    '[tracking] Discarding unconfirmed edit (no selection event — likely comment widget or non-editor input)'
+                                );
+                                this.unconfirmedTrackedEdit = null;
+                            }
+                            this.unconfirmedEditTimer = null;
+                        }, ExtensionController.EDIT_CONFIRMATION_TIMEOUT_MS);
+                    }
                 }
-            }
 
-            // Always update shadow immediately (reflects current document state)
-            this.documentShadow.set(docUri, editor.document.getText());
+                // Always update shadow immediately (reflects current document state)
+                this.documentShadow.set(docUri, editor.document.getText());
 
-            // Optimistic range transform: adjust cached decorations by edit delta.
-            // Provides instant visual feedback while LSP round-trip is in flight.
-            // LSP push (decorationData) overwrites with authoritative data.
-            if (!this.localParseHotPath) {
-                const transformed = transformCachedDecorations(docUri, event.contentChanges);
-                if (transformed) {
+                // Optimistic range transform: adjust cached decorations by edit delta.
+                // Provides instant visual feedback while LSP round-trip is in flight.
+                // LSP push (decorationData) overwrites with authoritative data.
+                if (!this.localParseHotPath) {
+                    const transformed = transformCachedDecorations(docUri, event.contentChanges);
+                    if (transformed) {
+                        this.scheduleDecorationUpdate(editor);
+                    }
+                }
+
+                // Section 11: No scheduleDecorationUpdate from document change. All content-driven
+                // decoration comes from LSP push (decorationData) or getChanges bootstrap.
+                // Section 11: No scheduleNotifyChanges from document change. Notify only from
+                // handleDecorationDataUpdate and getChanges bootstrap.
+                if (this.localParseHotPath) {
                     this.scheduleDecorationUpdate(editor);
+                    this.scheduleNotifyChanges([editor.document.uri]);
                 }
-            }
-
-            // Section 11: No scheduleDecorationUpdate from document change. All content-driven
-            // decoration comes from LSP push (decorationData) or getChanges bootstrap.
-            // Section 11: No scheduleNotifyChanges from document change. Notify only from
-            // handleDecorationDataUpdate and getChanges bootstrap.
-            if (this.localParseHotPath) {
-                this.scheduleDecorationUpdate(editor);
-                this.scheduleNotifyChanges([editor.document.uri]);
-            }
-            // Send overlay to LSP when pending changes (debounced)
-            if (editor.document.languageId === 'markdown' && this.trackingMode) {
-                this.scheduleOverlaySend();
+                // Send overlay to LSP when pending changes (debounced)
+                if (editor.document.languageId === 'markdown' && this.trackingMode) {
+                    this.scheduleOverlaySend();
+                }
+            } catch (err: any) {
+                getOutputChannel()?.appendLine(`[onDidChangeTextDocument] ${err.message}\n${err.stack}`);
             }
         }, null, context.subscriptions);
 
@@ -476,100 +491,118 @@ export class ExtensionController {
         // Clear composition state when switching editors (we're not composing in the old editor).
         context.subscriptions.push(
             vscode.window.onDidChangeActiveTextEditor((prevEditor) => {
-                this.pendingEditManager.setComposing(false);
-                // Clear overlay for previous doc when switching; schedule send for new doc
-                if (prevEditor?.document.uri) {
-                    this.sendOverlayNull(prevEditor.document.uri.toString());
+                try {
+                    this.pendingEditManager.setComposing(false);
+                    // Clear overlay for previous doc when switching; schedule send for new doc
+                    if (prevEditor?.document.uri) {
+                        this.sendOverlayNull(prevEditor.document.uri.toString());
+                    }
+                    this.scheduleOverlaySend();
+                } catch (err: any) {
+                    getOutputChannel()?.appendLine(`[onDidChangeActiveTextEditor] ${err.message}\n${err.stack}`);
                 }
-                this.scheduleOverlaySend();
             })
         );
 
         // Listen to cursor position changes for cursor-aware delimiter unfolding and changeAtCursor context
         vscode.window.onDidChangeTextEditorSelection(async event => {
-            const editor = event.textEditor;
-            if (editor && this.isSupported(editor.document)) {
-                // Selection-confirmation gate: confirm pending tracked edit.
-                // This fires ~1-5ms after the text change for real editor typing.
-                if (this.unconfirmedTrackedEdit &&
-                    event.textEditor.document.uri.toString() ===
-                    this.unconfirmedTrackedEdit.editor.document.uri.toString()) {
-                    if (this.unconfirmedEditTimer) {
-                        clearTimeout(this.unconfirmedEditTimer);
-                        this.unconfirmedEditTimer = null;
-                    }
-                    const pending = this.unconfirmedTrackedEdit;
-                    this.unconfirmedTrackedEdit = null;
+            try {
+                const editor = event.textEditor;
+                if (editor && this.isSupported(editor.document)) {
+                    // Selection-confirmation gate: confirm pending tracked edit.
+                    // This fires ~1-5ms after the text change for real editor typing.
+                    if (this.unconfirmedTrackedEdit &&
+                        event.textEditor.document.uri.toString() ===
+                        this.unconfirmedTrackedEdit.editor.document.uri.toString()) {
+                        if (this.unconfirmedEditTimer) {
+                            clearTimeout(this.unconfirmedEditTimer);
+                            this.unconfirmedEditTimer = null;
+                        }
+                        const pending = this.unconfirmedTrackedEdit;
+                        this.unconfirmedTrackedEdit = null;
 
-                    // Temporarily restore the pre-edit shadow so handleTrackedEdits
-                    // can correctly compute deleted/substituted text
-                    const docUri = pending.editor.document.uri.toString();
-                    this.documentShadow.set(docUri, pending.shadowSnapshot);
+                        // Temporarily restore the pre-edit shadow so handleTrackedEdits
+                        // can correctly compute deleted/substituted text
+                        const docUri = pending.editor.document.uri.toString();
+                        this.documentShadow.set(docUri, pending.shadowSnapshot);
 
-                    try {
-                        await this.handleTrackedEdits(pending.event, pending.editor);
-                    } finally {
-                        // Restore shadow to current document state
-                        this.documentShadow.set(docUri, pending.editor.document.getText());
+                        try {
+                            await this.handleTrackedEdits(pending.event, pending.editor);
+                        } finally {
+                            // Restore shadow to current document state
+                            this.documentShadow.set(docUri, pending.editor.document.getText());
+                        }
                     }
-                }
-                // Structural flush: cursor moved outside pending edit range.
-                // Fires regardless of pauseThresholdMs (structural event, not temporal).
-                // Must be AFTER selection-confirmation gate to avoid racing with edit confirmation.
-                // Skip when comment peek is expanded to avoid crystallizing during comment interaction.
-                if (this.trackingMode && editor.document.languageId === 'markdown' &&
-                    !this.changeComments?.isAnyThreadExpandedAtCursor()) {
-                    const text = editor.document.getText();
-                    const cursorOffset = positionToOffset(text, editor.selection.active);
-                    if (this.pendingEditManager.shouldFlushOnCursorMove(cursorOffset)) {
-                        await this.pendingEditManager.flush();
+                    // Structural flush: cursor moved outside pending edit range.
+                    // Fires regardless of pauseThresholdMs (structural event, not temporal).
+                    // Must be AFTER selection-confirmation gate to avoid racing with edit confirmation.
+                    // Skip when comment peek is expanded to avoid crystallizing during comment interaction.
+                    if (this.trackingMode && editor.document.languageId === 'markdown' &&
+                        !this.changeComments?.isAnyThreadExpandedAtCursor()) {
+                        const text = editor.document.getText();
+                        const cursorOffset = positionToOffset(text, editor.selection.active);
+                        if (this.pendingEditManager.shouldFlushOnCursorMove(cursorOffset)) {
+                            await this.pendingEditManager.flush();
+                        }
                     }
+                    this.updateChangeAtCursorContext(editor);
+                    // Section 11: scheduleDecorationUpdate only when cache has data (cursor unfolding)
+                    const uri = editor.document.uri.toString();
+                    if (getCachedDecorationData(uri)) {
+                        this.scheduleDecorationUpdate(editor);
+                    }
+                    // Send overlay to LSP (cursor move may have flushed)
+                    if (editor.document.languageId === 'markdown' && this.trackingMode) {
+                        this.scheduleOverlaySend();
+                    }
+
+                    this.snapCursorPastHiddenDelimiters(editor, event);
                 }
-                this.updateChangeAtCursorContext(editor);
-                // Section 11: scheduleDecorationUpdate only when cache has data (cursor unfolding)
-                const uri = editor.document.uri.toString();
-                if (getCachedDecorationData(uri)) {
-                    this.scheduleDecorationUpdate(editor);
-                }
-                // Send overlay to LSP (cursor move may have flushed)
-                if (editor.document.languageId === 'markdown' && this.trackingMode) {
-                    this.scheduleOverlaySend();
-                }
+            } catch (err: any) {
+                getOutputChannel()?.appendLine(`[onDidChangeTextEditorSelection] ${err.message}\n${err.stack}`);
             }
         }, null, context.subscriptions);
 
         // Listen to document save events to flush pending edits when enabled
         vscode.workspace.onWillSaveTextDocument(event => {
-            const document = event.document;
+            try {
+                const document = event.document;
 
-            // Only flush if enabled, tracking mode is on, and document is markdown
-            if (this.trackingMode && document.languageId === 'markdown') {
-                // Wrap flush in timeout to prevent hanging save
-                const flushWithTimeout = Promise.race([
-                    this.pendingEditManager.flush(),
-                    new Promise<void>((resolve) => {
-                        setTimeout(() => {
-                            this.logError('Flush timed out during save (5s limit)', new Error('Timeout'), false);
-                            resolve(); // Allow save to proceed
-                        }, 5000);
-                    })
-                ]);
+                // Only flush if enabled, tracking mode is on, and document is markdown
+                if (this.trackingMode && document.languageId === 'markdown') {
+                    // Wrap flush in timeout to prevent hanging save
+                    const flushWithTimeout = Promise.race([
+                        this.pendingEditManager.flush(),
+                        new Promise<void>((resolve) => {
+                            setTimeout(() => {
+                                this.logError('Flush timed out during save (5s limit)', new Error('Timeout'), false);
+                                resolve(); // Allow save to proceed
+                            }, 5000);
+                        })
+                    ]);
 
-                // Use waitUntil to ensure flush completes (or times out) before save
-                event.waitUntil(flushWithTimeout);
+                    // Use waitUntil to ensure flush completes (or times out) before save
+                    event.waitUntil(flushWithTimeout);
+                }
+            } catch (err: any) {
+                getOutputChannel()?.appendLine(`[onWillSaveTextDocument] ${err.message}\n${err.stack}`);
             }
         }, null, context.subscriptions);
 
         // P1-15: Clean up per-document maps when a document closes to prevent memory leaks
         vscode.workspace.onDidCloseTextDocument(doc => {
-            const uri = doc.uri.toString();
-            this.sendOverlayNull(uri);
-            this.documentShadow.delete(uri);
-            this.nextScIdMap.delete(uri);
-            this.documentStates.delete(uri);
-            this.userTrackingOverrides.delete(uri);
-            invalidateDecorationCache(uri);
-            this.changeComments?.disposeThreadsForUri?.(doc.uri);
+            try {
+                const uri = doc.uri.toString();
+                this.sendOverlayNull(uri);
+                this.documentShadow.delete(uri);
+                this.nextScIdMap.delete(uri);
+                this.documentStates.delete(uri);
+                this.userTrackingOverrides.delete(uri);
+                invalidateDecorationCache(uri);
+                this.changeComments?.disposeThreadsForUri?.(doc.uri);
+            } catch (err: any) {
+                getOutputChannel()?.appendLine(`[onDidCloseTextDocument] ${err.message}\n${err.stack}`);
+            }
         }, null, context.subscriptions);
     }
 
@@ -735,7 +768,6 @@ export class ExtensionController {
                 wsEdit.replace(editor.document.uri, range, edit.newText as string);
             }
             await vscode.workspace.applyEdit(wsEdit);
-            invalidateDecorationCache(uri);
         }
 
         return { success: true, result };
@@ -905,19 +937,29 @@ export class ExtensionController {
         // fires onDidChangeTextDocument → handleTrackedEdits wraps the header
         // in {++...++} → infinite recursion. Same guard used by PendingEditManager.
         this.isApplyingTrackedEdit = true;
+        let editSuccess = false;
         try {
             if (headerMatch) {
                 // Update existing header in place
                 const matchStart = text.indexOf(headerMatch[0]);
                 const startPos = editor.document.positionAt(matchStart);
                 const endPos = editor.document.positionAt(matchStart + headerMatch[0].length);
-                await editor.edit(eb => eb.replace(new vscode.Range(startPos, endPos), header));
+                editSuccess = await editor.edit(eb => eb.replace(new vscode.Range(startPos, endPos), header));
             } else {
                 // Insert at line 0
-                await editor.edit(eb => eb.insert(new vscode.Position(0, 0), header + '\n'));
+                editSuccess = await editor.edit(eb => eb.insert(new vscode.Position(0, 0), header + '\n'));
             }
         } finally {
             this.isApplyingTrackedEdit = false;
+        }
+
+        if (!editSuccess) {
+            // Rollback all state mutations
+            this._trackingMode = currentlyTracked;
+            this.userTrackingOverrides.delete(docUri);
+            this.setContextKey('changetracks:trackingEnabled', currentlyTracked);
+            getOutputChannel()?.appendLine('[tracking] header write failed — rolling back state');
+            return;
         }
 
         vscode.window.showInformationMessage(`ChangeTracks Tracking: ${this._trackingMode ? 'ON' : 'OFF'}`);
@@ -1055,33 +1097,32 @@ export class ExtensionController {
      */
     public async nextChange(): Promise<void> {
         const editor = this.findSupportedEditor();
-        if (!editor) {
-            return;
-        }
+        if (!editor) return;
 
         const text = editor.document.getText();
         const languageId = editor.document.languageId;
         const uri = editor.document.uri.toString();
         const virtualDoc = this.getVirtualDocumentFor(uri, text, languageId, true);
-        const changes = virtualDoc.getChanges();
+        const changes = virtualDoc.getChanges()
+            .filter(c => isChangeVisibleInMode(c, this._viewMode, this._showCriticMarkup));
 
         if (changes.length === 0) {
-            vscode.window.showInformationMessage('No changes found in document');
+            vscode.window.showInformationMessage('No visible changes in this view');
             return;
         }
 
-        const cursorOffset = positionToOffset(text, editor.selection.active);
-        const change = this.workspace.nextChange(virtualDoc, cursorOffset);
+        const cursorOffset = editor.document.offsetAt(editor.selection.active);
 
-        if (change) {
-            // Detect wrap-around: next change is before/at cursor means we wrapped to start
-            if (change.range.start <= cursorOffset) {
-                vscode.window.showInformationMessage('Wrapped to first change');
-            }
-            const range = coreRangeToVscode(text, change.range);
-            editor.selection = new vscode.Selection(range.start, range.start);
-            editor.revealRange(range, vscode.TextEditorRevealType.InCenter);
+        // Find first change after cursor, wrapping around
+        let target = changes.find(c => c.range.start > cursorOffset);
+        if (!target) {
+            target = changes[0]; // wrap to first
+            vscode.window.showInformationMessage('Wrapped to first change');
         }
+
+        const pos = editor.document.positionAt(target.range.start);
+        editor.selection = new vscode.Selection(pos, pos);
+        editor.revealRange(new vscode.Range(pos, pos), vscode.TextEditorRevealType.InCenterIfOutsideViewport);
     }
 
     /**
@@ -1089,33 +1130,38 @@ export class ExtensionController {
      */
     public async previousChange(): Promise<void> {
         const editor = this.findSupportedEditor();
-        if (!editor) {
-            return;
-        }
+        if (!editor) return;
 
         const text = editor.document.getText();
         const languageId = editor.document.languageId;
         const uri = editor.document.uri.toString();
         const virtualDoc = this.getVirtualDocumentFor(uri, text, languageId, true);
-        const changes = virtualDoc.getChanges();
+        const changes = virtualDoc.getChanges()
+            .filter(c => isChangeVisibleInMode(c, this._viewMode, this._showCriticMarkup));
 
         if (changes.length === 0) {
-            vscode.window.showInformationMessage('No changes found in document');
+            vscode.window.showInformationMessage('No visible changes in this view');
             return;
         }
 
-        const cursorOffset = positionToOffset(text, editor.selection.active);
-        const change = this.workspace.previousChange(virtualDoc, cursorOffset);
+        const cursorOffset = editor.document.offsetAt(editor.selection.active);
 
-        if (change) {
-            // Detect wrap-around: previous change is at/after cursor means we wrapped to end
-            if (change.range.start >= cursorOffset) {
-                vscode.window.showInformationMessage('Wrapped to last change');
+        // Find last change before cursor, wrapping around
+        let target: ChangeNode | undefined;
+        for (let i = changes.length - 1; i >= 0; i--) {
+            if (changes[i].range.start < cursorOffset) {
+                target = changes[i];
+                break;
             }
-            const range = coreRangeToVscode(text, change.range);
-            editor.selection = new vscode.Selection(range.start, range.start);
-            editor.revealRange(range, vscode.TextEditorRevealType.InCenter);
         }
+        if (!target) {
+            target = changes[changes.length - 1]; // wrap to last
+            vscode.window.showInformationMessage('Wrapped to last change');
+        }
+
+        const pos = editor.document.positionAt(target.range.start);
+        editor.selection = new vscode.Selection(pos, pos);
+        editor.revealRange(new vscode.Range(pos, pos), vscode.TextEditorRevealType.InCenterIfOutsideViewport);
     }
 
     /**
@@ -1220,10 +1266,15 @@ export class ExtensionController {
             const wsEdit = new vscode.WorkspaceEdit();
             wsEdit.replace(editor.document.uri, fullRange, finalText);
             this.isApplyingTrackedEdit = true;
+            let applySuccess = false;
             try {
-                await vscode.workspace.applyEdit(wsEdit);
+                applySuccess = await vscode.workspace.applyEdit(wsEdit);
             } finally {
                 this.isApplyingTrackedEdit = false;
+            }
+            if (!applySuccess) {
+                vscode.window.showWarningMessage('Comment insertion failed — please try again');
+                return;
             }
         } else {
             const body = includeAuthor ? (() => {
@@ -1242,12 +1293,17 @@ export class ExtensionController {
             }
             const vscodeEdit = coreEditToVscode(text, edit);
             this.isApplyingTrackedEdit = true;
+            let editSuccess = false;
             try {
-                await editor.edit(editBuilder => {
+                editSuccess = await editor.edit(editBuilder => {
                     editBuilder.replace(vscodeEdit.range, vscodeEdit.newText);
                 });
             } finally {
                 this.isApplyingTrackedEdit = false;
+            }
+            if (!editSuccess) {
+                vscode.window.showWarningMessage('Comment insertion failed — please try again');
+                return;
             }
         }
 
@@ -1478,52 +1534,55 @@ export class ExtensionController {
 
     /**
      * Accept a change by ID (from CodeLens) or at the current cursor position.
-     * Shows QuickPick for decision (approve / approve with reason / request changes).
+     * When called without `decision`, shows QuickPick for user to choose
+     * (approve / approve with reason / request changes).
+     * When `decision` is provided, bypasses all UI for programmatic callers.
      * Delegates to LSP for all edit computation.
      */
-    public async acceptChangeAtCursor(changeId?: string): Promise<void> {
+    public async acceptChangeAtCursor(changeId?: string, decision?: 'approve' | 'request_changes', reason?: string): Promise<void> {
         const found = this.findChangeForCommand(changeId);
         if (!found) return;
         const { change } = found;
 
-        const config = await this.getProjectConfig();
-        let decision: 'approve' | 'request_changes' = 'approve';
-        let reason: string | undefined;
+        if (!decision) {
+            const config = await this.getProjectConfig();
+            decision = 'approve';
 
-        if (config.reasonRequired.human) {
-            // Reason is mandatory
-            reason = await vscode.window.showInputBox({
-                prompt: 'Reason for accepting this change (required)',
-                placeHolder: 'Enter reason...',
-                validateInput: (v) => v.trim() ? null : 'Reason is required',
-            });
-            if (reason === undefined) return; // cancelled
-        } else {
-            // QuickPick with 3 options
-            interface QuickPickAction extends vscode.QuickPickItem { value: string }
-            const pick = await vscode.window.showQuickPick<QuickPickAction>([
-                { label: '$(check) Accept', description: 'Accept this change', value: 'approve' },
-                { label: '$(edit) Accept with reason...', description: 'Accept and provide a reason', value: 'approve_reason' },
-                { label: '$(comment-discussion) Request Changes...', description: 'Request modifications', value: 'request_changes' },
-            ], { placeHolder: 'Review change' });
-            if (!pick) return; // cancelled
-
-            if (pick.value === 'approve_reason') {
+            if (config.reasonRequired.human) {
+                // Reason is mandatory
                 reason = await vscode.window.showInputBox({
-                    prompt: 'Reason for accepting',
+                    prompt: 'Reason for accepting this change (required)',
                     placeHolder: 'Enter reason...',
+                    validateInput: (v) => v.trim() ? null : 'Reason is required',
                 });
-                if (reason === undefined) return;
-            } else if (pick.value === 'request_changes') {
-                decision = 'request_changes';
-                reason = await vscode.window.showInputBox({
-                    prompt: 'What changes are needed?',
-                    placeHolder: 'Describe requested changes...',
-                    validateInput: (v) => v.trim() ? null : 'Feedback is required',
-                });
-                if (reason === undefined) return;
+                if (reason === undefined) return; // cancelled
+            } else {
+                // QuickPick with 3 options
+                interface QuickPickAction extends vscode.QuickPickItem { value: string }
+                const pick = await vscode.window.showQuickPick<QuickPickAction>([
+                    { label: '$(check) Accept', description: 'Accept this change', value: 'approve' },
+                    { label: '$(edit) Accept with reason...', description: 'Accept and provide a reason', value: 'approve_reason' },
+                    { label: '$(comment-discussion) Request Changes...', description: 'Request modifications', value: 'request_changes' },
+                ], { placeHolder: 'Review change' });
+                if (!pick) return; // cancelled
+
+                if (pick.value === 'approve_reason') {
+                    reason = await vscode.window.showInputBox({
+                        prompt: 'Reason for accepting',
+                        placeHolder: 'Enter reason...',
+                    });
+                    if (reason === undefined) return;
+                } else if (pick.value === 'request_changes') {
+                    decision = 'request_changes';
+                    reason = await vscode.window.showInputBox({
+                        prompt: 'What changes are needed?',
+                        placeHolder: 'Describe requested changes...',
+                        validateInput: (v) => v.trim() ? null : 'Feedback is required',
+                    });
+                    if (reason === undefined) return;
+                }
+                // else: plain approve, no reason needed
             }
-            // else: plain approve, no reason needed
         }
 
         const { success } = await this.sendLifecycleRequest('changetracks/reviewChange', {
@@ -1539,37 +1598,40 @@ export class ExtensionController {
 
     /**
      * Reject a change by ID (from CodeLens) or at the current cursor position.
-     * Shows QuickPick for optional reason. Delegates to LSP for all edit computation.
+     * When called without `decision`, shows QuickPick for optional reason.
+     * When `decision` is provided, bypasses all UI for programmatic callers.
+     * Delegates to LSP for all edit computation.
      */
-    public async rejectChangeAtCursor(changeId?: string): Promise<void> {
+    public async rejectChangeAtCursor(changeId?: string, decision?: 'reject', reason?: string): Promise<void> {
         const found = this.findChangeForCommand(changeId);
         if (!found) return;
         const { change } = found;
 
-        const config = await this.getProjectConfig();
-        let reason: string | undefined;
+        if (!decision) {
+            const config = await this.getProjectConfig();
 
-        if (config.reasonRequired.human) {
-            reason = await vscode.window.showInputBox({
-                prompt: 'Reason for rejecting this change (required)',
-                placeHolder: 'Enter reason...',
-                validateInput: (v) => v.trim() ? null : 'Reason is required',
-            });
-            if (reason === undefined) return;
-        } else {
-            interface QuickPickAction extends vscode.QuickPickItem { value: string }
-            const pick = await vscode.window.showQuickPick<QuickPickAction>([
-                { label: '$(close) Reject', description: 'Reject this change', value: 'reject' },
-                { label: '$(edit) Reject with reason...', description: 'Reject and provide a reason', value: 'reject_reason' },
-            ], { placeHolder: 'Reject change' });
-            if (!pick) return;
-
-            if (pick.value === 'reject_reason') {
+            if (config.reasonRequired.human) {
                 reason = await vscode.window.showInputBox({
-                    prompt: 'Reason for rejecting',
+                    prompt: 'Reason for rejecting this change (required)',
                     placeHolder: 'Enter reason...',
+                    validateInput: (v) => v.trim() ? null : 'Reason is required',
                 });
                 if (reason === undefined) return;
+            } else {
+                interface QuickPickAction extends vscode.QuickPickItem { value: string }
+                const pick = await vscode.window.showQuickPick<QuickPickAction>([
+                    { label: '$(close) Reject', description: 'Reject this change', value: 'reject' },
+                    { label: '$(edit) Reject with reason...', description: 'Reject and provide a reason', value: 'reject_reason' },
+                ], { placeHolder: 'Reject change' });
+                if (!pick) return;
+
+                if (pick.value === 'reject_reason') {
+                    reason = await vscode.window.showInputBox({
+                        prompt: 'Reason for rejecting',
+                        placeHolder: 'Enter reason...',
+                    });
+                    if (reason === undefined) return;
+                }
             }
         }
 
@@ -1795,6 +1857,9 @@ export class ExtensionController {
 
     /**
      * Accept all proposed changes on the current cursor line.
+     * Uses LSP loop pattern: capture change IDs from the original cursor line
+     * BEFORE mutations, then filter by ID in the loop to avoid fragile
+     * re-computation of cursor line position after each mutation.
      */
     public async acceptAllOnLine(): Promise<void> {
         const editor = this.findSupportedEditor();
@@ -1802,11 +1867,11 @@ export class ExtensionController {
 
         const text = editor.document.getText();
         const languageId = editor.document.languageId;
-        const uri = editor.document.uri;
-        const uriStr = uri.toString();
-        const virtualDoc = this.getVirtualDocumentFor(uriStr, text, languageId, true);
+        const uri = editor.document.uri.toString();
+        const virtualDoc = this.getVirtualDocumentFor(uri, text, languageId, true);
         const cursorLine = editor.selection.active.line;
 
+        // Find proposed changes on current line
         const onLine = virtualDoc.getChanges().filter((c: ChangeNode) => {
             if (c.settled || c.status !== ChangeStatus.Proposed) return false;
             const changeLineNum = text.slice(0, c.range.start).split('\n').length - 1;
@@ -1818,34 +1883,51 @@ export class ExtensionController {
             return;
         }
 
-        // Collect accept edits for each change. Call without `text` so workspace does not
-        // add footnote-status edits — pushApprovalLineEdits handles those below.
-        const allEdits: Array<{ offset: number; length: number; newText: string }> = [];
-        for (const change of onLine) {
-            const edits = change.groupId
-                ? this.workspace.acceptGroup(virtualDoc, change.groupId)
-                : this.workspace.acceptChange(change);
-            allEdits.push(...edits);
+        // Capture change IDs on the original line BEFORE mutations shift positions
+        const targetChangeIds = new Set(onLine.map((c: ChangeNode) => c.id).filter((id): id is string => Boolean(id)));
+
+        // LSP loop: accept each change by ID (not by re-filtering line position)
+        let acceptedCount = 0;
+        let lastCandidateId: string | undefined;
+        while (true) {
+            const currentEditor = this.findSupportedEditor();
+            if (!currentEditor) break;
+
+            const freshText = currentEditor.document.getText();
+            const freshDoc = this.getVirtualDocumentFor(
+                currentEditor.document.uri.toString(),
+                freshText,
+                currentEditor.document.languageId,
+                true
+            );
+
+            // Find remaining changes from the original set (by ID, not line position)
+            const candidate = freshDoc.getChanges()
+                .filter(c => c.id && targetChangeIds.has(c.id))
+                .sort((a, b) => b.range.start - a.range.start)[0];
+
+            if (!candidate) break;
+            if (candidate.id === lastCandidateId) break;
+            lastCandidateId = candidate.id;
+
+            const { success } = await this.sendLifecycleRequest('changetracks/reviewChange', {
+                changeId: candidate.id,
+                decision: 'approve',
+            });
+            if (!success) break;
+            acceptedCount++;
         }
 
-        const changeIds = onLine.map((c: ChangeNode) => c.id).filter((id): id is string => Boolean(id));
-        this.pushApprovalLineEdits(text, changeIds, 'accepted', allEdits, onLine);
-
-        const wsEdit = new vscode.WorkspaceEdit();
-        const sorted = [...allEdits].sort((a, b) => b.offset - a.offset);
-        for (const coreEdit of sorted) {
-            const { range, newText } = coreEditToVscode(text, coreEdit);
-            wsEdit.replace(uri, range, newText);
-        }
-        const applied = await vscode.workspace.applyEdit(wsEdit);
-        if (applied) {
-            invalidateDecorationCache(uriStr);
-            vscode.window.showInformationMessage(`Accepted ${onLine.length} change${onLine.length === 1 ? '' : 's'} on line`);
+        if (acceptedCount > 0) {
+            vscode.window.showInformationMessage(`Accepted ${acceptedCount} change${acceptedCount === 1 ? '' : 's'} on line`);
         }
     }
 
     /**
      * Reject all proposed changes on the current cursor line.
+     * Uses LSP loop pattern: capture change IDs from the original cursor line
+     * BEFORE mutations, then filter by ID in the loop to avoid fragile
+     * re-computation of cursor line position after each mutation.
      */
     public async rejectAllOnLine(): Promise<void> {
         const editor = this.findSupportedEditor();
@@ -1853,11 +1935,11 @@ export class ExtensionController {
 
         const text = editor.document.getText();
         const languageId = editor.document.languageId;
-        const uri = editor.document.uri;
-        const uriStr = uri.toString();
-        const virtualDoc = this.getVirtualDocumentFor(uriStr, text, languageId, true);
+        const uri = editor.document.uri.toString();
+        const virtualDoc = this.getVirtualDocumentFor(uri, text, languageId, true);
         const cursorLine = editor.selection.active.line;
 
+        // Find proposed changes on current line
         const onLine = virtualDoc.getChanges().filter((c: ChangeNode) => {
             if (c.settled || c.status !== ChangeStatus.Proposed) return false;
             const changeLineNum = text.slice(0, c.range.start).split('\n').length - 1;
@@ -1869,40 +1951,56 @@ export class ExtensionController {
             return;
         }
 
-        // Collect reject edits for each change. Call without `text` so workspace does not
-        // add footnote-status edits — pushApprovalLineEdits handles those below.
-        const allEdits: Array<{ offset: number; length: number; newText: string }> = [];
-        for (const change of onLine) {
-            const edits = change.groupId
-                ? this.workspace.rejectGroup(virtualDoc, change.groupId)
-                : this.workspace.rejectChange(change);
-            allEdits.push(...edits);
+        // Capture change IDs on the original line BEFORE mutations shift positions
+        const targetChangeIds = new Set(onLine.map((c: ChangeNode) => c.id).filter((id): id is string => Boolean(id)));
+
+        // LSP loop: reject each change by ID (not by re-filtering line position)
+        let rejectedCount = 0;
+        let lastCandidateId: string | undefined;
+        while (true) {
+            const currentEditor = this.findSupportedEditor();
+            if (!currentEditor) break;
+
+            const freshText = currentEditor.document.getText();
+            const freshDoc = this.getVirtualDocumentFor(
+                currentEditor.document.uri.toString(),
+                freshText,
+                currentEditor.document.languageId,
+                true
+            );
+
+            // Find remaining changes from the original set (by ID, not line position)
+            const candidate = freshDoc.getChanges()
+                .filter(c => c.id && targetChangeIds.has(c.id))
+                .sort((a, b) => b.range.start - a.range.start)[0];
+
+            if (!candidate) break;
+            if (candidate.id === lastCandidateId) break;
+            lastCandidateId = candidate.id;
+
+            const { success } = await this.sendLifecycleRequest('changetracks/reviewChange', {
+                changeId: candidate.id,
+                decision: 'reject',
+            });
+            if (!success) break;
+            rejectedCount++;
         }
 
-        const changeIds = onLine.map((c: ChangeNode) => c.id).filter((id): id is string => Boolean(id));
-        this.pushApprovalLineEdits(text, changeIds, 'rejected', allEdits);
-
-        const wsEdit = new vscode.WorkspaceEdit();
-        const sorted = [...allEdits].sort((a, b) => b.offset - a.offset);
-        for (const coreEdit of sorted) {
-            const { range, newText } = coreEditToVscode(text, coreEdit);
-            wsEdit.replace(uri, range, newText);
-        }
-        const applied = await vscode.workspace.applyEdit(wsEdit);
-        if (applied) {
-            invalidateDecorationCache(uriStr);
-            vscode.window.showInformationMessage(`Rejected ${onLine.length} change${onLine.length === 1 ? '' : 's'} on line`);
+        if (rejectedCount > 0) {
+            vscode.window.showInformationMessage(`Rejected ${rejectedCount} change${rejectedCount === 1 ? '' : 's'} on line`);
         }
     }
 
     /**
      * Accept all pending changes in the document at the given URI.
      * Used from SCM context menu (file-scoped accept all).
+     * Uses LSP loop pattern (one change at a time) to avoid overlapping-range errors.
      */
     public async acceptAllInDocument(uri: vscode.Uri): Promise<void> {
         const doc = vscode.workspace.textDocuments.find(d => d.uri.toString() === uri.toString())
             ?? await vscode.workspace.openTextDocument(uri);
         if (!this.isSupported(doc)) return;
+
         const text = doc.getText();
         const languageId = doc.languageId;
         const uriStr = uri.toString();
@@ -1910,30 +2008,58 @@ export class ExtensionController {
         const changes = virtualDoc.getChanges();
         if (changes.length === 0) return;
         if (!await this.confirmBulkAction('Accept', changes.length)) return;
-        const coreEdits = this.workspace.acceptAll(virtualDoc, text, languageId);
-        const changeIds = changes.map((c: ChangeNode) => c.id).filter((id: string | undefined): id is string => Boolean(id));
-        this.pushApprovalLineEdits(text, changeIds, 'accepted', coreEdits, changes);
-        const wsEdit = new vscode.WorkspaceEdit();
-        const sorted = [...coreEdits].sort((a, b) => b.offset - a.offset);
-        for (const coreEdit of sorted) {
-            const { range, newText } = coreEditToVscode(text, coreEdit);
-            wsEdit.replace(uri, range, newText);
+
+        // CRITICAL: Focus target document before LSP loop.
+        // sendLifecycleRequest uses findSupportedEditor() which returns the ACTIVE editor.
+        // If SCM context menu targets a non-active document, this silently operates on the wrong doc.
+        await vscode.window.showTextDocument(doc, { preview: false });
+
+        // LSP loop pattern (same as acceptAllChanges)
+        let acceptedCount = 0;
+        let lastCandidateId: string | undefined;
+        while (true) {
+            const freshDoc = vscode.workspace.textDocuments.find(d => d.uri.toString() === uri.toString())
+                ?? await vscode.workspace.openTextDocument(uri);
+            const freshVirtualDoc = this.getVirtualDocumentFor(
+                uri.toString(),
+                freshDoc.getText(),
+                freshDoc.languageId,
+                true
+            );
+
+            // Pick the last change (highest offset) for offset safety
+            const candidate = freshVirtualDoc.getChanges()
+                .filter(c => c.id)
+                .sort((a, b) => b.range.start - a.range.start)[0];
+
+            if (!candidate) break;
+            // Guard against infinite loop if LSP succeeds but doesn't remove the change
+            if (candidate.id === lastCandidateId) break;
+            lastCandidateId = candidate.id;
+
+            const { success } = await this.sendLifecycleRequest('changetracks/reviewChange', {
+                changeId: candidate.id,
+                decision: 'approve',
+            });
+            if (!success) break;
+            acceptedCount++;
         }
-        const applied = await vscode.workspace.applyEdit(wsEdit);
-        if (applied) {
-            invalidateDecorationCache(uri.toString());
-            // Section 11: LSP receives didChange, sends decorationData → handleDecorationDataUpdate fires
+
+        if (acceptedCount > 0) {
+            vscode.window.showInformationMessage(`Accepted ${acceptedCount} change${acceptedCount === 1 ? '' : 's'} in file`);
         }
     }
 
     /**
      * Reject all pending changes in the document at the given URI.
      * Used from SCM context menu (file-scoped reject all).
+     * Uses LSP loop pattern (one change at a time) to avoid overlapping-range errors.
      */
     public async rejectAllInDocument(uri: vscode.Uri): Promise<void> {
         const doc = vscode.workspace.textDocuments.find(d => d.uri.toString() === uri.toString())
             ?? await vscode.workspace.openTextDocument(uri);
         if (!this.isSupported(doc)) return;
+
         const text = doc.getText();
         const languageId = doc.languageId;
         const uriStr = uri.toString();
@@ -1941,19 +2067,45 @@ export class ExtensionController {
         const changes = virtualDoc.getChanges();
         if (changes.length === 0) return;
         if (!await this.confirmBulkAction('Reject', changes.length)) return;
-        const coreEdits = this.workspace.rejectAll(virtualDoc, text, languageId);
-        const changeIds = changes.map((c: ChangeNode) => c.id).filter((id: string | undefined): id is string => Boolean(id));
-        this.pushApprovalLineEdits(text, changeIds, 'rejected', coreEdits);
-        const wsEdit = new vscode.WorkspaceEdit();
-        const sorted = [...coreEdits].sort((a, b) => b.offset - a.offset);
-        for (const coreEdit of sorted) {
-            const { range, newText } = coreEditToVscode(text, coreEdit);
-            wsEdit.replace(uri, range, newText);
+
+        // CRITICAL: Focus target document before LSP loop.
+        // sendLifecycleRequest uses findSupportedEditor() which returns the ACTIVE editor.
+        // If SCM context menu targets a non-active document, this silently operates on the wrong doc.
+        await vscode.window.showTextDocument(doc, { preview: false });
+
+        // LSP loop pattern (same as rejectAllChanges)
+        let rejectedCount = 0;
+        let lastCandidateId: string | undefined;
+        while (true) {
+            const freshDoc = vscode.workspace.textDocuments.find(d => d.uri.toString() === uri.toString())
+                ?? await vscode.workspace.openTextDocument(uri);
+            const freshVirtualDoc = this.getVirtualDocumentFor(
+                uri.toString(),
+                freshDoc.getText(),
+                freshDoc.languageId,
+                true
+            );
+
+            // Pick the last change (highest offset) for offset safety
+            const candidate = freshVirtualDoc.getChanges()
+                .filter(c => c.id)
+                .sort((a, b) => b.range.start - a.range.start)[0];
+
+            if (!candidate) break;
+            // Guard against infinite loop if LSP succeeds but doesn't remove the change
+            if (candidate.id === lastCandidateId) break;
+            lastCandidateId = candidate.id;
+
+            const { success } = await this.sendLifecycleRequest('changetracks/reviewChange', {
+                changeId: candidate.id,
+                decision: 'reject',
+            });
+            if (!success) break;
+            rejectedCount++;
         }
-        const applied = await vscode.workspace.applyEdit(wsEdit);
-        if (applied) {
-            invalidateDecorationCache(uri.toString());
-            // Section 11: LSP receives didChange, sends decorationData → handleDecorationDataUpdate fires
+
+        if (rejectedCount > 0) {
+            vscode.window.showInformationMessage(`Rejected ${rejectedCount} change${rejectedCount === 1 ? '' : 's'} in file`);
         }
     }
 
@@ -2094,21 +2246,6 @@ export class ExtensionController {
     }
 
     /**
-     * Reviewer identity for accept/reject attribution (ADR-031).
-     * Resolution order: changetracks.reviewerIdentity → changetracks.author setting → undefined.
-     * Note: does NOT use the git/system fallback chain — reviewer attribution is opt-in.
-     */
-    private getReviewerIdentity(): string | undefined {
-        const config = vscode.workspace.getConfiguration('changetracks');
-        const reviewer = config.get<string>('reviewerIdentity', '') || config.get<string>('author', '');
-        return reviewer.trim() || undefined;
-    }
-
-    private getArchiveOnAccept(): boolean {
-        return vscode.workspace.getConfiguration('changetracks').get<boolean>('archiveOnAccept', true) === true;
-    }
-
-    /**
      * Show a modal confirmation dialog before a bulk accept/reject operation.
      * Returns true if the user confirmed (or if the threshold is not exceeded).
      * Controlled by changetracks.confirmBulkThreshold (default 5, 0 = disabled).
@@ -2127,59 +2264,6 @@ export class ExtensionController {
         } catch {
             // VS Code test host refuses modal dialogs — proceed without confirmation
             return true;
-        }
-    }
-
-    /**
-     * Reference text to store in the footnote when archiving on accept (geological record).
-     */
-    private getReferenceTextForArchive(change: ChangeNode): string {
-        switch (change.type) {
-            case ChangeType.Insertion:
-                return change.modifiedText ?? '';
-            case ChangeType.Deletion:
-                return change.originalText ?? '';
-            case ChangeType.Substitution:
-                return `${change.originalText ?? ''} ~> ${change.modifiedText ?? ''}`;
-            case ChangeType.Highlight:
-            case ChangeType.Comment:
-                return change.originalText ?? '';
-        }
-    }
-
-    /**
-     * Append approval/rejection line edits for the given change IDs when reviewer identity is set.
-     * When status is 'accepted' and archiveOnAccept is set, appends archive: lines with reference text.
-     * Mutates the edits array. Caller must apply all edits in reverse offset order.
-     */
-    private pushApprovalLineEdits(
-        text: string,
-        changeIds: string[],
-        status: 'accepted' | 'rejected',
-        edits: { offset: number; length: number; newText: string }[],
-        changes?: ChangeNode[]
-    ): void {
-        // Update footnote header status field (proposed → accepted/rejected)
-        const statusEdits = computeFootnoteStatusEdits(text, changeIds, status);
-        edits.push(...statusEdits);
-
-        const reviewer = this.getReviewerIdentity();
-        if (reviewer) {
-            const date = nowTimestamp().raw;
-            for (const id of changeIds) {
-                if (!id) continue;
-                const edit = computeApprovalLineEdit(text, id, status, { author: reviewer, date });
-                if (edit) edits.push(edit);
-            }
-        }
-        if (status === 'accepted' && this.getArchiveOnAccept() && changes?.length) {
-            const idSet = new Set(changeIds.filter(Boolean));
-            for (const change of changes) {
-                if (!change.id || !idSet.has(change.id) || change.level < 2) continue;
-                const referenceText = this.getReferenceTextForArchive(change);
-                const edit = computeFootnoteArchiveLineEdit(text, change.id, referenceText);
-                if (edit) edits.push(edit);
-            }
         }
     }
 
@@ -2243,24 +2327,130 @@ export class ExtensionController {
 
         // Schedule parent footnote emission
         setTimeout(async () => {
-            const editor = vscode.window.activeTextEditor;
-            if (!editor) return;
-
-            const author = this.getAuthor(editor.document.uri);
-            const date = new Date().toISOString().slice(0, 10);
-            const footnote = generateFootnoteDefinition(`ct-${moveId}`, 'move', author, date);
-
-            this.isApplyingTrackedEdit = true;
             try {
-                const doc = editor.document;
-                const endPos = doc.positionAt(doc.getText().length);
-                await editor.edit(editBuilder => {
-                    editBuilder.insert(endPos, footnote);
-                }, { undoStopBefore: false, undoStopAfter: false });
-            } finally {
-                this.isApplyingTrackedEdit = false;
+                const editor = vscode.window.activeTextEditor;
+                if (!editor) return;
+
+                const author = this.getAuthor(editor.document.uri);
+                const date = new Date().toISOString().slice(0, 10);
+                const footnote = generateFootnoteDefinition(`ct-${moveId}`, 'move', author, date);
+
+                this.isApplyingTrackedEdit = true;
+                try {
+                    const doc = editor.document;
+                    const endPos = doc.positionAt(doc.getText().length);
+                    const success = await editor.edit(editBuilder => {
+                        editBuilder.insert(endPos, footnote);
+                    }, { undoStopBefore: false, undoStopAfter: false });
+                    if (!success) {
+                        getOutputChannel()?.appendLine('[clipboard] move footnote edit failed');
+                    }
+                } finally {
+                    this.isApplyingTrackedEdit = false;
+                }
+            } catch (err: any) {
+                getOutputChannel()?.appendLine(`[clipboard] move footnote failed: ${err.message}`);
             }
         }, 100);
+    }
+
+    private snapCursorPastHiddenDelimiters(
+        editor: vscode.TextEditor,
+        event: vscode.TextEditorSelectionChangeEvent
+    ): void {
+        // Guard: only keyboard-driven, empty selections
+        if (this.isSnappingCursor) return;
+        if (event.kind !== vscode.TextEditorSelectionChangeKind.Keyboard) return;
+        if (!event.selections[0].isEmpty) return;
+
+        // Guard: only when delimiters are hidden
+        const delimitersHidden = this._viewMode !== 'review' || !this._showCriticMarkup;
+        if (!delimitersHidden) return;
+
+        const text = editor.document.getText();
+        const uri = editor.document.uri.toString();
+        const virtualDoc = this.getVirtualDocumentFor(uri, text, editor.document.languageId, true);
+        const changes = virtualDoc.getChanges();
+        if (changes.length === 0) return;
+
+        const cursorOffset = editor.document.offsetAt(event.selections[0].active);
+
+        for (const change of changes) {
+            const fullStart = change.range.start;
+            const fullEnd = change.range.end;
+            const contentStart = change.contentRange.start;
+            const contentEnd = change.contentRange.end;
+
+            if (cursorOffset >= fullStart && cursorOffset < contentStart) {
+                // In opening delimiter — snap to content start
+                const snapPos = editor.document.positionAt(contentStart);
+                this.isSnappingCursor = true;
+                editor.selection = new vscode.Selection(snapPos, snapPos);
+                setTimeout(() => { this.isSnappingCursor = false; }, 0);
+                return;
+            }
+            if (cursorOffset > contentEnd && cursorOffset <= fullEnd) {
+                // In closing delimiter — snap to content end
+                const snapPos = editor.document.positionAt(contentEnd);
+                this.isSnappingCursor = true;
+                editor.selection = new vscode.Selection(snapPos, snapPos);
+                setTimeout(() => { this.isSnappingCursor = false; }, 0);
+                return;
+            }
+
+            // Substitution-internal hidden regions (Final/Original modes)
+            if (change.type === ChangeType.Substitution) {
+                const modStart = change.modifiedRange?.start;
+                const origEnd = change.originalRange?.end;
+                if (this._viewMode === 'settled' && modStart !== undefined) {
+                    // Final mode: original text + separator hidden
+                    if (cursorOffset >= contentStart && cursorOffset < modStart) {
+                        const snapPos = editor.document.positionAt(modStart);
+                        this.isSnappingCursor = true;
+                        editor.selection = new vscode.Selection(snapPos, snapPos);
+                        setTimeout(() => { this.isSnappingCursor = false; }, 0);
+                        return;
+                    }
+                }
+                if (this._viewMode === 'raw' && origEnd !== undefined) {
+                    // Original mode: separator + modified text hidden
+                    if (cursorOffset > origEnd && cursorOffset <= contentEnd) {
+                        const snapPos = editor.document.positionAt(origEnd);
+                        this.isSnappingCursor = true;
+                        editor.selection = new vscode.Selection(snapPos, snapPos);
+                        setTimeout(() => { this.isSnappingCursor = false; }, 0);
+                        return;
+                    }
+                }
+            }
+        }
+    }
+
+    public handleFileRename(oldUri: string, newUri: string): void {
+        // Migrate per-document state maps
+        for (const map of [this.documentShadow, this.documentStates, this.userTrackingOverrides] as Map<string, any>[]) {
+            if (map.has(oldUri)) {
+                if (!map.has(newUri)) {
+                    map.set(newUri, map.get(oldUri)!);
+                }
+                map.delete(oldUri);
+            }
+        }
+        // Special case for nextScIdMap: Math.max prevents ct-ID collisions
+        if (this.nextScIdMap.has(oldUri)) {
+            if (this.nextScIdMap.has(newUri)) {
+                this.nextScIdMap.set(newUri, Math.max(this.nextScIdMap.get(newUri)!, this.nextScIdMap.get(oldUri)!));
+            } else {
+                this.nextScIdMap.set(newUri, this.nextScIdMap.get(oldUri)!);
+            }
+            this.nextScIdMap.delete(oldUri);
+        }
+
+        // Migrate decoration cache
+        migrateDecorationCache(oldUri, newUri);
+
+        // Comment threads: dispose and let them recreate on next decoration update
+        this.changeComments?.disposeThreadsForUri?.(vscode.Uri.parse(oldUri));
     }
 
     public dispose() {

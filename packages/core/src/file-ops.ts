@@ -754,7 +754,7 @@ export function findUniqueMatch(
     const secondIdx = text.indexOf(target, firstIdx + 1);
     if (secondIdx !== -1) {
       throw new Error(
-        `Text "${target}" found multiple times (ambiguous). Provide more context to uniquely identify the location.`
+        `Text "${target}" found multiple times (ambiguous). Provide more context to uniquely identify the location. Use LINE:HASH coordinates from read_tracked_file for precise targeting (e.g., at: '15:a3').`
       );
     }
     return {
@@ -789,7 +789,7 @@ export function findUniqueMatch(
       const normSecondIdx = normalizedText.indexOf(normalizedTarget, normIdx + 1);
       if (normSecondIdx !== -1) {
         throw new Error(
-          `Text "${target}" found multiple times after normalization (ambiguous). Provide more context to uniquely identify the location.`
+          `Text "${target}" found multiple times after normalization (ambiguous). Provide more context to uniquely identify the location. Use LINE:HASH coordinates from read_tracked_file for precise targeting (e.g., at: '15:a3').`
         );
       }
       const originalText = text.slice(normIdx, normIdx + target.length);
@@ -812,7 +812,7 @@ export function findUniqueMatch(
     if (wsMatch !== null) {
       if (whitespaceCollapsedIsAmbiguous(text, target)) {
         throw new Error(
-          `Text "${target}" found multiple times after whitespace collapsing (ambiguous). Provide more context to uniquely identify the location.`
+          `Text "${target}" found multiple times after whitespace collapsing (ambiguous). Provide more context to uniquely identify the location. Use LINE:HASH coordinates from read_tracked_file for precise targeting (e.g., at: '15:a3').`
         );
       }
       return {
@@ -841,7 +841,7 @@ export function findUniqueMatch(
         const committedSecondIdx = committed.indexOf(target, committedIdx + 1);
         if (committedSecondIdx !== -1) {
           throw new Error(
-            `Text "${target}" found multiple times in committed text (ambiguous). Provide more context to uniquely identify the location.`
+            `Text "${target}" found multiple times in committed text (ambiguous). Provide more context to uniquely identify the location. Use LINE:HASH coordinates from read_tracked_file for precise targeting (e.g., at: '15:a3').`
           );
         }
 
@@ -901,7 +901,7 @@ export function findUniqueMatch(
       const settledSecondIdx = settled.indexOf(target, settledIdx + 1);
       if (settledSecondIdx !== -1) {
         throw new Error(
-          `Text "${target}" found multiple times in settled text (ambiguous). Provide more context to uniquely identify the location.`
+          `Text "${target}" found multiple times in settled text (ambiguous). Provide more context to uniquely identify the location. Use LINE:HASH coordinates from read_tracked_file for precise targeting (e.g., at: '15:a3').`
         );
       }
 

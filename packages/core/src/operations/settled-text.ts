@@ -53,31 +53,38 @@ export function computeSettledReplace(change: ChangeNode): TextEdit {
  * on subsequent indented lines (or blank lines within the body).
  * Trailing blank lines left behind are also cleaned up.
  */
-function stripFootnoteDefinitions(text: string): string {
+function stripFootnoteDefinitions(text: string, zones: CodeZone[]): string {
   const lines = text.split('\n');
   const kept: string[] = [];
   let inFootnote = false;
   let foundFootnote = false;
+  let charOffset = 0;
 
   for (const line of lines) {
-    if (FOOTNOTE_DEF_START.test(line)) {
+    // Check if this line's start is inside a code zone
+    const inCodeZone = zones.some(z => charOffset >= z.start && charOffset < z.end);
+
+    if (!inCodeZone && FOOTNOTE_DEF_START.test(line)) {
       inFootnote = true;
       foundFootnote = true;
       // Remove trailing blank lines that were separators before this footnote block
       while (kept.length > 0 && kept[kept.length - 1].trim() === '') {
         kept.pop();
       }
+      charOffset += line.length + 1; // +1 for newline
       continue;
     }
     if (inFootnote) {
       // Continuation lines are indented or blank
       if (line.trim() === '' || /^[\t ]/.test(line)) {
+        charOffset += line.length + 1;
         continue;
       }
       // Non-indented, non-blank line ends the footnote body
       inFootnote = false;
     }
     kept.push(line);
+    charOffset += line.length + 1;
   }
 
   // Only strip trailing blank lines if we actually removed footnote definitions
@@ -95,8 +102,19 @@ function stripFootnoteDefinitions(text: string): string {
  * remain in the text after CriticMarkup processing (these are not part of any
  * change node's range and appear as bare refs in the settled text).
  */
-function stripInlineFootnoteRefs(text: string): string {
-  return text.replace(footnoteRefGlobal(), '');
+function stripInlineFootnoteRefs(text: string, zones: CodeZone[]): string {
+  return text.replace(footnoteRefGlobal(), (match, offset) => {
+    if (zones.some(z => offset >= z.start && offset < z.end)) {
+      return match; // preserve refs inside code zones
+    }
+    return '';
+  });
+}
+
+export interface SettledTextOptions {
+  /** When true, the parser skips CriticMarkup inside fenced code blocks and
+   *  inline code spans. Default: false (backward compatible with existing callers). */
+  skipCodeBlocks?: boolean;
 }
 
 /**
@@ -118,13 +136,15 @@ function stripInlineFootnoteRefs(text: string): string {
  *
  * This is a pure function: it does not modify the input string.
  */
-export function computeSettledText(text: string): string {
+export function computeSettledText(text: string, options?: SettledTextOptions): string {
   const parser = new CriticMarkupParser();
-  const doc = parser.parse(text, { skipCodeBlocks: false });
+  const doc = parser.parse(text, { skipCodeBlocks: options?.skipCodeBlocks ?? false });
   const changes = doc.getChanges();
 
   if (changes.length === 0) {
-    return stripInlineFootnoteRefs(stripFootnoteDefinitions(text));
+    // Compute zones on original text (no edits to shift offsets)
+    const zones = findCodeZones(text);
+    return stripInlineFootnoteRefs(stripFootnoteDefinitions(text, zones), zones);
   }
 
   // Sort changes by descending offset so we can apply edits from end to start
@@ -138,8 +158,13 @@ export function computeSettledText(text: string): string {
     result = result.slice(0, edit.offset) + edit.newText + result.slice(edit.offset + edit.length);
   }
 
-  result = stripFootnoteDefinitions(result);
-  result = stripInlineFootnoteRefs(result);
+  // Compute zones on intermediate text (post-edit, pre-strip).
+  // CriticMarkup edits can shift code fence offsets, so zones must be computed
+  // on the intermediate result. Footnote definitions always appear after all
+  // content and code fences, so stripping them does not shift zone offsets.
+  const zones = findCodeZones(result);
+  result = stripFootnoteDefinitions(result, zones);
+  result = stripInlineFootnoteRefs(result, zones);
 
   return result;
 }

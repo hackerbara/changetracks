@@ -48,6 +48,8 @@ export function activate(context: vscode.ExtensionContext) {
     setOutputChannel(outputChannel);
     context.subscriptions.push(outputChannel);
 
+    const isDevMode = context.extensionMode === vscode.ExtensionMode.Development;
+
     // Log activation context for debugging initialization issues
     outputChannel.appendLine(`[activate] ChangeTracks activating (v${context.extension.packageJSON.version})`);
     outputChannel.appendLine(`[activate] activeTextEditor: ${vscode.window.activeTextEditor?.document.uri.fsPath ?? 'none'}`);
@@ -94,12 +96,14 @@ export function activate(context: vscode.ExtensionContext) {
     // Wire LSP decoration data to controller refresh (fixes LSP push never triggering refresh)
     setDecorationDataHandler((uri, changes) => {
         controller.handleDecorationDataUpdate(uri, changes);
-        // Test bridge: signal that decorationData has arrived for this URI.
-        // Enables Playwright tests to poll for LSP readiness without command palette overhead.
-        try {
-            const signalPath = path.join(os.tmpdir(), 'changetracks-test-decoration-ready.json');
-            fs.writeFileSync(signalPath, JSON.stringify({ uri, changeCount: changes.length, timestamp: Date.now() }));
-        } catch { /* non-critical */ }
+        if (isDevMode) {
+            // Test bridge: signal that decorationData has arrived for this URI.
+            // Enables Playwright tests to poll for LSP readiness without command palette overhead.
+            try {
+                const signalPath = path.join(os.tmpdir(), 'changetracks-test-decoration-ready.json');
+                fs.writeFileSync(signalPath, JSON.stringify({ uri, changeCount: changes.length, timestamp: Date.now() }));
+            } catch { /* non-critical */ }
+        }
     });
 
     // Wire LSP view mode confirmation — log for diagnostics (controller owns the source of truth)
@@ -308,8 +312,52 @@ export function activate(context: vscode.ExtensionContext) {
     // Command modules (Phase 4)
     registerChangeCommands(context, controller, statusModel, changeComments as ChangeCommandsContext);
     registerCommentCommands(context, controller, changeComments);
-    registerTestCommands(context, controller, () => client, changeComments as any);
+    if (isDevMode) {
+        registerTestCommands(context, controller, () => client, changeComments as any);
+    }
     registerSetupCommands(context);
+
+    if (isDevMode) {
+        context.subscriptions.push(
+            // Test-only: keep cursor position in sync on every selection change.
+            // Enables Playwright tests to read cursor line without command palette.
+            vscode.window.onDidChangeTextEditorSelection((e) => {
+                if (e.textEditor.document.languageId === 'markdown') {
+                    const statePath = path.join(os.tmpdir(), 'changetracks-test-cursor.json');
+                    fs.writeFileSync(statePath, JSON.stringify({
+                        line: e.selections[0].active.line + 1, // 1-based
+                        timestamp: Date.now(),
+                    }));
+                }
+            }),
+
+            // Test-only: keep per-instance temp file in sync with document text on
+            // every change. Uses testDocPath() for cross-instance isolation.
+            vscode.workspace.onDidChangeTextDocument((e) => {
+                // Don't check activeTextEditor — it can be temporarily undefined
+                // or wrong after command palette interactions in Playwright tests.
+                if (e.document.languageId === 'markdown' &&
+                    e.document.uri.scheme === 'file') {
+                    fs.writeFileSync(testDocPath(), JSON.stringify({
+                        text: e.document.getText(),
+                        uri: e.document.uri.toString(),
+                        timestamp: Date.now(),
+                    }));
+                }
+            }),
+
+            // Also write on active editor change (file open/switch)
+            vscode.window.onDidChangeActiveTextEditor(async (editor) => {
+                if (editor?.document.languageId === 'markdown') {
+                    fs.writeFileSync(testDocPath(), JSON.stringify({
+                        text: editor.document.getText(),
+                        uri: editor.document.uri.toString(),
+                        timestamp: Date.now(),
+                    }));
+                }
+            }),
+        );
+    }
 
     context.subscriptions.push(
         // CodeLens provider for move operations (shows "Go to destination" / "Go to source")
@@ -317,43 +365,6 @@ export function activate(context: vscode.ExtensionContext) {
             { language: 'markdown' },
             new MoveCodeLensProvider(controller.getChangesForDocument.bind(controller))
         ),
-        // Test-only: keep cursor position in sync on every selection change.
-        // Enables Playwright tests to read cursor line without command palette.
-        vscode.window.onDidChangeTextEditorSelection((e) => {
-            if (e.textEditor.document.languageId === 'markdown') {
-                const statePath = path.join(os.tmpdir(), 'changetracks-test-cursor.json');
-                fs.writeFileSync(statePath, JSON.stringify({
-                    line: e.selections[0].active.line + 1, // 1-based
-                    timestamp: Date.now(),
-                }));
-            }
-        }),
-
-        // Test-only: keep per-instance temp file in sync with document text on
-        // every change. Uses testDocPath() for cross-instance isolation.
-        vscode.workspace.onDidChangeTextDocument((e) => {
-            // Don't check activeTextEditor — it can be temporarily undefined
-            // or wrong after command palette interactions in Playwright tests.
-            if (e.document.languageId === 'markdown' &&
-                e.document.uri.scheme === 'file') {
-                fs.writeFileSync(testDocPath(), JSON.stringify({
-                    text: e.document.getText(),
-                    uri: e.document.uri.toString(),
-                    timestamp: Date.now(),
-                }));
-            }
-        }),
-
-        // Also write on active editor change (file open/switch)
-        vscode.window.onDidChangeActiveTextEditor(async (editor) => {
-            if (editor?.document.languageId === 'markdown') {
-                fs.writeFileSync(testDocPath(), JSON.stringify({
-                    text: editor.document.getText(),
-                    uri: editor.document.uri.toString(),
-                    timestamp: Date.now(),
-                }));
-            }
-        }),
 
         vscode.window.onDidChangeActiveTextEditor(async (editor) => {
             if (!editor) return;
@@ -372,6 +383,15 @@ export function activate(context: vscode.ExtensionContext) {
             await annotateFromGit(editor);
         }),
         controller
+    );
+
+    // Migrate per-document state when files are renamed
+    context.subscriptions.push(
+        vscode.workspace.onDidRenameFiles((event) => {
+            for (const { oldUri, newUri } of event.files) {
+                controller.handleFileRename(oldUri.toString(), newUri.toString());
+            }
+        })
     );
 
     // DOCX custom editor: "Open With..." → ChangeTracks DOCX Editor
@@ -415,13 +435,15 @@ export function activate(context: vscode.ExtensionContext) {
     // Test-only: write initial active editor content to per-instance temp file.
     // The onDidChangeActiveTextEditor listener misses the initial file load
     // because VS Code sets the active editor BEFORE the extension activates.
-    const initialEditor = vscode.window.activeTextEditor;
-    if (initialEditor?.document.languageId === 'markdown') {
-        fs.writeFileSync(testDocPath(), JSON.stringify({
-            text: initialEditor.document.getText(),
-            uri: initialEditor.document.uri.toString(),
-            timestamp: Date.now(),
-        }));
+    if (isDevMode) {
+        const initialEditor = vscode.window.activeTextEditor;
+        if (initialEditor?.document.languageId === 'markdown') {
+            fs.writeFileSync(testDocPath(), JSON.stringify({
+                text: initialEditor.document.getText(),
+                uri: initialEditor.document.uri.toString(),
+                timestamp: Date.now(),
+            }));
+        }
     }
 
     // Markdown preview: register CriticMarkup rendering plugin

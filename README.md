@@ -110,6 +110,11 @@ Changes carry metadata in markdown footnotes:
 
 ```markdown
 The API should use gRPC for internal services.
+
+[^ct-1]: @ai:claude-sonnet-4-5 | 2026-02-17 | sub | proposed
+    @ai:claude-sonnet-4-5 2026-02-17: gRPC reduces serialization
+    overhead for internal service-to-service calls.
+    approved: @james 2026-02-17 "agreed, REST is wasteful here"
 ```
 
 You can use as much or as little of the format as you want:

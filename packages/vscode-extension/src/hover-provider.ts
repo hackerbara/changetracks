@@ -15,7 +15,6 @@ export function registerHoverProvider(
 ): void {
     const selector: vscode.DocumentSelector = [
         { language: 'markdown' },
-        { scheme: 'file', pattern: '**/*' } // sidecar-annotated code files
     ];
 
     const provider = vscode.languages.registerHoverProvider(

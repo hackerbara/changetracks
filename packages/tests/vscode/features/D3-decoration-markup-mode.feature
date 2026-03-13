@@ -29,8 +29,8 @@ Feature: D3 -- Decoration rendering in all-markup mode
     When I decorate in markup mode
     Then substitutionOriginals count is 1
     And substitutionModifieds count is 1
-    And substitutionOriginals has range 0:9 to 0:12
-    And substitutionModifieds has range 0:14 to 0:17
+    And substitutionOriginals has range 0:6 to 0:14
+    And substitutionModifieds has range 0:14 to 0:20
     And hiddens is empty
     And unfolded is empty
 
@@ -277,9 +277,9 @@ Feature: D3 -- Decoration rendering in all-markup mode
     And markup text "Hello {~~old~>new~~} end"
     When I decorate in markup mode
     Then substitutionModifieds count is 1
-    And substitutionModifieds has range 0:14 to 0:17
+    And substitutionModifieds has range 0:14 to 0:20
     And substitutionOriginals count is 1
-    And substitutionOriginals has range 0:9 to 0:12
+    And substitutionOriginals has range 0:6 to 0:14
 
   Scenario: Background mode insertion has background tinting
     Given decorator style "background"
@@ -491,4 +491,4 @@ Feature: D3 -- Decoration rendering in all-markup mode
     # Insertion routed to author type (2 authors -> auto activates)
     And insertions is empty
     # 14 base types + 1 author type (for insertion only, not highlight)
-    And total setDecorations calls is 15
+    And total setDecorations calls is 20

@@ -5,6 +5,7 @@ import { annotateFromGit } from '../annotate-command';
 import type { ExtensionController } from '../controller';
 import { ProjectStatusModel } from '../project-status';
 import { positionToOffset } from '../converters';
+import { getOutputChannel } from '../output-channel';
 
 export interface ChangeCommandsContext {
     expandThreadForChangeId(changeId: string): void;
@@ -66,20 +67,29 @@ export function registerChangeCommands(
             vscode.commands.executeCommand('changetracks.revealPanel');
         }),
         vscode.commands.registerCommand('changetracks.clipboardCutAction', async () => {
-            if (controller.trackingMode) {
-                const editor = vscode.window.activeTextEditor;
-                if (editor && editor.document.languageId === 'markdown') {
-                    controller.prepareCutAsMove();
+            try {
+                if (controller.trackingMode) {
+                    const editor = vscode.window.activeTextEditor;
+                    if (editor && editor.document.languageId === 'markdown') {
+                        controller.prepareCutAsMove();
+                    }
                 }
+            } catch (err: any) {
+                getOutputChannel()?.appendLine(`[clipboard] cut metadata failed: ${err.message}`);
             }
+            // Native action always executes
             await vscode.commands.executeCommand('editor.action.clipboardCutAction');
         }),
         vscode.commands.registerCommand('changetracks.clipboardPasteAction', async () => {
-            if (controller.trackingMode) {
-                const editor = vscode.window.activeTextEditor;
-                if (editor && editor.document.languageId === 'markdown') {
-                    controller.preparePasteAsMove();
+            try {
+                if (controller.trackingMode) {
+                    const editor = vscode.window.activeTextEditor;
+                    if (editor && editor.document.languageId === 'markdown') {
+                        controller.preparePasteAsMove();
+                    }
                 }
+            } catch (err: any) {
+                getOutputChannel()?.appendLine(`[clipboard] paste metadata failed: ${err.message}`);
             }
             await vscode.commands.executeCommand('editor.action.clipboardPasteAction');
         }),

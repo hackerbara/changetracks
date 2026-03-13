@@ -1159,9 +1159,13 @@ export class ChangetracksServer {
         // Find the target L1 change by matching on inlineMetadata fields
         let idx = -1;
         if (preHeader) {
+          // parseFootnoteHeader strips the leading '@' from author (e.g. 'alice'),
+          // while parseInlineMetadata preserves it (e.g. '@alice'). Normalize both
+          // to bare form for comparison.
+          const bareAuthor = (a: string | undefined) => a?.replace(/^@/, '');
           idx = changes.findIndex((c) =>
             c.level === 1 &&
-            c.inlineMetadata?.author === preHeader.author &&
+            bareAuthor(c.inlineMetadata?.author) === bareAuthor(preHeader.author) &&
             c.inlineMetadata?.date === preHeader.date &&
             c.inlineMetadata?.type === preHeader.type
           );

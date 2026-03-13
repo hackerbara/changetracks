@@ -86,17 +86,33 @@ Given('tracking mode is definitely enabled', { timeout: 15000 }, async function 
 ) {
     assert.ok(this.page, 'Page not available');
 
-    // Check header first — after _testResetDocument syncs _trackingMode,
-    // the header is the source of truth and matches the controller state.
+    // Check BOTH the document header AND the controller state via bridge.
+    // After @destructive scenarios, the controller's _trackingMode can be
+    // out of sync with the document header (tracking mode contamination).
     const text = await getDocumentText(this.page, docOpts(this));
     const headerMatch = text.match(/<!--\s*ctrcks\.com\/v1:\s*(tracked|untracked)\s*-->/);
+    const headerSaysTracked = headerMatch?.[1] === 'tracked';
 
-    if (headerMatch?.[1] === 'tracked') {
-        // Already tracked — do nothing
+    // Query actual controller state via bridge command
+    const statePath = path.join(os.tmpdir(), 'changetracks-test-state.json');
+    try { fs.unlinkSync(statePath); } catch { /* ignore */ }
+    await executeCommandViaBridge(this.page, 'ChangeTracks: Test Query Panel State');
+    await this.page.waitForTimeout(300);
+
+    let controllerSaysTracked = false;
+    try {
+        if (fs.existsSync(statePath)) {
+            const state = JSON.parse(fs.readFileSync(statePath, 'utf8'));
+            controllerSaysTracked = !!state.trackingEnabled;
+        }
+    } catch { /* ignore read errors */ }
+
+    if (headerSaysTracked && controllerSaysTracked) {
+        // Both agree tracking is on — nothing to do
         return;
     }
 
-    // Not tracked (or no header yet) — toggle once
+    // Mismatch or tracking is off — toggle until both agree
     await executeCommandViaBridge(this.page, 'ChangeTracks: Toggle Tracking');
     await this.page.waitForTimeout(500);
 

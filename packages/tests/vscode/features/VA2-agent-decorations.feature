@@ -35,8 +35,8 @@ Feature: Agent Content Decorations - Footnoted Changes
     When I decorate in markup mode
     Then substitutionOriginals count is 1
     And substitutionModifieds count is 1
-    And substitutionOriginals has range 0:3 to 0:6
-    And substitutionModifieds has range 0:8 to 0:11
+    And substitutionOriginals has range 0:0 to 0:8
+    And substitutionModifieds has range 0:8 to 0:21
     And hiddens is empty
 
   Scenario: Substitution footnote ref does not affect sub-ranges
@@ -96,7 +96,7 @@ Feature: Agent Content Decorations - Footnoted Changes
     And parsed change 1 has author "@ai:claude"
     And parsed change 2 has author "@alice"
     And insertions is empty
-    And total setDecorations calls is 16
+    And total setDecorations calls is 21
 
   Scenario: Single agent author uses semantic colors
     Given markup text:
@@ -107,7 +107,7 @@ Feature: Agent Content Decorations - Footnoted Changes
       """
     When I decorate in markup mode
     Then insertions count is 1
-    And total setDecorations calls is 14
+    And total setDecorations calls is 19
 
   # ─── Cursor-Aware Unfolding with Footnotes ───────────────────────
 
@@ -196,8 +196,8 @@ Feature: Agent Content Decorations - Footnoted Changes
     And substitutionModifieds count is 1
     And insertions has range 0:0 to 0:18
     And deletions has range 1:0 to 1:20
-    And substitutionOriginals has range 2:3 to 2:6
-    And substitutionModifieds has range 2:8 to 2:11
+    And substitutionOriginals has range 2:0 to 2:8
+    And substitutionModifieds has range 2:8 to 2:21
 
   Scenario: Multiple footnoted changes settled-base: insertion plain, deletion hidden
     Given markup text:

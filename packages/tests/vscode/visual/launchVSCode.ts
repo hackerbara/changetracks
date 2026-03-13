@@ -76,6 +76,8 @@ async function launchVSCodeInternal(
         "update.mode": "none",
         "problems.decorations.enabled": false,
         "editor.codeLens": false,
+        // Show CriticMarkup delimiters so D1/D2 decoration tests can distinguish view modes
+        "changetracks.showCriticMarkup": true,
     };
 
     // Apply theme if specified
@@ -145,8 +147,6 @@ async function launchVSCodeInternal(
     // If we opened a file, wait for it to load and extension to activate
     if (fileToOpen) {
         console.log(`  Waiting for file to load: ${path.basename(fileToOpen)}`);
-        // Wait for the tab to show the filename
-        const fileName = path.basename(fileToOpen);
         await page.waitForTimeout(3000); // Give VS Code time to open the file
         
         // Check if file opened by looking for content in editor

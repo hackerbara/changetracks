@@ -97,3 +97,13 @@ Then('the HTML does not contain {string}', function (this: ChangeTracksWorld, un
         `HTML should not contain "${unwanted}" but it does`
     );
 });
+
+Then('the HTML has no reply badge', function (this: ChangeTracksWorld) {
+    assert.ok(this.settingsHtml, 'No HTML generated');
+    // The reply badge uses class "card-replies" in a <span> element.
+    // The CSS also contains .card-replies, so check for the element marker.
+    assert.ok(
+        !/<span[^>]*class="card-replies"/.test(this.settingsHtml),
+        'HTML should not contain a reply badge element but it does'
+    );
+});

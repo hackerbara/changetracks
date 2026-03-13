@@ -16,6 +16,8 @@ import {
     VIEW_NAME_DISPLAY_NAMES,
     nextViewName,
     resolveViewName,
+    type ChangeNode,
+    ChangeType,
 } from '@changetracks/core';
 
 /** ViewMode is an alias for the canonical ViewName from core. */
@@ -37,3 +39,29 @@ export function nextViewMode(current: ViewMode): ViewMode {
  * Used when reading user config that uses old display names.
  */
 export { resolveViewName };
+
+/**
+ * Returns true if a change should be navigable in the given view mode.
+ * Simple mode deletions return true because cursor arrival reveals them.
+ */
+export function isChangeVisibleInMode(
+    change: ChangeNode,
+    viewMode: ViewMode,
+    showCriticMarkup: boolean
+): boolean {
+    // Settled refs: visible only when showCriticMarkup is on
+    if (change.settled && !showCriticMarkup) return false;
+
+    if (viewMode === 'settled') {
+        // Final mode: hide deletions
+        if (change.type === ChangeType.Deletion) return false;
+        return true;
+    }
+    if (viewMode === 'raw') {
+        // Original mode: hide insertions
+        if (change.type === ChangeType.Insertion) return false;
+        return true;
+    }
+    // Review and Simple modes: all changes navigable
+    return true;
+}

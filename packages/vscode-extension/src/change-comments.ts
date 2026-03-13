@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { ChangeNode, ChangeStatus } from '@changetracks/core';
 import type { ExtensionController } from './controller';
-import { coreRangeToVscode, offsetToPosition, positionToOffset } from './converters';
+import { coreRangeToVscode, positionToOffset } from './converters';
 import { typeLabel, typeLabelCapitalized } from './visual-semantics';
 
 const REFRESH_THREADS_DEBOUNCE_MS = 100;
@@ -178,9 +178,9 @@ export class ChangeComments implements vscode.Disposable {
    * Range for the comment thread so the peek appears below the last line of the change,
    * not in the middle of multi-line insertions/deletions/substitutions.
    */
-  private contentRangeToPeekRange(text: string, contentRange: { start: number; end: number }): vscode.Range {
-    const endPos = offsetToPosition(text, contentRange.end);
-    const lineEnd = new vscode.Position(endPos.line, Number.MAX_SAFE_INTEGER);
+  private contentRangeToPeekRange(document: vscode.TextDocument, contentRange: { start: number; end: number }): vscode.Range {
+    const endPos = document.positionAt(contentRange.end);
+    const lineEnd = document.lineAt(endPos.line).range.end;
     return new vscode.Range(lineEnd, lineEnd);
   }
 
@@ -224,7 +224,6 @@ export class ChangeComments implements vscode.Disposable {
     }
 
     const changes = this.controller.getChangesForDocument(doc);
-    const text = doc.getText();
 
     // Track which threads are still alive
     const activeIds = new Set<string>();
@@ -234,7 +233,7 @@ export class ChangeComments implements vscode.Disposable {
       if (change.level < 1) continue;
 
       activeIds.add(change.id);
-      const range = this.contentRangeToPeekRange(text, change.contentRange);
+      const range = this.contentRangeToPeekRange(doc, change.contentRange);
 
       const existing = this.threads.get(change.id);
       const defaultCollapsibleState = this.getCommentsExpandedByDefault()

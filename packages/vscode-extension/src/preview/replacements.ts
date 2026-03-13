@@ -315,7 +315,7 @@ function changeToReplacement(change: ChangeNode, src: string, options: PreviewOp
             return {
                 start: change.range.start,
                 end: change.range.end,
-                html: `<del class="ct-sub-del ${sc}"${pairAttr}>${sanitizeContentHtml(original)}</del>${insHtml}${badge}${annotation}`,
+                html: `<del class="ct-sub-del ${sc}"${pairAttr}>${sanitizeContentHtml(original)}</del><span class="ct-sub-sep">\u2192</span>${insHtml}${badge}${annotation}`,
             };
         }
         case ChangeType.Highlight: {
@@ -400,13 +400,15 @@ function renderFootnoteHeader(id: string): string {
  * is true, wraps them in a styled <section> panel. When false, strips
  * the entire block by replacing it with empty string.
  */
-function footnoteDefinitionReplacements(src: string, changes: ChangeNode[], options: PreviewOptions): Replacement[] {
+function footnoteDefinitionReplacements(src: string, changes: ChangeNode[], options: PreviewOptions, codeZones?: CodeZone[]): Replacement[] {
     const replacements: Replacement[] = [];
     const defRegex = /^(\[\^(ct-\d+(?:\.\d+)?)\]:[ \t]*)(.*)/gm;
     let match: RegExpExecArray | null;
     const definitions: { start: number; end: number; id: string; firstLine: string }[] = [];
+    const zones = codeZones ?? findCodeZones(src);
 
     while ((match = defRegex.exec(src)) !== null) {
+        if (isInCodeZone(match.index, match.index + match[0].length, zones)) continue;
         const id = match[2];
         const firstLine = match[3];
         const start = match.index;
@@ -517,7 +519,7 @@ export function buildReplacements(src: string, changes: ChangeNode[], options: P
     }
 
     // Footnote definition panel
-    replacements.push(...footnoteDefinitionReplacements(src, changes, options));
+    replacements.push(...footnoteDefinitionReplacements(src, changes, options, codeZones));
 
     // Deduplicate overlapping replacements — keep the wider one
     replacements.sort((a, b) => a.start - b.start || b.end - a.end);

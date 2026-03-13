@@ -18,11 +18,14 @@
 .vscode-light .ct-sub-ins { color: #1E824C; }
 .vscode-dark .ct-sub-ins  { color: #66BB6A; }
 
+/* === Substitution separator === */
+.ct-sub-sep { color: #888; margin: 0 2px; font-size: 0.85em; }
+
 /* === Highlights === */
 .ct-hl { background: rgba(255,255,0,0.3); padding: 0 2px; border-radius: 2px; }
 
 /* === Comments === */
-.ct-comment { cursor: help; font-size: 0.85em; opacity: 0.8; }
+.ct-comment { cursor: help; font-size: 0.85em; color: var(--vscode-descriptionForeground, #666); }
 
 /* === Move operations === */
 .vscode-light .ct-move-from { color: #8E44AD; text-decoration: line-through; }
@@ -66,7 +69,7 @@
     margin-right: 0.5em;
 }
 .ct-fn-author { margin-right: 0.5em; font-weight: 500; }
-.ct-fn-date   { margin-right: 0.5em; opacity: 0.7; font-size: 0.9em; }
+.ct-fn-date   { margin-right: 0.5em; color: var(--vscode-descriptionForeground, #666); font-size: 0.9em; }
 .ct-fn-status {
     display: inline-block;
     padding: 0.1em 0.5em;
@@ -81,7 +84,7 @@
 .vscode-light .ct-fn-status.ct-rejected { background: rgba(192,57,43,0.15); color: #C0392B; }
 .vscode-dark .ct-fn-status.ct-rejected  { background: rgba(239,83,80,0.2); color: #EF5350; }
 
-.ct-fn-comment { margin-top: 0.3em; opacity: 0.85; }
+.ct-fn-comment { margin-top: 0.3em; color: var(--vscode-foreground, #333); }
 
 /* === CriticMarkup inside code fences === */
 pre code .ct-ins,
@@ -101,7 +104,7 @@ pre code .ct-move-to {
     padding: 0.3em 0.6em;
     border-left: 3px solid var(--vscode-editorWidget-border, #ccc);
     font-style: italic;
-    opacity: 0.85;
+    color: var(--vscode-foreground, #333);
 }
 .ct-ctx-changed { font-weight: 600; font-style: normal; }
 
@@ -120,7 +123,7 @@ pre code .ct-move-to {
 .vscode-light .ct-fn-request-changes { background: rgba(230,126,34,0.08); }
 .vscode-dark .ct-fn-request-changes  { background: rgba(255,183,77,0.1); }
 .ct-fn-reviewer { font-weight: 500; }
-.ct-fn-reason { opacity: 0.8; }
+.ct-fn-reason { color: var(--vscode-descriptionForeground, #666); }
 
 /* === Deliberation: Revisions === */
 .ct-fn-revisions {
@@ -145,7 +148,7 @@ pre code .ct-move-to {
 .vscode-dark .ct-discussion-comment  { background: rgba(255,255,255,0.03); }
 
 /* Comment text body */
-.ct-fn-text { opacity: 0.9; }
+.ct-fn-text { color: var(--vscode-foreground, #333); }
 
 /* Comment labels */
 .ct-label {

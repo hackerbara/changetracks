@@ -122,7 +122,8 @@ export class EditorDecorator {
             });
 
             this.substitutionModifiedObj = vscode.window.createTextEditorDecorationType({
-                textDecoration: 'underline; background-color: rgba(0,255,0,0.15); color: rgba(50,255,50,1)',
+                light: { textDecoration: 'underline; background-color: rgba(0,255,0,0.15); color: rgba(0, 130, 0, 1)' },
+                dark: { textDecoration: 'underline; background-color: rgba(0,255,0,0.15); color: rgba(80, 220, 80, 1)' },
                 overviewRulerColor: '#FFB74D80',
                 overviewRulerLane: vscode.OverviewRulerLane.Left
             });
@@ -145,7 +146,8 @@ export class EditorDecorator {
         });
 
         this.unfoldedObj = vscode.window.createTextEditorDecorationType({
-            color: 'rgba(128, 128, 128, 0.5)',
+            light: { color: 'rgba(100, 100, 100, 0.85)' },
+            dark: { color: 'rgba(180, 180, 180, 0.7)' },
             fontStyle: 'italic'
         });
 
@@ -158,7 +160,7 @@ export class EditorDecorator {
         });
 
         this.activeHighlightObj = vscode.window.createTextEditorDecorationType({
-            backgroundColor: 'rgba(100, 149, 237, 0.08)'
+            backgroundColor: 'rgba(100, 149, 237, 0.18)'
         });
 
         // Move decoration types: purple color, CSS injection for specificity
@@ -295,7 +297,7 @@ export class EditorDecorator {
         // - Simple + CM ON: hidden by default, cursor-in-content reveals (cursorRevealMode)
         // - Simple + CM OFF: always hidden, no unfolding
         // - Settled/Raw: CM setting ignored
-        showCriticMarkup = showCriticMarkup ?? (typeof viewMode === 'boolean' ? viewMode : false);
+        showCriticMarkup = showCriticMarkup ?? vscode.workspace.getConfiguration('changetracks').get<boolean>('showCriticMarkup', false);
         const isFinalMode = mode === 'settled';
         const isOriginalMode = mode === 'raw';
         const isReviewMode = mode === 'review';
@@ -788,13 +790,13 @@ export class EditorDecorator {
         // Collect ruler ranges grouped by change type. Rulers are shown in review
         // and changes modes where proposed changes are visible. In settled (final)
         // and raw (original) modes there are no pending changes, so clear all rulers.
-        if (!isFinalMode && !isOriginalMode) {
-            const rulerInsertions: vscode.DecorationOptions[] = [];
-            const rulerDeletions: vscode.DecorationOptions[] = [];
-            const rulerSubstitutions: vscode.DecorationOptions[] = [];
-            const rulerHighlights: vscode.DecorationOptions[] = [];
-            const rulerComments: vscode.DecorationOptions[] = [];
+        const rulerInsertions: vscode.DecorationOptions[] = [];
+        const rulerDeletions: vscode.DecorationOptions[] = [];
+        const rulerSubstitutions: vscode.DecorationOptions[] = [];
+        const rulerHighlights: vscode.DecorationOptions[] = [];
+        const rulerComments: vscode.DecorationOptions[] = [];
 
+        if (!isFinalMode && !isOriginalMode) {
             for (const change of changes) {
                 // Skip settled inline refs — they are dimmed and not pending review
                 if (change.settled) { continue; }
@@ -820,22 +822,9 @@ export class EditorDecorator {
                         break;
                 }
             }
-
-            editor.setDecorations(this.rulerInsertionObj, rulerInsertions);
-            editor.setDecorations(this.rulerDeletionObj, rulerDeletions);
-            editor.setDecorations(this.rulerSubstitutionObj, rulerSubstitutions);
-            editor.setDecorations(this.rulerHighlightObj, rulerHighlights);
-            editor.setDecorations(this.rulerCommentObj, rulerComments);
-        } else {
-            // Clear all ruler marks in final/original modes
-            editor.setDecorations(this.rulerInsertionObj, []);
-            editor.setDecorations(this.rulerDeletionObj, []);
-            editor.setDecorations(this.rulerSubstitutionObj, []);
-            editor.setDecorations(this.rulerHighlightObj, []);
-            editor.setDecorations(this.rulerCommentObj, []);
         }
 
-        // Apply all base decorations (10 fixed types)
+        // Apply all base decorations (10 fixed types — index-sensitive, see SpyEditor)
         editor.setDecorations(this.insertionObj, insertions);
         editor.setDecorations(this.deletionObj, deletions);
         editor.setDecorations(this.substitutionOriginalObj, substitutionOriginals);
@@ -865,6 +854,14 @@ export class EditorDecorator {
         editor.setDecorations(this.moveToObj, moveTos);
         editor.setDecorations(this.settledRefObj, settledRefs);
         editor.setDecorations(this.settledDimObj, settledDims);
+
+        // Overview ruler marks — applied after base decorations to preserve
+        // SpyEditor index order (indices 0–11 must stay stable for fast tests)
+        editor.setDecorations(this.rulerInsertionObj, rulerInsertions);
+        editor.setDecorations(this.rulerDeletionObj, rulerDeletions);
+        editor.setDecorations(this.rulerSubstitutionObj, rulerSubstitutions);
+        editor.setDecorations(this.rulerHighlightObj, rulerHighlights);
+        editor.setDecorations(this.rulerCommentObj, rulerComments);
 
         // Clear all known per-author decoration types, then apply current ones.
         // Without this, switching from a mode that renders author colors (review/changes)

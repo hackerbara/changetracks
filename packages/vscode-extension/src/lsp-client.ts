@@ -333,3 +333,12 @@ export function createLanguageClient(context: vscode.ExtensionContext): Language
 
     return client;
 }
+
+export function migrateDecorationCache(oldUri: string, newUri: string): void {
+    if (decorationCache.has(oldUri)) {
+        if (!decorationCache.has(newUri)) {
+            decorationCache.set(newUri, decorationCache.get(oldUri)!);
+        }
+        decorationCache.delete(oldUri);
+    }
+}

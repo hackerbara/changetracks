@@ -14041,27 +14041,32 @@ function computeSettledReplace(change) {
   }
   throw new Error(`Unknown ChangeType: ${change.type}`);
 }
-function stripFootnoteDefinitions(text) {
+function stripFootnoteDefinitions(text, zones) {
   const lines = text.split("\n");
   const kept = [];
   let inFootnote = false;
   let foundFootnote = false;
+  let charOffset = 0;
   for (const line of lines) {
-    if (FOOTNOTE_DEF_START.test(line)) {
+    const inCodeZone = zones.some((z) => charOffset >= z.start && charOffset < z.end);
+    if (!inCodeZone && FOOTNOTE_DEF_START.test(line)) {
       inFootnote = true;
       foundFootnote = true;
       while (kept.length > 0 && kept[kept.length - 1].trim() === "") {
         kept.pop();
       }
+      charOffset += line.length + 1;
       continue;
     }
     if (inFootnote) {
       if (line.trim() === "" || /^[\t ]/.test(line)) {
+        charOffset += line.length + 1;
         continue;
       }
       inFootnote = false;
     }
     kept.push(line);
+    charOffset += line.length + 1;
   }
   if (foundFootnote) {
     while (kept.length > 0 && kept[kept.length - 1].trim() === "") {
@@ -14070,23 +14075,30 @@ function stripFootnoteDefinitions(text) {
   }
   return kept.join("\n");
 }
-function stripInlineFootnoteRefs(text) {
-  return text.replace(footnoteRefGlobal(), "");
+function stripInlineFootnoteRefs(text, zones) {
+  return text.replace(footnoteRefGlobal(), (match, offset) => {
+    if (zones.some((z) => offset >= z.start && offset < z.end)) {
+      return match;
+    }
+    return "";
+  });
 }
-function computeSettledText(text) {
+function computeSettledText(text, options) {
   const parser = new CriticMarkupParser();
-  const doc = parser.parse(text, { skipCodeBlocks: false });
+  const doc = parser.parse(text, { skipCodeBlocks: options?.skipCodeBlocks ?? false });
   const changes = doc.getChanges();
   if (changes.length === 0) {
-    return stripInlineFootnoteRefs(stripFootnoteDefinitions(text));
+    const zones2 = findCodeZones(text);
+    return stripInlineFootnoteRefs(stripFootnoteDefinitions(text, zones2), zones2);
   }
   const edits = [...changes].sort((a, b) => b.range.start - a.range.start).map(computeSettledReplace);
   let result = text;
   for (const edit of edits) {
     result = result.slice(0, edit.offset) + edit.newText + result.slice(edit.offset + edit.length);
   }
-  result = stripFootnoteDefinitions(result);
-  result = stripInlineFootnoteRefs(result);
+  const zones = findCodeZones(result);
+  result = stripFootnoteDefinitions(result, zones);
+  result = stripInlineFootnoteRefs(result, zones);
   return result;
 }
 function findContainingCodeZone(offset, zones) {
@@ -15044,7 +15056,7 @@ function findUniqueMatch(text, target, normalizer) {
   if (firstIdx !== -1) {
     const secondIdx = text.indexOf(target, firstIdx + 1);
     if (secondIdx !== -1) {
-      throw new Error(`Text "${target}" found multiple times (ambiguous). Provide more context to uniquely identify the location.`);
+      throw new Error(`Text "${target}" found multiple times (ambiguous). Provide more context to uniquely identify the location. Use LINE:HASH coordinates from read_tracked_file for precise targeting (e.g., at: '15:a3').`);
     }
     return {
       index: firstIdx,
@@ -15072,7 +15084,7 @@ function findUniqueMatch(text, target, normalizer) {
     if (normIdx !== -1) {
       const normSecondIdx = normalizedText.indexOf(normalizedTarget, normIdx + 1);
       if (normSecondIdx !== -1) {
-        throw new Error(`Text "${target}" found multiple times after normalization (ambiguous). Provide more context to uniquely identify the location.`);
+        throw new Error(`Text "${target}" found multiple times after normalization (ambiguous). Provide more context to uniquely identify the location. Use LINE:HASH coordinates from read_tracked_file for precise targeting (e.g., at: '15:a3').`);
       }
       const originalText = text.slice(normIdx, normIdx + target.length);
       return {
@@ -15087,7 +15099,7 @@ function findUniqueMatch(text, target, normalizer) {
     const wsMatch = whitespaceCollapsedFind(text, target);
     if (wsMatch !== null) {
       if (whitespaceCollapsedIsAmbiguous(text, target)) {
-        throw new Error(`Text "${target}" found multiple times after whitespace collapsing (ambiguous). Provide more context to uniquely identify the location.`);
+        throw new Error(`Text "${target}" found multiple times after whitespace collapsing (ambiguous). Provide more context to uniquely identify the location. Use LINE:HASH coordinates from read_tracked_file for precise targeting (e.g., at: '15:a3').`);
       }
       return {
         index: wsMatch.index,
@@ -15104,7 +15116,7 @@ function findUniqueMatch(text, target, normalizer) {
       if (committedIdx !== -1) {
         const committedSecondIdx = committed.indexOf(target, committedIdx + 1);
         if (committedSecondIdx !== -1) {
-          throw new Error(`Text "${target}" found multiple times in committed text (ambiguous). Provide more context to uniquely identify the location.`);
+          throw new Error(`Text "${target}" found multiple times in committed text (ambiguous). Provide more context to uniquely identify the location. Use LINE:HASH coordinates from read_tracked_file for precise targeting (e.g., at: '15:a3').`);
         }
         const committedEnd = committedIdx + target.length - 1;
         let rawStart = toRaw[committedIdx];
@@ -15147,7 +15159,7 @@ function findUniqueMatch(text, target, normalizer) {
     if (settledIdx !== -1) {
       const settledSecondIdx = settled.indexOf(target, settledIdx + 1);
       if (settledSecondIdx !== -1) {
-        throw new Error(`Text "${target}" found multiple times in settled text (ambiguous). Provide more context to uniquely identify the location.`);
+        throw new Error(`Text "${target}" found multiple times in settled text (ambiguous). Provide more context to uniquely identify the location. Use LINE:HASH coordinates from read_tracked_file for precise targeting (e.g., at: '15:a3').`);
       }
       const settledEnd = settledIdx + target.length - 1;
       let rawStart = toRaw[settledIdx];
@@ -15717,6 +15729,13 @@ function computeSupersedeResult(text, changeId, opts) {
     return {
       isError: true,
       error: `Cannot supersede change "${changeId}": unexpected status "${header.status}". Only proposed changes can be superseded.`
+    };
+  }
+  const normalizedAuthor = author.startsWith("@") ? author.slice(1) : author;
+  if (header.author === normalizedAuthor) {
+    return {
+      isError: true,
+      error: `Cannot supersede change "${changeId}": authored by the same author (${author}). Use amend_change to modify your own changes.`
     };
   }
   const rejectResult = applyReview(text, changeId, "reject", reason ?? "Superseded by new change", author);

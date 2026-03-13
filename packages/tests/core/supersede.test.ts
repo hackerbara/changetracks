@@ -35,16 +35,17 @@ describe('computeSupersedeResult', () => {
     }
   });
 
-  it('allows supersede by same author (no different-author enforcement)', () => {
+  it('rejects supersede by same author', () => {
     const result = computeSupersedeResult(baseDoc, 'ct-1', {
       newText: 'better',
       oldText: 'new',
       reason: 'Fix',
       author: '@alice',
     });
-    // Same-author supersede is allowed — use amend_change for same-author edits
-    // is a UI guidance concern, not a core validation rule
-    expect(result.isError).toBe(false);
+    expect(result.isError).toBe(true);
+    if (result.isError) {
+      expect(result.error).toContain('same author');
+    }
   });
 
   it('rejects supersede of accepted change', () => {

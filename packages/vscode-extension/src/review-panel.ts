@@ -425,8 +425,8 @@ export class ReviewPanelProvider implements vscode.WebviewViewProvider, vscode.D
                 // Signal full rebuild by leaving added/removed/updated empty but hasChanges true
                 // The caller checks for this via the trackingEnabled/viewMode fields being set
                 // along with no card diffs — we use a different approach: force full rebuild
-                trackingEnabled: newState.trackingEnabled,
-                viewMode: newState.viewMode,
+                trackingEnabled: newState.trackingEnabled !== oldState.trackingEnabled ? newState.trackingEnabled : undefined,
+                viewMode: newState.viewMode !== oldState.viewMode ? newState.viewMode : undefined,
             };
         }
 

@@ -49,7 +49,7 @@ Feature: PNL5 — Review panel lifecycle actions
       [^ct-1]: @alice | 2026-03-09 | insertion | proposed
       """
     When I build the review panel HTML
-    Then the HTML does not contain "💬"
+    Then the HTML has no reply badge
 
   Scenario: PNL5-03 Panel uses theme CSS variables
     Given a lifecycle document with text:

@@ -8,7 +8,7 @@ Every edit is attributed, every decision recorded. The file carries its own deli
 ---
 
 **For humans** — a VS Code extension with the workflow you know from Word and Google Docs. Accept, reject, comment, navigate.
-The comment panel keeps discussion next to the text — no context-switching to review. [^ct-1.2]
+{++The comment panel keeps discussion next to the text — no context-switching to review. ++}[^ct-1.2]
 
 **For agents** — six MCP tools that read and write CriticMarkup directly. Hash-verified coordinates prevent stale edits. {~~Fewer tokens~>2.3× fewer tokens~~}[^ct-1.3] than raw file replacement.
 

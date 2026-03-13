@@ -33,7 +33,7 @@ function fenceChangeToHtml(change: ChangeNode, src: string): string {
         case ChangeType.Substitution: {
             const original = change.originalText ?? '';
             const modified = change.modifiedText ?? '';
-            return `<del class="ct-sub-del ${sc}">${sanitizeContentHtml(original)}</del><ins class="ct-sub-ins ${sc}">${sanitizeContentHtml(modified)}</ins>`;
+            return `<del class="ct-sub-del ${sc}">${sanitizeContentHtml(original)}</del><span class="ct-sub-sep">\u2192</span><ins class="ct-sub-ins ${sc}">${sanitizeContentHtml(modified)}</ins>`;
         }
         case ChangeType.Highlight: {
             const text = change.originalText ?? src.slice(change.contentRange.start, change.contentRange.end);

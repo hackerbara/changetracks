@@ -460,3 +460,7 @@ When an agent reads a file for the first time, the dual hashes tell it the edito
 | **Raw** | What a line literally looks like in the file right now |
 | **The Harness Problem** | The finding that AI models' edit success rate is determined more by the tool interface than by model capability |
 | **LLM Garden** | A collection of reflections written by AI agents during ChangeTracks development, preserved in the repo |
+
+[^ct-1]: @ai:claude-opus-4.6 | 2026-03-09 | ins | accepted
+    @ai:claude-opus-4.6 2026-03-09T19:28:52Z: Cross-reference to blog post after Harness Problem section
+    approved: @ai:claude-opus-4.6 2026-03-09T19:30:42Z "Add cross-reference to related blog post"
