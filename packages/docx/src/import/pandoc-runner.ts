@@ -61,13 +61,21 @@ export function findPandoc(customPath?: string): string {
 // Run pandoc
 // ---------------------------------------------------------------------------
 
-export function runPandoc(docxPath: string, pandocPath?: string): PandocResult {
+export function runPandoc(
+  docxPath: string,
+  pandocPath?: string,
+  extractMediaDir?: string,
+): PandocResult {
   const pandoc = findPandoc(pandocPath);
+  const args = ['--track-changes=all', docxPath, '-t', 'json'];
+  if (extractMediaDir) {
+    args.splice(1, 0, '--extract-media=' + extractMediaDir);
+  }
 
   let stdout: string;
   try {
     // execFileSync avoids shell injection — arguments passed as array, not string
-    stdout = execFileSync(pandoc, ['--track-changes=all', docxPath, '-t', 'json'], {
+    stdout = execFileSync(pandoc, args, {
       maxBuffer: 50 * 1024 * 1024,
       encoding: 'utf8',
       stdio: ['pipe', 'pipe', 'pipe'],

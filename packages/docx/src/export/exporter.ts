@@ -32,7 +32,13 @@ export async function exportDocx(
   }
 
   // Step 1: Convert markdown to paragraphs
-  const result = changesToDocxParagraphs(markdown, { mode, comments });
+  const result = changesToDocxParagraphs(markdown, {
+    mode,
+    comments,
+    mediaDir: options?.mediaDir,
+    defaultDpi: options?.defaultDpi,
+    maxWidthInches: options?.maxWidthInches,
+  });
 
   // Step 2: Build Document
   const doc = new Document({
@@ -58,7 +64,11 @@ export async function exportDocx(
 
   // Step 4: Post-process for Word Online compatibility
   if (wordOnlineCompat) {
-    buffer = await patchDocxForWordOnline(buffer, result.commentPatchInfos) as Buffer;
+    buffer = await patchDocxForWordOnline(
+      buffer,
+      result.commentPatchInfos,
+      result.imagePatchInfos,
+    ) as Buffer;
   }
 
   return {

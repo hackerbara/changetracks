@@ -34,6 +34,7 @@ interface Footnote {
     text: string;
     depth: number;
   }>;
+  imageDimensions?: string;  // e.g., "2.5in x 1.8in"
 }
 
 // ---------------------------------------------------------------------------
@@ -66,17 +67,22 @@ export function astToMarkup(
     author: string,
     date: string,
     type: string,
-    status: string
+    status: string,
+    imageDimensions?: { width: string; height: string },
   ): number {
     const id = nextCtId();
-    footnotes.push({
+    const fn: Footnote = {
       id,
       author: toChangeTracksAuthor(author),
       date: toShortDate(date),
       type,
       status: status || 'proposed',
       comments: [],
-    });
+    };
+    if (imageDimensions) {
+      fn.imageDimensions = `${imageDimensions.width} x ${imageDimensions.height}`;
+    }
+    footnotes.push(fn);
     return id;
   }
 
@@ -192,7 +198,26 @@ export function astToMarkup(
         // --- Deletion ---
         if (classes.includes('deletion')) {
           const meta = getSpanKvs(node);
-          const delText = renderInlineContent(getSpanContent(node));
+          const content = getSpanContent(node);
+
+          // Check for image inside deletion — must come before substitution merge logic
+          const imageNodeDel = content.find((n: PandocInline) => n.t === 'Image');
+          if (imageNodeDel) {
+            const imgAttrs = imageNodeDel.c[0][2] as [string, string][];
+            const alt = renderInlineContent(imageNodeDel.c[1]);
+            const src = imageNodeDel.c[2][0];
+            const widthAttr = imgAttrs.find(([k]: [string, string]) => k === 'width');
+            const heightAttr = imgAttrs.find(([k]: [string, string]) => k === 'height');
+            const ctId = addChangeFootnote(
+              meta.author, meta.date, 'del', 'proposed',
+              widthAttr && heightAttr ? { width: widthAttr[1], height: heightAttr[1] } : undefined,
+            );
+            result += `{--![${alt}](${src})--}[^ct-${ctId}]`;
+            i++;
+            continue;
+          }
+
+          const delText = renderInlineContent(content);
 
           if (options.mergeSubstitutions) {
             // Look ahead for substitution
@@ -262,7 +287,26 @@ export function astToMarkup(
         // --- Insertion ---
         if (classes.includes('insertion')) {
           const meta = getSpanKvs(node);
-          const text = renderInlineContent(getSpanContent(node));
+          const content = getSpanContent(node);
+
+          // Check if content contains an Image node
+          const imageNodeIns = content.find((n: PandocInline) => n.t === 'Image');
+          if (imageNodeIns) {
+            const imgAttrs = imageNodeIns.c[0][2] as [string, string][];
+            const alt = renderInlineContent(imageNodeIns.c[1]);
+            const src = imageNodeIns.c[2][0];
+            const widthAttr = imgAttrs.find(([k]: [string, string]) => k === 'width');
+            const heightAttr = imgAttrs.find(([k]: [string, string]) => k === 'height');
+            const ctId = addChangeFootnote(
+              meta.author, meta.date, 'ins', 'proposed',
+              widthAttr && heightAttr ? { width: widthAttr[1], height: heightAttr[1] } : undefined,
+            );
+            result += `{++![${alt}](${src})++}[^ct-${ctId}]`;
+            i++;
+            continue;
+          }
+
+          const text = renderInlineContent(content);
           const ctId = addChangeFootnote(
             meta.author,
             meta.date,
@@ -345,6 +389,26 @@ export function astToMarkup(
           i++;
           continue;
         }
+      }
+
+      // Plain image — intercept to attach synthetic footnote with dimensions
+      if (node.t === 'Image') {
+        const imgAttrs = node.c[0][2] as [string, string][];
+        const alt = renderInlineContent(node.c[1]);
+        const src = node.c[2][0];
+        const widthAttr = imgAttrs.find(([k]: [string, string]) => k === 'width');
+        const heightAttr = imgAttrs.find(([k]: [string, string]) => k === 'height');
+        if (widthAttr && heightAttr) {
+          const ctId = addChangeFootnote(
+            '@system', new Date().toISOString(), 'image', 'proposed',
+            { width: widthAttr[1], height: heightAttr[1] },
+          );
+          result += `![${alt}](${src})[^ct-${ctId}]`;
+        } else {
+          result += `![${alt}](${src})`;
+        }
+        i++;
+        continue;
       }
 
       // Regular inline
@@ -612,6 +676,10 @@ export function astToMarkup(
       lines.push(
         `[^ct-${fn.id}]: ${fn.author} | ${fn.date} | ${fn.type} | ${fn.status}`
       );
+
+      if (fn.imageDimensions) {
+        lines.push(`    image-dimensions: ${fn.imageDimensions}`);
+      }
 
       for (const comment of fn.comments) {
         const indent = '    ' + '  '.repeat(comment.depth);

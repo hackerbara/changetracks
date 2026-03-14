@@ -7,6 +7,7 @@ import {
   generateFootnoteDefinition,
   scanMaxCtId,
   nowTimestamp,
+  findFootnoteBlockStart,
 } from '@changetracks/core';
 import { validateOrAutoRemap, type RelocationEntry, type AutoRemapResult } from './hashline-relocate.js';
 import { resolveCoordinates, applyCompactOp, type NormalizedCompactOp, type ResolvedCoordinates } from './resolve-and-apply.js';
@@ -118,15 +119,9 @@ function hasHashlineParams(op: Record<string, unknown>): boolean {
  *  subsequent ops will target wrong lines. */
 function bodyLineCount(text: string): number {
   const lines = text.split('\n');
-  const idx = lines.findIndex((line) => line.startsWith('[^ct-'));
-  // Determine the end boundary (all lines if no footnotes, up to footnote block otherwise)
-  let bodyEnd = idx === -1 ? lines.length : idx;
-  // Walk backwards to skip trailing blank lines — ensures consistent counting
-  // whether or not footnotes are present (a file ending with \n has a trailing
-  // empty element from split that must not inflate the count).
-  while (bodyEnd > 0 && lines[bodyEnd - 1]!.trim() === '') {
-    bodyEnd--;
-  }
+  let bodyEnd = findFootnoteBlockStart(lines);
+  // Skip trailing blank lines between body and footnote block
+  while (bodyEnd > 0 && lines[bodyEnd - 1]!.trim() === '') bodyEnd--;
   return bodyEnd;
 }
 

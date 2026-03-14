@@ -1,0 +1,28 @@
+{
+  "name": "llm-jail",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/src/index.js",
+  "types": "dist/src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "default": "./dist/src/index.js"
+    },
+    "./types": {
+      "types": "./dist/src/types.d.ts",
+      "default": "./dist/src/types.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "mocha 'dist/test/**/*.test.js' 'dist/test/*.test.js'"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.0",
+    "@types/node": "^20.0.0",
+    "@types/mocha": "^10.0.0",
+    "mocha": "^10.0.0"
+  }
+}

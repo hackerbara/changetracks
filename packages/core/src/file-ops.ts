@@ -23,9 +23,8 @@ import {
 } from './hashline-cleanup.js';
 import { CriticMarkupParser } from './parser/parser.js';
 import { ChangeType, ChangeStatus } from './model/types.js';
-import { parseFootnotes } from './footnote-parser.js';
-import { findFootnoteSectionRange } from './renderers/view-builder-utils.js';
-import { findCodeZones } from './parser/code-zones.js';
+import { parseFootnotes, findFootnoteBlockStart } from './footnote-parser.js';
+import { FOOTNOTE_DEF_START, FOOTNOTE_CONTINUATION } from './footnote-patterns.js';
 import { viewAwareFind } from './view-surface.js';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -132,14 +131,6 @@ function level1Comment(author: string, changeType: 'ins' | 'del' | 'sub'): strin
  */
 function containsCriticMarkup(text: string): boolean {
   return /\{\+\+|\{--|\{~~|\{==|\{>>/.test(text);
-}
-
-/**
- * Returns true if the line opens or closes a fenced code block (CommonMark).
- * Handles ``` or ```lang; same line pattern toggles the fence.
- */
-function isCodeFenceLine(line: string): boolean {
-  return line.trim().startsWith('```');
 }
 
 // ─── Overlap detection ──────────────────────────────────────────────────────
@@ -1014,39 +1005,17 @@ export function replaceUnique(
  * (outside code blocks) establish the content-zone boundary.
  */
 export function contentZoneText(fullText: string): string {
-  const footnotes = parseFootnotes(fullText);
-  if (footnotes.size === 0) return fullText;
-
-  // Filter out footnotes inside fenced code blocks
-  const codeZones = findCodeZones(fullText);
   const lines = fullText.split('\n');
+  const blockStart = findFootnoteBlockStart(lines);
+  if (blockStart >= lines.length) return fullText;
 
-  // Build line-offset lookup.
-  // The +1 accounts for the '\n' delimiter consumed by split().
-  // lineOffsets[i] gives the character offset where line i starts in fullText.
-  // Since we always slice at the START of a footnote line (lineOffsets[range[0]]),
-  // the accumulated offset is correct regardless of whether the file has a trailing newline.
-  const lineOffsets: number[] = new Array(lines.length);
-  let cumOffset = 0;
-  for (let i = 0; i < lines.length; i++) {
-    lineOffsets[i] = cumOffset;
-    cumOffset += lines[i].length + 1; // +1 for newline
+  // Compute character offset of blockStart without allocating a full array
+  let offset = 0;
+  for (let i = 0; i < blockStart; i++) {
+    offset += lines[i].length + 1;
   }
 
-  // Remove footnotes whose start line falls inside a code zone
-  for (const [id, fn] of footnotes) {
-    const fnCharOffset = lineOffsets[fn.startLine];
-    if (codeZones.some(z => fnCharOffset >= z.start && fnCharOffset < z.end)) {
-      footnotes.delete(id);
-    }
-  }
-
-  const range = findFootnoteSectionRange(footnotes);
-  if (!range) return fullText; // no real footnotes outside code blocks
-
-  // range[0] is the 0-based line index of the first real footnote definition.
-  // Truncate at that line boundary.
-  return fullText.slice(0, lineOffsets[range[0]]);
+  return fullText.slice(0, offset);
 }
 
 // ─── Propose change ─────────────────────────────────────────────────────────
@@ -1207,50 +1176,50 @@ export function extractLineRange(
  * ignored so that example snippets do not capture new footnotes.
  */
 export function appendFootnote(text: string, footnoteBlock: string): string {
-  // Check if document has existing footnotes
-  if (!text.includes('[^ct-')) {
+  const lines = text.split('\n');
+  const blockStart = findFootnoteBlockStart(lines);
+
+  if (blockStart >= lines.length) {
     return text + footnoteBlock;
   }
 
-  const lines = text.split('\n');
-  let lastFootnoteEnd = -1;
-  let inCodeFence = false;
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i]!;
-    if (isCodeFenceLine(line)) {
-      inCodeFence = !inCodeFence;
-      continue;
-    }
-    if (inCodeFence) continue;
-
-    if (line.startsWith('[^ct-')) {
+  // Find the last footnote's end within the terminal block.
+  // Continuation logic matches parseFootnotes(): consume indented lines
+  // and blank lines followed by more indented content.
+  let lastFootnoteEnd = blockStart;
+  for (let i = blockStart; i < lines.length; i++) {
+    if (FOOTNOTE_DEF_START.test(lines[i])) {
       lastFootnoteEnd = i;
       let j = i + 1;
-      while (j < lines.length && lines[j]!.startsWith('    ')) {
-        lastFootnoteEnd = j;
-        j++;
+      while (j < lines.length) {
+        if (FOOTNOTE_CONTINUATION.test(lines[j])) {
+          lastFootnoteEnd = j;
+          j++;
+        } else if (lines[j].trim() === '') {
+          let k = j + 1;
+          while (k < lines.length && lines[k].trim() === '') k++;
+          if (k < lines.length && FOOTNOTE_CONTINUATION.test(lines[k])) {
+            lastFootnoteEnd = j;
+            j++;
+          } else {
+            break;
+          }
+        } else {
+          break;
+        }
       }
     }
-  }
-
-  if (lastFootnoteEnd === -1) {
-    return text + footnoteBlock;
   }
 
   const before = lines.slice(0, lastFootnoteEnd + 1).join('\n');
   const after = lines.slice(lastFootnoteEnd + 1).join('\n');
 
-  // Ensure the new footnote block never concatenates with the last line of the previous
-  // footnote (e.g. "trial" + "aks" -> "trialaks"). Insert exactly one blank line between
-  // the previous block and the new footnote; block already provides leading \n\n.
   const block = footnoteBlock.startsWith('\n') ? footnoteBlock : '\n\n' + footnoteBlock;
-  const separator = '';
 
   if (after.length > 0) {
-    return before + separator + block + '\n' + after;
+    return before + block + '\n' + after;
   }
-  return before + separator + block;
+  return before + block;
 }
 
 // ─── applySingleOperation ───────────────────────────────────────────────────

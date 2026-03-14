@@ -5,7 +5,7 @@
 // This gives Cursor parity with Claude Code's strict-mode raw edit blocking.
 
 import { loadConfig } from '../../config.js';
-import { evaluateRawEdit } from '../../core/policy-engine.js';
+import { evaluateRawEdit } from '../../core/mcp-validation.js';
 import { deriveProjectDir, readStdin, writeStdout, type HookInput } from '../shared.js';
 
 interface CursorPreToolUseResponse {

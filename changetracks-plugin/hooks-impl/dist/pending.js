@@ -4,6 +4,15 @@ function pendingPath(projectDir) {
     return path.join(projectDir, '.changetracks', 'pending.json');
 }
 /**
+ * Writes JSON data atomically using write-to-temp + rename.
+ * Rename is atomic on POSIX, so readers never see a partially-written file.
+ */
+async function atomicWriteJson(filePath, data) {
+    const tmpPath = filePath + '.tmp.' + process.pid;
+    await fs.writeFile(tmpPath, JSON.stringify(data, null, 2), 'utf-8');
+    await fs.rename(tmpPath, filePath);
+}
+/**
  * Reads all pending edits from `.changetracks/pending.json`.
  * Returns an empty array if the file does not exist or contains invalid JSON.
  */
@@ -25,7 +34,7 @@ export async function appendPendingEdit(projectDir, edit) {
     await fs.mkdir(path.dirname(filePath), { recursive: true });
     const existing = await readPendingEdits(projectDir);
     existing.push(edit);
-    await fs.writeFile(filePath, JSON.stringify(existing, null, 2), 'utf-8');
+    await atomicWriteJson(filePath, existing);
 }
 /**
  * Removes the pending.json file, clearing all pending edits.
@@ -56,7 +65,7 @@ export async function clearSessionEdits(projectDir, sessionId) {
         }
     }
     else {
-        await fs.writeFile(filePath, JSON.stringify(remaining, null, 2), 'utf-8');
+        await atomicWriteJson(filePath, remaining);
     }
 }
 //# sourceMappingURL=pending.js.map

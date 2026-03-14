@@ -5,7 +5,7 @@
 // to read_tracked_file. Only blocks in strict mode for tracked files.
 
 import { loadConfig } from '../../config.js';
-import { evaluateRawRead } from '../../core/policy-engine.js';
+import { evaluateRawRead } from '../../core/mcp-validation.js';
 import { deriveProjectDir, readStdin, writeStdout, type HookInput } from '../shared.js';
 
 interface CursorReadResponse {

@@ -1,4 +1,12 @@
-// core/policy-engine.ts — Platform-neutral policy decisions
+// core/mcp-validation.ts — Legacy policy functions (extracted from policy-engine.ts)
+// TODO: migrate Cursor adapters to llm-jail (evaluate/augment replaces these)
+//
+// Claude Code adapters now use llm-jail evaluate()/augment() directly.
+// These functions remain for Cursor adapter backward compatibility:
+//   - evaluateMcpCall → adapters/cursor/before-mcp-execution.ts
+//   - evaluateRawEdit → adapters/cursor/pre-tool-use.ts
+//   - evaluateRawRead → adapters/cursor/before-read-file.ts
+
 import * as fs from 'node:fs';
 import type { PolicyDecision } from './types.js';
 import type { ChangeTracksConfig } from '../config.js';
@@ -13,10 +21,7 @@ export interface RawEditOptions {
 
 /**
  * Evaluate whether a raw Edit/Write to a file should be allowed.
- * Used by: Claude Code PreToolUse, Cursor afterFileEdit (for classification)
- *
- * Pass `{ checkFileExists: true }` when the caller knows this is a Write
- * operation and wants creation tracking bypass for non-existent files.
+ * Used by: Cursor preToolUse (Claude Code now uses llm-jail evaluate())
  */
 export function evaluateRawEdit(
   filePath: string,
@@ -52,7 +57,6 @@ export function evaluateRawEdit(
   }
 
   // Non-existent file with creation tracking enabled → allow (file creation)
-  // PostToolUse hook will add tracking header + creation footnote.
   if (
     options?.checkFileExists &&
     config.policy.creation_tracking !== 'none' &&
@@ -100,10 +104,7 @@ Use propose_change instead of Edit/Write:
 
 /**
  * Evaluate whether a raw file read should be allowed.
- * Used by: Cursor beforeReadFile (Claude Code doesn't intercept reads)
- *
- * Only blocks in strict mode — redirects to read_tracked_file.
- * Safety-net mode allows reads (the edit path handles wrapping).
+ * Used by: Cursor beforeReadFile (Claude Code now uses llm-jail evaluate())
  */
 export function evaluateRawRead(
   filePath: string,

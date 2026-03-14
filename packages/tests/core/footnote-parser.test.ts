@@ -93,7 +93,10 @@ describe('parseFootnotes', () => {
     expect(fn.reason).toBe('complex change');
   });
 
-  it('stops scanning at non-indented line after footnote', () => {
+  it('only parses footnotes in the terminal block (non-terminal footnotes are skipped)', () => {
+    // ct-1 appears before body text — it is NOT in the terminal footnote block.
+    // findFootnoteBlockStart scans backward and stops at the body text line,
+    // so only ct-2 (after the body text) is parsed.
     const content = [
       '[^ct-1]: @alice | 2026-02-17 | ins | proposed',
       '    reason: fix',
@@ -102,8 +105,7 @@ describe('parseFootnotes', () => {
     ].join('\n');
 
     const result = parseFootnotes(content);
-    expect(result.size).toBe(2);
-    expect(result.get('ct-1')!.endLine).toBe(1);
+    expect(result.size).toBe(1);
     expect(result.get('ct-2')!.startLine).toBe(3);
   });
 });

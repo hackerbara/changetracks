@@ -158,3 +158,14 @@ export const FOOTNOTE_DEF_STATUS = new RegExp(
 export const FOOTNOTE_DEF_STATUS_VALUE = new RegExp(
   `^\\[\\^${FOOTNOTE_ID_PATTERN}\\]:\\s.*\\|\\s*(proposed|accepted|rejected)`
 );
+
+// ─── Continuation line pattern ──────────────────────────────────────────────
+
+/**
+ * Matches an indented continuation line (starts with whitespace then non-whitespace).
+ * Used by footnote-parser, committed-text, and file-ops to detect multi-line
+ * footnote definitions.
+ *
+ * Non-global.
+ */
+export const FOOTNOTE_CONTINUATION = /^\s+\S/;

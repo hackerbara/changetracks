@@ -11,6 +11,8 @@
  */
 
 import JSZip from 'jszip';
+import type { ImagePatchInfo, MediaInjection } from '../shared/image-types.js';
+import { wrapTrackedImages, injectMediaFiles } from './image-patch.js';
 
 export interface CommentPatchInfo {
   id: number;
@@ -36,7 +38,9 @@ export function randomParaId(): string {
  */
 export async function patchDocxForWordOnline(
   buffer: Buffer,
-  commentPatchInfos: CommentPatchInfo[]
+  commentPatchInfos: CommentPatchInfo[],
+  imagePatchInfos?: ImagePatchInfo[],
+  mediaInjections?: MediaInjection[],
 ): Promise<Buffer> {
   const zip = await JSZip.loadAsync(buffer);
 
@@ -65,6 +69,11 @@ export async function patchDocxForWordOnline(
   docXml = docXml.replace(/<w:p(?=>|[\s])/g, () => {
     return `<w:p w14:paraId="${randomParaId()}" w14:textId="${randomParaId()}"`;
   });
+
+  // --- Image tracked change wrapping ---
+  if (imagePatchInfos && imagePatchInfos.length > 0) {
+    docXml = wrapTrackedImages(docXml, imagePatchInfos);
+  }
 
   zip.file('word/document.xml', docXml);
 
@@ -153,6 +162,11 @@ export async function patchDocxForWordOnline(
       );
       zip.file('word/styles.xml', stylesXml);
     }
+  }
+
+  // --- Inject unsupported-format media files ---
+  if (mediaInjections && mediaInjections.length > 0) {
+    await injectMediaFiles(zip, mediaInjections);
   }
 
   return Buffer.from(await zip.generateAsync({ type: 'nodebuffer' }));

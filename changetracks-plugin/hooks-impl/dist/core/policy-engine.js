@@ -1,6 +1,7 @@
 // core/policy-engine.ts — Platform-neutral policy decisions
 import * as fs from 'node:fs';
 import { isFileInScope, isFileExcludedFromHooks } from '../scope.js';
+import { parseTrackingHeader } from '@changetracks/core';
 /**
  * Evaluate whether a raw Edit/Write to a file should be allowed.
  * Used by: Claude Code PreToolUse, Cursor afterFileEdit (for classification)
@@ -9,8 +10,25 @@ import { isFileInScope, isFileExcludedFromHooks } from '../scope.js';
  * operation and wants creation tracking bypass for non-existent files.
  */
 export function evaluateRawEdit(filePath, config, projectDir, options) {
-    // Not in tracking scope → allow silently
-    if (!isFileInScope(filePath, config, projectDir)) {
+    const inScope = isFileInScope(filePath, config, projectDir);
+    // Check per-file header override (if file exists)
+    let headerStatus = null;
+    if (fs.existsSync(filePath)) {
+        try {
+            const head = fs.readFileSync(filePath, 'utf-8').slice(0, 500);
+            const header = parseTrackingHeader(head);
+            if (header)
+                headerStatus = header.status;
+        }
+        catch {
+            // Can't read file — no override
+        }
+    }
+    // Per-file header overrides scope decision
+    if (headerStatus === 'untracked') {
+        return { action: 'allow', reason: 'File header declares untracked' };
+    }
+    if (!inScope && headerStatus !== 'tracked') {
         return { action: 'allow', reason: 'File not in tracking scope' };
     }
     // Hook-excluded → allow silently

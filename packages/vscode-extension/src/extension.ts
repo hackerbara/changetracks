@@ -420,7 +420,19 @@ export function activate(context: vscode.ExtensionContext) {
             try {
                 const markdown = editor.document.getText();
                 const { exportDocx } = await import('@changetracks/docx');
-                const { buffer, stats } = await exportDocx(markdown);
+
+                // Derive media folder from the markdown file path.
+                // Convention: foo-changetracks.md → foo_media/, or foo.md → foo_media/
+                const mdDir = path.dirname(mdPath);
+                const docxBasename = path.basename(mdPath)
+                    .replace(/-changetracks\.md$/i, '')
+                    .replace(/\.md$/i, '');
+                const mediaDir = path.join(mdDir, `${docxBasename}_media`);
+                const hasMedia = fs.existsSync(mediaDir);
+
+                const { buffer, stats } = await exportDocx(markdown, {
+                    mediaDir: hasMedia ? mediaDir : undefined,
+                });
 
                 await vscode.workspace.fs.writeFile(saveUri, new Uint8Array(buffer));
                 vscode.window.showInformationMessage(

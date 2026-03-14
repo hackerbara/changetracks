@@ -5,7 +5,7 @@
 // identity and policy constraints. Non-SC tools pass through untouched.
 
 import { loadConfig } from '../../config.js';
-import { evaluateMcpCall } from '../../core/policy-engine.js';
+import { evaluateMcpCall } from '../../core/mcp-validation.js';
 import { deriveProjectDir, readStdin, writeStdout, type HookInput } from '../shared.js';
 
 const CHANGETRACKS_TOOLS = [

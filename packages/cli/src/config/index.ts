@@ -17,6 +17,8 @@ export interface ChangeTracksConfig {
   hooks: {
     enforcement: 'warn' | 'block';
     exclude: string[];
+    intercept_tools: boolean;
+    intercept_bash: boolean;
     patch_wrap_experimental?: boolean;
   };
   matching: {
@@ -67,6 +69,8 @@ export const DEFAULT_CONFIG: ChangeTracksConfig = {
   hooks: {
     enforcement: 'warn',
     exclude: [],
+    intercept_tools: true,
+    intercept_bash: false,
     patch_wrap_experimental: false,
   },
   matching: {

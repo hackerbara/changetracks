@@ -122,8 +122,20 @@ export interface PreviewHtmlOptions {
     currentViewMode: string;
 }
 
+function replaceUnsupportedImages(html: string): string {
+    return html.replace(
+        /<img[^>]*src="[^"]*\.(emf|wmf|tiff?|bmp)"[^>]*>/gi,
+        (match) => {
+            const srcMatch = match.match(/src="([^"]*)"/);
+            const filename = srcMatch ? srcMatch[1].split('/').pop() : 'unknown';
+            return `<div class="image-placeholder" style="padding:12px;border:1px dashed #888;color:#888;text-align:center;margin:8px 0;">[Unsupported format: ${filename}]</div>`;
+        }
+    );
+}
+
 export function buildPreviewHtml(opts: PreviewHtmlOptions): string {
-    const { fileName, bodyHtml, annotations, stats, currentViewMode } = opts;
+    const { fileName, bodyHtml: rawBodyHtml, annotations, stats, currentViewMode } = opts;
+    const bodyHtml = replaceUnsupportedImages(rawBodyHtml);
     const nonce = generateNonce();
 
     const sel = (mode: string) => mode === currentViewMode ? 'selected' : '';
@@ -153,7 +165,7 @@ export function buildPreviewHtml(opts: PreviewHtmlOptions): string {
     }).join('\n');
 
     return `<!DOCTYPE html><html><head>
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'nonce-${nonce}'; script-src 'nonce-${nonce}'; img-src data:;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'nonce-${nonce}'; script-src 'nonce-${nonce}'; img-src data: https: vscode-resource: vscode-webview-resource:;">
 <style nonce="${nonce}">
 /* Base */
 body { font-family: var(--vscode-font-family); color: var(--vscode-foreground); background: var(--vscode-editor-background); margin: 0; }

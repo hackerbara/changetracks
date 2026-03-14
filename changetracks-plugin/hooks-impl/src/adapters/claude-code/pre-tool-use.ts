@@ -1,20 +1,14 @@
 // adapters/claude-code/pre-tool-use.ts — Claude Code PreToolUse handler
 //
-// Contains the handler logic for Claude Code's PreToolUse hook event.
-// Reads config, evaluates raw-edit policy.
-// When strict mode denies an edit, computes a warm redirect with a pre-formatted
-// propose_change call the agent can copy and add reasoning to.
-// The root-level pre-tool-use.ts remains the entrypoint (main + stdin/stdout).
+// Thin adapter: delegates all policy decisions to llm-jail evaluate().
 
-import * as fs from 'node:fs/promises';
-import * as path from 'node:path';
+import { evaluate } from 'llm-jail';
+import type { ToolCall, Verdict } from 'llm-jail';
 import { loadConfig } from '../../config.js';
 import type { HookInput } from '../shared.js';
-import { evaluateRawEdit, evaluateRawRead } from '../../core/policy-engine.js';
-import { formatRedirect, formatReadRedirect } from '../../core/redirect-formatter.js';
+import { buildChangeTracksRule } from '../../changetracks-rules.js';
 
 export interface PreToolUseResult {
-  /** Empty object = allow. Object with permissionDecision = deny/allow/ask. */
   hookSpecificOutput?: {
     hookEventName: string;
     permissionDecision: 'deny' | 'allow' | 'ask';
@@ -23,129 +17,53 @@ export interface PreToolUseResult {
   };
 }
 
-/**
- * Core logic for the PreToolUse handler.
- * Delegates policy decisions to core/policy-engine.ts.
- */
 export async function handlePreToolUse(input: HookInput): Promise<PreToolUseResult> {
-  const { tool_name: rawToolName, tool_input, cwd } = input;
-  const tool_name = rawToolName?.toLowerCase() ?? '';
+  if (!input.tool_name || !input.cwd) return {};
 
-  // read_tracked_file is read-only — always pass through
-  if (tool_name === 'read_tracked_file') {
-    return {};
-  }
-
-  // Handle Read tool — redirect to read_tracked_file in strict mode
-  if (tool_name === 'read') {
-    const filePath = (tool_input?.file_path as string) ?? '';
-    if (!filePath || !cwd) {
-      return {};
-    }
-    const config = await loadConfig(cwd);
-    const decision = evaluateRawRead(filePath, config, cwd);
-
-    if (decision.action === 'deny') {
-      const hint = formatReadRedirect(
-        path.relative(cwd, filePath),
-        { policy: config.policy },
-      );
-      return {
-        hookSpecificOutput: {
-          hookEventName: 'PreToolUse',
-          permissionDecision: 'deny',
-          permissionDecisionReason: hint,
-        },
-      };
-    }
-
-    if (decision.agentHint) {
-      return {
-        hookSpecificOutput: {
-          hookEventName: 'PreToolUse',
-          permissionDecision: 'allow',
-          additionalContext: decision.agentHint,
-        },
-      };
-    }
-    return {};
-  }
-
-  // Only handle Edit and Write tools beyond this point
-  if (tool_name !== 'edit' && tool_name !== 'write') {
-    return {};
-  }
-
-  if (!cwd || !tool_input) {
-    return {};
-  }
-
-  const projectDir = cwd;
-  const filePath = (tool_input.file_path as string) ?? '';
-
-  if (!filePath) {
-    return {};
-  }
-
+  const projectDir = input.cwd;
+  const sessionId = input.session_id ?? 'unknown';
   const config = await loadConfig(projectDir);
-  const oldText = (tool_input.old_string as string) ?? '';
-  const newText = (tool_input.new_string as string) ?? (tool_input.content as string) ?? '';
 
-  const decision = evaluateRawEdit(filePath, config, projectDir, {
-    checkFileExists: tool_name === 'write',
-  });
+  const tool = input.tool_name.toLowerCase();
 
-  if (decision.action === 'allow') {
-    // Creation bypass or other advisory allows: surface agentHint as informational output
-    if (decision.agentHint) {
-      return {
-        hookSpecificOutput: {
-          hookEventName: 'PreToolUse',
-          permissionDecision: 'allow',
-          additionalContext: decision.agentHint,
-        },
-      };
-    }
-    return {};
-  }
+  // Skip interception based on config toggles
+  const isBuiltInTool = tool === 'edit' || tool === 'write' || tool === 'read';
+  const isBashTool = tool === 'bash';
+  if (isBuiltInTool && !config.hooks.intercept_tools) return {};
+  if (isBashTool && !config.hooks.intercept_bash) return {};
 
-  if (decision.action === 'deny') {
-    let hint = decision.agentHint ?? '';
+  const toolCall: ToolCall = {
+    tool,
+    input: input.tool_input ?? {},
+    cwd: projectDir,
+  };
 
-    // Warm redirect: read the file and compute a pre-formatted propose_change call
-    try {
-      const fileContent = await fs.readFile(filePath, 'utf-8');
-      if (config.hashline.enabled) {
-        const { initHashline } = await import('@changetracks/core');
-        await initHashline();
-      }
-      hint = formatRedirect({
-        toolName: (tool_name === 'edit' ? 'Edit' : 'Write') as 'Edit' | 'Write',
-        filePath: path.relative(projectDir, filePath),
-        oldText: oldText,
-        newText: newText,
-        fileContent,
-        config: { protocol: config.protocol, hashline: config.hashline },
-      });
-    } catch {
-      // Fall back to generic agentHint from policy engine on any error
-    }
+  const rule = buildChangeTracksRule(config, projectDir, sessionId);
+  const verdict = await evaluate(toolCall, [rule]);
 
+  return verdictToHookResult(verdict);
+}
+
+function verdictToHookResult(verdict: Verdict): PreToolUseResult {
+  if (verdict.action === 'deny') {
     return {
       hookSpecificOutput: {
         hookEventName: 'PreToolUse',
         permissionDecision: 'deny',
-        permissionDecisionReason: hint,
+        permissionDecisionReason: verdict.reason ?? verdict.agentHint ?? 'Blocked by LLM Jail',
       },
     };
   }
 
-  // warn → allow with advisory context
-  return {
-    hookSpecificOutput: {
-      hookEventName: 'PreToolUse',
-      permissionDecision: 'allow',
-      additionalContext: decision.agentHint,
-    },
-  };
+  if (verdict.action === 'warn' || verdict.agentHint) {
+    return {
+      hookSpecificOutput: {
+        hookEventName: 'PreToolUse',
+        permissionDecision: 'allow',
+        additionalContext: verdict.agentHint,
+      },
+    };
+  }
+
+  return {};
 }

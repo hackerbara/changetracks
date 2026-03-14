@@ -1714,7 +1714,7 @@ function footnoteRefGlobal() {
 function footnoteRefNumericGlobal() {
   return new RegExp(`\\[\\^${FOOTNOTE_ID_NUMERIC_PATTERN}\\]`, "g");
 }
-var FOOTNOTE_ID_PATTERN, FOOTNOTE_ID_NUMERIC_PATTERN, FOOTNOTE_REF_ANCHORED, FOOTNOTE_DEF_START, FOOTNOTE_DEF_START_QUICK, FOOTNOTE_DEF_LENIENT, FOOTNOTE_DEF_STRICT, FOOTNOTE_DEF_STATUS, FOOTNOTE_DEF_STATUS_VALUE;
+var FOOTNOTE_ID_PATTERN, FOOTNOTE_ID_NUMERIC_PATTERN, FOOTNOTE_REF_ANCHORED, FOOTNOTE_DEF_START, FOOTNOTE_DEF_START_QUICK, FOOTNOTE_DEF_LENIENT, FOOTNOTE_DEF_STRICT, FOOTNOTE_DEF_STATUS, FOOTNOTE_DEF_STATUS_VALUE, FOOTNOTE_CONTINUATION;
 var init_footnote_patterns = __esm({
   "../../packages/core/dist-esm/footnote-patterns.js"() {
     "use strict";
@@ -1727,6 +1727,7 @@ var init_footnote_patterns = __esm({
     FOOTNOTE_DEF_STRICT = new RegExp(`^\\[\\^(${FOOTNOTE_ID_PATTERN})\\]:\\s+(?:(@\\S+)\\s+\\|\\s+)?(\\S+)\\s+\\|\\s+(\\S+)\\s+\\|\\s+(\\S+)`);
     FOOTNOTE_DEF_STATUS = new RegExp(`^\\[\\^(${FOOTNOTE_ID_PATTERN})\\]:\\s+(?:@\\S+\\s+\\|\\s+)?\\S+\\s+\\|\\s+\\S+\\s+\\|\\s+(\\S+)`);
     FOOTNOTE_DEF_STATUS_VALUE = new RegExp(`^\\[\\^${FOOTNOTE_ID_PATTERN}\\]:\\s.*\\|\\s*(proposed|accepted|rejected)`);
+    FOOTNOTE_CONTINUATION = /^\s+\S/;
   }
 });
 
@@ -3561,7 +3562,8 @@ var init_hashline_cleanup = __esm({
 function parseFootnotes(content) {
   const lines = content.split("\n");
   const footnotes = /* @__PURE__ */ new Map();
-  for (let i = 0; i < lines.length; i++) {
+  const blockStart = findFootnoteBlockStart(lines);
+  for (let i = blockStart; i < lines.length; i++) {
     const match = lines[i].match(FOOTNOTE_DEF_LENIENT);
     if (!match)
       continue;
@@ -3595,6 +3597,14 @@ function parseFootnotes(content) {
         const metaMatch = lines[j].match(RE_FOOTNOTE_META);
         if (metaMatch && metaMatch[1] === "reason") {
           info.reason = metaMatch[2];
+        } else if (metaMatch && metaMatch[1] === "image-dimensions") {
+          const dimMatch = metaMatch[2].match(/^([\d.]+)in\s*x\s*([\d.]+)in$/);
+          if (dimMatch) {
+            info.imageDimensions = {
+              widthIn: parseFloat(dimMatch[1]),
+              heightIn: parseFloat(dimMatch[2])
+            };
+          }
         }
       }
       info.endLine = j;
@@ -3604,6 +3614,70 @@ function parseFootnotes(content) {
   }
   return footnotes;
 }
+function findFootnoteBlockStart(lines) {
+  let lastDefIdx = -1;
+  for (let i = lines.length - 1; i >= 0; i--) {
+    if (FOOTNOTE_DEF_START.test(lines[i])) {
+      lastDefIdx = i;
+      break;
+    }
+  }
+  if (lastDefIdx === -1) {
+    return lines.length;
+  }
+  let candidate = lastDefIdx;
+  while (candidate >= 0) {
+    let j = candidate + 1;
+    let isTerminal = true;
+    while (j < lines.length) {
+      const line = lines[j];
+      if (FOOTNOTE_DEF_START.test(line) || FOOTNOTE_CONTINUATION.test(line)) {
+        j++;
+      } else if (line.trim() === "") {
+        j++;
+      } else {
+        isTerminal = false;
+        break;
+      }
+    }
+    if (isTerminal) {
+      lastDefIdx = candidate;
+      break;
+    }
+    candidate--;
+    while (candidate >= 0 && !FOOTNOTE_DEF_START.test(lines[candidate])) {
+      candidate--;
+    }
+  }
+  if (candidate < 0) {
+    return lines.length;
+  }
+  let blockStart = lastDefIdx;
+  for (let i = lastDefIdx - 1; i >= 0; i--) {
+    const line = lines[i];
+    if (FOOTNOTE_DEF_START.test(line) || FOOTNOTE_CONTINUATION.test(line)) {
+      blockStart = i;
+    } else if (line.trim() === "") {
+      let hasFootnoteBefore = false;
+      for (let k = i - 1; k >= 0; k--) {
+        if (lines[k].trim() === "")
+          continue;
+        if (FOOTNOTE_DEF_START.test(lines[k]) || FOOTNOTE_CONTINUATION.test(lines[k])) {
+          hasFootnoteBefore = true;
+        }
+        break;
+      }
+      if (hasFootnoteBefore) {
+        blockStart = i;
+      } else {
+        break;
+      }
+    } else {
+      break;
+    }
+  }
+  return blockStart;
+}
 var RE_THREAD_REPLY, RE_FOOTNOTE_META;
 var init_footnote_parser = __esm({
   "../../packages/core/dist-esm/footnote-parser.js"() {
@@ -3611,69 +3685,7 @@ var init_footnote_parser = __esm({
     init_footnote_patterns();
     init_timestamp();
     RE_THREAD_REPLY = /^\s+@\S+\s+\d{4}-\d{2}-\d{2}(?:[T ]\d{1,2}:\d{2}(?::\d{2})?(?:\s?[AaPp][Mm])?Z?)?:/;
-    RE_FOOTNOTE_META = /^\s+(\w+):\s*(.*)/;
-  }
-});
-
-// ../../packages/core/dist-esm/renderers/view-builder-utils.js
-function buildDeliberationHeader(options) {
-  const { footnotes } = options;
-  let proposed = 0, accepted = 0, rejected = 0, threadCount = 0;
-  const authorSet = /* @__PURE__ */ new Set();
-  for (const fn of footnotes.values()) {
-    if (fn.status === "proposed")
-      proposed++;
-    else if (fn.status === "accepted")
-      accepted++;
-    else if (fn.status === "rejected")
-      rejected++;
-    if (fn.replyCount > 0)
-      threadCount++;
-    if (fn.author)
-      authorSet.add(fn.author);
-  }
-  return {
-    filePath: options.filePath,
-    trackingStatus: options.trackingStatus,
-    protocolMode: options.protocolMode,
-    defaultView: options.defaultView,
-    viewPolicy: options.viewPolicy,
-    counts: { proposed, accepted, rejected },
-    authors: [...authorSet].sort(),
-    threadCount,
-    lineRange: options.lineRange
-  };
-}
-function buildLineRefMap(lines) {
-  const map = /* @__PURE__ */ new Map();
-  for (let i = 0; i < lines.length; i++) {
-    const refs = /* @__PURE__ */ new Set();
-    for (const match of lines[i].matchAll(REF_EXTRACT_RE)) {
-      refs.add(match[1]);
-    }
-    if (refs.size > 0)
-      map.set(i, refs);
-  }
-  return map;
-}
-function findFootnoteSectionRange(footnotes) {
-  if (footnotes.size === 0)
-    return null;
-  let min = Infinity;
-  let max = -Infinity;
-  for (const fn of footnotes.values()) {
-    if (fn.startLine < min)
-      min = fn.startLine;
-    if (fn.endLine > max)
-      max = fn.endLine;
-  }
-  return [min, max];
-}
-var REF_EXTRACT_RE;
-var init_view_builder_utils = __esm({
-  "../../packages/core/dist-esm/renderers/view-builder-utils.js"() {
-    "use strict";
-    REF_EXTRACT_RE = /\[\^(ct-\d+(?:\.\d+)?)\]/g;
+    RE_FOOTNOTE_META = /^\s+([\w-]+):\s*(.*)/;
   }
 });
 
@@ -3729,9 +3741,6 @@ function level1Comment(author, changeType) {
 }
 function containsCriticMarkup(text) {
   return /\{\+\+|\{--|\{~~|\{==|\{>>/.test(text);
-}
-function isCodeFenceLine(line) {
-  return line.trim().startsWith("```");
 }
 function resolveProposedChanges(text) {
   const parser = new CriticMarkupParser();
@@ -4278,27 +4287,15 @@ function replaceUnique(text, target, replacement, normalizer) {
   return text.slice(0, match.index) + replacement + text.slice(match.index + match.length);
 }
 function contentZoneText(fullText) {
-  const footnotes = parseFootnotes(fullText);
-  if (footnotes.size === 0)
-    return fullText;
-  const codeZones = findCodeZones(fullText);
   const lines = fullText.split("\n");
-  const lineOffsets = new Array(lines.length);
-  let cumOffset = 0;
-  for (let i = 0; i < lines.length; i++) {
-    lineOffsets[i] = cumOffset;
-    cumOffset += lines[i].length + 1;
-  }
-  for (const [id, fn] of footnotes) {
-    const fnCharOffset = lineOffsets[fn.startLine];
-    if (codeZones.some((z) => fnCharOffset >= z.start && fnCharOffset < z.end)) {
-      footnotes.delete(id);
-    }
-  }
-  const range = findFootnoteSectionRange(footnotes);
-  if (!range)
+  const blockStart = findFootnoteBlockStart(lines);
+  if (blockStart >= lines.length)
     return fullText;
-  return fullText.slice(0, lineOffsets[range[0]]);
+  let offset = 0;
+  for (let i = 0; i < blockStart; i++) {
+    offset += lines[i].length + 1;
+  }
+  return fullText.slice(0, offset);
 }
 function applyProposeChange(params) {
   const { text, oldText, newText, changeId, author, reasoning, insertAfter, level = 2 } = params;
@@ -4390,40 +4387,43 @@ function extractLineRange(fileLines, startLine, endLine) {
   return { content, startOffset, endOffset };
 }
 function appendFootnote(text, footnoteBlock) {
-  if (!text.includes("[^ct-")) {
+  const lines = text.split("\n");
+  const blockStart = findFootnoteBlockStart(lines);
+  if (blockStart >= lines.length) {
     return text + footnoteBlock;
   }
-  const lines = text.split("\n");
-  let lastFootnoteEnd = -1;
-  let inCodeFence = false;
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    if (isCodeFenceLine(line)) {
-      inCodeFence = !inCodeFence;
-      continue;
-    }
-    if (inCodeFence)
-      continue;
-    if (line.startsWith("[^ct-")) {
+  let lastFootnoteEnd = blockStart;
+  for (let i = blockStart; i < lines.length; i++) {
+    if (FOOTNOTE_DEF_START.test(lines[i])) {
       lastFootnoteEnd = i;
       let j = i + 1;
-      while (j < lines.length && lines[j].startsWith("    ")) {
-        lastFootnoteEnd = j;
-        j++;
+      while (j < lines.length) {
+        if (FOOTNOTE_CONTINUATION.test(lines[j])) {
+          lastFootnoteEnd = j;
+          j++;
+        } else if (lines[j].trim() === "") {
+          let k = j + 1;
+          while (k < lines.length && lines[k].trim() === "")
+            k++;
+          if (k < lines.length && FOOTNOTE_CONTINUATION.test(lines[k])) {
+            lastFootnoteEnd = j;
+            j++;
+          } else {
+            break;
+          }
+        } else {
+          break;
+        }
       }
     }
-  }
-  if (lastFootnoteEnd === -1) {
-    return text + footnoteBlock;
   }
   const before = lines.slice(0, lastFootnoteEnd + 1).join("\n");
   const after = lines.slice(lastFootnoteEnd + 1).join("\n");
   const block = footnoteBlock.startsWith("\n") ? footnoteBlock : "\n\n" + footnoteBlock;
-  const separator = "";
   if (after.length > 0) {
-    return before + separator + block + "\n" + after;
+    return before + block + "\n" + after;
   }
-  return before + separator + block;
+  return before + block;
 }
 function applySingleOperation(params) {
   const { fileContent, oldText, newText, changeId, author, reasoning, insertAfter, afterLine, startLine, endLine } = params;
@@ -4520,8 +4520,7 @@ var init_file_ops = __esm({
     init_parser();
     init_types();
     init_footnote_parser();
-    init_view_builder_utils();
-    init_code_zones();
+    init_footnote_patterns();
     init_view_surface();
   }
 });
@@ -5140,7 +5139,8 @@ function computeCommittedLine(line, footnotes) {
 }
 function findFootnoteLineIndices(lines) {
   const indices = /* @__PURE__ */ new Set();
-  for (let i = 0; i < lines.length; i++) {
+  const blockStart = findFootnoteBlockStart(lines);
+  for (let i = blockStart; i < lines.length; i++) {
     if (!FOOTNOTE_DEF_START_QUICK.test(lines[i]))
       continue;
     indices.add(i);
@@ -5528,6 +5528,68 @@ var init_formatters = __esm({
     init_plain_text();
     init_ansi();
     init_html();
+  }
+});
+
+// ../../packages/core/dist-esm/renderers/view-builder-utils.js
+function buildDeliberationHeader(options) {
+  const { footnotes } = options;
+  let proposed = 0, accepted = 0, rejected = 0, threadCount = 0;
+  const authorSet = /* @__PURE__ */ new Set();
+  for (const fn of footnotes.values()) {
+    if (fn.status === "proposed")
+      proposed++;
+    else if (fn.status === "accepted")
+      accepted++;
+    else if (fn.status === "rejected")
+      rejected++;
+    if (fn.replyCount > 0)
+      threadCount++;
+    if (fn.author)
+      authorSet.add(fn.author);
+  }
+  return {
+    filePath: options.filePath,
+    trackingStatus: options.trackingStatus,
+    protocolMode: options.protocolMode,
+    defaultView: options.defaultView,
+    viewPolicy: options.viewPolicy,
+    counts: { proposed, accepted, rejected },
+    authors: [...authorSet].sort(),
+    threadCount,
+    lineRange: options.lineRange
+  };
+}
+function buildLineRefMap(lines) {
+  const map = /* @__PURE__ */ new Map();
+  for (let i = 0; i < lines.length; i++) {
+    const refs = /* @__PURE__ */ new Set();
+    for (const match of lines[i].matchAll(REF_EXTRACT_RE)) {
+      refs.add(match[1]);
+    }
+    if (refs.size > 0)
+      map.set(i, refs);
+  }
+  return map;
+}
+function findFootnoteSectionRange(footnotes) {
+  if (footnotes.size === 0)
+    return null;
+  let min = Infinity;
+  let max = -Infinity;
+  for (const fn of footnotes.values()) {
+    if (fn.startLine < min)
+      min = fn.startLine;
+    if (fn.endLine > max)
+      max = fn.endLine;
+  }
+  return [min, max];
+}
+var REF_EXTRACT_RE;
+var init_view_builder_utils = __esm({
+  "../../packages/core/dist-esm/renderers/view-builder-utils.js"() {
+    "use strict";
+    REF_EXTRACT_RE = /\[\^(ct-\d+(?:\.\d+)?)\]/g;
   }
 });
 
@@ -6701,6 +6763,8 @@ function parseConfigToml(raw) {
     hooks: {
       enforcement: hooks?.["enforcement"] === "warn" || hooks?.["enforcement"] === "block" ? hooks["enforcement"] : DEFAULT_CONFIG.hooks.enforcement,
       exclude: asStringArray(hooks?.["exclude"]) ?? DEFAULT_CONFIG.hooks.exclude,
+      intercept_tools: typeof hooks?.["intercept_tools"] === "boolean" ? hooks["intercept_tools"] : DEFAULT_CONFIG.hooks.intercept_tools,
+      intercept_bash: typeof hooks?.["intercept_bash"] === "boolean" ? hooks["intercept_bash"] : DEFAULT_CONFIG.hooks.intercept_bash,
       patch_wrap_experimental: typeof hooks?.["patch_wrap_experimental"] === "boolean" ? hooks["patch_wrap_experimental"] : DEFAULT_CONFIG.hooks.patch_wrap_experimental
     },
     matching: {
@@ -6817,6 +6881,8 @@ var DEFAULT_CONFIG = {
   hooks: {
     enforcement: "warn",
     exclude: [],
+    intercept_tools: true,
+    intercept_bash: false,
     patch_wrap_experimental: false
   },
   matching: {
@@ -9268,11 +9334,9 @@ function hasHashlineParams(op) {
 }
 function bodyLineCount(text) {
   const lines = text.split("\n");
-  const idx = lines.findIndex((line) => line.startsWith("[^ct-"));
-  let bodyEnd = idx === -1 ? lines.length : idx;
-  while (bodyEnd > 0 && lines[bodyEnd - 1].trim() === "") {
+  let bodyEnd = findFootnoteBlockStart(lines);
+  while (bodyEnd > 0 && lines[bodyEnd - 1].trim() === "")
     bodyEnd--;
-  }
   return bodyEnd;
 }
 async function handleProposeBatch(args, resolver, state) {

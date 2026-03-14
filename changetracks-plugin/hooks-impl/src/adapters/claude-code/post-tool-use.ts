@@ -1,157 +1,84 @@
 // adapters/claude-code/post-tool-use.ts — Claude Code PostToolUse handler
 //
-// Contains the handler logic for Claude Code's PostToolUse hook event.
-// Logs edits to pending.json for later batch processing by the Stop hook.
-// The root-level post-tool-use.ts remains the entrypoint (main + stdin/stdout).
+// Thin adapter: delegates side effects and context injection to llm-jail augment().
 
 import * as fs from 'node:fs/promises';
 import { nowTimestamp } from '@changetracks/core';
+import { augment } from 'llm-jail';
+import type { ToolCall, ToolResult } from 'llm-jail';
 import { loadConfig } from '../../config.js';
-import { isFileInScope, isFileExcludedFromHooks } from '../../scope.js';
+import { isFileInScope } from '../../scope.js';
 import type { HookInput } from '../shared.js';
-import { shouldLogEdit, logEdit, logReadAudit } from '../../core/edit-tracker.js';
+import { buildChangeTracksRule } from '../../changetracks-rules.js';
 
 export interface PostToolUseResult {
-  /** PostToolUse always returns empty — no blocking capability. */
+  hookSpecificOutput?: {
+    hookEventName: string;
+    additionalContext?: string;
+  };
 }
 
-/**
- * Core logic for the PostToolUse handler.
- * Logs the edit to `.changetracks/pending.json` for later batch processing
- * by the Stop hook. Does NOT modify the edited file itself.
- *
- * Returns `{ logged: true }` when an edit was recorded, `{ logged: false }` otherwise.
- * (The actual hook output is always `{}`; the return value is for testing.)
- */
 export async function handlePostToolUse(
   input: HookInput,
-): Promise<{ logged: boolean }> {
-  const { tool_name: rawToolName, tool_input, session_id, cwd } = input;
-  const tool_name = rawToolName?.toLowerCase() ?? '';
-
-  if (!cwd || !tool_input) {
-    return { logged: false };
-  }
+): Promise<PostToolUseResult> {
+  const { tool_name, tool_input, session_id, cwd } = input;
+  if (!tool_name || !cwd) return {};
 
   const projectDir = cwd;
-
-  // Log read_tracked_file as informational audit entry (no wrapping needed)
-  if (tool_name === 'read_tracked_file') {
-    const filePath = (tool_input.file as string) ?? '';
-    if (!filePath) {
-      return { logged: false };
-    }
-    await logReadAudit(projectDir, session_id ?? 'unknown', filePath);
-    return { logged: true };
-  }
-
-  // Log raw Read calls on tracked files as audit entries
-  if (tool_name === 'read') {
-    const filePath = (tool_input.file_path as string) ?? '';
-    if (!filePath) {
-      return { logged: false };
-    }
-    const config = await loadConfig(projectDir);
-    if (!isFileInScope(filePath, config, projectDir)) {
-      return { logged: false };
-    }
-    if (isFileExcludedFromHooks(filePath, config, projectDir)) {
-      return { logged: false };
-    }
-    await logReadAudit(projectDir, session_id ?? 'unknown', filePath);
-    return { logged: true };
-  }
-
-  // Only handle Edit and Write tools
-  if (tool_name !== 'edit' && tool_name !== 'write') {
-    return { logged: false };
-  }
-
-  const filePath = (tool_input.file_path as string) ?? '';
-
-  if (!filePath) {
-    return { logged: false };
-  }
-
+  const sessionId = session_id ?? 'unknown';
   const config = await loadConfig(projectDir);
 
-  // Check scope
-  if (!isFileInScope(filePath, config, projectDir)) {
-    return { logged: false };
-  }
+  const tool = tool_name.toLowerCase();
 
-  // Check if file is excluded from hook enforcement (e.g. llm-garden)
-  if (isFileExcludedFromHooks(filePath, config, projectDir)) {
-    return { logged: false };
-  }
+  // Skip interception based on config toggles
+  const isBuiltInTool = tool === 'edit' || tool === 'write' || tool === 'read';
+  const isBashTool = tool === 'bash';
+  if (isBuiltInTool && !config.hooks.intercept_tools) return {};
+  if (isBashTool && !config.hooks.intercept_bash) return {};
 
-  // File creation tracking: Write tool on in-scope files without tracking header.
-  // Wraps the file with tracking header + creation footnote as a side effect,
-  // then continues to the normal edit-logging path (safety-net batch processing).
-  let creationWrapped = false;
-  if (tool_name === 'write' && config.policy.creation_tracking !== 'none') {
-    try {
-      const content = await fs.readFile(filePath, 'utf-8');
-      const TRACKING_HEADER = '<!-- ctrcks.com/v1: tracked -->';
+  const toolCall: ToolCall = {
+    tool,
+    input: tool_input ?? {},
+    cwd: projectDir,
+  };
 
-      if (!content.startsWith(TRACKING_HEADER)) {
-        const author = process.env.CHANGETRACKS_AUTHOR ?? (config.author.default || 'unknown');
-        const ts = nowTimestamp();
-        const date = ts.date;
+  const toolResult: ToolResult = {
+    tool_response: (input as unknown as Record<string, unknown>).tool_response,
+  };
 
-        let wrapped = TRACKING_HEADER + '\n' + content;
-        const footnote = `\n\n[^ct-1]: ${author} | ${date} | creation | proposed\n    ${author} ${ts.raw}: File created`;
-        wrapped += footnote;
-
-        await fs.writeFile(filePath, wrapped, 'utf-8');
-        creationWrapped = true;
-      }
-    } catch (err) {
-      process.stderr.write(`changetracks: creation tracking failed for ${filePath}: ${err}\n`);
-    }
-  }
-
-  // Determine old_text and new_text based on tool type
-  const oldText = (tool_input.old_string as string) ?? '';
-  const newText = (tool_input.new_string as string) ?? (tool_input.content as string) ?? '';
-
-  // Only safety-net mode logs edits for batch wrapping
-  if (!shouldLogEdit(config.policy.mode)) {
-    return { logged: creationWrapped };
-  }
-
-  // Capture context around the edit by reading the post-edit file
-  let contextBefore: string | undefined;
-  let contextAfter: string | undefined;
-
-  try {
-    const fileContent = await fs.readFile(filePath, 'utf-8');
-    if (newText) {
-      const editPos = fileContent.indexOf(newText);
-      if (editPos > 0) {
-        contextBefore = fileContent.slice(Math.max(0, editPos - 50), editPos);
-      }
-      if (editPos >= 0) {
-        contextAfter = fileContent.slice(
-          editPos + newText.length,
-          editPos + newText.length + 50,
-        );
+  // Creation tracking: handled before augment since it modifies the file
+  if (tool_name.toLowerCase() === 'write' && config.policy.creation_tracking !== 'none') {
+    const filePath = (tool_input?.file_path as string) ?? '';
+    if (filePath && isFileInScope(filePath, config, projectDir)) {
+      try {
+        const content = await fs.readFile(filePath, 'utf-8');
+        const TRACKING_HEADER = '<!-- ctrcks.com/v1: tracked -->';
+        if (!content.startsWith(TRACKING_HEADER)) {
+          const author = process.env.CHANGETRACKS_AUTHOR ?? (config.author.default || 'unknown');
+          const ts = nowTimestamp();
+          let wrapped = TRACKING_HEADER + '\n' + content;
+          const footnote = `\n\n[^ct-1]: ${author} | ${ts.date} | creation | proposed\n    ${author} ${ts.raw}: File created`;
+          wrapped += footnote;
+          await fs.writeFile(filePath, wrapped, 'utf-8');
+        }
+      } catch (err) {
+        process.stderr.write(`changetracks: creation tracking failed: ${err}\n`);
       }
     }
-  } catch (err) {
-    process.stderr.write(`changetracks: context capture failed for ${filePath}: ${err}\n`);
   }
 
-  await logEdit(
-    projectDir,
-    session_id ?? 'unknown',
-    filePath,
-    oldText,
-    newText,
-    tool_name!,
-    contextBefore,
-    contextAfter,
-  );
+  // Run augment phase (side effects + optional additionalContext)
+  const rule = buildChangeTracksRule(config, projectDir, sessionId);
+  const additionalContext = await augment(toolCall, toolResult, [rule]);
 
-  return { logged: true };
+  if (additionalContext) {
+    return {
+      hookSpecificOutput: {
+        hookEventName: 'PostToolUse',
+        additionalContext,
+      },
+    };
+  }
+
+  return {};
 }

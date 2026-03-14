@@ -16,9 +16,13 @@ import {
   CommentReference,
   ExternalHyperlink,
   HighlightColor,
+  ImageRun,
   type ICommentOptions,
   type ParagraphChild,
 } from 'docx';
+
+import * as fs from 'fs';
+import * as path from 'path';
 
 import {
   CriticMarkupParser,
@@ -31,6 +35,8 @@ import {
 
 import { buildCommentChain, type CommentReply } from './comment-builder.js';
 import type { CommentPatchInfo } from './word-online-patch.js';
+import { resolveImageDimensions, buildImageRun } from './image-builder.js';
+import { type ImagePatchInfo, type ImageDimensions, detectFormat } from '../shared/image-types.js';
 import { toDocxAuthor } from '../shared/author-mapper.js';
 import { toIsoString } from '../shared/date-utils.js';
 
@@ -41,12 +47,19 @@ import { toIsoString } from '../shared/date-utils.js';
 export interface DocxConversionOptions {
   mode: 'tracked' | 'settled' | 'clean';
   comments: 'all' | 'none' | 'unresolved';
+  /** Directory to resolve relative image paths against */
+  mediaDir?: string;
+  /** DPI for images without metadata (default: 96) */
+  defaultDpi?: number;
+  /** Page content width clamp in inches (default: 6.5) */
+  maxWidthInches?: number;
 }
 
 export interface DocxConversionResult {
   paragraphs: Paragraph[];
   commentDefs: ICommentOptions[];
   commentPatchInfos: CommentPatchInfo[];
+  imagePatchInfos: ImagePatchInfo[];
   stats: {
     insertions: number;
     deletions: number;
@@ -73,13 +86,103 @@ function createCounters() {
 // Inline markdown formatting helpers
 // ============================================================================
 
+/** Matches ![alt](path) image references */
+const IMAGE_REGEX = /!\[([^\]]*)\]\(([^)]+)\)/g;
+
+/** Matches a standalone image reference (entire content is one image) */
+const STANDALONE_IMAGE_REGEX = /^!\[([^\]]*)\]\(([^)]+)\)$/;
+
+const SUPPORTED_IMAGE_FORMATS = new Set(['png', 'jpg', 'gif', 'bmp']);
+
 /**
- * Parse inline markdown formatting: **bold**, *italic*, `code`, [link](url).
+ * Resolve an image path against a media directory.
+ * Handles absolute paths, relative paths, and pandoc's "media/" prefix fallback.
  */
-function parseInlineMarkdown(text: string): ParagraphChild[] {
+function resolveImagePath(imgPath: string, mediaDir?: string): string {
+  if (path.isAbsolute(imgPath) && fs.existsSync(imgPath)) return imgPath;
+  if (!mediaDir) return imgPath;
+  const candidate = path.resolve(mediaDir, imgPath);
+  if (fs.existsSync(candidate)) return candidate;
+  return path.resolve(mediaDir, path.basename(imgPath));
+}
+
+/**
+ * Try to read an image file and build an ImageRun.
+ * Optionally accepts a sentinel name for tracked image changes (JSZip post-processing).
+ */
+function tryBuildImageRun(
+  imgPath: string,
+  mediaDir?: string,
+  footnoteDimensions?: ImageDimensions,
+  dpi?: number,
+  maxWidthInches?: number,
+  sentinelName?: string,
+): ImageRun | null {
+  try {
+    const resolvedPath = resolveImagePath(imgPath, mediaDir);
+    const data = fs.readFileSync(resolvedPath);
+    const format = detectFormat(resolvedPath);
+    if (!format || !SUPPORTED_IMAGE_FORMATS.has(format)) return null;
+
+    const dims = resolveImageDimensions({ footnoteDimensions, imageBuffer: data, dpi, maxWidthInches });
+    return buildImageRun(
+      data,
+      format as 'png' | 'jpg' | 'gif' | 'bmp',
+      dims,
+      dpi,
+      sentinelName ? { name: sentinelName, description: '', title: '' } : undefined,
+    );
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Parse inline markdown formatting: **bold**, *italic*, `code`, [link](url), ![alt](path).
+ */
+function parseInlineMarkdown(text: string, mediaDir?: string): ParagraphChild[] {
   if (!text) return [];
 
   const children: ParagraphChild[] = [];
+
+  // First pass: split on images, emit ImageRun or fallback text for each segment
+  const imageSegments: Array<{ start: number; end: number; imgPath: string; altText: string }> = [];
+  IMAGE_REGEX.lastIndex = 0;
+  let imgMatch: RegExpExecArray | null;
+  while ((imgMatch = IMAGE_REGEX.exec(text)) !== null) {
+    imageSegments.push({
+      start: imgMatch.index,
+      end: imgMatch.index + imgMatch[0].length,
+      altText: imgMatch[1],
+      imgPath: imgMatch[2],
+    });
+  }
+
+  if (imageSegments.length > 0) {
+    let pos = 0;
+    for (const seg of imageSegments) {
+      // Emit text before the image
+      if (seg.start > pos) {
+        const before = text.slice(pos, seg.start);
+        children.push(...parseInlineMarkdown(before, mediaDir));
+      }
+      // Attempt to build an ImageRun; fall back to alt text on failure
+      const imageRun = tryBuildImageRun(seg.imgPath, mediaDir);
+      if (imageRun) {
+        children.push(imageRun);
+      } else if (seg.altText) {
+        children.push(new TextRun({ text: seg.altText }));
+      }
+      pos = seg.end;
+    }
+    // Emit remaining text after last image
+    if (pos < text.length) {
+      children.push(...parseInlineMarkdown(text.slice(pos), mediaDir));
+    }
+    return children;
+  }
+
+  // No images — proceed with original inline formatting logic
   const pattern = /(\*\*([^*]+)\*\*|\*([^*]+)\*|`([^`]+)`|\[([^\]]+)\]\(([^)]+)\))/g;
 
   let lastIndex = 0;
@@ -164,6 +267,10 @@ interface ConversionContext {
   changes: ChangeNode[];
   commentDefs: ICommentOptions[];
   commentPatchInfos: CommentPatchInfo[];
+  imagePatchInfos: ImagePatchInfo[];
+  mediaDir?: string;
+  defaultDpi?: number;
+  maxWidthInches?: number;
   stats: {
     insertions: number;
     deletions: number;
@@ -204,6 +311,39 @@ function buildRepliesFromDiscussion(node: ChangeNode): CommentReply[] {
 }
 
 /**
+ * Try to handle image content inside a tracked change node.
+ * Returns the ImageRun if successful, null if content is not an image.
+ */
+function tryHandleTrackedImage(
+  content: string,
+  changeType: 'ins' | 'del',
+  ctx: ConversionContext,
+  displayName: string,
+  date: string,
+  node: ChangeNode,
+): ImageRun | null {
+  const imgMatch = content.match(STANDALONE_IMAGE_REGEX);
+  if (!imgMatch) return null;
+
+  const imgPath = imgMatch[2];
+  const sentinelName = `_ct_tracked_img_${ctx.imagePatchInfos.length}_${changeType}`;
+  const footnoteDims = (node.metadata as Record<string, unknown> | undefined)?.imageDimensions as ImageDimensions | undefined;
+  const imageRun = tryBuildImageRun(
+    imgPath, ctx.mediaDir, footnoteDims, ctx.defaultDpi, ctx.maxWidthInches, sentinelName
+  );
+  if (!imageRun) return null;
+
+  ctx.imagePatchInfos.push({
+    sentinelName,
+    changeType,
+    author: displayName,
+    date: toIsoString(date),
+    revisionId: ctx.nextRevId(),
+  });
+  return imageRun;
+}
+
+/**
  * Convert a single ChangeNode into docx ParagraphChild elements.
  */
 function changeNodeToDocxChildren(
@@ -219,6 +359,15 @@ function changeNodeToDocxChildren(
     case ChangeType.Insertion: {
       const content = node.modifiedText || '';
       if (!content) break;
+
+      const trackedImg = tryHandleTrackedImage(content, 'ins', ctx, displayName, date, node);
+      if (trackedImg) {
+        ctx.stats.insertions++;
+        ctx.stats.authorSet.add(displayName);
+        children.push(trackedImg);
+        break;
+      }
+
       const fmt = extractFormatting(content);
       ctx.stats.insertions++;
       ctx.stats.authorSet.add(displayName);
@@ -238,6 +387,15 @@ function changeNodeToDocxChildren(
     case ChangeType.Deletion: {
       const content = node.originalText || '';
       if (!content) break;
+
+      const trackedImg = tryHandleTrackedImage(content, 'del', ctx, displayName, date, node);
+      if (trackedImg) {
+        ctx.stats.deletions++;
+        ctx.stats.authorSet.add(displayName);
+        children.push(trackedImg);
+        break;
+      }
+
       const fmt = extractFormatting(content);
       ctx.stats.deletions++;
       ctx.stats.authorSet.add(displayName);
@@ -446,7 +604,7 @@ function lineToDocxChildren(
   if (lineChanges.length === 0) {
     // No changes on this line — emit as plain text
     const lineText = text.substring(lineStart, lineEnd);
-    children.push(...parseInlineMarkdown(lineText));
+    children.push(...parseInlineMarkdown(lineText, ctx.mediaDir));
     return children;
   }
 
@@ -468,7 +626,7 @@ function lineToDocxChildren(
       const plainEnd = Math.min(change.range.start, lineEnd);
       if (plainEnd > plainStart) {
         const plain = text.substring(plainStart, plainEnd);
-        children.push(...parseInlineMarkdown(plain));
+        children.push(...parseInlineMarkdown(plain, ctx.mediaDir));
       }
     }
 
@@ -482,7 +640,7 @@ function lineToDocxChildren(
   if (pos < lineEnd) {
     const trailing = text.substring(pos, lineEnd);
     if (trailing) {
-      children.push(...parseInlineMarkdown(trailing));
+      children.push(...parseInlineMarkdown(trailing, ctx.mediaDir));
     }
   }
 
@@ -499,7 +657,7 @@ function isSkippableLine(line: string): boolean {
   if (/^\[\^sc-/.test(line)) return true;
   // Skip footnote continuation lines (indented lines following [^ct-N]: definitions)
   if (/^\s{4}@/.test(line)) return true;
-  if (/^\s{4}(approved|rejected|revised|previous):/.test(line)) return true;
+  if (/^\s{4}(approved|rejected|revised|previous|image-dimensions):/.test(line)) return true;
   return false;
 }
 
@@ -565,6 +723,7 @@ export function changesToDocxParagraphs(
 
   const commentDefs: ICommentOptions[] = [];
   const commentPatchInfos: CommentPatchInfo[] = [];
+  const imagePatchInfos: ImagePatchInfo[] = [];
   const stats = {
     insertions: 0,
     deletions: 0,
@@ -596,6 +755,10 @@ export function changesToDocxParagraphs(
     changes,
     commentDefs,
     commentPatchInfos,
+    imagePatchInfos,
+    mediaDir: options.mediaDir,
+    defaultDpi: options.defaultDpi,
+    maxWidthInches: options.maxWidthInches,
     stats,
     includeComments,
     nextRevId: counters.nextRevId,
@@ -655,7 +818,7 @@ export function changesToDocxParagraphs(
 
     // For clean mode, no tracked changes exist — just emit plain paragraphs
     if (options.mode === 'clean') {
-      const inlineChildren = parseInlineMarkdown(content);
+      const inlineChildren = parseInlineMarkdown(content, options.mediaDir);
       paragraphs.push(
         new Paragraph({
           heading,
@@ -686,6 +849,7 @@ export function changesToDocxParagraphs(
     paragraphs,
     commentDefs,
     commentPatchInfos,
+    imagePatchInfos,
     stats: {
       insertions: stats.insertions,
       deletions: stats.deletions,

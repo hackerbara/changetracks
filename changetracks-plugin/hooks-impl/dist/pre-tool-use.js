@@ -284,8 +284,8 @@ var require_utils = __commonJS({
       }
       return output;
     };
-    exports.basename = (path4, { windows } = {}) => {
-      const segs = path4.split(windows ? /[\\/]/ : "/");
+    exports.basename = (path6, { windows } = {}) => {
+      const segs = path6.split(windows ? /[\\/]/ : "/");
       const last = segs[segs.length - 1];
       if (last === "") {
         return segs[segs.length - 2];
@@ -1750,7 +1750,7 @@ function footnoteRefGlobal() {
 function footnoteRefNumericGlobal() {
   return new RegExp(`\\[\\^${FOOTNOTE_ID_NUMERIC_PATTERN}\\]`, "g");
 }
-var FOOTNOTE_ID_PATTERN, FOOTNOTE_ID_NUMERIC_PATTERN, FOOTNOTE_REF_ANCHORED, FOOTNOTE_DEF_START, FOOTNOTE_DEF_START_QUICK, FOOTNOTE_DEF_LENIENT, FOOTNOTE_DEF_STRICT, FOOTNOTE_DEF_STATUS, FOOTNOTE_DEF_STATUS_VALUE;
+var FOOTNOTE_ID_PATTERN, FOOTNOTE_ID_NUMERIC_PATTERN, FOOTNOTE_REF_ANCHORED, FOOTNOTE_DEF_START, FOOTNOTE_DEF_START_QUICK, FOOTNOTE_DEF_LENIENT, FOOTNOTE_DEF_STRICT, FOOTNOTE_DEF_STATUS, FOOTNOTE_DEF_STATUS_VALUE, FOOTNOTE_CONTINUATION;
 var init_footnote_patterns = __esm({
   "../../packages/core/dist-esm/footnote-patterns.js"() {
     "use strict";
@@ -1763,6 +1763,7 @@ var init_footnote_patterns = __esm({
     FOOTNOTE_DEF_STRICT = new RegExp(`^\\[\\^(${FOOTNOTE_ID_PATTERN})\\]:\\s+(?:(@\\S+)\\s+\\|\\s+)?(\\S+)\\s+\\|\\s+(\\S+)\\s+\\|\\s+(\\S+)`);
     FOOTNOTE_DEF_STATUS = new RegExp(`^\\[\\^(${FOOTNOTE_ID_PATTERN})\\]:\\s+(?:@\\S+\\s+\\|\\s+)?\\S+\\s+\\|\\s+\\S+\\s+\\|\\s+(\\S+)`);
     FOOTNOTE_DEF_STATUS_VALUE = new RegExp(`^\\[\\^${FOOTNOTE_ID_PATTERN}\\]:\\s.*\\|\\s*(proposed|accepted|rejected)`);
+    FOOTNOTE_CONTINUATION = /^\s+\S/;
   }
 });
 
@@ -3800,7 +3801,8 @@ var init_hashline_cleanup = __esm({
 function parseFootnotes(content) {
   const lines = content.split("\n");
   const footnotes = /* @__PURE__ */ new Map();
-  for (let i = 0; i < lines.length; i++) {
+  const blockStart = findFootnoteBlockStart(lines);
+  for (let i = blockStart; i < lines.length; i++) {
     const match = lines[i].match(FOOTNOTE_DEF_LENIENT);
     if (!match)
       continue;
@@ -3834,6 +3836,14 @@ function parseFootnotes(content) {
         const metaMatch = lines[j].match(RE_FOOTNOTE_META);
         if (metaMatch && metaMatch[1] === "reason") {
           info.reason = metaMatch[2];
+        } else if (metaMatch && metaMatch[1] === "image-dimensions") {
+          const dimMatch = metaMatch[2].match(/^([\d.]+)in\s*x\s*([\d.]+)in$/);
+          if (dimMatch) {
+            info.imageDimensions = {
+              widthIn: parseFloat(dimMatch[1]),
+              heightIn: parseFloat(dimMatch[2])
+            };
+          }
         }
       }
       info.endLine = j;
@@ -3843,6 +3853,70 @@ function parseFootnotes(content) {
   }
   return footnotes;
 }
+function findFootnoteBlockStart(lines) {
+  let lastDefIdx = -1;
+  for (let i = lines.length - 1; i >= 0; i--) {
+    if (FOOTNOTE_DEF_START.test(lines[i])) {
+      lastDefIdx = i;
+      break;
+    }
+  }
+  if (lastDefIdx === -1) {
+    return lines.length;
+  }
+  let candidate = lastDefIdx;
+  while (candidate >= 0) {
+    let j = candidate + 1;
+    let isTerminal = true;
+    while (j < lines.length) {
+      const line = lines[j];
+      if (FOOTNOTE_DEF_START.test(line) || FOOTNOTE_CONTINUATION.test(line)) {
+        j++;
+      } else if (line.trim() === "") {
+        j++;
+      } else {
+        isTerminal = false;
+        break;
+      }
+    }
+    if (isTerminal) {
+      lastDefIdx = candidate;
+      break;
+    }
+    candidate--;
+    while (candidate >= 0 && !FOOTNOTE_DEF_START.test(lines[candidate])) {
+      candidate--;
+    }
+  }
+  if (candidate < 0) {
+    return lines.length;
+  }
+  let blockStart = lastDefIdx;
+  for (let i = lastDefIdx - 1; i >= 0; i--) {
+    const line = lines[i];
+    if (FOOTNOTE_DEF_START.test(line) || FOOTNOTE_CONTINUATION.test(line)) {
+      blockStart = i;
+    } else if (line.trim() === "") {
+      let hasFootnoteBefore = false;
+      for (let k = i - 1; k >= 0; k--) {
+        if (lines[k].trim() === "")
+          continue;
+        if (FOOTNOTE_DEF_START.test(lines[k]) || FOOTNOTE_CONTINUATION.test(lines[k])) {
+          hasFootnoteBefore = true;
+        }
+        break;
+      }
+      if (hasFootnoteBefore) {
+        blockStart = i;
+      } else {
+        break;
+      }
+    } else {
+      break;
+    }
+  }
+  return blockStart;
+}
 var RE_THREAD_REPLY, RE_FOOTNOTE_META;
 var init_footnote_parser = __esm({
   "../../packages/core/dist-esm/footnote-parser.js"() {
@@ -3850,69 +3924,7 @@ var init_footnote_parser = __esm({
     init_footnote_patterns();
     init_timestamp();
     RE_THREAD_REPLY = /^\s+@\S+\s+\d{4}-\d{2}-\d{2}(?:[T ]\d{1,2}:\d{2}(?::\d{2})?(?:\s?[AaPp][Mm])?Z?)?:/;
-    RE_FOOTNOTE_META = /^\s+(\w+):\s*(.*)/;
-  }
-});
-
-// ../../packages/core/dist-esm/renderers/view-builder-utils.js
-function buildDeliberationHeader(options) {
-  const { footnotes } = options;
-  let proposed = 0, accepted = 0, rejected = 0, threadCount = 0;
-  const authorSet = /* @__PURE__ */ new Set();
-  for (const fn of footnotes.values()) {
-    if (fn.status === "proposed")
-      proposed++;
-    else if (fn.status === "accepted")
-      accepted++;
-    else if (fn.status === "rejected")
-      rejected++;
-    if (fn.replyCount > 0)
-      threadCount++;
-    if (fn.author)
-      authorSet.add(fn.author);
-  }
-  return {
-    filePath: options.filePath,
-    trackingStatus: options.trackingStatus,
-    protocolMode: options.protocolMode,
-    defaultView: options.defaultView,
-    viewPolicy: options.viewPolicy,
-    counts: { proposed, accepted, rejected },
-    authors: [...authorSet].sort(),
-    threadCount,
-    lineRange: options.lineRange
-  };
-}
-function buildLineRefMap(lines) {
-  const map = /* @__PURE__ */ new Map();
-  for (let i = 0; i < lines.length; i++) {
-    const refs = /* @__PURE__ */ new Set();
-    for (const match of lines[i].matchAll(REF_EXTRACT_RE)) {
-      refs.add(match[1]);
-    }
-    if (refs.size > 0)
-      map.set(i, refs);
-  }
-  return map;
-}
-function findFootnoteSectionRange(footnotes) {
-  if (footnotes.size === 0)
-    return null;
-  let min = Infinity;
-  let max = -Infinity;
-  for (const fn of footnotes.values()) {
-    if (fn.startLine < min)
-      min = fn.startLine;
-    if (fn.endLine > max)
-      max = fn.endLine;
-  }
-  return [min, max];
-}
-var REF_EXTRACT_RE;
-var init_view_builder_utils = __esm({
-  "../../packages/core/dist-esm/renderers/view-builder-utils.js"() {
-    "use strict";
-    REF_EXTRACT_RE = /\[\^(ct-\d+(?:\.\d+)?)\]/g;
+    RE_FOOTNOTE_META = /^\s+([\w-]+):\s*(.*)/;
   }
 });
 
@@ -3968,9 +3980,6 @@ function level1Comment(author, changeType) {
 }
 function containsCriticMarkup(text) {
   return /\{\+\+|\{--|\{~~|\{==|\{>>/.test(text);
-}
-function isCodeFenceLine(line) {
-  return line.trim().startsWith("```");
 }
 function resolveProposedChanges(text) {
   const parser = new CriticMarkupParser();
@@ -4517,27 +4526,15 @@ function replaceUnique(text, target, replacement, normalizer) {
   return text.slice(0, match.index) + replacement + text.slice(match.index + match.length);
 }
 function contentZoneText(fullText) {
-  const footnotes = parseFootnotes(fullText);
-  if (footnotes.size === 0)
-    return fullText;
-  const codeZones = findCodeZones(fullText);
   const lines = fullText.split("\n");
-  const lineOffsets = new Array(lines.length);
-  let cumOffset = 0;
-  for (let i = 0; i < lines.length; i++) {
-    lineOffsets[i] = cumOffset;
-    cumOffset += lines[i].length + 1;
-  }
-  for (const [id, fn] of footnotes) {
-    const fnCharOffset = lineOffsets[fn.startLine];
-    if (codeZones.some((z) => fnCharOffset >= z.start && fnCharOffset < z.end)) {
-      footnotes.delete(id);
-    }
-  }
-  const range = findFootnoteSectionRange(footnotes);
-  if (!range)
+  const blockStart = findFootnoteBlockStart(lines);
+  if (blockStart >= lines.length)
     return fullText;
-  return fullText.slice(0, lineOffsets[range[0]]);
+  let offset = 0;
+  for (let i = 0; i < blockStart; i++) {
+    offset += lines[i].length + 1;
+  }
+  return fullText.slice(0, offset);
 }
 function applyProposeChange(params) {
   const { text, oldText, newText, changeId, author, reasoning, insertAfter, level = 2 } = params;
@@ -4629,40 +4626,43 @@ function extractLineRange(fileLines, startLine, endLine) {
   return { content, startOffset, endOffset };
 }
 function appendFootnote(text, footnoteBlock) {
-  if (!text.includes("[^ct-")) {
+  const lines = text.split("\n");
+  const blockStart = findFootnoteBlockStart(lines);
+  if (blockStart >= lines.length) {
     return text + footnoteBlock;
   }
-  const lines = text.split("\n");
-  let lastFootnoteEnd = -1;
-  let inCodeFence = false;
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    if (isCodeFenceLine(line)) {
-      inCodeFence = !inCodeFence;
-      continue;
-    }
-    if (inCodeFence)
-      continue;
-    if (line.startsWith("[^ct-")) {
+  let lastFootnoteEnd = blockStart;
+  for (let i = blockStart; i < lines.length; i++) {
+    if (FOOTNOTE_DEF_START.test(lines[i])) {
       lastFootnoteEnd = i;
       let j = i + 1;
-      while (j < lines.length && lines[j].startsWith("    ")) {
-        lastFootnoteEnd = j;
-        j++;
+      while (j < lines.length) {
+        if (FOOTNOTE_CONTINUATION.test(lines[j])) {
+          lastFootnoteEnd = j;
+          j++;
+        } else if (lines[j].trim() === "") {
+          let k = j + 1;
+          while (k < lines.length && lines[k].trim() === "")
+            k++;
+          if (k < lines.length && FOOTNOTE_CONTINUATION.test(lines[k])) {
+            lastFootnoteEnd = j;
+            j++;
+          } else {
+            break;
+          }
+        } else {
+          break;
+        }
       }
     }
-  }
-  if (lastFootnoteEnd === -1) {
-    return text + footnoteBlock;
   }
   const before = lines.slice(0, lastFootnoteEnd + 1).join("\n");
   const after = lines.slice(lastFootnoteEnd + 1).join("\n");
   const block = footnoteBlock.startsWith("\n") ? footnoteBlock : "\n\n" + footnoteBlock;
-  const separator = "";
   if (after.length > 0) {
-    return before + separator + block + "\n" + after;
+    return before + block + "\n" + after;
   }
-  return before + separator + block;
+  return before + block;
 }
 function applySingleOperation(params) {
   const { fileContent, oldText, newText, changeId, author, reasoning, insertAfter, afterLine, startLine, endLine } = params;
@@ -4759,8 +4759,7 @@ var init_file_ops = __esm({
     init_parser();
     init_types();
     init_footnote_parser();
-    init_view_builder_utils();
-    init_code_zones();
+    init_footnote_patterns();
     init_view_surface();
   }
 });
@@ -6076,16 +6075,16 @@ var init_base = __esm({
           }
         }
       }
-      addToPath(path4, added, removed, oldPosInc, options) {
-        const last = path4.lastComponent;
+      addToPath(path6, added, removed, oldPosInc, options) {
+        const last = path6.lastComponent;
         if (last && !options.oneChangePerToken && last.added === added && last.removed === removed) {
           return {
-            oldPos: path4.oldPos + oldPosInc,
+            oldPos: path6.oldPos + oldPosInc,
             lastComponent: { count: last.count + 1, added, removed, previousComponent: last.previousComponent }
           };
         } else {
           return {
-            oldPos: path4.oldPos + oldPosInc,
+            oldPos: path6.oldPos + oldPosInc,
             lastComponent: { count: 1, added, removed, previousComponent: last }
           };
         }
@@ -6637,7 +6636,8 @@ function computeCommittedLine(line, footnotes) {
 }
 function findFootnoteLineIndices(lines) {
   const indices = /* @__PURE__ */ new Set();
-  for (let i = 0; i < lines.length; i++) {
+  const blockStart = findFootnoteBlockStart(lines);
+  for (let i = blockStart; i < lines.length; i++) {
     if (!FOOTNOTE_DEF_START_QUICK.test(lines[i]))
       continue;
     indices.add(i);
@@ -7593,6 +7593,68 @@ var init_formatters = __esm({
   }
 });
 
+// ../../packages/core/dist-esm/renderers/view-builder-utils.js
+function buildDeliberationHeader(options) {
+  const { footnotes } = options;
+  let proposed = 0, accepted = 0, rejected = 0, threadCount = 0;
+  const authorSet = /* @__PURE__ */ new Set();
+  for (const fn of footnotes.values()) {
+    if (fn.status === "proposed")
+      proposed++;
+    else if (fn.status === "accepted")
+      accepted++;
+    else if (fn.status === "rejected")
+      rejected++;
+    if (fn.replyCount > 0)
+      threadCount++;
+    if (fn.author)
+      authorSet.add(fn.author);
+  }
+  return {
+    filePath: options.filePath,
+    trackingStatus: options.trackingStatus,
+    protocolMode: options.protocolMode,
+    defaultView: options.defaultView,
+    viewPolicy: options.viewPolicy,
+    counts: { proposed, accepted, rejected },
+    authors: [...authorSet].sort(),
+    threadCount,
+    lineRange: options.lineRange
+  };
+}
+function buildLineRefMap(lines) {
+  const map = /* @__PURE__ */ new Map();
+  for (let i = 0; i < lines.length; i++) {
+    const refs = /* @__PURE__ */ new Set();
+    for (const match of lines[i].matchAll(REF_EXTRACT_RE)) {
+      refs.add(match[1]);
+    }
+    if (refs.size > 0)
+      map.set(i, refs);
+  }
+  return map;
+}
+function findFootnoteSectionRange(footnotes) {
+  if (footnotes.size === 0)
+    return null;
+  let min = Infinity;
+  let max = -Infinity;
+  for (const fn of footnotes.values()) {
+    if (fn.startLine < min)
+      min = fn.startLine;
+    if (fn.endLine > max)
+      max = fn.endLine;
+  }
+  return [min, max];
+}
+var REF_EXTRACT_RE;
+var init_view_builder_utils = __esm({
+  "../../packages/core/dist-esm/renderers/view-builder-utils.js"() {
+    "use strict";
+    REF_EXTRACT_RE = /\[\^(ct-\d+(?:\.\d+)?)\]/g;
+  }
+});
+
 // ../../packages/core/dist-esm/renderers/view-builders/review.js
 function buildReviewDocument(content, options) {
   const footnotes = parseFootnotes(content);
@@ -8246,6 +8308,7 @@ __export(dist_esm_exports, {
   ChangeType: () => ChangeType,
   CriticMarkupParser: () => CriticMarkupParser,
   DEFAULT_EDIT_BOUNDARY_CONFIG: () => DEFAULT_EDIT_BOUNDARY_CONFIG,
+  FOOTNOTE_CONTINUATION: () => FOOTNOTE_CONTINUATION,
   FOOTNOTE_DEF_LENIENT: () => FOOTNOTE_DEF_LENIENT,
   FOOTNOTE_DEF_START: () => FOOTNOTE_DEF_START,
   FOOTNOTE_DEF_START_QUICK: () => FOOTNOTE_DEF_START_QUICK,
@@ -8329,6 +8392,7 @@ __export(dist_esm_exports, {
   findCodeZones: () => findCodeZones,
   findDiscussionInsertionIndex: () => findDiscussionInsertionIndex,
   findFootnoteBlock: () => findFootnoteBlock,
+  findFootnoteBlockStart: () => findFootnoteBlockStart,
   findFootnoteSectionRange: () => findFootnoteSectionRange,
   findReviewInsertionIndex: () => findReviewInsertionIndex,
   findSidecarBlockStart: () => findSidecarBlockStart,
@@ -8486,9 +8550,488 @@ function writeStdout(data) {
   process.stdout.write(JSON.stringify(data));
 }
 
-// src/adapters/claude-code/pre-tool-use.ts
-import * as fs3 from "node:fs/promises";
-import * as path3 from "node:path";
+// ../llm-jail/dist/src/types.js
+var PRE_HANDLER_MAP = {
+  read: "onRead",
+  write: "onWrite",
+  delete: "onDelete"
+};
+
+// ../llm-jail/dist/src/recognizers/edit-write-read.js
+import * as path from "node:path";
+var TOOL_OP_MAP = {
+  edit: "write",
+  write: "write",
+  read: "read"
+};
+function analyzeEditWriteRead(call) {
+  const op = TOOL_OP_MAP[call.tool];
+  if (!op)
+    return [];
+  const filePath = call.input.file_path;
+  if (!filePath)
+    return [];
+  const absPath = path.isAbsolute(filePath) ? filePath : path.resolve(call.cwd, filePath);
+  return [{ op, file: absPath, source: call }];
+}
+
+// ../llm-jail/dist/src/recognizers/bash.js
+import * as path2 from "node:path";
+function splitCommand(command) {
+  const segments = [];
+  let current = "";
+  let inSingleQuote = false;
+  let inDoubleQuote = false;
+  let escaped = false;
+  for (let i = 0; i < command.length; i++) {
+    const ch = command[i];
+    if (escaped) {
+      current += ch;
+      escaped = false;
+      continue;
+    }
+    if (ch === "\\") {
+      current += ch;
+      escaped = true;
+      continue;
+    }
+    if (ch === "'" && !inDoubleQuote) {
+      inSingleQuote = !inSingleQuote;
+      current += ch;
+      continue;
+    }
+    if (ch === '"' && !inSingleQuote) {
+      inDoubleQuote = !inDoubleQuote;
+      current += ch;
+      continue;
+    }
+    if (inSingleQuote || inDoubleQuote) {
+      current += ch;
+      continue;
+    }
+    if (ch === "&" && command[i + 1] === "&" || ch === "|" && command[i + 1] === "|") {
+      if (current.trim())
+        segments.push(current.trim());
+      current = "";
+      i++;
+      continue;
+    }
+    if (ch === ";" || ch === "|") {
+      if (current.trim())
+        segments.push(current.trim());
+      current = "";
+      continue;
+    }
+    current += ch;
+  }
+  if (current.trim())
+    segments.push(current.trim());
+  return segments;
+}
+function extractRedirect(segment) {
+  let inSingleQuote = false;
+  let inDoubleQuote = false;
+  let escaped = false;
+  for (let i = 0; i < segment.length; i++) {
+    const ch = segment[i];
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (ch === "\\") {
+      escaped = true;
+      continue;
+    }
+    if (ch === "'" && !inDoubleQuote) {
+      inSingleQuote = !inSingleQuote;
+      continue;
+    }
+    if (ch === '"' && !inSingleQuote) {
+      inDoubleQuote = !inDoubleQuote;
+      continue;
+    }
+    if (inSingleQuote || inDoubleQuote)
+      continue;
+    if (ch === ">") {
+      const isAppend = segment[i + 1] === ">";
+      const afterOp = isAppend ? i + 2 : i + 1;
+      const file = segment.slice(afterOp).trim();
+      const command = segment.slice(0, i).trim();
+      if (file)
+        return { file, command };
+    }
+  }
+  return null;
+}
+function parseArgv(segment) {
+  const args = [];
+  let current = "";
+  let inSingleQuote = false;
+  let inDoubleQuote = false;
+  let escaped = false;
+  for (const ch of segment) {
+    if (escaped) {
+      current += ch;
+      escaped = false;
+      continue;
+    }
+    if (ch === "\\") {
+      escaped = true;
+      current += ch;
+      continue;
+    }
+    if (ch === "'" && !inDoubleQuote) {
+      inSingleQuote = !inSingleQuote;
+      continue;
+    }
+    if (ch === '"' && !inSingleQuote) {
+      inDoubleQuote = !inDoubleQuote;
+      continue;
+    }
+    if (ch === " " && !inSingleQuote && !inDoubleQuote) {
+      if (current) {
+        args.push(current);
+        current = "";
+      }
+      continue;
+    }
+    current += ch;
+  }
+  if (current)
+    args.push(current);
+  return args;
+}
+var recognizers = [];
+function registerRecognizer(r) {
+  recognizers.push(r);
+}
+function analyzeBash(call) {
+  const command = call.input.command;
+  if (!command)
+    return [];
+  const segments = splitCommand(command);
+  const ops = [];
+  for (const segment of segments) {
+    const redirect = extractRedirect(segment);
+    if (redirect) {
+      const absFile = path2.isAbsolute(redirect.file) ? redirect.file : path2.resolve(call.cwd, redirect.file);
+      ops.push({ op: "write", file: absFile, source: call });
+    }
+    const argv = parseArgv(redirect ? redirect.command : segment);
+    if (argv.length === 0)
+      continue;
+    const cmdName = path2.basename(argv[0]);
+    for (const recognizer of recognizers) {
+      const matches = typeof recognizer.command === "string" ? cmdName === recognizer.command : recognizer.command.test(cmdName);
+      if (matches) {
+        const results = recognizer.extract(argv, segment);
+        for (const match of results) {
+          const absFile = path2.isAbsolute(match.file) ? match.file : path2.resolve(call.cwd, match.file);
+          ops.push({ op: match.op, file: absFile, source: call });
+        }
+        break;
+      }
+    }
+  }
+  return ops;
+}
+
+// ../llm-jail/dist/src/recognizers/sed.js
+var sedRecognizer = {
+  command: "sed",
+  extract(argv) {
+    let hasInPlace = false;
+    let hasExplicitExpr = false;
+    const nonFlagArgs2 = [];
+    let skipNext = false;
+    for (let i = 1; i < argv.length; i++) {
+      if (skipNext) {
+        skipNext = false;
+        continue;
+      }
+      const arg = argv[i];
+      if (arg === "-i" || arg.startsWith("-i.") || arg.startsWith("-i=")) {
+        hasInPlace = true;
+      } else if (arg === "-e" || arg === "-f") {
+        hasExplicitExpr = true;
+        skipNext = true;
+      } else if (arg.startsWith("-")) {
+      } else {
+        nonFlagArgs2.push(arg);
+      }
+    }
+    if (!hasInPlace)
+      return [];
+    const files = hasExplicitExpr ? nonFlagArgs2 : nonFlagArgs2.slice(1);
+    return files.map((f) => ({ op: "write", file: f }));
+  }
+};
+
+// ../llm-jail/dist/src/recognizers/file-commands.js
+var VALUE_FLAGS = /* @__PURE__ */ new Set(["-n", "-c"]);
+function nonFlagArgs(argv, skipValueFlags = false) {
+  const result = [];
+  let skip = false;
+  for (let i = 1; i < argv.length; i++) {
+    if (skip) {
+      skip = false;
+      continue;
+    }
+    const a = argv[i];
+    if (a.startsWith("-")) {
+      if (skipValueFlags && VALUE_FLAGS.has(a))
+        skip = true;
+      continue;
+    }
+    result.push(a);
+  }
+  return result;
+}
+function lastNonFlagArg(argv) {
+  const args = nonFlagArgs(argv);
+  return args[args.length - 1];
+}
+var cpRecognizer = {
+  command: "cp",
+  extract(argv) {
+    const dest = lastNonFlagArg(argv);
+    return dest ? [{ op: "write", file: dest }] : [];
+  }
+};
+var mvRecognizer = {
+  command: "mv",
+  extract(argv) {
+    const args = nonFlagArgs(argv);
+    if (args.length < 2)
+      return [];
+    const dest = args[args.length - 1];
+    const sources = args.slice(0, -1);
+    return [
+      { op: "write", file: dest },
+      ...sources.map((f) => ({ op: "delete", file: f }))
+    ];
+  }
+};
+var rmRecognizer = {
+  command: "rm",
+  extract(argv) {
+    return nonFlagArgs(argv).map((f) => ({ op: "delete", file: f }));
+  }
+};
+var teeRecognizer = {
+  command: "tee",
+  extract(argv) {
+    return nonFlagArgs(argv).map((f) => ({ op: "write", file: f }));
+  }
+};
+function readRecognizer(name) {
+  return {
+    command: name,
+    extract(argv) {
+      return nonFlagArgs(argv, true).map((f) => ({ op: "read", file: f }));
+    }
+  };
+}
+function metaWriteRecognizer(name) {
+  return {
+    command: name,
+    extract(argv) {
+      return nonFlagArgs(argv).map((f) => ({ op: "write", file: f }));
+    }
+  };
+}
+var fileCommandRecognizers = [
+  cpRecognizer,
+  mvRecognizer,
+  rmRecognizer,
+  teeRecognizer,
+  readRecognizer("cat"),
+  readRecognizer("head"),
+  readRecognizer("tail"),
+  readRecognizer("less"),
+  metaWriteRecognizer("touch"),
+  metaWriteRecognizer("truncate"),
+  metaWriteRecognizer("chmod"),
+  metaWriteRecognizer("chown")
+];
+
+// ../llm-jail/dist/src/recognizers/redirects.js
+function noOpRecognizer(name) {
+  return {
+    command: name,
+    extract() {
+      return [];
+    }
+  };
+}
+var redirectRecognizers = [
+  noOpRecognizer("echo"),
+  noOpRecognizer("printf")
+];
+
+// ../llm-jail/dist/src/recognizers/interpreters.js
+function extractFilesFromScript(script, patterns) {
+  const matches = [];
+  for (const pattern of patterns) {
+    let match;
+    const re = new RegExp(pattern.source, pattern.flags.includes("g") ? pattern.flags : pattern.flags + "g");
+    while ((match = re.exec(script)) !== null) {
+      const file = match[1];
+      if (file) {
+        matches.push({ op: "write", file });
+      }
+    }
+  }
+  return matches;
+}
+function getInlineScript(argv) {
+  for (let i = 1; i < argv.length; i++) {
+    if (argv[i] === "-c" || argv[i] === "-e") {
+      return argv[i + 1] ?? null;
+    }
+  }
+  return null;
+}
+var pythonRecognizer = {
+  command: /^python[23]?$/,
+  extract(argv) {
+    const script = getInlineScript(argv);
+    if (!script)
+      return [];
+    return extractFilesFromScript(script, [
+      /open\s*\(\s*['"]([^'"]+)['"]\s*,\s*['"][wa]/,
+      /Path\s*\(\s*['"]([^'"]+)['"]\s*\)\s*\.write_text/
+    ]);
+  }
+};
+var nodeRecognizer = {
+  command: /^node$/,
+  extract(argv) {
+    const script = getInlineScript(argv);
+    if (!script)
+      return [];
+    return extractFilesFromScript(script, [
+      /writeFileSync\s*\(\s*['"]([^'"]+)['"]/,
+      /writeFile\s*\(\s*['"]([^'"]+)['"]/,
+      /createWriteStream\s*\(\s*['"]([^'"]+)['"]/
+    ]);
+  }
+};
+var perlRecognizer = {
+  command: "perl",
+  extract(argv) {
+    const hasInPlace = argv.some((a) => a === "-i" || a === "-pi" || a.startsWith("-pi"));
+    if (!hasInPlace)
+      return [];
+    const files = [];
+    let hasExplicitExpr = false;
+    let pastExpression = false;
+    for (const a of argv.slice(1)) {
+      if (a === "-e") {
+        hasExplicitExpr = true;
+        break;
+      }
+    }
+    for (let i = 1; i < argv.length; i++) {
+      if (argv[i] === "-e") {
+        pastExpression = true;
+        i++;
+        continue;
+      }
+      if (argv[i].startsWith("-"))
+        continue;
+      if (hasExplicitExpr) {
+        if (pastExpression) {
+          files.push({ op: "write", file: argv[i] });
+        }
+      } else {
+        if (pastExpression) {
+          files.push({ op: "write", file: argv[i] });
+        } else {
+          pastExpression = true;
+        }
+      }
+    }
+    return files;
+  }
+};
+var rubyRecognizer = {
+  command: "ruby",
+  extract(argv) {
+    const script = getInlineScript(argv);
+    if (!script)
+      return [];
+    return extractFilesFromScript(script, [
+      /File\.write\s*\(\s*['"]([^'"]+)['"]/,
+      /File\.open\s*\(\s*['"]([^'"]+)['"]\s*,\s*['"]w/
+    ]);
+  }
+};
+var interpreterRecognizers = [
+  pythonRecognizer,
+  nodeRecognizer,
+  perlRecognizer,
+  rubyRecognizer
+];
+
+// ../llm-jail/dist/src/analyzer.js
+var initialized = false;
+function ensureInitialized() {
+  if (initialized)
+    return;
+  initialized = true;
+  registerRecognizer(sedRecognizer);
+  for (const r of fileCommandRecognizers)
+    registerRecognizer(r);
+  for (const r of redirectRecognizers)
+    registerRecognizer(r);
+  for (const r of interpreterRecognizers)
+    registerRecognizer(r);
+}
+function analyze(call) {
+  ensureInitialized();
+  const tool = call.tool.toLowerCase();
+  if (tool === "edit" || tool === "write" || tool === "read") {
+    return analyzeEditWriteRead(call);
+  }
+  if (tool === "bash") {
+    return analyzeBash(call);
+  }
+  return [];
+}
+
+// ../llm-jail/dist/src/evaluate.js
+async function evaluate(call, rules) {
+  let advisory = null;
+  for (const rule of rules) {
+    if (!rule.onToolCall)
+      continue;
+    const verdict = await rule.onToolCall(call);
+    if (verdict.action === "deny")
+      return verdict;
+    if (verdict.action === "warn" && !advisory)
+      advisory = verdict;
+  }
+  const ops = analyze(call);
+  if (ops.length === 0)
+    return advisory ?? { action: "allow" };
+  for (const op of ops) {
+    for (const rule of rules) {
+      if (!rule.scope(op.file))
+        continue;
+      const handlerKey = PRE_HANDLER_MAP[op.op];
+      const handler = rule[handlerKey];
+      if (!handler)
+        continue;
+      const verdict = await handler(op);
+      if (verdict.action === "deny")
+        return verdict;
+      if (verdict.action === "warn" && !advisory)
+        advisory = verdict;
+    }
+  }
+  return advisory ?? { action: "allow" };
+}
 
 // ../../node_modules/smol-toml/dist/error.js
 function getLineColFromPtr(string, ptr) {
@@ -9178,7 +9721,7 @@ function parse(toml, { maxDepth = 1e3, integersAsBigInt } = {}) {
 // ../../packages/cli/dist/config/loader.js
 var import_picomatch = __toESM(require_picomatch2(), 1);
 import * as fs from "node:fs/promises";
-import * as path from "node:path";
+import * as path3 from "node:path";
 function asStringArray(value) {
   if (!Array.isArray(value))
     return void 0;
@@ -9221,6 +9764,8 @@ function parseConfigToml(raw) {
     hooks: {
       enforcement: hooks?.["enforcement"] === "warn" || hooks?.["enforcement"] === "block" ? hooks["enforcement"] : DEFAULT_CONFIG.hooks.enforcement,
       exclude: asStringArray(hooks?.["exclude"]) ?? DEFAULT_CONFIG.hooks.exclude,
+      intercept_tools: typeof hooks?.["intercept_tools"] === "boolean" ? hooks["intercept_tools"] : DEFAULT_CONFIG.hooks.intercept_tools,
+      intercept_bash: typeof hooks?.["intercept_bash"] === "boolean" ? hooks["intercept_bash"] : DEFAULT_CONFIG.hooks.intercept_bash,
       patch_wrap_experimental: typeof hooks?.["patch_wrap_experimental"] === "boolean" ? hooks["patch_wrap_experimental"] : DEFAULT_CONFIG.hooks.patch_wrap_experimental
     },
     matching: {
@@ -9261,16 +9806,16 @@ function parseConfigToml(raw) {
   };
 }
 async function findConfigFile(startDir) {
-  let dir = path.resolve(startDir);
-  const root = path.parse(dir).root;
+  let dir = path3.resolve(startDir);
+  const root = path3.parse(dir).root;
   while (true) {
-    const candidate = path.join(dir, ".changetracks", "config.toml");
+    const candidate = path3.join(dir, ".changetracks", "config.toml");
     try {
       await fs.access(candidate);
       return candidate;
     } catch {
     }
-    const parent = path.dirname(dir);
+    const parent = path3.dirname(dir);
     if (parent === dir || dir === root) {
       return void 0;
     }
@@ -9298,16 +9843,16 @@ async function loadConfig(projectDir) {
   }
 }
 function isFileInScope(filePath, config, projectDir) {
-  let relative4;
-  if (path.isAbsolute(filePath)) {
-    relative4 = path.relative(projectDir, filePath);
+  let relative3;
+  if (path3.isAbsolute(filePath)) {
+    relative3 = path3.relative(projectDir, filePath);
   } else {
-    relative4 = filePath;
+    relative3 = filePath;
   }
-  relative4 = relative4.split(path.sep).join("/");
+  relative3 = relative3.split(path3.sep).join("/");
   const matchesInclude = (0, import_picomatch.default)(config.tracking.include);
   const matchesExclude = (0, import_picomatch.default)(config.tracking.exclude);
-  return matchesInclude(relative4) && !matchesExclude(relative4);
+  return matchesInclude(relative3) && !matchesExclude(relative3);
 }
 
 // ../../packages/cli/dist/config/index.js
@@ -9325,6 +9870,8 @@ var DEFAULT_CONFIG = {
   hooks: {
     enforcement: "warn",
     exclude: [],
+    intercept_tools: true,
+    intercept_bash: false,
     patch_wrap_experimental: false
   },
   matching: {
@@ -9358,94 +9905,27 @@ var DEFAULT_CONFIG = {
   }
 };
 
-// src/core/policy-engine.ts
-import * as fs2 from "node:fs";
+// src/changetracks-rules.ts
+import * as fs3 from "node:fs";
+import * as fsPromises from "node:fs/promises";
 
 // src/scope.ts
 var import_picomatch2 = __toESM(require_picomatch2(), 1);
-import * as path2 from "node:path";
+import * as path4 from "node:path";
 function isFileExcludedFromHooks(filePath, config, projectDir) {
   if (config.hooks.exclude.length === 0) return false;
-  let relative4;
-  if (path2.isAbsolute(filePath)) {
-    relative4 = path2.relative(projectDir, filePath);
+  let relative3;
+  if (path4.isAbsolute(filePath)) {
+    relative3 = path4.relative(projectDir, filePath);
   } else {
-    relative4 = filePath;
+    relative3 = filePath;
   }
-  relative4 = relative4.split(path2.sep).join("/");
-  return (0, import_picomatch2.default)(config.hooks.exclude)(relative4);
+  relative3 = relative3.split(path4.sep).join("/");
+  return (0, import_picomatch2.default)(config.hooks.exclude)(relative3);
 }
 
-// src/core/policy-engine.ts
+// src/changetracks-rules.ts
 init_dist_esm();
-function evaluateRawEdit(filePath, config, projectDir, options) {
-  const inScope = isFileInScope(filePath, config, projectDir);
-  let headerStatus = null;
-  if (fs2.existsSync(filePath)) {
-    try {
-      const head = fs2.readFileSync(filePath, "utf-8").slice(0, 500);
-      const header = parseTrackingHeader(head);
-      if (header) headerStatus = header.status;
-    } catch {
-    }
-  }
-  if (headerStatus === "untracked") {
-    return { action: "allow", reason: "File header declares untracked" };
-  }
-  if (!inScope && headerStatus !== "tracked") {
-    return { action: "allow", reason: "File not in tracking scope" };
-  }
-  if (isFileExcludedFromHooks(filePath, config, projectDir)) {
-    return { action: "allow", reason: "File excluded from hook enforcement" };
-  }
-  if (options?.checkFileExists && config.policy.creation_tracking !== "none" && !fs2.existsSync(filePath)) {
-    return {
-      action: "allow",
-      reason: "File does not exist \u2014 creation allowed. PostToolUse hook will add tracking.",
-      agentHint: "New file will be created with ChangeTracks tracking header and creation footnote."
-    };
-  }
-  const mode = config.policy.mode;
-  if (mode === "permissive") {
-    return { action: "allow", reason: "Permissive mode \u2014 no interference" };
-  }
-  const hashlineTip = config.hashline.enabled ? "\nTip: Use read_tracked_file first for LINE:HASH coordinates." : "";
-  if (mode === "strict") {
-    return {
-      action: "deny",
-      reason: "This file is tracked by ChangeTracks. Use propose_change MCP tool instead of raw Edit/Write.",
-      agentHint: `BLOCKED: This file is tracked by ChangeTracks (policy: strict).
-Use propose_change instead of Edit/Write:
-- Substitution: propose_change(file, old_text, new_text, reasoning="...")
-- Insertion: propose_change(file, "", new_text, insert_after="anchor")
-- Deletion: propose_change(file, old_text, "")
-- Batch (multiple edits): propose_change(file, reasoning="...", changes=[{old_text, new_text}, ...])${hashlineTip}`,
-      userMessage: "ChangeTracks blocked a raw edit on a tracked file."
-    };
-  }
-  return {
-    action: "warn",
-    reason: "File is tracked \u2014 edit will be auto-wrapped in CriticMarkup at session end.",
-    agentHint: `This file is tracked by ChangeTracks (policy: safety-net). Edit will be auto-wrapped but reasoning is lost. Use propose_change for tracked edits with context.${hashlineTip}`
-  };
-}
-function evaluateRawRead(filePath, config, projectDir) {
-  if (!isFileInScope(filePath, config, projectDir)) {
-    return { action: "allow", reason: "File not in tracking scope" };
-  }
-  if (isFileExcludedFromHooks(filePath, config, projectDir)) {
-    return { action: "allow", reason: "File excluded from hook enforcement" };
-  }
-  if (config.policy.mode === "strict") {
-    return {
-      action: "deny",
-      reason: "This file is tracked by ChangeTracks. Use read_tracked_file MCP tool for tracked content.",
-      agentHint: "Use the read_tracked_file MCP tool to read this file. It provides deliberation context, hashline coordinates, and change metadata.",
-      userMessage: "ChangeTracks blocked a raw read on a tracked file."
-    };
-  }
-  return { action: "allow", reason: "Reads allowed in non-strict mode" };
-}
 
 // src/core/redirect-formatter.ts
 init_dist_esm();
@@ -9551,106 +10031,234 @@ function formatReadRedirect(filePath, config) {
 This provides change metadata, hashline coordinates, and deliberation context.`;
 }
 
+// src/pending.ts
+import * as fs2 from "node:fs/promises";
+import * as path5 from "node:path";
+function pendingPath(projectDir) {
+  return path5.join(projectDir, ".changetracks", "pending.json");
+}
+async function atomicWriteJson(filePath, data) {
+  const tmpPath = filePath + ".tmp." + process.pid;
+  await fs2.writeFile(tmpPath, JSON.stringify(data, null, 2), "utf-8");
+  await fs2.rename(tmpPath, filePath);
+}
+async function readPendingEdits(projectDir) {
+  try {
+    const raw = await fs2.readFile(pendingPath(projectDir), "utf-8");
+    return JSON.parse(raw);
+  } catch {
+    return [];
+  }
+}
+async function appendPendingEdit(projectDir, edit) {
+  const filePath = pendingPath(projectDir);
+  await fs2.mkdir(path5.dirname(filePath), { recursive: true });
+  const existing = await readPendingEdits(projectDir);
+  existing.push(edit);
+  await atomicWriteJson(filePath, existing);
+}
+
+// src/core/edit-tracker.ts
+function classifyEdit(toolName, oldText, newText) {
+  if (toolName === "Write") return "creation";
+  if (oldText === "" && newText !== "") return "insertion";
+  if (newText === "" && oldText !== "") return "deletion";
+  return "substitution";
+}
+function shouldLogEdit(policyMode) {
+  return policyMode === "safety-net";
+}
+async function logEdit(projectDir, sessionId, filePath, oldText, newText, toolName, contextBefore, contextAfter) {
+  const editClass = classifyEdit(toolName, oldText, newText);
+  const edit = {
+    file: filePath,
+    old_text: oldText,
+    new_text: newText,
+    timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+    session_id: sessionId,
+    context_before: contextBefore,
+    context_after: contextAfter,
+    tool_name: toolName,
+    edit_class: editClass
+  };
+  await appendPendingEdit(projectDir, edit);
+}
+async function logReadAudit(projectDir, sessionId, filePath) {
+  const edit = {
+    file: filePath,
+    old_text: "",
+    new_text: "",
+    timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+    session_id: sessionId,
+    context_before: "read_tracked_file"
+  };
+  await appendPendingEdit(projectDir, edit);
+}
+
+// src/changetracks-rules.ts
+function buildChangeTracksRule(config, projectDir, sessionId) {
+  function isInScope(file) {
+    if (!isFileInScope(file, config, projectDir)) {
+      if (fs3.existsSync(file)) {
+        try {
+          const head = fs3.readFileSync(file, "utf-8").slice(0, 500);
+          const header = parseTrackingHeader(head);
+          if (header?.status === "tracked") return true;
+        } catch {
+        }
+      }
+      return false;
+    }
+    if (fs3.existsSync(file)) {
+      try {
+        const head = fs3.readFileSync(file, "utf-8").slice(0, 500);
+        const header = parseTrackingHeader(head);
+        if (header?.status === "untracked") return false;
+      } catch {
+      }
+    }
+    if (isFileExcludedFromHooks(file, config, projectDir)) return false;
+    return true;
+  }
+  return {
+    name: "changetracks",
+    scope: isInScope,
+    onToolCall: (call) => {
+      if (config.author.enforcement === "required") {
+        const mcpWriteTools = ["propose_change", "amend_change", "review_changes", "supersede_change"];
+        if (mcpWriteTools.includes(call.tool) && !call.input.author) {
+          return {
+            action: "deny",
+            reason: 'Author is required by project policy. Add author parameter (e.g., author: "ai:claude-opus-4.6").'
+          };
+        }
+      }
+      return { action: "allow" };
+    },
+    onWrite: async (op) => {
+      if (config.policy.creation_tracking !== "none" && !fs3.existsSync(op.file)) {
+        return {
+          action: "allow",
+          agentHint: "New file will be created with ChangeTracks tracking header and creation footnote."
+        };
+      }
+      if (config.policy.mode === "permissive") {
+        return { action: "allow" };
+      }
+      if (config.policy.mode === "strict") {
+        let hint;
+        try {
+          const fileContent = await fsPromises.readFile(op.file, "utf-8");
+          if (config.hashline.enabled) {
+            const { initHashline: initHashline2 } = await Promise.resolve().then(() => (init_dist_esm(), dist_esm_exports));
+            await initHashline2();
+          }
+          const relPath = op.file.startsWith(projectDir) ? op.file.slice(projectDir.length + 1) : op.file;
+          hint = formatRedirect({
+            toolName: op.source.tool === "edit" ? "Edit" : "Write",
+            filePath: relPath,
+            oldText: op.source.input.old_string ?? "",
+            newText: op.source.input.new_string ?? op.source.input.content ?? "",
+            fileContent,
+            config: { protocol: config.protocol, hashline: config.hashline }
+          });
+        } catch {
+          hint = `BLOCKED: This file is tracked by ChangeTracks (policy: strict). Use propose_change instead of Edit/Write.`;
+        }
+        return {
+          action: "deny",
+          reason: hint,
+          userMessage: "ChangeTracks blocked a raw edit on a tracked file."
+        };
+      }
+      const hashlineTip = config.hashline.enabled ? "\nTip: Use read_tracked_file first for LINE:HASH coordinates." : "";
+      return {
+        action: "warn",
+        agentHint: `This file is tracked by ChangeTracks (policy: safety-net). Edit will be auto-wrapped but reasoning is lost. Use propose_change for tracked edits with context.${hashlineTip}`
+      };
+    },
+    onRead: (op) => {
+      if (config.policy.mode === "strict") {
+        const relPath = op.file.startsWith(projectDir) ? op.file.slice(projectDir.length + 1) : op.file;
+        return {
+          action: "deny",
+          reason: formatReadRedirect(relPath, { policy: config.policy }),
+          userMessage: "ChangeTracks blocked a raw read on a tracked file."
+        };
+      }
+      return { action: "allow" };
+    },
+    onDelete: () => {
+      if (config.policy.mode === "permissive") return { action: "allow" };
+      return {
+        action: "deny",
+        reason: "This file is tracked by ChangeTracks. Tracked files cannot be deleted directly.",
+        agentHint: "Deletion of tracked files is not supported. Use propose_change to mark content for deletion instead."
+      };
+    },
+    afterWrite: async (op, _result) => {
+      if (!shouldLogEdit(config.policy.mode)) return;
+      const oldText = op.source.input.old_string ?? "";
+      const newText = op.source.input.new_string ?? op.source.input.content ?? "";
+      let contextBefore;
+      let contextAfter;
+      try {
+        const fileContent = await fsPromises.readFile(op.file, "utf-8");
+        if (newText) {
+          const editPos = fileContent.indexOf(newText);
+          if (editPos > 0) contextBefore = fileContent.slice(Math.max(0, editPos - 50), editPos);
+          if (editPos >= 0) contextAfter = fileContent.slice(editPos + newText.length, editPos + newText.length + 50);
+        }
+      } catch {
+      }
+      await logEdit(projectDir, sessionId, op.file, oldText, newText, op.source.tool, contextBefore, contextAfter);
+    },
+    afterRead: async (op, _result) => {
+      await logReadAudit(projectDir, sessionId, op.file);
+    }
+  };
+}
+
 // src/adapters/claude-code/pre-tool-use.ts
 async function handlePreToolUse(input) {
-  const { tool_name: rawToolName, tool_input, cwd } = input;
-  const tool_name = rawToolName?.toLowerCase() ?? "";
-  if (tool_name === "read_tracked_file") {
-    return {};
-  }
-  if (tool_name === "read") {
-    const filePath2 = tool_input?.file_path ?? "";
-    if (!filePath2 || !cwd) {
-      return {};
-    }
-    const config2 = await loadConfig(cwd);
-    const decision2 = evaluateRawRead(filePath2, config2, cwd);
-    if (decision2.action === "deny") {
-      const hint = formatReadRedirect(
-        path3.relative(cwd, filePath2),
-        { policy: config2.policy }
-      );
-      return {
-        hookSpecificOutput: {
-          hookEventName: "PreToolUse",
-          permissionDecision: "deny",
-          permissionDecisionReason: hint
-        }
-      };
-    }
-    if (decision2.agentHint) {
-      return {
-        hookSpecificOutput: {
-          hookEventName: "PreToolUse",
-          permissionDecision: "allow",
-          additionalContext: decision2.agentHint
-        }
-      };
-    }
-    return {};
-  }
-  if (tool_name !== "edit" && tool_name !== "write") {
-    return {};
-  }
-  if (!cwd || !tool_input) {
-    return {};
-  }
-  const projectDir = cwd;
-  const filePath = tool_input.file_path ?? "";
-  if (!filePath) {
-    return {};
-  }
+  if (!input.tool_name || !input.cwd) return {};
+  const projectDir = input.cwd;
+  const sessionId = input.session_id ?? "unknown";
   const config = await loadConfig(projectDir);
-  const oldText = tool_input.old_string ?? "";
-  const newText = tool_input.new_string ?? tool_input.content ?? "";
-  const decision = evaluateRawEdit(filePath, config, projectDir, {
-    checkFileExists: tool_name === "write"
-  });
-  if (decision.action === "allow") {
-    if (decision.agentHint) {
-      return {
-        hookSpecificOutput: {
-          hookEventName: "PreToolUse",
-          permissionDecision: "allow",
-          additionalContext: decision.agentHint
-        }
-      };
-    }
-    return {};
-  }
-  if (decision.action === "deny") {
-    let hint = decision.agentHint ?? "";
-    try {
-      const fileContent = await fs3.readFile(filePath, "utf-8");
-      if (config.hashline.enabled) {
-        const { initHashline: initHashline2 } = await Promise.resolve().then(() => (init_dist_esm(), dist_esm_exports));
-        await initHashline2();
-      }
-      hint = formatRedirect({
-        toolName: tool_name === "edit" ? "Edit" : "Write",
-        filePath: path3.relative(projectDir, filePath),
-        oldText,
-        newText,
-        fileContent,
-        config: { protocol: config.protocol, hashline: config.hashline }
-      });
-    } catch {
-    }
+  const tool = input.tool_name.toLowerCase();
+  const isBuiltInTool = tool === "edit" || tool === "write" || tool === "read";
+  const isBashTool = tool === "bash";
+  if (isBuiltInTool && !config.hooks.intercept_tools) return {};
+  if (isBashTool && !config.hooks.intercept_bash) return {};
+  const toolCall = {
+    tool,
+    input: input.tool_input ?? {},
+    cwd: projectDir
+  };
+  const rule = buildChangeTracksRule(config, projectDir, sessionId);
+  const verdict = await evaluate(toolCall, [rule]);
+  return verdictToHookResult(verdict);
+}
+function verdictToHookResult(verdict) {
+  if (verdict.action === "deny") {
     return {
       hookSpecificOutput: {
         hookEventName: "PreToolUse",
         permissionDecision: "deny",
-        permissionDecisionReason: hint
+        permissionDecisionReason: verdict.reason ?? verdict.agentHint ?? "Blocked by LLM Jail"
       }
     };
   }
-  return {
-    hookSpecificOutput: {
-      hookEventName: "PreToolUse",
-      permissionDecision: "allow",
-      additionalContext: decision.agentHint
-    }
-  };
+  if (verdict.action === "warn" || verdict.agentHint) {
+    return {
+      hookSpecificOutput: {
+        hookEventName: "PreToolUse",
+        permissionDecision: "allow",
+        additionalContext: verdict.agentHint
+      }
+    };
+  }
+  return {};
 }
 
 // src/pre-tool-use.ts

@@ -12,7 +12,7 @@
  * hashes each committed line, builds committed<->raw line mapping.
  */
 
-import { parseFootnotes } from './footnote-parser.js';
+import { parseFootnotes, findFootnoteBlockStart } from './footnote-parser.js';
 import { computeLineHash } from './hashline.js';
 import {
   multiLineSubstitution,
@@ -165,7 +165,8 @@ export interface FormatOptions {
 function findFootnoteLineIndices(lines: string[]): Set<number> {
   const indices = new Set<number>();
 
-  for (let i = 0; i < lines.length; i++) {
+  const blockStart = findFootnoteBlockStart(lines);
+  for (let i = blockStart; i < lines.length; i++) {
     if (!FOOTNOTE_DEF_START_QUICK.test(lines[i])) continue;
 
     // Mark the header line

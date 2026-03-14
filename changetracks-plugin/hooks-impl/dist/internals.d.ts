@@ -10,7 +10,7 @@ export type { HookInput } from './adapters/shared.js';
 export { applyPendingEdits } from './core/batch-wrapper.js';
 export { classifyEdit, shouldLogEdit } from './core/edit-tracker.js';
 export { scanMaxId, allocateIds } from './core/id-allocator.js';
-export { evaluateRawEdit, evaluateRawRead, evaluateMcpCall } from './core/policy-engine.js';
+export { evaluateRawEdit, evaluateRawRead, evaluateMcpCall } from './core/mcp-validation.js';
 export { formatRedirect, formatReadRedirect } from './core/redirect-formatter.js';
 export type { CreationTracking, PolicyDecision } from './core/types.js';
 export { handleAfterFileEdit } from './adapters/cursor/after-file-edit.js';

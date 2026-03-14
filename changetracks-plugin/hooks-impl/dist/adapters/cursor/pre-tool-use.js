@@ -2274,6 +2274,8 @@ function parseConfigToml(raw) {
     hooks: {
       enforcement: hooks?.["enforcement"] === "warn" || hooks?.["enforcement"] === "block" ? hooks["enforcement"] : DEFAULT_CONFIG.hooks.enforcement,
       exclude: asStringArray(hooks?.["exclude"]) ?? DEFAULT_CONFIG.hooks.exclude,
+      intercept_tools: typeof hooks?.["intercept_tools"] === "boolean" ? hooks["intercept_tools"] : DEFAULT_CONFIG.hooks.intercept_tools,
+      intercept_bash: typeof hooks?.["intercept_bash"] === "boolean" ? hooks["intercept_bash"] : DEFAULT_CONFIG.hooks.intercept_bash,
       patch_wrap_experimental: typeof hooks?.["patch_wrap_experimental"] === "boolean" ? hooks["patch_wrap_experimental"] : DEFAULT_CONFIG.hooks.patch_wrap_experimental
     },
     matching: {
@@ -2378,6 +2380,8 @@ var DEFAULT_CONFIG = {
   hooks: {
     enforcement: "warn",
     exclude: [],
+    intercept_tools: true,
+    intercept_bash: false,
     patch_wrap_experimental: false
   },
   matching: {
@@ -2411,7 +2415,7 @@ var DEFAULT_CONFIG = {
   }
 };
 
-// src/core/policy-engine.ts
+// src/core/mcp-validation.ts
 import * as fs2 from "node:fs";
 
 // src/scope.ts
@@ -3311,7 +3315,7 @@ function parseTrackingHeader(text) {
 // ../../packages/core/dist-esm/renderers/decoration-intents.js
 var SUB_SEPARATOR_LEN = TokenType.SubstitutionSeparator.length;
 
-// src/core/policy-engine.ts
+// src/core/mcp-validation.ts
 function evaluateRawEdit(filePath, config, projectDir, options) {
   const inScope = isFileInScope(filePath, config, projectDir);
   let headerStatus = null;

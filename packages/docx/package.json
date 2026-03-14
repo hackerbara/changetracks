@@ -12,12 +12,15 @@
   "dependencies": {
     "@changetracks/core": "file:../core",
     "docx": "^9.5.0",
+    "image-size": "^1.2.1",
     "jszip": "^3.10.0"
   },
   "devDependencies": {
-    "vitest": "^3.0.0",
-    "@types/node": "^22.0.0"
+    "@types/node": "^22.0.0",
+    "vitest": "^3.0.0"
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "license": "MIT"
 }

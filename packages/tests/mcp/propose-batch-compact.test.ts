@@ -445,6 +445,55 @@ describe('propose_batch compact mode', () => {
   // Regression: exact scenario from user research — compact batch with at/op
   // fails when auto_header inserts a tracking header that shifts line numbers.
 
+  it('handles document with [^ct- patterns inside code fences', async () => {
+    // Regression test: bodyLineCount must not falsely detect [^ct- patterns
+    // inside code fences as the footnote block start. If it does,
+    // cumulativeDelta is wrong and later ops target the wrong lines.
+    const content = [
+      '# Design Doc',
+      '',
+      '```markdown',
+      '[^ct-5]: @alice | 2026-03-14 | ins | proposed',
+      '    image-dimensions: 2.5in x 1.8in',
+      '```',
+      '',
+      'The image-dimensions line stores the display size.',
+    ].join('\n');
+    const filePath = path.join(tmpDir, 'footnote-in-body.md');
+    await fs.writeFile(filePath, content);
+
+    const h1 = hashForLine(content, 1); // # Design Doc
+    const h8 = hashForLine(content, 8); // paragraph line
+
+    const result = await handleProposeBatch(
+      {
+        file: filePath,
+        reason: 'fix typo and update title',
+        changes: [
+          {
+            at: `1:${h1}`,
+            op: '{~~# Design Doc~># Design Document~~}',
+          },
+          {
+            at: `8:${h8}`,
+            op: '{~~The image-dimensions line stores the display size.~>The image-dimensions line stores the DOCX display size.~~}',
+          },
+        ],
+      },
+      resolver,
+      state,
+    );
+
+    if (result.isError) {
+      console.error('BATCH ERROR:', JSON.stringify(result, null, 2));
+    }
+    expect(result.isError).toBeUndefined();
+    const modified = await fs.readFile(filePath, 'utf-8');
+    // Both operations should have been applied
+    expect(modified).toContain('{~~# Design Doc~># Design Document~~}');
+    expect(modified).toContain('{~~The image-dimensions line stores the display size.~>The image-dimensions line stores the DOCX display size.~~}');
+  });
+
   it('compact batch succeeds when auto_header shifts lines', async () => {
     const autoHeaderConfig = {
       ...compactConfig,

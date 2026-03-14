@@ -8,6 +8,23 @@ import { renderMarkdownToHtml } from './docx-preview-renderer';
 import { buildAnnotationCards } from './annotation-extractor';
 import { buildLoadingHtml, buildErrorHtml, buildChoiceHtml, buildPreviewHtml } from './docx-preview-html';
 
+function rewriteImagePaths(markdown: string, mediaDir: string, webview: vscode.Webview): string {
+  // Markdown paths are relative to where the .md file would sit (e.g., "basename_media/hash.png").
+  // mediaDir already points inside that folder, so resolve against its parent.
+  const baseDir = path.dirname(mediaDir);
+  return markdown.replace(
+    /!\[([^\]]*)\]\(([^)]+)\)/g,
+    (match, alt, src) => {
+      const absolutePath = path.isAbsolute(src) ? src : path.join(baseDir, src);
+      if (fs.existsSync(absolutePath)) {
+        const uri = webview.asWebviewUri(vscode.Uri.file(absolutePath));
+        return `![${alt}](${uri})`;
+      }
+      return match;
+    }
+  );
+}
+
 export class DocxEditorProvider implements vscode.CustomReadonlyEditorProvider {
   public static readonly viewType = 'changetracks.docxEditor';
   private readonly tempFiles: string[] = [];
@@ -44,20 +61,38 @@ export class DocxEditorProvider implements vscode.CustomReadonlyEditorProvider {
     let tempPath: string | undefined;
     let currentMdPath: string | undefined;
     let currentViewMode = 'allMarkup';
+    let currentMediaDir: string | undefined;
 
     // Single consolidated message handler (Task 9 fix — no duplicate listeners)
     webviewPanel.webview.onDidReceiveMessage(async (message) => {
       switch (message.command) {
-        case 'openExisting':
+        case 'openExisting': {
           currentMdPath = mdPath;
+          // Look for a media folder alongside the sidecar .md file
+          if (!currentMediaDir) {
+            const docxBasename = path.basename(docxPath, path.extname(docxPath));
+            const sidecarMediaDir = path.join(path.dirname(mdPath), `${docxBasename}_media`);
+            if (fs.existsSync(sidecarMediaDir)) {
+              currentMediaDir = sidecarMediaDir;
+              webviewPanel.webview.options = {
+                ...webviewPanel.webview.options,
+                localResourceRoots: [
+                  ...(webviewPanel.webview.options.localResourceRoots || []),
+                  vscode.Uri.file(sidecarMediaDir),
+                ],
+              };
+            }
+          }
           await this.showPreviewFromMarkdown(
             webviewPanel, fs.readFileSync(mdPath, 'utf-8'),
-            fileName, currentViewMode
+            fileName, currentViewMode, currentMediaDir
           );
           break;
+        }
         case 'reimport':
           tempPath = await this.convertAndShow(
-            webviewPanel, docxPath, fileName, currentViewMode
+            webviewPanel, docxPath, fileName, currentViewMode,
+            (dir) => { currentMediaDir = dir; }
           );
           if (tempPath) {
             currentMdPath = tempPath;
@@ -68,16 +103,23 @@ export class DocxEditorProvider implements vscode.CustomReadonlyEditorProvider {
           if (currentMdPath && fs.existsSync(currentMdPath)) {
             const md = fs.readFileSync(currentMdPath, 'utf-8');
             await this.showPreviewFromMarkdown(
-              webviewPanel, md, fileName, currentViewMode
+              webviewPanel, md, fileName, currentViewMode, currentMediaDir
             );
           }
           break;
         case 'edit': {
-          // Ensure mdPath has content
+          // Copy markdown sidecar
           if (tempPath && !fs.existsSync(mdPath)) {
             fs.copyFileSync(tempPath, mdPath);
           } else if (tempPath && currentMdPath === tempPath) {
             fs.copyFileSync(tempPath, mdPath);
+          }
+          // Copy media folder alongside the sidecar markdown
+          if (currentMediaDir && fs.existsSync(currentMediaDir)) {
+            const targetMediaDir = path.join(path.dirname(mdPath), path.basename(currentMediaDir));
+            if (!fs.existsSync(targetMediaDir)) {
+              fs.cpSync(currentMediaDir, targetMediaDir, { recursive: true });
+            }
           }
           if (!fs.existsSync(mdPath)) {
             vscode.window.showErrorMessage(`Cannot open: ${mdFileName} does not exist.`);
@@ -99,7 +141,8 @@ export class DocxEditorProvider implements vscode.CustomReadonlyEditorProvider {
       webviewPanel.webview.html = buildChoiceHtml(fileName, mdFileName);
     } else {
       tempPath = await this.convertAndShow(
-        webviewPanel, docxPath, fileName, currentViewMode
+        webviewPanel, docxPath, fileName, currentViewMode,
+        (dir) => { currentMediaDir = dir; }
       );
       if (tempPath) {
         currentMdPath = tempPath;
@@ -111,13 +154,26 @@ export class DocxEditorProvider implements vscode.CustomReadonlyEditorProvider {
     webviewPanel: vscode.WebviewPanel,
     docxPath: string,
     fileName: string,
-    viewMode: string
+    viewMode: string,
+    onMediaDir?: (dir: string) => void,
   ): Promise<string | undefined> {
     webviewPanel.webview.html = buildLoadingHtml(fileName);
 
     try {
       const { importDocx } = await import('@changetracks/docx');
-      const { markdown } = await importDocx(docxPath);
+      const { markdown, mediaDir } = await importDocx(docxPath);
+
+      // Add media folder to localResourceRoots so the webview can load images
+      if (mediaDir) {
+        onMediaDir?.(mediaDir);
+        webviewPanel.webview.options = {
+          ...webviewPanel.webview.options,
+          localResourceRoots: [
+            ...(webviewPanel.webview.options.localResourceRoots || []),
+            vscode.Uri.file(mediaDir),
+          ],
+        };
+      }
 
       // Write to temp file
       const mdBaseName = path.basename(docxPath).replace(/\.docx$/i, '-changetracks.md');
@@ -126,7 +182,7 @@ export class DocxEditorProvider implements vscode.CustomReadonlyEditorProvider {
       this.tempFiles.push(tempPath);
 
       await this.showPreviewFromMarkdown(
-        webviewPanel, markdown, fileName, viewMode
+        webviewPanel, markdown, fileName, viewMode, mediaDir
       );
 
       return tempPath;
@@ -140,7 +196,8 @@ export class DocxEditorProvider implements vscode.CustomReadonlyEditorProvider {
     webviewPanel: vscode.WebviewPanel,
     markdown: string,
     fileName: string,
-    viewMode: string = 'allMarkup'
+    viewMode: string = 'allMarkup',
+    mediaDir?: string
   ): Promise<void> {
     const { CriticMarkupParser } = await import('@changetracks/core');
     const parser = new CriticMarkupParser();
@@ -150,7 +207,11 @@ export class DocxEditorProvider implements vscode.CustomReadonlyEditorProvider {
     const isDark = vscode.window.activeColorTheme?.kind === 2
       || vscode.window.activeColorTheme?.kind === 3;
 
-    const bodyHtml = renderMarkdownToHtml(markdown, isDark, viewMode);
+    const resolvedMarkdown = mediaDir
+      ? rewriteImagePaths(markdown, mediaDir, webviewPanel.webview)
+      : markdown;
+
+    const bodyHtml = renderMarkdownToHtml(resolvedMarkdown, isDark, viewMode);
     const annotations = buildAnnotationCards(changes, markdown);
 
     const stats = {

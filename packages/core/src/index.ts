@@ -31,7 +31,7 @@ export { computeSettledReplace, computeSettledText, settleAcceptedChangesOnly, s
 export { initHashline, ensureHashlineReady, computeLineHash, formatHashLines, parseLineRef, validateLineRef, HashlineMismatchError } from './hashline.js';
 export { settledLine, computeSettledLineHash, formatTrackedHashLines, formatTrackedHeader } from './hashline-tracked.js';
 export { stripHashlinePrefixes, detectNoOp, relocateHashRef, stripBoundaryEcho } from './hashline-cleanup.js';
-export { parseFootnotes, type FootnoteInfo } from './footnote-parser.js';
+export { parseFootnotes, findFootnoteBlockStart, type FootnoteInfo } from './footnote-parser.js';
 export { computeCommittedLine, computeCommittedView, formatCommittedOutput, type CommittedLineResult, type CommittedLine, type CommittedViewResult, type FormatOptions, type FootnoteStatus } from './committed-text.js';
 export { SIDECAR_BLOCK_MARKER, findSidecarBlockStart } from './constants.js';
 export {
@@ -44,6 +44,7 @@ export {
   FOOTNOTE_REF_ANCHORED, footnoteRefGlobal, footnoteRefNumericGlobal,
   FOOTNOTE_DEF_START, FOOTNOTE_DEF_START_QUICK,
   FOOTNOTE_DEF_LENIENT, FOOTNOTE_DEF_STRICT, FOOTNOTE_DEF_STATUS, FOOTNOTE_DEF_STATUS_VALUE,
+  FOOTNOTE_CONTINUATION,
 } from './footnote-patterns.js';
 export {
   buildViewSurfaceMap, viewAwareFind,
