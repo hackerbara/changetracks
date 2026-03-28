@@ -1,0 +1,29 @@
+<!DOCTYPE html><html lang="en" data-astro-cid-5hce7sga> <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>The Format — ChangeTracks</title><link rel="canonical" href="https://changedown.com/content/spec/"><meta name="description" content="Any markdown file with these constructs is a valid CriticMarkup document. ChangeTracks adds a metadata layer on top."><meta name="robots" content="index, follow"><meta property="og:title" content="The Format"><meta property="og:type" content="article"><meta property="og:image" content="https://changedown.com/og-images/content-spec.png"><meta property="og:url" content="https://changedown.com/content/spec/"><meta property="og:description" content="Any markdown file with these constructs is a valid CriticMarkup document. ChangeTracks adds a metadata layer on top."><meta property="og:site_name" content="ChangeTracks"><meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="The Format"><meta name="twitter:image" content="https://changedown.com/og-images/content-spec.png"><meta name="twitter:description" content="Any markdown file with these constructs is a valid CriticMarkup document. ChangeTracks adds a metadata layer on top."><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet"><style>#app[data-astro-cid-5hce7sga]:not(:empty)~.static-content[data-astro-cid-5hce7sga],.static-content[data-astro-cid-5hce7sga]:has(~#app:not(:empty)){display:none}.static-content[data-astro-cid-5hce7sga]{max-width:800px;margin:2rem auto;padding:0 1rem;font-family:DM Sans,sans-serif}
+</style></head> <body data-astro-cid-5hce7sga> <!-- Static content for crawlers and fast first paint --> <article class="static-content" data-astro-cid-5hce7sga> <h1 id="the-format">The Format</h1>
+<p>ChangeTracks builds on <a href="http://criticmarkup.com">CriticMarkup</a>, a plain-text syntax for editorial markup created by Gabe Weatherhead and Erik Hess in 2013. Five inline constructs cover the full editorial vocabulary.</p>
+<h2 id="syntax">Syntax</h2>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="plaintext"><code><span class="line"><span>Type          Syntax             Example</span></span>
+<span class="line"><span>───────────── ────────────────── ──────────────────</span></span>
+<span class="line"><span>Insertion     {++text++}         {++added this++}</span></span>
+<span class="line"><span>Deletion      {--text--}         {--removed this--}</span></span>
+<span class="line"><span>Substitution  {~~old~>new~~}     {~~before~>after~~}</span></span>
+<span class="line"><span>Highlight     {==text==}         {==highlighted==}</span></span>
+<span class="line"><span>Comment       {>>text&#x3C;&#x3C;}         {>>a note&#x3C;&#x3C;}</span></span></code></pre>
+<p>Any markdown file with these constructs is a valid CriticMarkup document. ChangeTracks adds a metadata layer on top.</p>
+<h2 id="metadata-levels">Metadata Levels</h2>
+<p><strong>Level 0</strong> — Bare CriticMarkup. No attribution. Just the change.</p>
+<p><code>{++added this++}</code></p>
+<p><strong>Level 1</strong> — Inline metadata appended after the closing delimiter. Author, date, status.</p>
+<p><code>{++added this++}{>>@claude 2026-03-12 proposed&#x3C;&#x3C;}</code></p>
+<p><strong>Level 2</strong> — Footnote references linking to full discussion blocks. Author identity, timestamps, status lifecycle, amendment history, and threaded deliberation. This is what the MCP tools produce and what the review panel displays.</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="plaintext"><code><span class="line"><span>[^ct-1]: @claude | 2026-03-12 | ins | accepted</span></span>
+<span class="line"><span>    @claude 2026-03-12T14:30:00Z: Added for clarity</span></span>
+<span class="line"><span>    approved: @hackerbara 2026-03-12T15:00:00Z "good addition"</span></span></code></pre>
+<p>The footnote block is the deliberation record. It stays with the file — not in a PR comment, not in a Slack thread, not in a separate review system. When someone reads the file next year, the context is still there.</p>
+<h2 id="views">Views</h2>
+<p>Three projections of the same file:</p>
+<ul>
+<li><strong>Changes</strong> — The working view. Markup rendered as colored inline decorations, delimiters hidden, gutter shows where edits are.</li>
+<li><strong>Agent</strong> — Everything visible. Raw delimiters, hash coordinates, footnotes. What an AI agent sees when it reads the file.</li>
+<li><strong>Final</strong> — Clean prose. All accepted changes applied, rejected changes removed. The document as it reads when deliberation is done.</li>
+</ul> </article> <!-- Preact app mount point --> <div id="app" data-content-path="/content/spec.md" data-astro-cid-5hce7sga></div> <script type="module" src="/app/main.js"></script> </body> </html>
