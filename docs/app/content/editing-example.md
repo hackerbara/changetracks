@@ -1,12 +1,12 @@
-<!-- ctrcks.com/v1: tracked -->
+<!-- changedown.com/v1: tracked -->
 
-**ChangeTracks {++c++}[^ct-1]{--C--}[^ct-2]ollaborative Editing Powered by CriticMarkup**[^ct-3]
+**ChangeDown {++c++}[^ct-1]{--C--}[^ct-2]ollaborative Editing Powered by CriticMarkup**[^ct-3]
 
-*By: Sarah Chen, Product Lead – ChangeTracks*
+*By: Sarah Chen, Product Lead – ChangeDown*
 
-*James Rivera, Engineering – ChangeTracks*
+*James Rivera, Engineering – ChangeDown*
 
-*Maya Patel, Documentation – ChangeTracks*[^ct-4]
+*Maya Patel, Documentation – ChangeDown*[^ct-4]
 
 **{--Introduction--}[^ct-5]**
 
@@ -14,23 +14,23 @@ When teams collaborate on documents, they are not thinking about the underlying 
 
 But {--most--}[^ct-7] document editing workflows face a familiar challenge: you have invested in {++sophisticated++}[^ct-8] {++AI agents++}[^ct-9] that can draft, revise, and restructure content, yet they {--bypass--}[^ct-10] every editorial safeguard your team depends on {--—--}[^ct-11] {~~~>—~~}[^ct-12]Edits arrive without {~~attribution~>attribution~~}[^ct-13]. Revisions overwrite previous work with no {~~record~>record~~}[^ct-14]. Reviewers discover changes only by diffing file versions after the fact{++,++}[^ct-15] {--—--}[^ct-16] reconstructing context from commit messages that rarely explain why a particular sentence was reworded or a paragraph reorganized.
 
-That is why ChangeTracks and {++the CriticMarkup open standard++}[^ct-17] took a different approach{++.++}[^ct-18] {~~:~>Every edit is~~}[^ct-19] {--captured--}[^ct-20] inline, attributed to {~~its~>its~~}[^ct-21] author, with a reason attached.
+That is why ChangeDown and {++the CriticMarkup open standard++}[^ct-17] took a different approach{++.++}[^ct-18] {~~:~>Every edit is~~}[^ct-19] {--captured--}[^ct-20] inline, attributed to {~~its~>its~~}[^ct-21] author, with a reason attached.
 
 The new {~~open-source~>open source~~}[^ct-22] {++CriticMarkup++}[^ct-23] connector for markdown editors gives teams a bring-your-own-vocabulary approach to change tracking. Rather than forcing a proprietary format, the connector maps every insertion, deletion, substitution{--,--}[^ct-24] {--"--}[^ct-25]highlight{~~"~>and comment~~}[^ct-26] to standard CriticMarkup delimiters that any text editor can render. This means organizations can integrate change tracking into their existing markdown pipelines without vendor lock-in, using the same files across VS Code, GitHub, static site generators, and documentation build systems that already process plain text natively{--,--}[^ct-27] while maintaining full editorial accountability.
 
-For the {++more than++}[^ct-28] 10,000{--+--}[^ct-29] organizations running collaborative document workflows today, this integration delivers a practical path to tracked AI editing. Teams in {~~North America, Europe, and the Asia-Pacific region~>North America, Europe, and the Asia-Pacific region~~}[^ct-30] {++can++}[^ct-31] connect {++their++}[^ct-32] existing markdown toolchains to ChangeTracks without replacing their current editors or revision control systems{--+--}[^ct-33].
+For the {++more than++}[^ct-28] 10,000{--+--}[^ct-29] organizations running collaborative document workflows today, this integration delivers a practical path to tracked AI editing. Teams in {~~North America, Europe, and the Asia-Pacific region~>North America, Europe, and the Asia-Pacific region~~}[^ct-30] {++can++}[^ct-31] connect {++their++}[^ct-32] existing markdown toolchains to ChangeDown without replacing their current editors or revision control systems{--+--}[^ct-33].
 
 Here is how the integration works, where it fits across collaborative editing workflows, and what measurable improvements organizations report from deploying tracked change management.
 
-**{~~ChangeTracks Integration Architecture and Design~>ChangeTracks~~}[^ct-34] {++integration++}[^ct-35] {++architecture and design++}[^ct-36]**
+**{~~ChangeDown Integration Architecture and Design~>ChangeDown~~}[^ct-34] {++integration++}[^ct-35] {++architecture and design++}[^ct-36]**
 
 This integration connects your markdown editing environment to open-source CriticMarkup services through a {~~layered~>layered~~}[^ct-37] architecture designed for extensibility and reliability. {++The architecture comprises three integrated layers:++}[^ct-38]
 
-{--F--}[^ct-39]{--igure--}[^ct-40] {--1--}[^ct-41] {--shows the component architecture for the ChangeTracks integration, illustrating how the VS Code extension, the MCP tool server, and the CriticMarkup parser work together to deliver tracked changes.--}[^ct-42]
+{--F--}[^ct-39]{--igure--}[^ct-40] {--1--}[^ct-41] {--shows the component architecture for the ChangeDown integration, illustrating how the VS Code extension, the MCP tool server, and the CriticMarkup parser work together to deliver tracked changes.--}[^ct-42]
 
-{--![Diagram showing human and AI agent collaboration flow](changetracks-intro_media/7bf4b3672eb5431bc7fe4330e9c6237948fd6493.png)--}[^ct-43]
+{--![Diagram showing human and AI agent collaboration flow](changedown-intro_media/7bf4b3672eb5431bc7fe4330e9c6237948fd6493.png)--}[^ct-43]
 
-{--**Figure 1:** ChangeTracks extension integration with CriticMarkup services--}[^ct-44]
+{--**Figure 1:** ChangeDown extension integration with CriticMarkup services--}[^ct-44]
 
 {--The architecture comprises three integrated layers:--}[^ct-45]
 
@@ -40,15 +40,15 @@ This integration connects your markdown editing environment to open-source Criti
 
 {++This arc++}[^ct-58]{++hitecture is illustrated in the following NEEDS ACTION: replace with actual figure reference diagram++}[^ct-59]{++.++}[^ct-60]
 
-{++![Diagram showing human and AI agent collaboration flow](changetracks-intro_media/7bf4b3672eb5431bc7fe4330e9c6237948fd6493.png)++}[^ct-61]
+{++![Diagram showing human and AI agent collaboration flow](changedown-intro_media/7bf4b3672eb5431bc7fe4330e9c6237948fd6493.png)++}[^ct-61]
 
-{++*Figure 1: ChangeTracks extension integration with CriticMarkup services overview*++}[^ct-62]
+{++*Figure 1: ChangeDown extension integration with CriticMarkup services overview*++}[^ct-62]
 
 **{--How an--}[^ct-63] Agent {~~E~>e~~}[^ct-64]diting {~~F~>f~~}[^ct-65]low{--s End-to-End--}[^ct-66]**
 
-{--![Diagram showing MCP plugin agent editing flow](changetracks-intro_media/39147bb8e8058267e9a1c5e85296161e951acca4.png)--}[^ct-67]
+{--![Diagram showing MCP plugin agent editing flow](changedown-intro_media/39147bb8e8058267e9a1c5e85296161e951acca4.png)--}[^ct-67]
 
-{--**Figure 2:** ChangeTracks Agent Editing and Review Integration Call flow--}[^ct-68]
+{--**Figure 2:** ChangeDown Agent Editing and Review Integration Call flow--}[^ct-68]
 
 When an agent connects to a tracked file in the editing environment, the following flow takes place:[^ct-69]
 
@@ -67,9 +67,9 @@ When an agent connects to a tracked file in the editing environment, the followi
 
 {++The agent editing flow is illustrated in the following flow diagram.++}[^ct-105]
 
-{++![Diagram showing MCP plugin agent editing flow](changetracks-intro_media/39147bb8e8058267e9a1c5e85296161e951acca4.png)++}[^ct-106]
+{++![Diagram showing MCP plugin agent editing flow](changedown-intro_media/39147bb8e8058267e9a1c5e85296161e951acca4.png)++}[^ct-106]
 
-{++*Figure 2: ChangeTracks agent editing environment and review integration call flow*++}[^ct-107]
+{++*Figure 2: ChangeDown agent editing environment and review integration call flow*++}[^ct-107]
 
 {~~How t~>T~~}[^ct-108]his solution integrates with your editing environment {++in the following ways for collaborative workflows.++}[^ct-109]
 
@@ -79,7 +79,7 @@ When an agent connects to a tracked file in the editing environment, the followi
 
 **Why this design matters**
 
-- **Your files, your rules.** The ChangeTracks {~~extension~>extension~~}[^ct-122] runs entirely in your own editor, giving you full control over customization, data retention, and compliance.
+- **Your files, your rules.** The ChangeDown {~~extension~>extension~~}[^ct-122] runs entirely in your own editor, giving you full control over customization, data retention, and compliance.
 - **Built for performance.** Designed for responsive, real-time change tracking with minimal editor overhead.
 - **Secure by design.** Local-first processing means your document data stays in your infrastructure at all times.
 - **Deploy where you need.** Available as an open source extension supporting global teams{++, with local-first++}[^ct-123] processing and no cloud dependency for all supported editing operations.[^ct-124]
@@ -106,10 +106,10 @@ Government agencies can streamline policy document workflows with full change at
 
 {----}[^ct-137]Tracked AI editing transforms routine document revisions{++, including++}[^ct-138] {--—--}[^ct-139]content updates, structural reorganization, and style corrections, into streamlined self-service experiences. The integration delivers consistent editorial quality around the clock and scales to handle revision volume spikes without adding headcount or compromising review quality. The result{~~:~>is~~}[^ct-140] consistent, quality support available {~~24/7~>around the clock~~}[^ct-141] without proportional staffing costs.
 
-|     | **Step**              | **Traditional {++p++}[^ct-142]{--P--}[^ct-143]rocess**                                        | **With {~~integration~>ChangeTracks integration~~}[^ct-144] {++i++}[^ct-145]{--I--}[^ct-146]ntegration**                                                                    |
+|     | **Step**              | **Traditional {++p++}[^ct-142]{--P--}[^ct-143]rocess**                                        | **With {~~integration~>ChangeDown integration~~}[^ct-144] {++i++}[^ct-145]{--I--}[^ct-146]ntegration**                                                                    |
 | --- | --------------------- | -------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
 | 1   | Author initiates edit | Opens file, makes changes without attribution (4{++–++}[^ct-147]{-----}[^ct-148] {~~min~>minute~~}[^ct-149] no audit trail) | Instant change tracking with author metadata {~~via~>using~~}[^ct-150] LINE:HASH coordinates (under 1 second)           |
-| 2   | Review                | Reviewer manually diffs versions (2{~~-~>–~~}[^ct-151]3 min per file)           | {~~ChangeTracks~>ChangeTracks~~}[^ct-152] presents inline changes with author, date, and reason in sec{++onds++}[^ct-153]           |
+| 2   | Review                | Reviewer manually diffs versions (2{~~-~>–~~}[^ct-151]3 min per file)           | {~~ChangeDown~>ChangeDown~~}[^ct-152] presents inline changes with author, date, and reason in sec{++onds++}[^ct-153]           |
 | 3   | Resolution            | 8{++–++}[^ct-154]{-----}[^ct-155]12 minute review cycle                               | 2{++–++}[^ct-156]{-----}[^ct-157]4 minute resolution with full context preserved                        |
 
 Similar efficiency gains apply to content migration and multi-author consolidation workflows across all supported editing environments.
@@ -124,7 +124,7 @@ In today's collaborative editing deployments, organizations face a definitive ch
 
 Organizations implementing this {--Open-source--}[^ct-175]{++o++}[^ct-176]{++pen source++}[^ct-177] {~~integration~>CriticMarkup integration~~}[^ct-178] gain measurable advantages in editorial throughput{--,--}[^ct-179] review quality, and document integrity. This solution integrates with proven {~~CriticMarkup~>open source~~}[^ct-180] standards to improve every interaction and maintain context and intent across complete conversations{++,++}[^ct-181] {--that--}[^ct-182] improv{~~es~>ing~~}[^ct-183] your editorial experience.
 
-Ready to transform your collaborative editing strategy? {++Connect with the ChangeTracks++}[^ct-184] open source community {++to design a deployment architecture++}[^ct-185] tailored to your specific editorial workflow requirements.[^ct-186]
+Ready to transform your collaborative editing strategy? {++Connect with the ChangeDown++}[^ct-184] open source community {++to design a deployment architecture++}[^ct-185] tailored to your specific editorial workflow requirements.[^ct-186]
 
 [^ct-1]: @editor | 2026-03-21 | ins | proposed
 
@@ -508,5 +508,5 @@ Ready to transform your collaborative editing strategy? {++Connect with the Chan
 
 [^ct-186]: @editor | 2026-03-21 | comment | proposed
     @editor 2026-03-21: **QUESTION:** is there a place somewhere in the post for this link?
-    ChangeTracks Open Source Community
-    [https://github.com/changetracks/community](https://github.com/changetracks/community)
+    ChangeDown Open Source Community
+    [https://github.com/changedown/community](https://github.com/changedown/community)

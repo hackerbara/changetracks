@@ -1,4 +1,4 @@
-<!-- ctrcks.com/v1: tracked -->
+<!-- changedown.com/v1: tracked -->
 # All You Need Is a File and Governance
 
 Everyone building AI tools right now is circling the same question: how do humans and agents collaborate on documents?
@@ -9,13 +9,13 @@ But underneath all of it, something is missing. When an AI agent edits your docu
 
 We need an interchange format. Not another tool — a format. A way to say "here are my changes, here's why, here's who" that works in any editor, any workflow, any tool. Something you can email, put in a pull request, open in Notepad.
 
-That's what ChangeTracks is. An open format that puts track changes — the kind you'd use in Word — directly into plain text files. CriticMarkup for the editing operations. Footnotes for the governance log. And smart tooling that makes adherence the path of least resistance.
+That's what ChangeDown is. An open format that puts track changes — the kind you'd use in Word — directly into plain text files. CriticMarkup for the editing operations. Footnotes for the governance log. And smart tooling that makes adherence the path of least resistance.
 
 ## Intent in the character stream
 
 Humans and agents already think in editing operations. A human making tracked changes in Word is composing insertions, deletions, and substitutions with specific purposes — not character-level real-time maps. An LLM proposing changes defaults to old_text/new_text and gives reasons in commit messages or responses. Both are thinking at the same level: writing and changing the words, with reasons attached.
 
-ChangeTracks writes this down in the file. An insertion: `{++new text++}`. A deletion: `{--removed text--}`. A substitution: `{~~old~>new~~}`. These are CriticMarkup delimiters — an existing open standard. Below the document body, a footnote log records who, when, why, and what decision was made about each change:
+ChangeDown writes this down in the file. An insertion: `{++new text++}`. A deletion: `{--removed text--}`. A substitution: `{~~old~>new~~}`. These are CriticMarkup delimiters — an existing open standard. Below the document body, a footnote log records who, when, why, and what decision was made about each change:
 
 ```
 [^ct-1]: @alice | 2026-03-15 | sub | proposed
@@ -41,7 +41,7 @@ The design test we use: design every feature so a good-faith newcomer feels orie
 
 ## Better for humans
 
-Content professionals have twenty years of muscle memory with Word Track Changes. Legal redliners, copy editors, journal reviewers, policy writers — they know this workflow in their hands. ChangeTracks maps directly to that muscle memory: insertions underlined, deletions struck, comments in the margin, accept and reject with a click. The VS Code extension renders CriticMarkup into the same visual language, and the format round-trips to .docx for teams that need to move between worlds. No new concepts to learn. Just a new medium that happens to be plain text.
+Content professionals have twenty years of muscle memory with Word Track Changes. Legal redliners, copy editors, journal reviewers, policy writers — they know this workflow in their hands. ChangeDown maps directly to that muscle memory: insertions underlined, deletions struck, comments in the margin, accept and reject with a click. The VS Code extension renders CriticMarkup into the same visual language, and the format round-trips to .docx for teams that need to move between worlds. No new concepts to learn. Just a new medium that happens to be plain text.
 
 And because the changes live in the text, humans can read AI work directly. Not a diff behind a tool response. Not a binary transformation you have to trust. The actual proposed words, visible in context, with the agent's reasoning attached in a footnote you can read without switching windows. When an agent proposes changing "REST" to "GraphQL" and explains "reduces N+1 query problem" in the footnote, you're reading a collaborator's work — not auditing a black box.
 
@@ -49,11 +49,11 @@ And because the changes live in the text, humans can read AI work directly. Not 
 
 Here's the thing about AI agents: they read raw files. You can skill them and harness them and build elaborate tool surfaces — and they'll still read the file directly when it suits them. State has to live in the world, not in instructions they might forget.
 
-ChangeTracks puts state in the world. The editorial history is in the bytes. An agent reads the file and gets the full picture — who proposed what, who approved it, what's still pending — without a separate tool call. The footnotes are right there. The format is the context.
+ChangeDown puts state in the world. The editorial history is in the bytes. An agent reads the file and gets the full picture — who proposed what, who approved it, what's still pending — without a separate tool call. The footnotes are right there. The format is the context.
 
 And when agents write, the cognitive shape fits. Batched editing operations — "here are twelve changes to this document, with reasons" — match how language models naturally process revision. Not character-level keystroke replay. Not complex key-value structures. Markdown changes with reasons attached, expressed in the same CriticMarkup they read in the file. The read surface and the write surface are two halves of one gesture.
 
-We measured this directly. On a 169-line document with 32 seeded errors, the same model using ChangeTracks completed the task in 3 tool calls and 46 seconds. Raw file editing took 25 calls and 173 seconds. Eight times fewer calls. Three times faster. Same quality. The difference wasn't the model — it was the harness.
+We measured this directly. On a 169-line document with 32 seeded errors, the same model using ChangeDown completed the task in 3 tool calls and 46 seconds. Raw file editing took 25 calls and 173 seconds. Eight times fewer calls. Three times faster. Same quality. The difference wasn't the model — it was the harness.
 
 ## The format
 

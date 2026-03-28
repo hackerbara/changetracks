@@ -8676,7 +8676,7 @@ ${JSON.stringify(message, null, 4)}`);
          */
         static fromOverlayOnly(overlay) {
           const change = {
-            id: overlay.scId ?? `ct-pending-${overlay.range.start}`,
+            id: overlay.scId ?? `cn-pending-${overlay.range.start}`,
             type: types_js_1.ChangeType.Insertion,
             status: types_js_1.ChangeStatus.Proposed,
             range: overlay.range,
@@ -8937,8 +8937,8 @@ ${JSON.stringify(message, null, 4)}`);
       exports.unescapeCtxString = unescapeCtxString;
       exports.splitBodyAndFootnotes = splitBodyAndFootnotes;
       var code_zones_js_1 = require_code_zones();
-      exports.FOOTNOTE_ID_PATTERN = "ct-\\d+(?:\\.\\d+)?";
-      exports.FOOTNOTE_ID_NUMERIC_PATTERN = "ct-(\\d+)(?:\\.\\d+)?";
+      exports.FOOTNOTE_ID_PATTERN = "cn-\\d+(?:\\.\\d+)?";
+      exports.FOOTNOTE_ID_NUMERIC_PATTERN = "cn-(\\d+)(?:\\.\\d+)?";
       exports.FOOTNOTE_REF_ANCHORED = new RegExp(`^\\[\\^(${exports.FOOTNOTE_ID_PATTERN})\\]`);
       function footnoteRefGlobal() {
         return new RegExp(`\\[\\^${exports.FOOTNOTE_ID_PATTERN}\\]`, "g");
@@ -8947,7 +8947,7 @@ ${JSON.stringify(message, null, 4)}`);
         return new RegExp(`\\[\\^${exports.FOOTNOTE_ID_NUMERIC_PATTERN}\\]`, "g");
       }
       exports.FOOTNOTE_DEF_START = new RegExp(`^\\[\\^${exports.FOOTNOTE_ID_PATTERN}\\]:`);
-      exports.FOOTNOTE_DEF_START_QUICK = /^\[\^ct-\d+/;
+      exports.FOOTNOTE_DEF_START_QUICK = /^\[\^cn-\d+/;
       exports.FOOTNOTE_DEF_LENIENT = new RegExp(`^\\[\\^(${exports.FOOTNOTE_ID_PATTERN})\\]:\\s*@(\\S+)\\s*\\|\\s*(\\S+)\\s*\\|\\s*(\\S+)\\s*\\|\\s*(\\S+)`);
       exports.FOOTNOTE_DEF_STRICT = new RegExp(`^\\[\\^(${exports.FOOTNOTE_ID_PATTERN})\\]:\\s+(?:(@\\S+)\\s+\\|\\s+)?(\\S+)\\s+\\|\\s+(\\S+)\\s+\\|\\s+(\\S+)`);
       exports.FOOTNOTE_DEF_STATUS = new RegExp(`^\\[\\^(${exports.FOOTNOTE_ID_PATTERN})\\]:\\s+(?:@\\S+\\s+\\|\\s+)?\\S+\\s+\\|\\s+\\S+\\s+\\|\\s+(\\S+)`);
@@ -9024,7 +9024,7 @@ ${JSON.stringify(message, null, 4)}`);
       exports.buildEditOpFromParts = buildEditOpFromParts;
       exports.formatL3EditOpLine = formatL3EditOpLine;
       exports.buildContextualL3EditOp = buildContextualL3EditOp;
-      exports.scanMaxCtId = scanMaxCtId;
+      exports.scanMaxCnId = scanMaxCnId;
       var footnote_patterns_js_1 = require_footnote_patterns();
       var timestamp_js_1 = require_timestamp();
       var types_js_1 = require_types();
@@ -9106,7 +9106,7 @@ ${JSON.stringify(message, null, 4)}`);
         const contextAfter = lineContent.slice(clampedEnd, spanEnd);
         return `    ${lineNumber}:${hash} ${contextBefore}${rawOp}${contextAfter}`;
       }
-      function scanMaxCtId(text) {
+      function scanMaxCnId(text) {
         const pattern = (0, footnote_patterns_js_1.footnoteRefNumericGlobal)();
         let max = 0;
         let match;
@@ -9182,7 +9182,7 @@ ${JSON.stringify(message, null, 4)}`);
           this.idBase = 0;
         }
         parse(text, options) {
-          this.idBase = (0, footnote_generator_js_1.scanMaxCtId)(text);
+          this.idBase = (0, footnote_generator_js_1.scanMaxCnId)(text);
           const changes = [];
           let position = 0;
           let changeCounter = 0;
@@ -9274,18 +9274,18 @@ ${JSON.stringify(message, null, 4)}`);
           const usedIds = /* @__PURE__ */ new Set();
           for (const c of changes) {
             if (c.anchored) {
-              const m = c.id.match(/^ct-(\d+)(?:\.\d+)?$/);
+              const m = c.id.match(/^cn-(\d+)(?:\.\d+)?$/);
               if (m)
                 usedIds.add(parseInt(m[1], 10));
             }
           }
           let nextId = this.idBase;
-          const unanchored = changes.filter((c) => !c.anchored && c.id.startsWith("ct-"));
+          const unanchored = changes.filter((c) => !c.anchored && c.id.startsWith("cn-"));
           for (const c of unanchored) {
             do {
               nextId++;
             } while (usedIds.has(nextId));
-            c.id = `ct-${nextId}`;
+            c.id = `cn-${nextId}`;
           }
           return new document_js_1.VirtualDocument(changes);
         }
@@ -9442,10 +9442,10 @@ ${JSON.stringify(message, null, 4)}`);
         parseFootnoteDefinitions(text) {
           const map = /* @__PURE__ */ new Map();
           let searchStart = 0;
-          if (text.startsWith("[^ct-")) {
+          if (text.startsWith("[^cn-")) {
             searchStart = 0;
           } else {
-            const firstDef = text.indexOf("\n[^ct-");
+            const firstDef = text.indexOf("\n[^cn-");
             if (firstDef === -1)
               return map;
             searchStart = firstDef + 1;
@@ -9702,7 +9702,7 @@ ${JSON.stringify(message, null, 4)}`);
                 status,
                 range: { start: offset, end: offset + refLength },
                 contentRange: { start: offset, end: offset + refLength },
-                // covers [^ct-N] ref
+                // covers [^cn-N] ref
                 level: 2,
                 settled: true,
                 anchored: true,
@@ -9786,7 +9786,7 @@ ${JSON.stringify(message, null, 4)}`);
           return text.startsWith(delimiter, position);
         }
         assignId(counter) {
-          return `ct-${this.idBase + counter + 1}`;
+          return `cn-${this.idBase + counter + 1}`;
         }
       };
       exports.CriticMarkupParser = CriticMarkupParser;
@@ -9831,7 +9831,7 @@ ${JSON.stringify(message, null, 4)}`);
             let end = i;
             let j = i + 1;
             while (j < lines.length) {
-              if (lines[j].startsWith("[^ct-"))
+              if (lines[j].startsWith("[^cn-"))
                 break;
               if (lines[j].startsWith("    ")) {
                 end = j;
@@ -9841,7 +9841,7 @@ ${JSON.stringify(message, null, 4)}`);
               if (lines[j].trim() === "") {
                 let k = j + 1;
                 let hasMore = false;
-                while (k < lines.length && !lines[k].startsWith("[^ct-")) {
+                while (k < lines.length && !lines[k].startsWith("[^cn-")) {
                   if (lines[k].startsWith("    ")) {
                     hasMore = true;
                     break;
@@ -9998,7 +9998,7 @@ ${JSON.stringify(message, null, 4)}`);
       function isResolutionLine(trimmed) {
         return trimmed.startsWith("resolved") || trimmed.startsWith("open --") || trimmed.startsWith("open ") || trimmed === "open";
       }
-      var FOOTNOTE_ID_AND_STATUS_RE = /^\[\^(ct-\d+(?:\.\d+)?)\]:.*\|\s*(\S+)\s*$/;
+      var FOOTNOTE_ID_AND_STATUS_RE = /^\[\^(cn-\d+(?:\.\d+)?)\]:.*\|\s*(\S+)\s*$/;
       function extractFootnoteStatuses(text) {
         const statuses = /* @__PURE__ */ new Map();
         const lines = text.split("\n");
@@ -10552,7 +10552,7 @@ ${JSON.stringify(message, null, 4)}`);
       var HASH_MOD = RADIX ** HASH_LEN;
       var DICT = Array.from({ length: HASH_MOD }, (_, i) => i.toString(RADIX).padStart(HASH_LEN, "0"));
       var encoder = new TextEncoder();
-      var HASHLINE_KEY = "__changetracks_xxhash__";
+      var HASHLINE_KEY = "__changedown_xxhash__";
       function getXXHash() {
         return globalThis[HASHLINE_KEY] ?? null;
       }
@@ -10563,7 +10563,7 @@ ${JSON.stringify(message, null, 4)}`);
       }
       exports.ensureHashlineReady = initHashline;
       function stripForHash(line) {
-        return line.replace(/\r$/, "").replace(/\[\^ct-[\w.]+\]/g, "").replace(/\s+/g, "");
+        return line.replace(/\r$/, "").replace(/\[\^cn-[\w.]+\]/g, "").replace(/\s+/g, "");
       }
       function computeLineHash(idx, line, allLines) {
         const h = getXXHash();
@@ -11158,7 +11158,7 @@ ${JSON.stringify(message, null, 4)}`);
         while (i < footnoteLines.length) {
           const line = footnoteLines[i];
           if (footnote_patterns_js_1.FOOTNOTE_DEF_START.test(line)) {
-            const idMatch = line.match(/^\[\^(ct-[\w.]+)\]:/);
+            const idMatch = line.match(/^\[\^(cn-[\w.]+)\]:/);
             const changeId = idMatch ? idMatch[1] : null;
             rebuiltFootnotes.push(line);
             i++;
@@ -11439,7 +11439,7 @@ ${JSON.stringify(message, null, 4)}`);
         let i = 0;
         while (i < footnoteLines.length) {
           const line = footnoteLines[i];
-          const idMatch = line.match(/^\[\^(ct-[\w.]+)\]:/);
+          const idMatch = line.match(/^\[\^(cn-[\w.]+)\]:/);
           if (!idMatch) {
             i++;
             continue;
@@ -11592,7 +11592,7 @@ ${JSON.stringify(message, null, 4)}`);
         let fi = 0;
         while (fi < footnoteLines.length) {
           const fline = footnoteLines[fi];
-          const idMatch = fline.match(/^\[\^(ct-[\w.]+)\]:/);
+          const idMatch = fline.match(/^\[\^(cn-[\w.]+)\]:/);
           if (idMatch) {
             const changeId = idMatch[1];
             const freshAnchor = anchorMap.get(changeId);
@@ -11688,7 +11688,7 @@ ${JSON.stringify(message, null, 4)}`);
         }
         return offset;
       }
-      var SC_TAG_PATTERN = /ct-\d+(?:\.\d+)?/;
+      var SC_TAG_PATTERN = /cn-\d+(?:\.\d+)?/;
       function stripLineComment(line, syntax) {
         const tagMatch = line.match(SC_TAG_PATTERN);
         if (!tagMatch) {
@@ -11866,7 +11866,7 @@ ${JSON.stringify(message, null, 4)}`);
             let fi = 0;
             while (fi < footnoteLines.length) {
               const fline = footnoteLines[fi];
-              const idMatch = fline.match(/^\[\^(ct-[\w.]+)\]:/);
+              const idMatch = fline.match(/^\[\^(cn-[\w.]+)\]:/);
               if (idMatch) {
                 const freshAnchor = freshAnchors.get(idMatch[1]);
                 rebuiltFootnotes.push(fline);
@@ -11910,7 +11910,7 @@ ${JSON.stringify(message, null, 4)}`);
                 current.endLine = lineIdx - 1;
                 entries.push(current);
               }
-              const idMatch = line.match(/^\[\^(ct-[\w.]+)\]:/);
+              const idMatch = line.match(/^\[\^(cn-[\w.]+)\]:/);
               const header = (0, footnote_utils_js_1.parseFootnoteHeader)(line);
               if (idMatch && header) {
                 current = {
@@ -12738,7 +12738,7 @@ ${JSON.stringify(message, null, 4)}`);
         let i = 0;
         while (i < raw.length) {
           const slice = raw.slice(i);
-          const refMatch = slice.match(/^\[\^ct-\d+(?:\.\d+)?\]/);
+          const refMatch = slice.match(/^\[\^cn-\d+(?:\.\d+)?\]/);
           if (refMatch) {
             i += refMatch[0].length;
             continue;
@@ -12752,7 +12752,7 @@ ${JSON.stringify(message, null, 4)}`);
       }
       function viewAwareFind(raw, target) {
         const { surface, toRaw } = buildViewSurfaceMap(raw);
-        const cleanTarget = target.replace(/\[\^?ct-\d+(?:\.\d+)?\]/g, "");
+        const cleanTarget = target.replace(/\[\^?cn-\d+(?:\.\d+)?\]/g, "");
         const searchTarget = cleanTarget || target;
         const firstIdx = surface.indexOf(searchTarget);
         if (firstIdx === -1)
@@ -12929,7 +12929,7 @@ ${JSON.stringify(message, null, 4)}`);
       }
       function stripRefsFromContent(text) {
         const refs = [];
-        const cleaned = text.replace(/\[\^ct-\d+(?:\.\d+)?\]/g, (match) => {
+        const cleaned = text.replace(/\[\^cn-\d+(?:\.\d+)?\]/g, (match) => {
           refs.push(match);
           return "";
         });
@@ -12941,9 +12941,9 @@ ${JSON.stringify(message, null, 4)}`);
         const markupRanges = [];
         let i = 0;
         while (i < text.length) {
-          if (text[i] === "[" && text[i + 1] === "^" && text.startsWith("ct-", i + 2)) {
+          if (text[i] === "[" && text[i + 1] === "^" && text.startsWith("cn-", i + 2)) {
             const closeIdx = text.indexOf("]", i + 2);
-            if (closeIdx !== -1 && /^\[\^ct-\d+(?:\.\d+)?\]$/.test(text.slice(i, closeIdx + 1)) && text[closeIdx + 1] !== ":") {
+            if (closeIdx !== -1 && /^\[\^cn-\d+(?:\.\d+)?\]$/.test(text.slice(i, closeIdx + 1)) && text[closeIdx + 1] !== ":") {
               markupRanges.push({ rawStart: i, rawEnd: closeIdx + 1 });
               i = closeIdx + 1;
               continue;
@@ -13037,14 +13037,14 @@ ${JSON.stringify(message, null, 4)}`);
         const markupRanges = [];
         let i = 0;
         function consumeFootnoteRef(pos) {
-          if (text[pos] !== "[" || text[pos + 1] !== "^" || !text.startsWith("ct-", pos + 2)) {
+          if (text[pos] !== "[" || text[pos + 1] !== "^" || !text.startsWith("cn-", pos + 2)) {
             return void 0;
           }
           const closeIdx = text.indexOf("]", pos + 2);
           if (closeIdx === -1)
             return void 0;
           const candidate = text.slice(pos, closeIdx + 1);
-          if (!/^\[\^ct-\d+(?:\.\d+)?\]$/.test(candidate))
+          if (!/^\[\^cn-\d+(?:\.\d+)?\]$/.test(candidate))
             return void 0;
           if (text[closeIdx + 1] === ":")
             return void 0;
@@ -13052,9 +13052,9 @@ ${JSON.stringify(message, null, 4)}`);
           return { id, end: closeIdx + 1 };
         }
         while (i < text.length) {
-          if (text[i] === "[" && text[i + 1] === "^" && text.startsWith("ct-", i + 2)) {
+          if (text[i] === "[" && text[i + 1] === "^" && text.startsWith("cn-", i + 2)) {
             const closeIdx = text.indexOf("]", i + 2);
-            if (closeIdx !== -1 && /^\[\^ct-\d+(?:\.\d+)?\]$/.test(text.slice(i, closeIdx + 1)) && text[closeIdx + 1] !== ":") {
+            if (closeIdx !== -1 && /^\[\^cn-\d+(?:\.\d+)?\]$/.test(text.slice(i, closeIdx + 1)) && text[closeIdx + 1] !== ":") {
               markupRanges.push({ rawStart: i, rawEnd: closeIdx + 1 });
               i = closeIdx + 1;
               continue;
@@ -13187,8 +13187,8 @@ ${JSON.stringify(message, null, 4)}`);
             wasNormalized: false
           };
         }
-        if (text.includes("[^ct-") || target.includes("[^ct-") || target.includes("[ct-")) {
-          const cleanTarget = target.replace(/\[\^?ct-\d+(?:\.\d+)?\]/g, "");
+        if (text.includes("[^cn-") || target.includes("[^cn-") || target.includes("[cn-")) {
+          const cleanTarget = target.replace(/\[\^?cn-\d+(?:\.\d+)?\]/g, "");
           const viewMatch = (0, view_surface_js_1.viewAwareFind)(text, cleanTarget);
           if (viewMatch) {
             return {
@@ -13260,7 +13260,7 @@ ${JSON.stringify(message, null, 4)}`);
                 }
               }
               for (const range of markupRanges) {
-                if (range.rawStart === rawEnd && /^\[\^ct-/.test(text.slice(range.rawStart))) {
+                if (range.rawStart === rawEnd && /^\[\^cn-/.test(text.slice(range.rawStart))) {
                   rawEnd = range.rawEnd;
                 }
               }
@@ -13303,7 +13303,7 @@ ${JSON.stringify(message, null, 4)}`);
               }
             }
             for (const range of markupRanges) {
-              if (range.rawStart === rawEnd && /^\[\^ct-/.test(text.slice(range.rawStart))) {
+              if (range.rawStart === rawEnd && /^\[\^cn-/.test(text.slice(range.rawStart))) {
                 rawEnd = range.rawEnd;
               }
             }
@@ -13369,7 +13369,7 @@ Hint: Re-read the file for current content, or use LINE:HASH addressing.`);
         const isL3 = level === 3;
         if (isL3)
           await (0, hashline_js_1.initHashline)();
-        if (!isL3 && text.includes("[^ct-") && (0, footnote_patterns_js_1.isL3Format)(text)) {
+        if (!isL3 && text.includes("[^cn-") && (0, footnote_patterns_js_1.isL3Format)(text)) {
           throw new Error("L3 format detected but level is not 3. Pass level: 3 for L3 text to avoid garbled output.");
         }
         let bodyText;
@@ -13662,8 +13662,8 @@ Hint: Re-read the file for current content, or use LINE:HASH addressing.`);
         if (change.level !== 0) {
           return { text, changeId: change.id, promoted: false };
         }
-        const maxId = (0, footnote_generator_js_1.scanMaxCtId)(text);
-        const nextId = `ct-${maxId + 1}`;
+        const maxId = (0, footnote_generator_js_1.scanMaxCnId)(text);
+        const nextId = `cn-${maxId + 1}`;
         const typeAbbrev = (0, types_js_1.changeTypeToAbbrev)(change.type) ?? opts.type;
         const insertPos = change.range.end;
         const withRef = text.slice(0, insertPos) + `[^${nextId}]` + text.slice(insertPos);
@@ -13754,7 +13754,7 @@ Hint: Re-read the file for current content, or use LINE:HASH addressing.`);
           };
         }
         const originalMarkup = text.slice(change.range.start, change.range.end);
-        const refs = originalMarkup.match(/\[\^ct-[\d.]+\]/g) ?? [];
+        const refs = originalMarkup.match(/\[\^cn-[\d.]+\]/g) ?? [];
         const refString = refs.join("");
         let newMarkup;
         let previousText = "";
@@ -13908,8 +13908,8 @@ Hint: Re-read the file for current content, or use LINE:HASH addressing.`);
         const rejectedChange = doc.getChanges().find((c) => c.id === changeId);
         const isDirectReplace = rejectedChange && !oldText && !insertAfter && (rejectedChange.type === types_js_1.ChangeType.Insertion || rejectedChange.type === types_js_1.ChangeType.Comment);
         if (isDirectReplace && rejectedChange) {
-          const maxId2 = (0, footnote_generator_js_1.scanMaxCtId)(fileContent);
-          const newChangeId2 = `ct-${maxId2 + 1}`;
+          const maxId2 = (0, footnote_generator_js_1.scanMaxCnId)(fileContent);
+          const newChangeId2 = `cn-${maxId2 + 1}`;
           let newMarkup;
           let changeType;
           if (rejectedChange.type === types_js_1.ChangeType.Comment) {
@@ -13956,8 +13956,8 @@ Hint: Re-read the file for current content, or use LINE:HASH addressing.`);
           const rejectEdit = (0, accept_reject_js_1.computeReject)(rejectedChange);
           fileContent = fileContent.slice(0, rejectEdit.offset) + rejectEdit.newText + fileContent.slice(rejectEdit.offset + rejectEdit.length);
         }
-        const maxId = (0, footnote_generator_js_1.scanMaxCtId)(fileContent);
-        const newChangeId = `ct-${maxId + 1}`;
+        const maxId = (0, footnote_generator_js_1.scanMaxCnId)(fileContent);
+        const newChangeId = `cn-${maxId + 1}`;
         let proposeOldText = oldText;
         if (rejectedChange) {
           if (!proposeOldText) {
@@ -14233,7 +14233,7 @@ Hint: Re-read the file for current content, or use LINE:HASH addressing.`);
         while (i < footnoteLines.length) {
           const line = footnoteLines[i];
           if (footnote_patterns_js_1.FOOTNOTE_DEF_START.test(line)) {
-            const idMatch = line.match(/^\[\^(ct-[\w.]+)\]:/);
+            const idMatch = line.match(/^\[\^(cn-[\w.]+)\]:/);
             const changeId = idMatch ? idMatch[1] : "";
             const changeStatus = statusMap.get(changeId);
             rebuiltFootnotes.push(line);
@@ -14408,8 +14408,8 @@ Hint: Re-read the file for current content, or use LINE:HASH addressing.`);
         for (const { range } of blocks) {
           lines.splice(range.startLine, range.endLine - range.startLine + 1);
         }
-        const maxId = (0, footnote_generator_js_1.scanMaxCtId)(l3Text);
-        const boundaryId = `ct-${maxId + 1}`;
+        const maxId = (0, footnote_generator_js_1.scanMaxCnId)(l3Text);
+        const boundaryId = `cn-${maxId + 1}`;
         const boundaryLines = [`[^${boundaryId}]: compaction-boundary`];
         if (request.boundaryMeta) {
           for (const [key, value] of Object.entries(request.boundaryMeta)) {
@@ -14500,7 +14500,7 @@ Hint: Re-read the file for current content, or use LINE:HASH addressing.`);
       Object.defineProperty(exports, "__esModule", { value: true });
       exports.SIDECAR_BLOCK_MARKER = void 0;
       exports.findSidecarBlockStart = findSidecarBlockStart;
-      exports.SIDECAR_BLOCK_MARKER = "-- ChangeTracks";
+      exports.SIDECAR_BLOCK_MARKER = "-- ChangeDown";
       function findSidecarBlockStart(lines, commentLinePrefix) {
         const prefix = `${commentLinePrefix} ${exports.SIDECAR_BLOCK_MARKER}`;
         for (let i = 0; i < lines.length; i++) {
@@ -14546,12 +14546,12 @@ Hint: Re-read the file for current content, or use LINE:HASH addressing.`);
         }
         /**
          * Parses the sidecar block starting at the given line index.
-         * Returns a map from tag (e.g. "ct-1") to its metadata.
+         * Returns a map from tag (e.g. "cn-1") to its metadata.
          */
         parseSidecarBlock(lines, startIndex, syntax) {
           const map = /* @__PURE__ */ new Map();
           const cm = (0, comment_syntax_js_1.escapeRegex)(syntax.line);
-          const entryPattern = new RegExp(`^${cm}\\s+\\[\\^(ct-\\d+(?:\\.\\d+)?)\\]:\\s+(\\w+)\\s+\\|\\s+(\\w+)`);
+          const entryPattern = new RegExp(`^${cm}\\s+\\[\\^(cn-\\d+(?:\\.\\d+)?)\\]:\\s+(\\w+)\\s+\\|\\s+(\\w+)`);
           const fieldPattern = new RegExp(`^${cm}\\s{4,}(\\w+):\\s+(.+)$`);
           const closePattern = new RegExp(`^${cm}\\s+-{3,}`);
           let currentTag = null;
@@ -14601,7 +14601,7 @@ Hint: Re-read the file for current content, or use LINE:HASH addressing.`);
           return map;
         }
         /**
-         * Scans lines up to the sidecar block for ct-N tags.
+         * Scans lines up to the sidecar block for cn-N tags.
          * Returns an array of tagged lines with their line index and parsed info.
          */
         scanTaggedLines(lines, endIndex, syntax) {
@@ -14621,7 +14621,7 @@ Hint: Re-read the file for current content, or use LINE:HASH addressing.`);
           return result;
         }
         /**
-         * Groups tagged lines by their ct-N tag.
+         * Groups tagged lines by their cn-N tag.
          * Preserves insertion order (first tag seen comes first).
          */
         groupByTag(taggedLines) {
@@ -14739,7 +14739,7 @@ Hint: Re-read the file for current content, or use LINE:HASH addressing.`);
       var constants_js_1 = require_constants();
       function stripTag(line, syntax) {
         const escaped = (0, comment_syntax_js_1.escapeRegex)(syntax.line);
-        const pattern = new RegExp(`  ${escaped} ct-\\d+(?:\\.\\d+)?$`);
+        const pattern = new RegExp(`  ${escaped} cn-\\d+(?:\\.\\d+)?$`);
         return line.replace(pattern, "");
       }
       function tagMatches(lineTag, requestedTag) {
@@ -14775,7 +14775,7 @@ Hint: Re-read the file for current content, or use LINE:HASH addressing.`);
           return edits;
         }
         const escaped = (0, comment_syntax_js_1.escapeRegex)(syntax.line);
-        const entryPattern = new RegExp(`^${escaped}\\s+\\[\\^(ct-\\d+(?:\\.\\d+)?)\\]:`);
+        const entryPattern = new RegExp(`^${escaped}\\s+\\[\\^(cn-\\d+(?:\\.\\d+)?)\\]:`);
         const fieldPattern = new RegExp(`^${escaped}\\s{4,}\\w+:\\s+`);
         const linesToRemove = [];
         let totalEntryCount = 0;
@@ -15161,7 +15161,7 @@ Hint: Re-read the file for current content, or use LINE:HASH addressing.`);
          * Determines whether to use the FootnoteNativeParser for a given text.
          *
          * Returns true when footnoteNative is explicitly true, or when auto-detected:
-         * the text has [^ct-N] footnote definitions AND no inline CriticMarkup delimiters.
+         * the text has [^cn-N] footnote definitions AND no inline CriticMarkup delimiters.
          * This distinguishes footnote-native files (clean body + footnotes) from
          * regular CriticMarkup files that also have L2 footnotes.
          */
@@ -15192,7 +15192,7 @@ Hint: Re-read the file for current content, or use LINE:HASH addressing.`);
          * Returns true when ALL of:
          * 1. languageId is provided and is NOT 'markdown'
          * 2. The language has line-comment syntax in the comment syntax map
-         * 3. The text contains a '-- ChangeTracks' sidecar block marker
+         * 3. The text contains a '-- ChangeDown' sidecar block marker
          */
         shouldUseSidecar(text, languageId) {
           if (!languageId || languageId === "markdown") {
@@ -17149,7 +17149,7 @@ Hint: Re-read the file for current content, or use LINE:HASH addressing.`);
           const next = lineChanges[i + 1];
           if (change.removed && next?.added) {
             tagCounter++;
-            const tag = `ct-${tagCounter}`;
+            const tag = `cn-${tagCounter}`;
             const oldLines = splitChangeLines(change.value);
             const newLines = splitChangeLines(next.value);
             for (const line of oldLines) {
@@ -17166,7 +17166,7 @@ Hint: Re-read the file for current content, or use LINE:HASH addressing.`);
             i++;
           } else if (change.removed) {
             tagCounter++;
-            const tag = `ct-${tagCounter}`;
+            const tag = `cn-${tagCounter}`;
             const oldLines = splitChangeLines(change.value);
             for (const line of oldLines) {
               outputLines.push((0, comment_syntax_js_1.wrapLineComment)(line, tag, syntax, true));
@@ -17178,7 +17178,7 @@ Hint: Re-read the file for current content, or use LINE:HASH addressing.`);
             });
           } else if (change.added) {
             tagCounter++;
-            const tag = `ct-${tagCounter}`;
+            const tag = `cn-${tagCounter}`;
             const newLines = splitChangeLines(change.value);
             for (const line of newLines) {
               outputLines.push((0, comment_syntax_js_1.wrapLineComment)(line, tag, syntax, false));
@@ -17227,17 +17227,18 @@ ${sidecarSection}
     "../core/dist/tracking-header.js"(exports) {
       "use strict";
       Object.defineProperty(exports, "__esModule", { value: true });
+      exports.TRACKING_HEADER_RE = void 0;
       exports.parseTrackingHeader = parseTrackingHeader;
       exports.generateTrackingHeader = generateTrackingHeader;
       exports.insertTrackingHeader = insertTrackingHeader;
-      var TRACKING_HEADER_RE = /<!--\s*ctrcks\.com\/v(\d+):\s*(tracked|untracked)\s*-->/;
+      exports.TRACKING_HEADER_RE = /<!--\s*(?:changedown\.com|ctrcks\.com)\/v(\d+):\s*(tracked|untracked)\s*-->/;
       var MAX_SCAN_LINES = 5;
       function parseTrackingHeader(text) {
         const lines = text.split("\n");
         const scanLimit = Math.min(lines.length, MAX_SCAN_LINES);
         let offset = 0;
         for (let i = 0; i < scanLimit; i++) {
-          const match = TRACKING_HEADER_RE.exec(lines[i]);
+          const match = exports.TRACKING_HEADER_RE.exec(lines[i]);
           if (match) {
             return {
               version: parseInt(match[1], 10),
@@ -17252,7 +17253,7 @@ ${sidecarSection}
         return null;
       }
       function generateTrackingHeader(status) {
-        return `<!-- ctrcks.com/v1: ${status} -->`;
+        return `<!-- changedown.com/v1: ${status} -->`;
       }
       function insertTrackingHeader(text) {
         if (parseTrackingHeader(text) !== null) {
@@ -17315,21 +17316,21 @@ ${sidecarSection}
         return /\{>>((?:[^<]|<(?!<\}))*?)<<\}/g;
       }
       function multiLineSubstitution() {
-        return /\{~~([\s\S]*?)~>([\s\S]*?)~~\}(\[\^(ct-\d+(?:\.\d+)?)\])?/g;
+        return /\{~~([\s\S]*?)~>([\s\S]*?)~~\}(\[\^(cn-\d+(?:\.\d+)?)\])?/g;
       }
       function multiLineInsertion() {
-        return /\{\+\+([\s\S]*?)\+\+\}(\[\^(ct-\d+(?:\.\d+)?)\])?/g;
+        return /\{\+\+([\s\S]*?)\+\+\}(\[\^(cn-\d+(?:\.\d+)?)\])?/g;
       }
       function multiLineDeletion() {
-        return /\{--([\s\S]*?)--\}(\[\^(ct-\d+(?:\.\d+)?)\])?/g;
+        return /\{--([\s\S]*?)--\}(\[\^(cn-\d+(?:\.\d+)?)\])?/g;
       }
       function multiLineHighlight() {
-        return /\{==([\s\S]*?)==\}(\[\^(ct-\d+(?:\.\d+)?)\])?/g;
+        return /\{==([\s\S]*?)==\}(\[\^(cn-\d+(?:\.\d+)?)\])?/g;
       }
       function multiLineComment() {
         return /\{>>([\s\S]*?)<<\}/g;
       }
-      exports.HAS_CRITIC_MARKUP = /\{\+\+|\{--|\{~~|\{==|\{>>|\[\^ct-\d/;
+      exports.HAS_CRITIC_MARKUP = /\{\+\+|\{--|\{~~|\{==|\{>>|\[\^cn-\d/;
       function hasCriticMarkup(line) {
         return exports.HAS_CRITIC_MARKUP.test(line);
       }
@@ -17337,7 +17338,7 @@ ${sidecarSection}
         return /\{\+\+[^]*?\+\+\}|\{--[^]*?--\}|\{~~[^]*?~~\}|\{==[^]*?==\}|\{>>[^]*?<<\}/g;
       }
       function markupWithRef() {
-        return /(?:\+\+\}|-{2}\}|~~\}|==\}|<<\})\[\^ct-\d+(?:\.\d+)?\]/g;
+        return /(?:\+\+\}|-{2}\}|~~\}|==\}|<<\})\[\^cn-\d+(?:\.\d+)?\]/g;
       }
     }
   });
@@ -18356,7 +18357,7 @@ ${sidecarSection}
           case "anchor": {
             if (!showAnchors)
               return "";
-            const idMatch = span.text.match(/\[\^(ct-[\d.]+)\]/);
+            const idMatch = span.text.match(/\[\^(cn-[\d.]+)\]/);
             const changeId = idMatch ? idMatch[1] : "";
             const meta = metaByChangeId.get(changeId);
             const dataAttrs = meta ? buildDataAttrs(meta) : "";
@@ -18448,7 +18449,7 @@ ${sidecarSection}
       exports.computeContinuationLines = computeContinuationLines;
       var format_aware_parse_js_1 = require_format_aware_parse();
       var types_js_1 = require_types();
-      var REF_EXTRACT_RE = /\[\^(ct-\d+(?:\.\d+)?)\]/g;
+      var REF_EXTRACT_RE = /\[\^(cn-\d+(?:\.\d+)?)\]/g;
       function buildDeliberationHeader(options) {
         const { changes } = options;
         let proposed = 0, accepted = 0, rejected = 0, threadCount = 0;
@@ -18556,7 +18557,7 @@ ${sidecarSection}
       var hashline_tracked_js_1 = require_hashline_tracked();
       var view_builder_utils_js_1 = require_view_builder_utils();
       var CRITIC_MARKUP_RE = /\{\+\+((?:[^+]|\+(?!\+\}))*?)\+\+\}|\{--((?:[^-]|-(?!-\}))*?)--\}|\{~~((?:[^~]|~(?!>))*?)~>((?:[^~]|~(?!~\}))*?)~~\}|\{==((?:[^=]|=(?!=\}))*?)==\}|\{>>((?:[^<]|<(?!<\}))*?)<<\}/g;
-      var FOOTNOTE_REF_RE = /\[\^(ct-\d+(?:\.\d+)?)\]/g;
+      var FOOTNOTE_REF_RE = /\[\^(cn-\d+(?:\.\d+)?)\]/g;
       function buildReviewDocument(content, options) {
         const committedResult = (0, committed_text_js_1.computeCommittedView)(content);
         const changes = committedResult.changes;
@@ -19142,7 +19143,7 @@ ${sidecarSection}
           const canProduceL2 = hasContext && context?.documentFormat === "l2";
           const canProduceL3 = hasContext && context?.documentFormat === "l3";
           if (canProduceL2 || canProduceL3) {
-            const scId = buf.scId ?? "ct-0";
+            const scId = buf.scId ?? "cn-0";
             const docText = context.documentText;
             const ct = changeType === "insertion" ? types_js_1.ChangeType.Insertion : changeType === "deletion" ? types_js_1.ChangeType.Deletion : types_js_1.ChangeType.Substitution;
             const abbrev = (0, types_js_1.changeTypeToAbbrev)(ct);
@@ -19433,7 +19434,7 @@ ${sidecarSection}
     "../core/dist/index.js"(exports) {
       "use strict";
       Object.defineProperty(exports, "__esModule", { value: true });
-      exports.promoteToLevel2 = exports.promoteToLevel1 = exports.computeSupersedeResult = exports.computeAmendEdits = exports.VALID_DECISIONS = exports.applyReview = exports.ensureL2 = exports.buildContextualL3EditOp = exports.formatL3EditOpLine = exports.buildEditOpFromParts = exports.scanMaxCtId = exports.generateFootnoteDefinition = exports.insertComment = exports.wrapSubstitution = exports.wrapDeletion = exports.wrapInsertion = exports.previousChange = exports.nextChange = exports.computeReplyEdit = exports.computeUnresolveEdit = exports.computeResolutionEdit = exports.computeFootnoteArchiveLineEdit = exports.computeApprovalLineEdit = exports.computeFootnoteStatusEdits = exports.computeRejectParts = exports.computeAcceptParts = exports.computeReject = exports.computeAccept = exports.skipInlineCode = exports.tryMatchFenceClose = exports.tryMatchFenceOpen = exports.findCodeZones = exports.CriticMarkupParser = exports.TokenType = exports.VirtualDocument = exports.nodeStatus = exports.consumptionLabel = exports.isGhostNode = exports.changeTypeToAbbrev = exports.ChangeStatus = exports.ChangeType = exports.formatTimestamp = exports.compareTimestamps = exports.nowTimestamp = exports.parseTimestamp = exports.canWithdraw = exports.canAccept = exports.reviewerType = exports.DEFAULT_CONFIG = exports.parseProjectConfig = void 0;
+      exports.promoteToLevel2 = exports.promoteToLevel1 = exports.computeSupersedeResult = exports.computeAmendEdits = exports.VALID_DECISIONS = exports.applyReview = exports.ensureL2 = exports.buildContextualL3EditOp = exports.formatL3EditOpLine = exports.buildEditOpFromParts = exports.scanMaxCnId = exports.generateFootnoteDefinition = exports.insertComment = exports.wrapSubstitution = exports.wrapDeletion = exports.wrapInsertion = exports.previousChange = exports.nextChange = exports.computeReplyEdit = exports.computeUnresolveEdit = exports.computeResolutionEdit = exports.computeFootnoteArchiveLineEdit = exports.computeApprovalLineEdit = exports.computeFootnoteStatusEdits = exports.computeRejectParts = exports.computeAcceptParts = exports.computeReject = exports.computeAccept = exports.skipInlineCode = exports.tryMatchFenceClose = exports.tryMatchFenceOpen = exports.findCodeZones = exports.CriticMarkupParser = exports.TokenType = exports.VirtualDocument = exports.nodeStatus = exports.consumptionLabel = exports.isGhostNode = exports.changeTypeToAbbrev = exports.ChangeStatus = exports.ChangeType = exports.formatTimestamp = exports.compareTimestamps = exports.nowTimestamp = exports.parseTimestamp = exports.canWithdraw = exports.canAccept = exports.reviewerType = exports.DEFAULT_CONFIG = exports.parseProjectConfig = void 0;
       exports.ensureHashlineReady = exports.initHashline = exports.computeSettledView = exports.settleRejectedChangesOnly = exports.settleAcceptedChangesOnly = exports.computeOriginalText = exports.computeSettledText = exports.computeSettledReplace = exports.tryDiagnosticConfusableMatch = exports.unicodeName = exports.diagnosticConfusableNormalize = exports.whitespaceCollapsedIsAmbiguous = exports.whitespaceCollapsedFind = exports.buildWhitespaceCollapseMap = exports.collapseWhitespace = exports.normalizedIndexOf = exports.defaultNormalizer = exports.insertTrackingHeader = exports.generateTrackingHeader = exports.parseTrackingHeader = exports.computeSidecarResolveAll = exports.computeSidecarReject = exports.computeSidecarAccept = exports.parseContextualEditOp = exports.FootnoteNativeParser = exports.SidecarParser = exports.annotateSidecar = exports.annotateMarkdown = exports.lineOffset = exports.escapeRegex = exports.stripLineComment = exports.wrapLineComment = exports.getCommentSyntax = exports.Workspace = exports.resolveReplayFromParsedFootnotes = exports.traceDependencies = exports.resolve = exports.scrubForward = exports.scrubBackward = exports.convertL3ToL2 = exports.offsetToLineNumber = exports.buildLineStarts = exports.bodyReplacement = exports.convertL2ToL3 = exports.checkSupersedesIntegrity = exports.compactL2 = exports.compact = exports.analyzeCompactionCandidates = exports.compactToLevel0 = exports.compactToLevel1 = void 0;
       exports.splitBodyAndFootnotes = exports.isL3Format = exports.FOOTNOTE_L3_EDIT_OP = exports.FOOTNOTE_THREAD_REPLY = exports.FOOTNOTE_CONTINUATION = exports.FOOTNOTE_DEF_STATUS_VALUE = exports.FOOTNOTE_DEF_STATUS = exports.FOOTNOTE_DEF_STRICT = exports.FOOTNOTE_DEF_LENIENT = exports.FOOTNOTE_DEF_START_QUICK = exports.FOOTNOTE_DEF_START = exports.footnoteRefNumericGlobal = exports.footnoteRefGlobal = exports.FOOTNOTE_REF_ANCHORED = exports.FOOTNOTE_ID_NUMERIC_PATTERN = exports.FOOTNOTE_ID_PATTERN = exports.markupWithRef = exports.inlineMarkupAll = exports.hasCriticMarkup = exports.HAS_CRITIC_MARKUP = exports.multiLineComment = exports.multiLineHighlight = exports.multiLineDeletion = exports.multiLineInsertion = exports.multiLineSubstitution = exports.singleLineComment = exports.singleLineHighlight = exports.singleLineInsertion = exports.singleLineDeletion = exports.singleLineSubstitution = exports.findSidecarBlockStart = exports.SIDECAR_BLOCK_MARKER = exports.formatCommittedOutput = exports.computeCommittedView = exports.computeCommittedLine = exports.parseFootnotes = exports.findFootnoteBlockStart = exports.stripBoundaryEcho = exports.relocateHashRef = exports.detectNoOp = exports.stripHashlinePrefixes = exports.formatTrackedHeader = exports.formatTrackedHashLines = exports.computeSettledLineHash = exports.settledLine = exports.HashlineMismatchError = exports.validateLineRef = exports.parseLineRef = exports.formatHashLines = exports.computeLineHash = void 0;
       exports.isBufferEmpty = exports.DEFAULT_EDIT_BOUNDARY_CONFIG = exports.computeContinuationLines = exports.findFootnoteSectionRange = exports.buildLineRefMap = exports.buildDeliberationHeader = exports.buildRawDocument = exports.buildSettledDocument = exports.buildChangesDocument = exports.buildReviewDocument = exports.buildViewDocument = exports.formatHtml = exports.formatAnsi = exports.formatPlainText = exports.formatDocument = exports.buildDecorationIntents = exports.nextViewName = exports.resolveViewName = exports.VIEW_NAMES = exports.VIEW_NAME_DISPLAY_NAMES = exports.VIEW_NAME_ALIASES = exports.parseOp = exports.resolveAt = exports.parseAt = exports.extractFootnoteStatuses = exports.resolveChangeById = exports.findChildFootnoteIds = exports.findReviewInsertionIndex = exports.findDiscussionInsertionIndex = exports.parseFootnoteHeader = exports.findFootnoteBlock = exports.countFootnoteHeadersWithStatus = exports.contentZoneText = exports.resolveOverlapWithAuthor = exports.findAllProposedOverlaps = exports.stripRefsFromContent = exports.guardOverlap = exports.checkCriticMarkupOverlap = exports.stripCriticMarkupToCommittedWithMap = exports.stripCriticMarkup = exports.stripCriticMarkupWithMap = exports.replaceUnique = exports.extractLineRange = exports.appendFootnote = exports.applySingleOperation = exports.applyProposeChange = exports.tryFindUniqueMatch = exports.findUniqueMatch = exports.viewAwareFind = exports.buildViewSurfaceMap = void 0;
@@ -19570,8 +19571,8 @@ ${sidecarSection}
       Object.defineProperty(exports, "generateFootnoteDefinition", { enumerable: true, get: function() {
         return footnote_generator_js_1.generateFootnoteDefinition;
       } });
-      Object.defineProperty(exports, "scanMaxCtId", { enumerable: true, get: function() {
-        return footnote_generator_js_1.scanMaxCtId;
+      Object.defineProperty(exports, "scanMaxCnId", { enumerable: true, get: function() {
+        return footnote_generator_js_1.scanMaxCnId;
       } });
       Object.defineProperty(exports, "buildEditOpFromParts", { enumerable: true, get: function() {
         return footnote_generator_js_1.buildEditOpFromParts;
@@ -20288,7 +20289,7 @@ This change's visible effect was absorbed by a later edit. The change is preserv
           if (unresolvedCount > 0) {
             lenses.push({
               range: vscode_languageserver_1.Range.create(0, 0, 0, 0),
-              command: vscode_languageserver_1.Command.create(`\u26A0 ${unresolvedCount} unresolved anchor${unresolvedCount === 1 ? "" : "s"}`, "changetracks.inspectUnresolved")
+              command: vscode_languageserver_1.Command.create(`\u26A0 ${unresolvedCount} unresolved anchor${unresolvedCount === 1 ? "" : "s"}`, "changedown.inspectUnresolved")
             });
           }
         }
@@ -20330,11 +20331,11 @@ This change's visible effect was absorbed by a later edit. The change is preserv
           }
           lenses.push({
             range: lensRange,
-            command: vscode_languageserver_1.Command.create(`Accept${snippet}${suffix}`, "changetracks.acceptChange", change.id)
+            command: vscode_languageserver_1.Command.create(`Accept${snippet}${suffix}`, "changedown.acceptChange", change.id)
           });
           lenses.push({
             range: lensRange,
-            command: vscode_languageserver_1.Command.create(`Reject${snippet}${suffix}`, "changetracks.rejectChange", change.id)
+            command: vscode_languageserver_1.Command.create(`Reject${snippet}${suffix}`, "changedown.rejectChange", change.id)
           });
         }
         return lenses;
@@ -20359,11 +20360,11 @@ This change's visible effect was absorbed by a later edit. The change is preserv
             return [
               {
                 range: lensRange2,
-                command: vscode_languageserver_1.Command.create(`Accept${suffix2}`, "changetracks.acceptChange", focused.id)
+                command: vscode_languageserver_1.Command.create(`Accept${suffix2}`, "changedown.acceptChange", focused.id)
               },
               {
                 range: lensRange2,
-                command: vscode_languageserver_1.Command.create(`Reject${suffix2}`, "changetracks.rejectChange", focused.id)
+                command: vscode_languageserver_1.Command.create(`Reject${suffix2}`, "changedown.rejectChange", focused.id)
               }
             ];
           }
@@ -20375,11 +20376,11 @@ This change's visible effect was absorbed by a later edit. The change is preserv
         return [
           {
             range: lensRange,
-            command: vscode_languageserver_1.Command.create(`Accept All (${onLine.length})${suffix}`, "changetracks.acceptAllOnLine")
+            command: vscode_languageserver_1.Command.create(`Accept All (${onLine.length})${suffix}`, "changedown.acceptAllOnLine")
           },
           {
             range: lensRange,
-            command: vscode_languageserver_1.Command.create(`Reject All (${onLine.length})${suffix}`, "changetracks.rejectAllOnLine")
+            command: vscode_languageserver_1.Command.create(`Reject All (${onLine.length})${suffix}`, "changedown.rejectAllOnLine")
           }
         ];
       }
@@ -20450,11 +20451,11 @@ This change's visible effect was absorbed by a later edit. The change is preserv
         if (autoFoldLines?.length) {
           params.autoFoldLines = autoFoldLines;
         }
-        connection.sendNotification("changetracks/decorationData", params);
+        connection.sendNotification("changedown/decorationData", params);
       }
       function sendCoherenceStatus(connection, uri, coherenceRate, unresolvedCount, threshold) {
         const params = { uri, coherenceRate, unresolvedCount, threshold };
-        connection.sendNotification("changetracks/coherenceStatus", params);
+        connection.sendNotification("changedown/coherenceStatus", params);
       }
       function sendChangeCount(connection, uri, changes) {
         const counts = {
@@ -20485,10 +20486,10 @@ This change's visible effect was absorbed by a later edit. The change is preserv
           }
         }
         const params = { uri, counts };
-        connection.sendNotification("changetracks/changeCount", params);
+        connection.sendNotification("changedown/changeCount", params);
         if (counts.total === 0) {
           const resolvedParams = { uri };
-          connection.sendNotification("changetracks/allChangesResolved", resolvedParams);
+          connection.sendNotification("changedown/allChangesResolved", resolvedParams);
         }
       }
     }
@@ -20508,7 +20509,7 @@ This change's visible effect was absorbed by a later edit. The change is preserv
             { range: footnoteRange, newText: footnoteNewText }
           ]
         };
-        connection.sendNotification("changetracks/pendingEditFlushed", params);
+        connection.sendNotification("changedown/pendingEditFlushed", params);
       }
     }
   });
@@ -20524,7 +20525,7 @@ This change's visible effect was absorbed by a later edit. The change is preserv
           textDocument: { uri },
           viewMode
         };
-        connection.sendNotification("changetracks/viewModeChanged", params);
+        connection.sendNotification("changedown/viewModeChanged", params);
       }
     }
   });
@@ -20537,7 +20538,7 @@ This change's visible effect was absorbed by a later edit. The change is preserv
       exports.resolveTracking = resolveTracking;
       exports.sendDocumentState = sendDocumentState;
       function resolveTracking(docText, projectTrackingDefault) {
-        const headerMatch = docText.match(/^<!--\s*ctrcks\.com\/v1:\s*(tracked|untracked)\s*-->/m);
+        const headerMatch = docText.match(/^<!--\s*changedown\.com\/v1:\s*(tracked|untracked)\s*-->/m);
         if (headerMatch) {
           return { enabled: headerMatch[1] === "tracked", source: "file" };
         }
@@ -20555,7 +20556,7 @@ This change's visible effect was absorbed by a later edit. The change is preserv
           tracking,
           viewMode
         };
-        connection.sendNotification("changetracks/documentState", params);
+        connection.sendNotification("changedown/documentState", params);
       }
     }
   });
@@ -20569,21 +20570,21 @@ This change's visible effect was absorbed by a later edit. The change is preserv
       exports.buildSemanticTokens = buildSemanticTokens;
       var core_1 = require_dist();
       var TOKEN_TYPES = [
-        "changetracks-insertion",
+        "changedown-insertion",
         // 0: additions and modified text
-        "changetracks-deletion",
+        "changedown-deletion",
         // 1: deletions
-        "changetracks-highlight",
+        "changedown-highlight",
         // 2: highlights
-        "changetracks-comment",
+        "changedown-comment",
         // 3: comments
-        "changetracks-subOriginal",
+        "changedown-subOriginal",
         // 4: substitution original half
-        "changetracks-subModified",
+        "changedown-subModified",
         // 5: substitution modified half
-        "changetracks-moveFrom",
+        "changedown-moveFrom",
         // 6: move source
-        "changetracks-moveTo"
+        "changedown-moveTo"
         // 7: move target
       ];
       var TOKEN_MODIFIERS = [
@@ -20764,7 +20765,7 @@ This change's visible effect was absorbed by a later edit. The change is preserv
             result.push({
               range,
               severity: vscode_languageserver_1.DiagnosticSeverity.Warning,
-              source: "changetracks",
+              source: "changedown",
               message: message2,
               code: change.id,
               data: {
@@ -20780,7 +20781,7 @@ This change's visible effect was absorbed by a later edit. The change is preserv
             result.push({
               range,
               severity: vscode_languageserver_1.DiagnosticSeverity.Information,
-              source: "changetracks",
+              source: "changedown",
               message: `${label} by ${change.consumedBy} \u2014 this change's effect was absorbed by a later edit`,
               code: change.id,
               data: {
@@ -20796,7 +20797,7 @@ This change's visible effect was absorbed by a later edit. The change is preserv
           result.push({
             range,
             severity: vscode_languageserver_1.DiagnosticSeverity.Hint,
-            source: "changetracks",
+            source: "changedown",
             message,
             code: change.id,
             data: {
@@ -20883,12 +20884,12 @@ This change's visible effect was absorbed by a later edit. The change is preserv
           {
             title: searchTitle,
             kind: vscode_languageserver_1.CodeActionKind.QuickFix,
-            command: vscode_languageserver_1.Command.create(searchTitle, "changetracks.searchAnchorText", changeId)
+            command: vscode_languageserver_1.Command.create(searchTitle, "changedown.searchAnchorText", changeId)
           },
           {
             title: jumpTitle,
             kind: vscode_languageserver_1.CodeActionKind.QuickFix,
-            command: vscode_languageserver_1.Command.create(jumpTitle, "changetracks.jumpToFootnote", changeId)
+            command: vscode_languageserver_1.Command.create(jumpTitle, "changedown.jumpToFootnote", changeId)
           }
         ];
       }
@@ -20897,14 +20898,14 @@ This change's visible effect was absorbed by a later edit. The change is preserv
           {
             title: `Go to consuming change (${consumedBy})`,
             kind: vscode_languageserver_1.CodeActionKind.QuickFix,
-            command: vscode_languageserver_1.Command.create(`Go to consuming change (${consumedBy})`, "changetracks.jumpToFootnote", consumedBy)
+            command: vscode_languageserver_1.Command.create(`Go to consuming change (${consumedBy})`, "changedown.jumpToFootnote", consumedBy)
           }
         ];
         if (!hasActiveThread) {
           actions.push({
             title: "Compact consumed footnote",
             kind: vscode_languageserver_1.CodeActionKind.RefactorRewrite,
-            command: vscode_languageserver_1.Command.create("Compact consumed footnote", "changetracks.compactChange", changeId)
+            command: vscode_languageserver_1.Command.create("Compact consumed footnote", "changedown.compactChange", changeId)
           });
         }
         return actions;
@@ -20942,10 +20943,10 @@ This change's visible effect was absorbed by a later edit. The change is preserv
       }
       function createAction(title, change, _text, _uri, mode, _reviewerIdentity) {
         const commandMap = {
-          accept: "changetracks.acceptChange",
-          reject: "changetracks.rejectChange",
-          request_changes: "changetracks.requestChanges",
-          withdraw: "changetracks.withdrawRequest"
+          accept: "changedown.acceptChange",
+          reject: "changedown.rejectChange",
+          request_changes: "changedown.requestChanges",
+          withdraw: "changedown.withdrawRequest"
         };
         return {
           title,
@@ -20960,7 +20961,7 @@ This change's visible effect was absorbed by a later edit. The change is preserv
         ];
       }
       function createBulkAction(title, _changes, _text, _uri, mode, _reviewerIdentity) {
-        const commandName = mode === "accept" ? "changetracks.acceptAll" : "changetracks.rejectAll";
+        const commandName = mode === "accept" ? "changedown.acceptAll" : "changedown.rejectAll";
         return {
           title,
           kind: vscode_languageserver_1.CodeActionKind.Source,
@@ -20978,8 +20979,8 @@ This change's visible effect was absorbed by a later edit. The change is preserv
       exports.createDocumentLinks = createDocumentLinks;
       var vscode_languageserver_1 = require_main3();
       var converters_1 = require_converters();
-      var INLINE_REF = /\[\^(ct-\d+(?:\.\d+)?)\]/g;
-      var DEF_HEADER = /^\[\^(ct-\d+(?:\.\d+)?)\]:/gm;
+      var INLINE_REF = /\[\^(cn-\d+(?:\.\d+)?)\]/g;
+      var DEF_HEADER = /^\[\^(cn-\d+(?:\.\d+)?)\]:/gm;
       function createDocumentLinks(text, uri) {
         const inlineRefs = [];
         const definitions = [];
@@ -21015,7 +21016,7 @@ This change's visible effect was absorbed by a later edit. The change is preserv
           const defPos = (0, converters_1.offsetToPosition)(text, def.offset);
           links.push({
             range: vscode_languageserver_1.Range.create(refStart, refEnd),
-            target: `command:changetracks.goToPosition?${encodeURIComponent(JSON.stringify([uri, defPos.line, defPos.character]))}`,
+            target: `command:changedown.goToPosition?${encodeURIComponent(JSON.stringify([uri, defPos.line, defPos.character]))}`,
             tooltip: `Go to footnote definition [^${ref.id}]`
           });
         }
@@ -21028,7 +21029,7 @@ This change's visible effect was absorbed by a later edit. The change is preserv
           const refPos = (0, converters_1.offsetToPosition)(text, ref.offset);
           links.push({
             range: vscode_languageserver_1.Range.create(defStart, defEnd),
-            target: `command:changetracks.goToPosition?${encodeURIComponent(JSON.stringify([uri, refPos.line, refPos.character]))}`,
+            target: `command:changedown.goToPosition?${encodeURIComponent(JSON.stringify([uri, refPos.line, refPos.character]))}`,
             tooltip: `Go to inline change [^${def.id}]`
           });
         }
@@ -21262,7 +21263,7 @@ This change's visible effect was absorbed by a later edit. The change is preserv
         }
         /**
          * Initialize the scId counter from existing document content.
-         * Call on document open with the max ct-N found in the document.
+         * Call on document open with the max cn-N found in the document.
          */
         initScIdCounter(uri, maxId) {
           const uriState = this.getUriState(uri);
@@ -21300,7 +21301,7 @@ This change's visible effect was absorbed by a later edit. The change is preserv
             now: Date.now(),
             allocateScId: () => {
               uriState.scIdCounter++;
-              return `ct-${uriState.scIdCounter}`;
+              return `cn-${uriState.scIdCounter}`;
             },
             author: this._author,
             documentText,
@@ -21401,7 +21402,7 @@ This change's visible effect was absorbed by a later edit. The change is preserv
     "dist/server.js"(exports) {
       "use strict";
       Object.defineProperty(exports, "__esModule", { value: true });
-      exports.ChangetracksServer = void 0;
+      exports.ChangedownServer = void 0;
       var vscode_languageserver_1 = require_main3();
       var vscode_languageserver_textdocument_1 = (init_main2(), __toCommonJS(main_exports2));
       var core_1 = require_dist();
@@ -21420,7 +21421,7 @@ This change's visible effect was absorbed by a later edit. The change is preserv
       var pending_edit_manager_1 = require_pending_edit_manager();
       var converters_1 = require_converters();
       var document_state_2 = require_document_state2();
-      function isChangetracksInitOptions(value) {
+      function isChangedownInitOptions(value) {
         if (typeof value !== "object" || value === null)
           return false;
         const obj = value;
@@ -21431,7 +21432,7 @@ This change's visible effect was absorbed by a later edit. The change is preserv
         return true;
       }
       var DECORATION_NOTIFY_DEBOUNCE_MS = 60;
-      var ChangetracksServer = class {
+      var ChangedownServer = class {
         constructor(connection, options) {
           this.docStates = /* @__PURE__ */ new Map();
           this.semanticTokenRefreshTimeout = null;
@@ -21488,40 +21489,40 @@ This change's visible effect was absorbed by a later edit. The change is preserv
           this.connection.onCodeAction(this.handleCodeAction.bind(this));
           this.connection.onDocumentLinks(this.handleDocumentLinks.bind(this));
           this.connection.onFoldingRanges(this.handleFoldingRanges.bind(this));
-          this.connection.onRequest("changetracks/annotate", this.handleAnnotate.bind(this));
-          this.connection.onRequest("changetracks/getChanges", this.handleGetChanges.bind(this));
-          this.connection.onRequest("changetracks/getProjectConfig", this.handleGetProjectConfig.bind(this));
-          this.connection.onRequest("changetracks/reviewChange", this.handleReviewChange.bind(this));
-          this.connection.onRequest("changetracks/replyToThread", this.handleReplyToThread.bind(this));
-          this.connection.onRequest("changetracks/amendChange", this.handleAmendChange.bind(this));
-          this.connection.onRequest("changetracks/supersedeChange", this.handleSupersedeChange.bind(this));
-          this.connection.onRequest("changetracks/resolveThread", this.handleResolveThread.bind(this));
-          this.connection.onRequest("changetracks/unresolveThread", this.handleUnresolveThread.bind(this));
-          this.connection.onRequest("changetracks/compactChange", this.handleCompactChange.bind(this));
-          this.connection.onRequest("changetracks/compactChanges", this.handleCompactChanges.bind(this));
-          this.connection.onRequest("changetracks/reviewAll", this.handleReviewAll.bind(this));
-          this.connection.onNotification("changetracks/batchEditStart", (params) => {
+          this.connection.onRequest("changedown/annotate", this.handleAnnotate.bind(this));
+          this.connection.onRequest("changedown/getChanges", this.handleGetChanges.bind(this));
+          this.connection.onRequest("changedown/getProjectConfig", this.handleGetProjectConfig.bind(this));
+          this.connection.onRequest("changedown/reviewChange", this.handleReviewChange.bind(this));
+          this.connection.onRequest("changedown/replyToThread", this.handleReplyToThread.bind(this));
+          this.connection.onRequest("changedown/amendChange", this.handleAmendChange.bind(this));
+          this.connection.onRequest("changedown/supersedeChange", this.handleSupersedeChange.bind(this));
+          this.connection.onRequest("changedown/resolveThread", this.handleResolveThread.bind(this));
+          this.connection.onRequest("changedown/unresolveThread", this.handleUnresolveThread.bind(this));
+          this.connection.onRequest("changedown/compactChange", this.handleCompactChange.bind(this));
+          this.connection.onRequest("changedown/compactChanges", this.handleCompactChanges.bind(this));
+          this.connection.onRequest("changedown/reviewAll", this.handleReviewAll.bind(this));
+          this.connection.onNotification("changedown/batchEditStart", (params) => {
             this.handleBatchEditStart(params.uri);
           });
-          this.connection.onNotification("changetracks/batchEditEnd", (params) => {
+          this.connection.onNotification("changedown/batchEditEnd", (params) => {
             this.handleBatchEditEnd(params.uri);
           });
-          this.connection.onNotification("changetracks/flushPending", (params) => {
+          this.connection.onNotification("changedown/flushPending", (params) => {
             try {
               this.pendingEditManager.flush(params.textDocument.uri);
             } catch (err) {
-              this.connection.console.error(`changetracks/flushPending handler error: ${err}`);
+              this.connection.console.error(`changedown/flushPending handler error: ${err}`);
             }
           });
-          this.connection.onNotification("changetracks/updateSettings", (params) => {
+          this.connection.onNotification("changedown/updateSettings", (params) => {
             try {
               const identity = (params.reviewerIdentity ?? "").trim();
               this.reviewerIdentity = identity || void 0;
             } catch (err) {
-              this.connection.console.error(`changetracks/updateSettings handler error: ${err}`);
+              this.connection.console.error(`changedown/updateSettings handler error: ${err}`);
             }
           });
-          this.connection.onNotification("changetracks/pendingOverlay", (params) => {
+          this.connection.onNotification("changedown/pendingOverlay", (params) => {
             try {
               const { uri, overlay } = params;
               const state = this.docStates.get(uri);
@@ -21529,15 +21530,15 @@ This change's visible effect was absorbed by a later edit. The change is preserv
                 state.overlay = overlay;
               this.scheduleDecorationResend(uri);
             } catch (err) {
-              this.connection.console.error(`changetracks/pendingOverlay handler error: ${err}`);
+              this.connection.console.error(`changedown/pendingOverlay handler error: ${err}`);
             }
           });
-          this.connection.onNotification("changetracks/setViewMode", (params) => {
+          this.connection.onNotification("changedown/setViewMode", (params) => {
             try {
               const uri = params.textDocument.uri;
               const viewMode = params.viewMode;
               if (!core_1.VIEW_NAMES.includes(viewMode)) {
-                this.connection.console.warn(`changetracks/setViewMode: ignoring unknown viewMode "${viewMode}" for ${uri}`);
+                this.connection.console.warn(`changedown/setViewMode: ignoring unknown viewMode "${viewMode}" for ${uri}`);
                 return;
               }
               const state = this.docStates.get(uri);
@@ -21561,10 +21562,10 @@ This change's visible effect was absorbed by a later edit. The change is preserv
                 });
               }, 50);
             } catch (err) {
-              this.connection.console.error(`changetracks/setViewMode handler error: ${err}`);
+              this.connection.console.error(`changedown/setViewMode handler error: ${err}`);
             }
           });
-          this.connection.onNotification("changetracks/cursorPosition", (params) => {
+          this.connection.onNotification("changedown/cursorPosition", (params) => {
             try {
               const uri = params.textDocument.uri;
               const state = this.docStates.get(uri);
@@ -21579,10 +21580,10 @@ This change's visible effect was absorbed by a later edit. The change is preserv
               this.connection.sendRequest(vscode_languageserver_1.FoldingRangeRefreshRequest.type).catch(() => {
               });
             } catch (err) {
-              this.connection.console.error(`changetracks/cursorPosition handler error: ${err}`);
+              this.connection.console.error(`changedown/cursorPosition handler error: ${err}`);
             }
           });
-          this.connection.onNotification("changetracks/setCodeLensMode", (params) => {
+          this.connection.onNotification("changedown/setCodeLensMode", (params) => {
             try {
               const mode = params.mode;
               if (mode === "cursor" || mode === "always" || mode === "off") {
@@ -21590,19 +21591,19 @@ This change's visible effect was absorbed by a later edit. The change is preserv
                 this.connection.sendRequest(vscode_languageserver_1.CodeLensRefreshRequest.type).catch(() => {
                 });
               } else {
-                this.connection.console.warn(`changetracks/setCodeLensMode: ignoring unknown mode "${mode}"`);
+                this.connection.console.warn(`changedown/setCodeLensMode: ignoring unknown mode "${mode}"`);
               }
             } catch (err) {
-              this.connection.console.error(`changetracks/setCodeLensMode handler error: ${err}`);
+              this.connection.console.error(`changedown/setCodeLensMode handler error: ${err}`);
             }
           });
-          this.connection.onNotification("changetracks/cursorMove", (params) => {
+          this.connection.onNotification("changedown/cursorMove", (params) => {
             try {
               const uri = params.textDocument.uri;
               const text = this.docStates.get(uri)?.text ?? "";
               this.pendingEditManager.handleCursorMove(uri, params.offset, text);
             } catch (err) {
-              this.connection.console.error(`changetracks/cursorMove handler error: ${err}`);
+              this.connection.console.error(`changedown/cursorMove handler error: ${err}`);
             }
           });
           this.documents.listen(this.connection);
@@ -21664,8 +21665,8 @@ This change's visible effect was absorbed by a later edit. The change is preserv
          */
         async handleInitialize(params) {
           await (0, core_1.initHashline)();
-          const raw = params.initializationOptions?.changetracks;
-          if (isChangetracksInitOptions(raw)) {
+          const raw = params.initializationOptions?.changedown;
+          if (isChangedownInitOptions(raw)) {
             const identity = (raw.reviewerIdentity || raw.author || "").trim();
             this.reviewerIdentity = identity || void 0;
           }
@@ -21711,7 +21712,7 @@ This change's visible effect was absorbed by a later edit. The change is preserv
         handleInitialized() {
           this.loadProjectConfig();
           this.connection.client.register(vscode_languageserver_1.DidChangeWatchedFilesNotification.type, {
-            watchers: [{ globPattern: "**/.changetracks/config.toml" }]
+            watchers: [{ globPattern: "**/.changedown/config.toml" }]
           });
           this.connection.onDidChangeWatchedFiles((change) => {
             for (const event of change.changes) {
@@ -21766,7 +21767,7 @@ This change's visible effect was absorbed by a later edit. The change is preserv
           if (!overlay)
             return parseChanges;
           const synthetic = {
-            id: overlay.scId ?? "ct-overlay-0",
+            id: overlay.scId ?? "cn-overlay-0",
             type: core_1.ChangeType.Insertion,
             status: core_1.ChangeStatus.Proposed,
             range: { start: overlay.range.start, end: overlay.range.end },
@@ -21791,7 +21792,7 @@ This change's visible effect was absorbed by a later edit. The change is preserv
           (0, document_state_1.sendDocumentState)(this.connection, uri, tracking, viewMode);
         }
         /**
-         * Load project config from .changetracks/config.toml via canonical parser.
+         * Load project config from .changedown/config.toml via canonical parser.
          * Stores full parsed config and extracts tracking default.
          * Sets both to undefined when the config file is absent.
          */
@@ -21933,7 +21934,7 @@ This change's visible effect was absorbed by a later edit. The change is preserv
             return;
           this.ensureDocState(uri, text, languageId);
           const state = this.docStates.get(uri);
-          const maxId = (0, core_1.scanMaxCtId)(text);
+          const maxId = (0, core_1.scanMaxCnId)(text);
           this.pendingEditManager.initScIdCounter(uri, maxId);
           const isL3 = this.workspace.isFootnoteNative(text);
           if (!isL3) {
@@ -21949,7 +21950,7 @@ This change's visible effect was absorbed by a later edit. The change is preserv
                 if (autoFoldLines2)
                   state.autoFoldSent = true;
                 (0, decoration_data_1.sendChangeCount)(this.connection, uri, l3Changes);
-                this.connection.sendNotification("changetracks/promotionStarting", { uri });
+                this.connection.sendNotification("changedown/promotionStarting", { uri });
                 state.isPromoting = true;
                 const applied = await this.connection.workspace.applyEdit({
                   label: "Promote to L3",
@@ -21976,7 +21977,7 @@ This change's visible effect was absorbed by a later edit. The change is preserv
                   (0, decoration_data_1.sendChangeCount)(this.connection, uri, fallbackChanges);
                   this.connection.console?.error(`[promoteToL3] workspace/applyEdit rejected for ${uri}`);
                 }
-                this.connection.sendNotification("changetracks/promotionComplete", { uri });
+                this.connection.sendNotification("changedown/promotionComplete", { uri });
                 this.broadcastDocumentState(uri);
                 return;
               } catch (err) {
@@ -22024,7 +22025,7 @@ This change's visible effect was absorbed by a later edit. The change is preserv
           if (state.isBatchEditing) {
             const previousText2 = state.text;
             this.parseAndCacheDocument(uri, text, languageId);
-            const headerRegex2 = /^<!--\s*ctrcks\.com\/v1:\s*(tracked|untracked)\s*-->/m;
+            const headerRegex2 = /^<!--\s*changedown\.com\/v1:\s*(tracked|untracked)\s*-->/m;
             const oldHeader2 = previousText2?.match(headerRegex2)?.[1];
             const newHeader2 = text.match(headerRegex2)?.[1];
             if (oldHeader2 !== newHeader2) {
@@ -22051,7 +22052,7 @@ This change's visible effect was absorbed by a later edit. The change is preserv
           }
           const previousText = state.text;
           this.parseAndCacheDocument(uri, text, languageId);
-          const headerRegex = /^<!--\s*ctrcks\.com\/v1:\s*(tracked|untracked)\s*-->/m;
+          const headerRegex = /^<!--\s*changedown\.com\/v1:\s*(tracked|untracked)\s*-->/m;
           const oldHeader = previousText?.match(headerRegex)?.[1];
           const newHeader = text.match(headerRegex)?.[1];
           if (oldHeader !== newHeader) {
@@ -22070,7 +22071,7 @@ This change's visible effect was absorbed by a later edit. The change is preserv
          * Handle a crystallized edit from the PendingEditManager.
          *
          * Converts the offset-based CrystallizedEdit into LSP Ranges and sends
-         * a changetracks/pendingEditFlushed notification to the client. The client
+         * a changedown/pendingEditFlushed notification to the client. The client
          * is responsible for applying the workspace edits to the document.
          *
          * The new CrystallizedEdit contains `edits` with `markupEdit` (inline
@@ -22201,7 +22202,7 @@ This change's visible effect was absorbed by a later edit. The change is preserv
             const diagnostics = params.context.diagnostics;
             const actions = [];
             for (const diagnostic of diagnostics) {
-              if (diagnostic.source === "changetracks") {
+              if (diagnostic.source === "changedown") {
                 actions.push(...(0, code_actions_1.createCodeActions)(diagnostic, changes, text, uri, this.reviewerIdentity));
               }
             }
@@ -22213,7 +22214,7 @@ This change's visible effect was absorbed by a later edit. The change is preserv
         }
         /**
          * Handle document links request
-         * Provides clickable navigation between inline [^ct-N] refs and footnote definitions
+         * Provides clickable navigation between inline [^cn-N] refs and footnote definitions
          */
         handleDocumentLinks(params) {
           try {
@@ -22229,7 +22230,7 @@ This change's visible effect was absorbed by a later edit. The change is preserv
           }
         }
         /**
-         * Handle the changetracks/annotate custom request.
+         * Handle the changedown/annotate custom request.
          *
          * Takes a textDocument URI, retrieves the previous version from git,
          * runs the appropriate annotator (CriticMarkup for markdown, sidecar for
@@ -22327,7 +22328,7 @@ This change's visible effect was absorbed by a later edit. The change is preserv
           return this.docStates.get(uri)?.viewMode ?? "review";
         }
         /**
-         * Handle changetracks/getChanges request (Section 11).
+         * Handle changedown/getChanges request (Section 11).
          * Params: { textDocument: { uri: string } }
          * Response: { changes: ChangeNode[] }
          * Reuses getMergedChanges logic. Parses document if not yet cached.
@@ -22370,7 +22371,7 @@ This change's visible effect was absorbed by a later edit. The change is preserv
         }
         // ─── Phase 2: Lifecycle operation handlers (2A–2G) ─────────────────────────
         /**
-         * 2A: changetracks/getProjectConfig
+         * 2A: changedown/getProjectConfig
          * Returns project configuration for reason requirements and reviewer identity.
          */
         handleGetProjectConfig() {
@@ -22381,7 +22382,7 @@ This change's visible effect was absorbed by a later edit. The change is preserv
           };
         }
         /**
-         * 2B: changetracks/reviewChange
+         * 2B: changedown/reviewChange
          * Apply a review decision (approve/reject/request_changes) to a tracked change.
          */
         handleReviewChange(params) {
@@ -22416,7 +22417,7 @@ This change's visible effect was absorbed by a later edit. The change is preserv
           }
         }
         /**
-         * 2C: changetracks/replyToThread
+         * 2C: changedown/replyToThread
          * Add a discussion reply to a change's footnote thread.
          */
         handleReplyToThread(params) {
@@ -22439,7 +22440,7 @@ This change's visible effect was absorbed by a later edit. The change is preserv
           }
         }
         /**
-         * 2D: changetracks/amendChange
+         * 2D: changedown/amendChange
          * Amend a proposed change's inline text or reasoning.
          */
         async handleAmendChange(params) {
@@ -22485,7 +22486,7 @@ This change's visible effect was absorbed by a later edit. The change is preserv
           }
         }
         /**
-         * 2E: changetracks/supersedeChange
+         * 2E: changedown/supersedeChange
          * Reject a proposed change and propose a replacement, with cross-references.
          */
         async handleSupersedeChange(params) {
@@ -22513,7 +22514,7 @@ This change's visible effect was absorbed by a later edit. The change is preserv
           }
         }
         /**
-         * 2F: changetracks/resolveThread
+         * 2F: changedown/resolveThread
          * Mark a change's discussion thread as resolved.
          */
         handleResolveThread(params) {
@@ -22533,7 +22534,7 @@ This change's visible effect was absorbed by a later edit. The change is preserv
           }
         }
         /**
-         * 2F (unresolve): changetracks/unresolveThread
+         * 2F (unresolve): changedown/unresolveThread
          * Remove the resolved status from a change's discussion thread.
          */
         handleUnresolveThread(params) {
@@ -22552,7 +22553,7 @@ This change's visible effect was absorbed by a later edit. The change is preserv
           }
         }
         /**
-         * 2G: changetracks/compactChange
+         * 2G: changedown/compactChange
          * Compact a settled change by descending its metadata level.
          * Default: L2 → L1. With `fully: true`: L2 → L0.
          */
@@ -22606,7 +22607,7 @@ This change's visible effect was absorbed by a later edit. The change is preserv
           }
         }
         /**
-         * 2G+: changetracks/compactChanges (plural)
+         * 2G+: changedown/compactChanges (plural)
          * Compact multiple decided footnotes from an L3 (or L2) document in a single
          * operation. Removes targeted footnote blocks, applies body mutations for
          * rejected proposed changes, and inserts a compaction-boundary footnote.
@@ -22644,10 +22645,10 @@ This change's visible effect was absorbed by a later edit. The change is preserv
           }
         }
         /**
-         * 2H: changetracks/reviewAll
+         * 2H: changedown/reviewAll
          * Apply a review decision to all proposed changes in a document in a single
          * request, eliminating the stale-text race that occurs when looping over
-         * changetracks/reviewChange one change at a time.
+         * changedown/reviewChange one change at a time.
          *
          * When changeIds is provided, only the specified changes are reviewed
          * (used by acceptAllOnLine / rejectAllOnLine).
@@ -22708,7 +22709,7 @@ This change's visible effect was absorbed by a later edit. The change is preserv
           }
         }
       };
-      exports.ChangetracksServer = ChangetracksServer;
+      exports.ChangedownServer = ChangedownServer;
     }
   });
 
@@ -22721,7 +22722,7 @@ This change's visible effect was absorbed by a later edit. The change is preserv
       var reader = new browser_1.BrowserMessageReader(self);
       var writer = new browser_1.BrowserMessageWriter(self);
       var conn = (0, browser_1.createConnection)(reader, writer);
-      var server = new server_1.ChangetracksServer(conn);
+      var server = new server_1.ChangedownServer(conn);
       server.listen();
     }
   });
