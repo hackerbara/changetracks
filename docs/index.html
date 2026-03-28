@@ -1,55 +1,23 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>ChangeTracks</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Charter:ital,wght@0,400;0,700;1,400&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
-  <script type="module" crossorigin src="/assets/index-BKtcAYmJ.js"></script>
-  <link rel="stylesheet" crossorigin href="/assets/index-BraXh8DI.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300..700;1,9..40,300..700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <script type="module" crossorigin src="/assets/index-BM88MvNX.js"></script>
+  <link rel="modulepreload" crossorigin href="/assets/_polyfill-node.buffer-BXLShJXA.js">
+  <link rel="modulepreload" crossorigin href="/assets/preload-helper-D4M6sveU.js">
+  <link rel="modulepreload" crossorigin href="/assets/dist-esm-CUharHiu.js">
+  <link rel="modulepreload" crossorigin href="/assets/editor.api2-DT-dKln6.js">
+  <link rel="modulepreload" crossorigin href="/assets/workers-CBEW1V67.js">
+  <link rel="modulepreload" crossorigin href="/assets/monaco.contribution-BLKJw4yr.js">
+  <link rel="stylesheet" crossorigin href="/assets/editor-DVSAlpqy.css">
+  <link rel="stylesheet" crossorigin href="/assets/index-CeWnIRLm.css">
 </head>
 <body>
-  <header class="shell-header">
-    <div class="header-top">
-      <div class="brand-group">
-        <span class="brand-name">ChangeTracks</span>
-        <span class="brand-url">ctrcks.com</span>
-      </div>
-      <button class="view-toggle-cycle" id="view-toggle-cycle">changes</button>
-    </div>
-    <div class="header-bar">
-      <nav class="page-nav" id="page-nav">
-        <a href="#/" class="current" data-page="index">index</a>
-        <a href="#/spec" data-page="spec">spec</a>
-        <a href="#/ideas" data-page="ideas">ideas</a>
-        <a href="#/install" data-page="install">install</a>
-      </nav>
-      <div class="view-toggle" id="view-toggle">
-        <span class="toggle-label">Views</span>
-        <button data-view="changes" class="active">changes</button>
-        <button data-view="agent">agent</button>
-        <button data-view="final">final</button>
-      </div>
-    </div>
-  </header>
-
-  <main class="editor-frame">
-    <div class="editor-viewport" id="editor-viewport">
-      <div class="editor-gutter" id="editor-gutter"></div>
-      <div class="editor-content" id="editor-content"></div>
-      <aside class="comment-panel" id="comment-panel"></aside>
-    </div>
-  </main>
-
-  <footer class="shell-footer">
-    <span>ChangeTracks · MIT</span>
-    <span>
-      <a href="https://github.com/hackerbara/changetracks">source</a> ·
-      <a href="https://x.com/changetracks">X</a>
-    </span>
-  </footer>
-
+  <div id="app"></div>
 </body>
 </html>
