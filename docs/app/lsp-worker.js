@@ -20853,8 +20853,9 @@ This change's visible effect was absorbed by a later edit. The change is preserv
       exports.PendingEditManager = void 0;
       var core_1 = require_dist();
       var PendingEditManager = class {
-        constructor(onCrystallize) {
+        constructor(onCrystallize, onOverlayChange) {
           this.onCrystallize = onCrystallize;
+          this.onOverlayChange = onOverlayChange;
           this.states = /* @__PURE__ */ new Map();
           this.pendingEchos = /* @__PURE__ */ new Set();
           this.safetyNetInterval = null;
@@ -21043,8 +21044,21 @@ This change's visible effect was absorbed by a later edit. The change is preserv
                 break;
               case "mergeAdjacent":
                 break;
-              case "updatePendingOverlay":
+              case "updatePendingOverlay": {
+                const overlay = effect.overlay;
+                if (overlay) {
+                  const pending = this.states.get(uri)?.boundary.pending;
+                  this.onOverlayChange(uri, {
+                    range: { start: overlay.anchorOffset, end: overlay.anchorOffset + overlay.currentLength },
+                    text: overlay.currentText,
+                    type: "insertion",
+                    scId: pending?.scId
+                  });
+                } else {
+                  this.onOverlayChange(uri, null);
+                }
                 break;
+              }
             }
           }
         }
@@ -21169,7 +21183,13 @@ This change's visible effect was absorbed by a later edit. The change is preserv
           this.connection = connection;
           this.documents = new vscode_languageserver_1.TextDocuments(vscode_languageserver_textdocument_1.TextDocument);
           this.workspace = new core_1.Workspace();
-          this.pendingEditManager = new pending_edit_manager_1.PendingEditManager((edit) => this.handleCrystallizedEdit(edit));
+          this.pendingEditManager = new pending_edit_manager_1.PendingEditManager((edit) => this.handleCrystallizedEdit(edit), (uri, overlay) => {
+            const state = this.docStates.get(uri);
+            if (state) {
+              state.overlay = overlay;
+              this.scheduleDecorationResend(uri);
+            }
+          });
           this.setupHandlers();
         }
         /**
@@ -21386,6 +21406,9 @@ This change's visible effect was absorbed by a later edit. The change is preserv
                   this.pendingEditManager.handleChange(uri, type, offset, insertedText, deletedText, currentText);
                   currentText = currentText.substring(0, offset) + insertedText + currentText.substring(endOffset);
                 }
+                const docState = this.docStates.get(uri);
+                if (docState)
+                  docState.text = currentText;
               }
             } catch (err) {
               this.connection.console.error(`textDocument/didChange (edit tracking) error: ${err}`);
