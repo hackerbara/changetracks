@@ -1,11 +1,12 @@
 <!DOCTYPE html><html lang="en" data-astro-cid-zetdm5md> <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>ChangeDown</title><link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet"><link rel="stylesheet" href="/app/assets/main.css"><link rel="stylesheet" href="/app/assets/editor.css"><style>body{margin:0;background:#18181b}
-</style></head> <body data-astro-cid-zetdm5md> <div id="app" data-astro-cid-zetdm5md></div> <script>
+</style></head> <body data-astro-cid-zetdm5md> <div id="app" data-astro-cid-zetdm5md></div> <script>(function(){const indexPath = "/content/01-index.md";
+
     // Derive content path from URL before the SPA module loads
     (function() {
       var p = window.location.pathname;
-      var cp = p === '/' ? '/content/01-index.md'
+      var cp = p === '/' ? indexPath
         : p.startsWith('/content/') ? (p.endsWith('.md') ? p : p + '.md')
         : '/content' + p + '.md';
       document.getElementById('app').dataset.contentPath = cp;
     })();
-  </script> <script type="module" src="/app/main.js"></script> </body> </html>
+  })();</script> <script type="module" src="/app/main.js"></script> </body> </html>
