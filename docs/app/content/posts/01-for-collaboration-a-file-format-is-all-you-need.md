@@ -1,6 +1,10 @@
-<!-- changedown.com/v1: tracked -->
+<!-- changedown.com/v1: untracked -->
 
 # For collaboration, a file format is all you need
+**Date:** March 31st, 2026  
+**Author:** Hackerbara 
+
+---
 
 How should humans and agents collaborate on documents? How do we keep track of who is changing what, when, and why? What does it mean to “review” and “approve” these changes? These are rich UX questions many different people are circling. Beneath them all, I think something is missing: where does all this get recorded? And how do we control and share that record? I think we need an interchange file format, one that is human-readable, AI-readable, and plain text: **Changedown** - CriticMarkup + Markdown footnotes with governance.
 
