@@ -20812,6 +20812,39 @@ This change's visible effect was absorbed by a later edit. The change is preserv
     }
   });
 
+  // ../../node_modules/vscode-languageserver/node.js
+  var require_node = __commonJS({
+    "../../node_modules/vscode-languageserver/node.js"(exports, module) {
+      "use strict";
+      module.exports = require_main3();
+    }
+  });
+
+  // dist/capabilities/definition.js
+  var require_definition = __commonJS({
+    "dist/capabilities/definition.js"(exports) {
+      "use strict";
+      Object.defineProperty(exports, "__esModule", { value: true });
+      exports.getDefinitionForOffset = getDefinitionForOffset;
+      var node_1 = require_node();
+      function getDefinitionForOffset(uri, offset, changes) {
+        for (const change of changes) {
+          const range = change.contentRange ?? change.range;
+          if (offset < range.start || offset > range.end)
+            continue;
+          if (change.footnoteLineRange) {
+            const startLine = change.footnoteLineRange.startLine;
+            return node_1.Location.create(uri, {
+              start: node_1.Position.create(startLine, 0),
+              end: node_1.Position.create(startLine, 0)
+            });
+          }
+        }
+        return null;
+      }
+    }
+  });
+
   // dist/pending-edit-manager.js
   var require_pending_edit_manager = __commonJS({
     "dist/pending-edit-manager.js"(exports) {
@@ -21103,6 +21136,7 @@ This change's visible effect was absorbed by a later edit. The change is preserv
       var code_actions_1 = require_code_actions();
       var document_links_1 = require_document_links();
       var folding_ranges_1 = require_folding_ranges();
+      var definition_1 = require_definition();
       var pending_edit_manager_1 = require_pending_edit_manager();
       var converters_1 = require_converters();
       var document_state_2 = require_document_state2();
@@ -21176,6 +21210,7 @@ This change's visible effect was absorbed by a later edit. The change is preserv
           this.connection.onCodeAction(this.handleCodeAction.bind(this));
           this.connection.onDocumentLinks(this.handleDocumentLinks.bind(this));
           this.connection.onFoldingRanges(this.handleFoldingRanges.bind(this));
+          this.connection.onDefinition(this.handleDefinition.bind(this));
           this.connection.onRequest("changedown/annotate", this.handleAnnotate.bind(this));
           this.connection.onRequest("changedown/getChanges", this.handleGetChanges.bind(this));
           this.connection.onRequest("changedown/getProjectConfig", this.handleGetProjectConfig.bind(this));
@@ -21406,7 +21441,9 @@ This change's visible effect was absorbed by a later edit. The change is preserv
                 resolveProvider: false
               },
               // Folding ranges - L3 footnote sections + deletion hiding
-              foldingRangeProvider: true
+              foldingRangeProvider: true,
+              // Go to Definition - jump from change content to its footnote
+              definitionProvider: true
             }
           };
         }
@@ -21819,6 +21856,23 @@ This change's visible effect was absorbed by a later edit. The change is preserv
             return (0, hover_1.createHover)(params.position, changes, document.getText());
           } catch (err) {
             this.connection.console.error(`handleHover error: ${err}`);
+            return null;
+          }
+        }
+        /**
+         * Handle go-to-definition request
+         * Jump from change content to its footnote definition
+         */
+        handleDefinition(params) {
+          try {
+            const document = this.documents.get(params.textDocument.uri);
+            if (!document)
+              return null;
+            const offset = document.offsetAt(params.position);
+            const changes = this.getMergedChanges(params.textDocument.uri);
+            return (0, definition_1.getDefinitionForOffset)(params.textDocument.uri, offset, changes);
+          } catch (err) {
+            this.connection.console.error(`handleDefinition error: ${err}`);
             return null;
           }
         }
