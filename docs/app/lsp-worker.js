@@ -21786,6 +21786,7 @@ This change's visible effect was absorbed by a later edit. The change is preserv
                 this.broadcastDocumentState(uri);
                 return;
               } catch (err) {
+                state.isPromoting = false;
                 this.connection.console?.error(`[promoteToL3] conversion error for ${uri}: ${err}`);
               }
             }
