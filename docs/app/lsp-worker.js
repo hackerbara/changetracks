@@ -21157,6 +21157,7 @@ This change's visible effect was absorbed by a later edit. The change is preserv
         constructor(connection, options) {
           this.docStates = /* @__PURE__ */ new Map();
           this.semanticTokenRefreshTimeout = null;
+          this.trackingOverride = /* @__PURE__ */ new Map();
           this.coherenceThreshold = core_2.DEFAULT_CONFIG.coherence.threshold;
           this.lastCoherenceStatus = /* @__PURE__ */ new Map();
           this.pendingWriteBack = /* @__PURE__ */ new Set();
@@ -21202,6 +21203,7 @@ This change's visible effect was absorbed by a later edit. The change is preserv
             this.docStates.delete(uri);
             this.lastCoherenceStatus.delete(uri);
             this.pendingWriteBack.delete(uri);
+            this.trackingOverride.delete(uri);
             this.pendingEditManager.removeDocument(uri);
           });
           this.connection.onHover(this.handleHover.bind(this));
@@ -21234,6 +21236,19 @@ This change's visible effect was absorbed by a later edit. The change is preserv
               this.pendingEditManager.flush(params.textDocument.uri);
             } catch (err) {
               this.connection.console.error(`changedown/flushPending handler error: ${err}`);
+            }
+          });
+          this.connection.onNotification("changedown/setDocumentState", (params) => {
+            try {
+              const uri = params.textDocument.uri;
+              if (params.tracking !== void 0) {
+                this.trackingOverride.set(uri, params.tracking.enabled);
+                if (!params.tracking.enabled) {
+                  this.pendingEditManager.removeDocument(uri);
+                }
+              }
+            } catch (err) {
+              this.connection.console.error(`changedown/setDocumentState handler error: ${err}`);
             }
           });
           this.connection.onNotification("changedown/updateSettings", (params) => {
@@ -21324,7 +21339,9 @@ This change's visible effect was absorbed by a later edit. The change is preserv
               const uri = params.textDocument.uri;
               const state = this.docStates.get(uri);
               const text = state?.text ?? "";
-              this.pendingEditManager.handleCursorMove(uri, params.offset, text);
+              if (this.isTrackingEnabled(uri)) {
+                this.pendingEditManager.handleCursorMove(uri, params.offset, text);
+              }
               if (state) {
                 const pos = (0, converters_1.offsetToPosition)(text, params.offset);
                 const hit = state.parseResult?.changeAtOffset(params.offset);
@@ -21344,28 +21361,31 @@ This change's visible effect was absorbed by a later edit. The change is preserv
           this.connection.onNotification("textDocument/didChange", (params) => {
             try {
               const uri = params.textDocument.uri;
-              let currentText = this.docStates.get(uri)?.text ?? "";
-              for (const change of params.contentChanges) {
-                if (!change.range) {
-                  this.pendingEditManager.consumeEcho(uri);
-                  currentText = change.text;
-                  continue;
+              if (!this.isTrackingEnabled(uri)) {
+              } else {
+                let currentText = this.docStates.get(uri)?.text ?? "";
+                for (const change of params.contentChanges) {
+                  if (!change.range) {
+                    this.pendingEditManager.consumeEcho(uri);
+                    currentText = change.text;
+                    continue;
+                  }
+                  const offset = (0, converters_1.positionToOffset)(currentText, change.range.start);
+                  const endOffset = (0, converters_1.positionToOffset)(currentText, change.range.end);
+                  const rangeLength = endOffset - offset;
+                  const deletedText = currentText.substring(offset, endOffset);
+                  const insertedText = change.text;
+                  let type;
+                  if (rangeLength === 0 && insertedText.length > 0) {
+                    type = "insertion";
+                  } else if (rangeLength > 0 && insertedText.length === 0) {
+                    type = "deletion";
+                  } else {
+                    type = "substitution";
+                  }
+                  this.pendingEditManager.handleChange(uri, type, offset, insertedText, deletedText, currentText);
+                  currentText = currentText.substring(0, offset) + insertedText + currentText.substring(endOffset);
                 }
-                const offset = (0, converters_1.positionToOffset)(currentText, change.range.start);
-                const endOffset = (0, converters_1.positionToOffset)(currentText, change.range.end);
-                const rangeLength = endOffset - offset;
-                const deletedText = currentText.substring(offset, endOffset);
-                const insertedText = change.text;
-                let type;
-                if (rangeLength === 0 && insertedText.length > 0) {
-                  type = "insertion";
-                } else if (rangeLength > 0 && insertedText.length === 0) {
-                  type = "deletion";
-                } else {
-                  type = "substitution";
-                }
-                this.pendingEditManager.handleChange(uri, type, offset, insertedText, deletedText, currentText);
-                currentText = currentText.substring(0, offset) + insertedText + currentText.substring(endOffset);
               }
             } catch (err) {
               this.connection.console.error(`textDocument/didChange (edit tracking) error: ${err}`);
@@ -21522,6 +21542,25 @@ This change's visible effect was absorbed by a later edit. The change is preserv
           const merged = [...parseChanges, synthetic];
           merged.sort((a, b) => a.range.start - b.range.start);
           return merged;
+        }
+        /**
+         * Check if edit tracking is enabled for a URI.
+         *
+         * Resolution order:
+         * 1. Client-side override (via changedown/setDocumentState notification)
+         * 2. Server-resolved state (file header → project config → default=true)
+         *
+         * The website sends setDocumentState with tracking.enabled=false for
+         * non-native mode, preventing edit crystallization on the web viewer.
+         */
+        isTrackingEnabled(uri) {
+          const override = this.trackingOverride.get(uri);
+          if (override !== void 0)
+            return override;
+          const text = this.getDocumentText(uri);
+          if (!text)
+            return true;
+          return (0, document_state_1.resolveTracking)(text, this.projectTrackingDefault).enabled;
         }
         /**
          * Broadcast resolved document state (tracking + view mode) for a URI.
