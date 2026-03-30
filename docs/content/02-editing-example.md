@@ -28,7 +28,7 @@ This integration connects your markdown editing environment to open-source Criti
 
 {--F--}[^cn-39]{--igure--}[^cn-40] {--1--}[^cn-41] {--shows the component architecture for the ChangeDown integration, illustrating how the VS Code extension, the MCP tool server, and the CriticMarkup parser work together to deliver tracked changes.--}[^cn-42]
 
-{--![Diagram showing human and AI agent collaboration flow](changedown-intro_media/7bf4b3672eb5431bc7fe4330e9c6237948fd6493.png)--}[^cn-43]
+{--![Diagram showing human and AI agent collaboration flow](_media/diagram-collaboration.png)--}[^cn-43]
 
 {--**Figure 1:** ChangeDown extension integration with CriticMarkup services--}[^cn-44]
 
@@ -40,13 +40,13 @@ This integration connects your markdown editing environment to open-source Criti
 
 {++This arc++}[^cn-58]{++hitecture is illustrated in the following NEEDS ACTION: replace with actual figure reference diagram++}[^cn-59]{++.++}[^cn-60]
 
-{++![Diagram showing human and AI agent collaboration flow](changedown-intro_media/7bf4b3672eb5431bc7fe4330e9c6237948fd6493.png)++}[^cn-61]
+{++![Diagram showing human and AI agent collaboration flow](_media/diagram-collaboration.png)++}[^cn-61]
 
 {++*Figure 1: ChangeDown extension integration with CriticMarkup services overview*++}[^cn-62]
 
 **{--How an--}[^cn-63] Agent {~~E~>e~~}[^cn-64]diting {~~F~>f~~}[^cn-65]low{--s End-to-End--}[^cn-66]**
 
-{--![Diagram showing MCP plugin agent editing flow](changedown-intro_media/39147bb8e8058267e9a1c5e85296161e951acca4.png)--}[^cn-67]
+{--![Diagram showing MCP plugin agent editing flow](_media/diagram-plugin-flow.png)--}[^cn-67]
 
 {--**Figure 2:** ChangeDown Agent Editing and Review Integration Call flow--}[^cn-68]
 
@@ -67,7 +67,7 @@ When an agent connects to a tracked file in the editing environment, the followi
 
 {++The agent editing flow is illustrated in the following flow diagram.++}[^cn-105]
 
-{++![Diagram showing MCP plugin agent editing flow](changedown-intro_media/39147bb8e8058267e9a1c5e85296161e951acca4.png)++}[^cn-106]
+{++![Diagram showing MCP plugin agent editing flow](_media/diagram-plugin-flow.png)++}[^cn-106]
 
 {++*Figure 2: ChangeDown agent editing environment and review integration call flow*++}[^cn-107]
 

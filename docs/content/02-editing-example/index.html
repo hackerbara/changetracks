@@ -12,17 +12,17 @@
 <p>Here is how the integration works, where it fits across collaborative editing workflows, and what measurable improvements organizations report from deploying tracked change management.</p>
 <p><strong>ChangeDown integration architecture and design</strong></p>
 <p>This integration connects your markdown editing environment to open-source CriticMarkup services through a layered architecture designed for extensibility and reliability. The architecture comprises three integrated layers:</p>
-<p>{--<img src="changedown-intro_media/7bf4b3672eb5431bc7fe4330e9c6237948fd6493.png" alt="Diagram showing human and AI agent collaboration flow">--}</p>
+<p>{--<img src="_media/diagram-collaboration.png" alt="Diagram showing human and AI agent collaboration flow">--}</p>
 <ul>
 <li><strong>Editor</strong>  <strong>interaction layer:</strong> – The VS Code extension captures every keystroke and cursor movement, accumulating edits into boundary-delimited change operations that wrap automatically in CriticMarkup(CM) syntax before writing each attributed change to the file.</li>
 <li><strong>Connector layer:</strong> – The open source MCP tool server bridges AI agents to the same CriticMarkup format, translating propose_change calls into attributed edit operations with full metadata.</li>
 <li><strong>AI agent</strong> <strong>layer</strong> – Large language models and other AI agents interact with tracked files through the MCP tool server, generating context-aware edit proposals that reference LINE:HASH coordinates. The connector validates each proposal against the current file state before committing attributed changes to the CriticMarkup record using thesix-level matching cascade. Metadata extraction is handled by the footnote-native parser, delivering structured metadata extraction for attributed review responses.</li>
 </ul>
 <p>This architecture is illustrated in the following NEEDS ACTION: replace with actual figure reference diagram.</p>
-<p><img src="changedown-intro_media/7bf4b3672eb5431bc7fe4330e9c6237948fd6493.png" alt="Diagram showing human and AI agent collaboration flow"></p>
+<p><img src="_media/diagram-collaboration.png" alt="Diagram showing human and AI agent collaboration flow"></p>
 <p><em>Figure 1: ChangeDown extension integration with CriticMarkup services overview</em></p>
 <p>** Agent editing flow{--s End-to-End--}**</p>
-<p>{--<img src="changedown-intro_media/39147bb8e8058267e9a1c5e85296161e951acca4.png" alt="Diagram showing MCP plugin agent editing flow">--}</p>
+<p>{--<img src="_media/diagram-plugin-flow.png" alt="Diagram showing MCP plugin agent editing flow">--}</p>
 <p>When an agent connects to a tracked file in the editing environment, the following flow takes place:</p>
 <ol>
 <li><strong>Agent reads file state</strong> – The agent reads the current file state through the MCP read_tracked_file tool, which returns every line with its LINE:HASH coordinate. The agent receives the full document context including pending changes, author metadata, and review status for each  tracked operation.</li>
@@ -41,7 +41,7 @@
 </ol>
 <p>This architecture supports multiturn conversations with contextual awareness, allowing agents to reference earlier edits and build on previous review decisions within the same session.</p>
 <p>The agent editing flow is illustrated in the following flow diagram.</p>
-<p><img src="changedown-intro_media/39147bb8e8058267e9a1c5e85296161e951acca4.png" alt="Diagram showing MCP plugin agent editing flow"></p>
+<p><img src="_media/diagram-plugin-flow.png" alt="Diagram showing MCP plugin agent editing flow"></p>
 <p><em>Figure 2: ChangeDown agent editing environment and review integration call flow</em></p>
 <p>This solution integrates with your editing environment in the following ways for collaborative workflows.</p>
 <ul>
