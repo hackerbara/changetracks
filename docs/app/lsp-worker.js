@@ -21164,6 +21164,8 @@ This change's visible effect was absorbed by a later edit. The change is preserv
           return false;
         if ("settlement" in obj && typeof obj.settlement !== "object")
           return false;
+        if ("promotion" in obj && obj.promotion !== "auto" && obj.promotion !== "never")
+          return false;
         return true;
       }
       var DECORATION_NOTIFY_DEBOUNCE_MS = 60;
@@ -21177,6 +21179,7 @@ This change's visible effect was absorbed by a later edit. The change is preserv
           this.pendingWriteBack = /* @__PURE__ */ new Set();
           this.pendingCrystallizeEcho = /* @__PURE__ */ new Set();
           this.codeLensMode = "cursor";
+          this.promotionPolicy = "auto";
           this._gitGetWorkspaceRoot = async () => void 0;
           this._gitGetPreviousVersion = async () => void 0;
           this.options = options ?? {};
@@ -21446,6 +21449,9 @@ This change's visible effect was absorbed by a later edit. The change is preserv
           if (isChangedownInitOptions(raw)) {
             const identity = (raw.reviewerIdentity || raw.author || "").trim();
             this.reviewerIdentity = identity || void 0;
+            if (raw.promotion === "never") {
+              this.promotionPolicy = "never";
+            }
             if (raw.settlement) {
               this.projectConfig = {
                 ...this.projectConfig ?? core_2.DEFAULT_CONFIG,
@@ -21742,7 +21748,7 @@ This change's visible effect was absorbed by a later edit. The change is preserv
           const maxId = (0, core_1.scanMaxCnId)(text);
           this.pendingEditManager.initScIdCounter(uri, maxId);
           const isL3 = this.workspace.isFootnoteNative(text);
-          if (!isL3) {
+          if (!isL3 && this.promotionPolicy !== "never") {
             const l2Doc = this.workspace.parse(text, languageId);
             const l2Changes = l2Doc.getChanges();
             if (l2Changes.length > 0) {
@@ -21841,7 +21847,7 @@ This change's visible effect was absorbed by a later edit. The change is preserv
           }
           const isCrystallizeEcho = this.pendingCrystallizeEcho.delete(uri);
           const isL3 = this.workspace.isFootnoteNative(text);
-          if (!isL3 && !isCrystallizeEcho) {
+          if (!isL3 && !isCrystallizeEcho && this.promotionPolicy !== "never") {
             const doc = this.workspace.parse(text, languageId);
             const changes = doc.getChanges();
             if (changes.length > 0) {
