@@ -640,6 +640,13 @@
                 "when": "editorTextFocus"
             }
         ],
+        "grammars": [
+            {
+                "scopeName": "text.changedown.criticmarkup",
+                "path": "./syntaxes/changedown.tmLanguage.json",
+                "injectTo": ["text.html.markdown"]
+            }
+        ],
         "configuration": {
             "title": "ChangeDown",
             "properties": {

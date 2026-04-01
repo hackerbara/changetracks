@@ -26,7 +26,7 @@ BOLD='\033[1m'
 
 failed=0
 total=0
-TOTAL_PKGS=7
+TOTAL_PKGS=10
 
 build_pkg() {
   local name="$1"
@@ -60,6 +60,9 @@ build_pkg "@changedown/lsp-server"  "packages/lsp-server"              "npm run 
 build_pkg "changedown-vscode"       "packages/vscode-extension"        "npm run compile && npm run esbuild"
 build_pkg "@changedown/mcp"          "changedown-plugin/mcp-server"   "node esbuild.mjs"
 build_pkg "hooks-impl (plugin)"       "changedown-plugin/hooks-impl"   "node esbuild.mjs"
+build_pkg "@changedown/website-v2"    "website-v2"                     "npm run build"
+build_pkg "native SPA bundle"         "website-v2"                     "npx vite build --config vite.config.native.ts"
+build_pkg "mac-wrapper (Swift)"       "packages/mac-wrapper"           "swift build -c release"
 
 echo ""
 if [ $failed -eq 0 ]; then
@@ -107,6 +110,15 @@ if [ $failed -eq 0 ]; then
   else
     printf "${RED}FAIL${RESET}\n"
     cat /tmp/sc-vsce.log | head -15
+  fi
+
+  # Install CLI globally (provides cdown and changedown binaries on PATH)
+  printf "${BOLD}Installing CLI globally...${RESET} "
+  if npm install -g "$ROOT/packages/cli" >/tmp/sc-cli-install.log 2>&1; then
+    printf "${GREEN}ok${RESET} (cdown, changedown)\n"
+  else
+    printf "${RED}FAIL${RESET}\n"
+    cat /tmp/sc-cli-install.log | head -10
   fi
 
   # Install Cursor MCP config so the ChangeDown server appears in Cursor's MCP tool list.

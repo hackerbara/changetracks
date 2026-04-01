@@ -7,6 +7,7 @@ import { ChangeType, parseForFormat } from '@changedown/core';
 import { renderMarkdownToHtml } from './docx-preview-renderer';
 import { buildAnnotationCards } from './annotation-extractor';
 import { buildLoadingHtml, buildErrorHtml, buildChoiceHtml, buildPreviewHtml } from './docx-preview-html';
+import type { ViewMode } from '../view-mode';
 
 function rewriteImagePaths(markdown: string, mediaDir: string, webview: vscode.Webview): string {
   // Markdown paths are relative to where the .md file would sit (e.g., "basename_media/hash.png").
@@ -60,7 +61,7 @@ export class DocxEditorProvider implements vscode.CustomReadonlyEditorProvider {
     // State tracking
     let tempPath: string | undefined;
     let currentMdPath: string | undefined;
-    let currentViewMode = 'allMarkup';
+    let currentViewMode: ViewMode = 'review';
     let currentMediaDir: string | undefined;
 
     // Single consolidated message handler (Task 9 fix — no duplicate listeners)
@@ -154,7 +155,7 @@ export class DocxEditorProvider implements vscode.CustomReadonlyEditorProvider {
     webviewPanel: vscode.WebviewPanel,
     docxPath: string,
     fileName: string,
-    viewMode: string,
+    viewMode: ViewMode,
     onMediaDir?: (dir: string) => void,
   ): Promise<string | undefined> {
     webviewPanel.webview.html = buildLoadingHtml(fileName);
@@ -196,7 +197,7 @@ export class DocxEditorProvider implements vscode.CustomReadonlyEditorProvider {
     webviewPanel: vscode.WebviewPanel,
     markdown: string,
     fileName: string,
-    viewMode: string = 'allMarkup',
+    viewMode: ViewMode = 'review',
     mediaDir?: string
   ): Promise<void> {
     const doc = parseForFormat(markdown);

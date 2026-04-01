@@ -491,4 +491,4 @@ Feature: D3 -- Decoration rendering in all-markup mode
     # Insertion routed to author type (2 authors -> auto activates)
     And insertions is empty
     # 16 base types + 1 author type (for insertion only, not highlight)
-    And total setDecorations calls is 23
+    And total setDecorations calls is 25

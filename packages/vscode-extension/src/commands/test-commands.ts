@@ -6,7 +6,7 @@ import type { ExtensionController } from '../controller';
 import type { LanguageClient } from 'vscode-languageclient/node';
 import type { ChangeComments } from '../change-comments';
 import { ChangeType } from '@changedown/core';
-import { getCachedDecorationData, invalidateDecorationCache } from '../lsp-client';
+
 import { typeLabel } from '../visual-semantics';
 
 function testDocPath(): string {
@@ -157,7 +157,7 @@ export function registerTestCommands(
                     editor.selection = new vscode.Selection(0, 0, 0, 0);
 
                     // Invalidate decoration cache
-                    invalidateDecorationCache(uri);
+                    controller.invalidateDecorationCache(uri);
                 } finally {
                     controller.isApplyingTrackedEdit = false;
                 }
@@ -204,9 +204,9 @@ export function registerTestCommands(
             const pollInterval = 100;
             const start = Date.now();
             while (Date.now() - start < timeout) {
-                const cached = getCachedDecorationData(uri);
-                if (cached !== undefined) {
-                    fs.writeFileSync(statePath, JSON.stringify({ ready: true, changeCount: cached.changes.length, uri, timestamp: Date.now() }));
+                const count = controller.getCachedDecorationCount(uri);
+                if (count !== undefined) {
+                    fs.writeFileSync(statePath, JSON.stringify({ ready: true, changeCount: count, uri, timestamp: Date.now() }));
                     return;
                 }
                 await new Promise(r => setTimeout(r, pollInterval));

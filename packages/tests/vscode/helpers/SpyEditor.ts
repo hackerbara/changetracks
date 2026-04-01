@@ -42,19 +42,18 @@ export class SpyEditor implements EditorPort {
 
     /**
      * Get decorations for a specific type by its index in the order they were set.
-     * Order matches EditorDecorator.decorate() apply order:
-     *   0: insertions
-     *   1: deletions
-     *   2: substitutionOriginals
-     *   3: substitutionModifieds
-     *   4: highlights
-     *   5: comments
-     *   6: hiddens
-     *   7: unfolded
-     *   8: commentIcons
-     *   9: activeHighlights
-     *  10: moveFroms
-     *  11: moveTos
+     * Order matches applyPlan() canonical call order:
+     *   0: insertions         8: commentIcons
+     *   1: deletions          9: activeHighlights
+     *   2: substitutionOrig  10: moveFroms
+     *   3: substitutionMod   11: moveTos
+     *   4: highlights        12: settledRefs
+     *   5: comments          13: settledDims
+     *   6: hiddens           14: ghostDeletions
+     *   7: unfolded          15: consumedRanges
+     *                        16: consumingAnnotations
+     *                        17: ghostDelimiters
+     *                        18: ghostRefs
      */
     getByIndex(index: number): RecordedDecoration[] {
         const entries = Array.from(this.calls.entries());
@@ -80,6 +79,10 @@ export class SpyEditor implements EditorPort {
     get settledRefs(): RecordedDecoration[] { return this.getByIndex(12); }
     get settledDims(): RecordedDecoration[] { return this.getByIndex(13); }
     get ghostDeletions(): RecordedDecoration[] { return this.getByIndex(14); }
+    get consumedRanges(): RecordedDecoration[] { return this.getByIndex(15); }
+    get consumingAnnotations(): RecordedDecoration[] { return this.getByIndex(16); }
+    get ghostDelimiters(): RecordedDecoration[] { return this.getByIndex(17); }
+    get ghostRefs(): RecordedDecoration[] { return this.getByIndex(18); }
 
     /** Total number of decoration types that were set */
     get callCount(): number { return this.calls.size; }

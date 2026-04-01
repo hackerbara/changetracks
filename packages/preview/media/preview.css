@@ -238,3 +238,60 @@ pre code .cn-move-to {
     border-top: none;
     padding-top: 0.5em;
 }
+
+/* === Changes view mode: simplified preview ===
+ * Deletions hidden, insertions shown as plain text (green tint preserved),
+ * change gutters indicate which paragraphs contain edits.
+ * Activated by data-view-mode="changes" attribute on the preview container.
+ *
+ * KEEP IN SYNC with generateViewModeCSS() in src/generate-css.ts —
+ * that function returns these same rules as a string for webview consumers. */
+
+/* Hide deletions, move sources, move labels */
+[data-view-mode="changes"] .cn-del,
+[data-view-mode="changes"] .cn-sub-del,
+[data-view-mode="changes"] del.cn-move-from,
+[data-view-mode="changes"] .cn-move-label { display: none; }
+
+/* Insertions as plain text (keep green color, remove underline) */
+[data-view-mode="changes"] .cn-ins,
+[data-view-mode="changes"] .cn-sub-ins,
+[data-view-mode="changes"] ins.cn-move-to { text-decoration: none; }
+
+/* Hide comments, highlights, metadata, footnotes, ref badges */
+[data-view-mode="changes"] .cn-comment { display: none; }
+[data-view-mode="changes"] .cn-hl { background: none; padding: 0; }
+[data-view-mode="changes"] .cn-anchor-meta { display: none; }
+[data-view-mode="changes"] .cn-footnotes { display: none; }
+[data-view-mode="changes"] .cn-ref { display: none; }
+
+/* Reset status dimming — in simplified view, all text reads at full opacity */
+[data-view-mode="changes"] .cn-accepted { opacity: 1; }
+[data-view-mode="changes"] .cn-rejected { opacity: 1; font-style: normal; }
+
+/* Change gutter: insertion (green) */
+[data-view-mode="changes"] :is(p,li,h1,h2,h3,h4,h5,h6,blockquote,pre):has(ins.cn-ins) {
+  border-left: 3px solid #66BB6A; padding-left: 8px; margin-left: -12px;
+}
+.vscode-light [data-view-mode="changes"] :is(p,li,h1,h2,h3,h4,h5,h6,blockquote,pre):has(ins.cn-ins),
+.cn-light [data-view-mode="changes"] :is(p,li,h1,h2,h3,h4,h5,h6,blockquote,pre):has(ins.cn-ins) {
+  border-left-color: #1E824C;
+}
+
+/* Change gutter: deletion only (red) — paragraph has deletion but no insertion */
+[data-view-mode="changes"] :is(p,li,h1,h2,h3,h4,h5,h6,blockquote,pre):has(del.cn-del):not(:has(ins.cn-ins)) {
+  border-left: 3px solid #EF5350; padding-left: 8px; margin-left: -12px; min-height: 1.2em;
+}
+.vscode-light [data-view-mode="changes"] :is(p,li,h1,h2,h3,h4,h5,h6,blockquote,pre):has(del.cn-del):not(:has(ins.cn-ins)),
+.cn-light [data-view-mode="changes"] :is(p,li,h1,h2,h3,h4,h5,h6,blockquote,pre):has(del.cn-del):not(:has(ins.cn-ins)) {
+  border-left-color: #C0392B;
+}
+
+/* Change gutter: substitution (blue) */
+[data-view-mode="changes"] :is(p,li,h1,h2,h3,h4,h5,h6,blockquote,pre):has(.cn-sub-del) {
+  border-left: 3px solid #64B5F6; padding-left: 8px; margin-left: -12px;
+}
+.vscode-light [data-view-mode="changes"] :is(p,li,h1,h2,h3,h4,h5,h6,blockquote,pre):has(.cn-sub-del),
+.cn-light [data-view-mode="changes"] :is(p,li,h1,h2,h3,h4,h5,h6,blockquote,pre):has(.cn-sub-del) {
+  border-left-color: #2980B9;
+}

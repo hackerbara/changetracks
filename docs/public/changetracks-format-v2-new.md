@@ -1,4 +1,4 @@
-# ChangeTracks Format Specification
+# ChangeDown Format Specification
 
 **Version:** 2.0
 **Date:** 2026-03-23
@@ -6,7 +6,7 @@
 
 ## 1. What This Is
 
-ChangeTracks puts the reason next to the change.
+ChangeDown puts the reason next to the change.
 
 A change to a file is wrapped in [CriticMarkup](https://github.com/CriticMarkup/CriticMarkup-toolkit)
 (Weatherhead and Hess, 2013). A markdown footnote carries who proposed it, when,
@@ -16,7 +16,7 @@ bytes. No external database. No proprietary format.
 
 The format is a universal interchange: any system that produces changes to a
 markdown file — a human typing, an AI agent calling tools, a DOCX import, a CRDT
-sync layer — emits well-formed ChangeTracks and enters the same deliberation
+sync layer — emits well-formed ChangeDown and enters the same deliberation
 record. The format specifies what appears on the durable side of the
 **crystallization membrane**: the boundary where transient activity becomes a
 well-formed footnote with identity, anchoring, and provenance. What crosses the
@@ -51,9 +51,9 @@ few or as many fields as needed.
 Add a footnote reference and it becomes **Level 2** — full deliberation:
 
 ```markdown
-The API should use GraphQL[^ct-1] for the public interface.
+The API should use GraphQL for the public interface.
 
-[^ct-1]: @alice | 2024-01-15 | sub | proposed
+[^cn-1]: @alice | 2024-01-15 | sub | proposed
     context: "The API should use {REST} for the public interface"
     @alice 2024-01-15: GraphQL reduces over-fetching for dashboard clients.
 ```
@@ -97,21 +97,21 @@ corrupts the deliberation record.
 
 ### Change IDs
 
-`[^ct-N]` — standard markdown footnote reference. The `ct-` prefix is mandatory.
+`[^cn-N]` — standard markdown footnote reference. The `cn-` prefix is mandatory.
 IDs are document-unique and monotonically increasing. New changes take the next
 integer after the highest existing ID, even after compaction removes earlier ones.
 
 A footnote with only a header line and no body is valid. Definitions SHOULD appear
-in `ct-N` order.
+in `cn-N` order.
 
 ### Grouped Changes
 
-Dotted IDs under a shared parent: `ct-17.1`, `ct-17.2`. The parent is the logical
-operation; children are components. One level only — `ct-17.1.1` is never valid.
+Dotted IDs under a shared parent: `cn-17.1`, `cn-17.2`. The parent is the logical
+operation; children are components. One level only — `cn-17.1.1` is never valid.
 Accept the parent → resolves all children. Reject a child → carves out one exception.
 
-A change may carry multiple refs: `slow[^ct-1][^ct-2]` signals
-ct-2 supersedes ct-1.
+A change may carry multiple refs: `slow` signals
+cn-2 supersedes cn-1.
 
 ## 4. The Footnote
 
@@ -121,7 +121,7 @@ a text diff lives here.
 ### Header
 
 ```
-[^ct-N]: @author | date | type | status
+[^cn-N]: @author | date | type | status
 ```
 
 Types: `ins`, `del`, `sub`, `highlight`, `comment`, `move`. The `move` type is
@@ -155,8 +155,8 @@ CriticMarkup in the body is their anchor.
 | `rejected:`        | Same pattern                                    | Yes        |
 | `request-changes:` | Between approval and rejection                  | Yes        |
 | `revisions:`       | Amendment history; `r1`, `r2` entries below     | No         |
-| `supersedes:`      | `ct-N` — this replaces ct-N                     | No         |
-| `superseded-by:`   | `ct-N` — ct-N replaces this                     | Yes        |
+| `supersedes:`      | `cn-N` — this replaces cn-N                     | No         |
+| `superseded-by:`   | `cn-N` — cn-N replaces this                     | Yes        |
 | `proposed-text:`   | Text for footnote-resident alternative          | No         |
 | `previous:`        | Pre-amendment text                              | No         |
 | `original:`        | Pre-change content for range sub/del            | No         |
@@ -213,7 +213,7 @@ body is clean text — the anchor must locate the change from outside the body.
 A content-addressed coordinate. `LINE` is 1-indexed. `HASH` is:
 
 1. Strip trailing `\r`
-2. Remove footnote references matching `\[\^ct-[\w.]+\]`
+2. Remove footnote references matching `\[\^cn-[\w.]+\]`
 3. Remove all whitespace
 4. `xxHash32` (seed 0) of the UTF-8 bytes
 5. Modulo 256
@@ -299,14 +299,14 @@ contain the text described by the edit-op? If yes, coherence holds.
 
 ### 7.3 Slices
 
-A file may show changes `ct-190` through `ct-195` with everything before
+A file may show changes `cn-190` through `cn-195` with everything before
 compacted away. A **compaction boundary** marks the start:
 
 ```
-[^ct-7]: compaction-boundary
+[^cn-7]: compaction-boundary
 ```
 
-Next `ct-N` ID in log order. Attribution optional. Excluded from change counts
+Next `cn-N` ID in log order. Attribution optional. Excluded from change counts
 and coherence calculations. Never auto-removed.
 
 Within a slice, the body at the boundary is ground truth, each footnote carries
@@ -361,7 +361,7 @@ between range markers is live and executable.
 ## 11. File Header
 
 ```
-<!-- ctrcks.com/v2: tracked -->
+<!-- changedown.com/v1: tracked -->
 ```
 
 First line (or first line after YAML frontmatter). Tools auto-insert on first
@@ -373,16 +373,16 @@ An L2 document. Two decided changes with clean body text and edit-op lines in
 footnotes. One proposed change with inline CriticMarkup.
 
 ```markdown
-<!-- ctrcks.com/v2: tracked -->
+<!-- changedown.com/v1: tracked -->
 # API Design Document
 
 The API should use GraphQL for the public interface
 and gRPC for internal service communication.
 
 Authentication uses OAuth 2.0 with JWT tokens for
-all endpoints. Rate limiting is set to 100 req/min[^ct-3].
+all endpoints. Rate limiting is set to 100 req/min.
 
-[^ct-1]: @alice | 2024-01-15 | sub | accepted
+[^cn-1]: @alice | 2024-01-15 | sub | accepted
     4:e2 should use GraphQL for the public
     approved: @eve 2024-01-20
     approved: @bob 2024-01-21
@@ -391,14 +391,14 @@ all endpoints. Rate limiting is set to 100 req/min[^ct-3].
       @dave 2024-01-17: Fair point. Benchmarks are convincing.
     resolved @dave 2024-01-17
 
-[^ct-2]: @alice | 2024-01-15 | ins | accepted
+[^cn-2]: @alice | 2024-01-15 | ins | accepted
     7:91 uses OAuth 2.0 with JWT tokens for
     approved: @eve 2024-01-20
     @bob 2024-01-16 [question]: What about latency for gRPC?
       @alice 2024-01-17: Sub-millisecond on our test cluster.
     resolved @bob 2024-01-18
 
-[^ct-3]: @carol | 2024-01-17 | highlight | proposed
+[^cn-3]: @carol | 2024-01-17 | highlight | proposed
     @carol 2024-01-17 [issue/blocking]: 100/min feels low for production.
       @alice 2024-01-18: Depends on infrastructure costs.
       @dave 2024-01-19 [todo]: I can run load tests next week.

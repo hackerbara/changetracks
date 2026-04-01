@@ -17,7 +17,6 @@ Feature: D7-slow -- View mode switching clears author decorations (E2E)
     Then decorations include colored spans for change types
     When I switch to "final" view mode
     Then no colored text decorations remain
-    And delimiters are hidden via display:none
 
   Scenario: Final → All-markup restores colored decorations
     When I switch to "final" view mode

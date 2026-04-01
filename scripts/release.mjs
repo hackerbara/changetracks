@@ -105,6 +105,10 @@ async function main() {
   console.log('\nStep 2: Building all packages...');
   run('node scripts/build.mjs');
 
+  // 2b. Package .app bundle
+  console.log('\nStep 2b: Packaging .app bundle...');
+  run('node scripts/package-app.mjs --version=' + version);
+
   // 3. Tests
   console.log('\nStep 3: Running tests...');
   try {
@@ -148,8 +152,11 @@ async function main() {
   [ ] Push: git push origin main && git push origin v${version}
   [ ] GitHub Release: create at github.com/hackerbara/changedown/releases/new
       Attach: packages/vscode-extension/changedown-vscode-${version}.vsix
+      Attach: packages/mac-wrapper/ChangeDown-arm64.zip
+      Attach: packages/mac-wrapper/ChangeDown-arm64.zip.sha256
   [ ] Verify: npx changedown init (in a fresh directory)
   [ ] Verify: /plugin marketplace add hackerbara/changedown (Claude Code)
+  [ ] Verify: curl -fsSL .../install-viewer.sh | sh (from a clean machine)
 `);
 }
 

@@ -29,6 +29,8 @@ import type {
   DocumentLink,
   WorkspaceEdit,
   FoldingRange,
+  DefinitionParams,
+  Location,
 } from 'vscode-languageserver';
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import {
@@ -59,8 +61,9 @@ import { createDiagnostics } from './capabilities/diagnostics';
 import { createCodeActions } from './capabilities/code-actions';
 import { createDocumentLinks } from './capabilities/document-links';
 import { createFoldingRanges, computeAutoFoldLines } from './capabilities/folding-ranges';
+import { getDefinitionForOffset } from './capabilities/definition';
 import { PendingEditManager, type CrystallizedEdit } from './pending-edit-manager';
-import { offsetRangeToLspRange, positionToOffset } from './converters';
+import { offsetRangeToLspRange, offsetToPosition, positionToOffset } from './converters';
 import { createLspDocumentState } from './document-state';
 import type { PendingOverlay, LspDocumentState } from './document-state';
 
@@ -77,6 +80,8 @@ export interface AnnotateParams {
 interface ChangedownInitOptions {
   reviewerIdentity?: string;
   author?: string;
+  settlement?: { auto_on_approve?: boolean; auto_on_reject?: boolean };
+  promotion?: 'auto' | 'never';
 }
 
 /**
@@ -87,6 +92,8 @@ function isChangedownInitOptions(value: unknown): value is ChangedownInitOptions
   const obj = value as Record<string, unknown>;
   if ('reviewerIdentity' in obj && typeof obj.reviewerIdentity !== 'string') return false;
   if ('author' in obj && typeof obj.author !== 'string') return false;
+  if ('settlement' in obj && typeof obj.settlement !== 'object') return false;
+  if ('promotion' in obj && obj.promotion !== 'auto' && obj.promotion !== 'never') return false;
   return true;
 }
 
@@ -131,6 +138,8 @@ export class ChangedownServer {
   public reviewerIdentity: string | undefined;
   /** Project config tracking default (from .changedown/config.toml). Set by Task 11. */
   private projectTrackingDefault: string | undefined;
+  /** Client-side tracking override per URI. Set via changedown/setDocumentState notification. */
+  private trackingOverride = new Map<string, boolean>();
   /** Full parsed project config (from .changedown/config.toml). */
   private projectConfig: ChangeDownConfig | undefined;
   /** Coherence threshold (0–100) from project config coherence.threshold. */
@@ -144,6 +153,7 @@ export class ChangedownServer {
   /** Workspace root path for config file resolution. */
   private workspaceRoot: string | undefined;
   private codeLensMode: CodeLensMode = 'cursor';
+  private promotionPolicy: 'auto' | 'never' = 'auto';
   private readonly options: ServerOptions;
 
   /**
@@ -160,6 +170,13 @@ export class ChangedownServer {
     this.workspace = new Workspace();
     this.pendingEditManager = new PendingEditManager(
       (edit: CrystallizedEdit) => this.handleCrystallizedEdit(edit),
+      (uri, overlay) => {
+        const state = this.docStates.get(uri);
+        if (state) {
+          state.overlay = overlay;
+          this.scheduleDecorationResend(uri);
+        }
+      },
     );
 
     this.setupHandlers();
@@ -200,6 +217,7 @@ export class ChangedownServer {
       this.docStates.delete(uri);
       this.lastCoherenceStatus.delete(uri);
       this.pendingWriteBack.delete(uri);
+      this.trackingOverride.delete(uri);
       this.pendingEditManager.removeDocument(uri);
     });
 
@@ -220,6 +238,9 @@ export class ChangedownServer {
 
     // Folding ranges capability
     this.connection.onFoldingRanges(this.handleFoldingRanges.bind(this));
+
+    // Go to Definition capability
+    this.connection.onDefinition(this.handleDefinition.bind(this));
 
     // Custom request: annotate file from git changes
     this.connection.onRequest('changedown/annotate', this.handleAnnotate.bind(this));
@@ -256,6 +277,29 @@ export class ChangedownServer {
         this.pendingEditManager.flush(params.textDocument.uri);
       } catch (err) {
         this.connection.console.error(`changedown/flushPending handler error: ${err}`);
+      }
+    });
+
+    // Client-side tracking override: allows the client (website, extension) to
+    // enable or disable edit tracking per document. When set, this overrides the
+    // server-resolved tracking state (file header → project config → default).
+    // The website uses this to disable tracking (non-native mode).
+    this.connection.onNotification('changedown/setDocumentState', (params: {
+      textDocument: { uri: string };
+      tracking?: { enabled: boolean };
+    }) => {
+      try {
+        const uri = params.textDocument.uri;
+        if (params.tracking !== undefined) {
+          this.trackingOverride.set(uri, params.tracking.enabled);
+          // If tracking was just disabled, flush any pending edits so they don't
+          // linger and crystallize later if tracking is re-enabled.
+          if (!params.tracking.enabled) {
+            this.pendingEditManager.removeDocument(uri);
+          }
+        }
+      } catch (err) {
+        this.connection.console.error(`changedown/setDocumentState handler error: ${err}`);
       }
     });
 
@@ -382,8 +426,25 @@ export class ChangedownServer {
     }) => {
       try {
         const uri = params.textDocument.uri;
-        const text = this.docStates.get(uri)?.text ?? '';
-        this.pendingEditManager.handleCursorMove(uri, params.offset, text);
+        const state = this.docStates.get(uri);
+        const text = state?.text ?? '';
+        // Only forward cursor moves to PEM when tracking is enabled —
+        // cursor-move flush is irrelevant when edits are not tracked.
+        if (this.isTrackingEnabled(uri)) {
+          this.pendingEditManager.handleCursorMove(uri, params.offset, text);
+        }
+
+        // Update cursorState for CodeLens only when the cursor moves to a different line or change
+        if (state) {
+          const pos = offsetToPosition(text, params.offset);
+          const hit = state.parseResult?.changeAtOffset(params.offset);
+          const newLine = pos.line;
+          const newChangeId = hit?.id;
+          if (newLine !== state.cursorState?.line || newChangeId !== state.cursorState?.changeId) {
+            state.cursorState = { line: newLine, changeId: newChangeId };
+            this.connection.sendRequest(CodeLensRefreshRequest.type).catch(() => {});
+          }
+        }
       } catch (err) {
         this.connection.console.error(`changedown/cursorMove handler error: ${err}`);
       }
@@ -409,41 +470,53 @@ export class ChangedownServer {
     }) => {
       try {
         const uri = params.textDocument.uri;
-        let currentText = this.docStates.get(uri)?.text ?? '';
 
-        for (const change of params.contentChanges) {
-          if (!change.range) {
-            // Full sync fallback — no range means entire document replaced.
-            // Skip tracking for full replacement.
-            // Consume any pending echo: website-v2 sends full-doc sync when
-            // applying crystallized edits, so the echo arrives without a range.
-            this.pendingEditManager.consumeEcho(uri);
-            currentText = change.text;
-            continue;
+        // Skip edit tracking when tracking is disabled for this document.
+        // The website sends changedown/setDocumentState with tracking.enabled=false
+        // for non-native mode; documents with an "untracked" header or project
+        // config also resolve to disabled. Document sync continues below regardless.
+        if (!this.isTrackingEnabled(uri)) {
+          // still need to fall through to document sync below
+        } else {
+          let currentText = this.docStates.get(uri)?.text ?? '';
+
+          for (const change of params.contentChanges) {
+            if (!change.range) {
+              // Full sync fallback — no range means entire document replaced.
+              // Skip tracking for full replacement.
+              // Consume any pending echo: website-v2 sends full-doc sync when
+              // applying crystallized edits, so the echo arrives without a range.
+              this.pendingEditManager.consumeEcho(uri);
+              currentText = change.text;
+              continue;
+            }
+
+            const offset = positionToOffset(currentText, change.range.start);
+            const endOffset = positionToOffset(currentText, change.range.end);
+            const rangeLength = endOffset - offset;
+            const deletedText = currentText.substring(offset, endOffset);
+            const insertedText = change.text;
+
+            let type: 'insertion' | 'deletion' | 'substitution';
+            if (rangeLength === 0 && insertedText.length > 0) {
+              type = 'insertion';
+            } else if (rangeLength > 0 && insertedText.length === 0) {
+              type = 'deletion';
+            } else {
+              type = 'substitution';
+            }
+
+            this.pendingEditManager.handleChange(
+              uri, type, offset, insertedText, deletedText, currentText,
+            );
+
+            // Apply this change to currentText so the next change in the batch
+            // operates on correct text (LSP sends changes against updated state).
+            currentText = currentText.substring(0, offset) + insertedText + currentText.substring(endOffset);
           }
-
-          const offset = positionToOffset(currentText, change.range.start);
-          const endOffset = positionToOffset(currentText, change.range.end);
-          const rangeLength = endOffset - offset;
-          const deletedText = currentText.substring(offset, endOffset);
-          const insertedText = change.text;
-
-          let type: 'insertion' | 'deletion' | 'substitution';
-          if (rangeLength === 0 && insertedText.length > 0) {
-            type = 'insertion';
-          } else if (rangeLength > 0 && insertedText.length === 0) {
-            type = 'deletion';
-          } else {
-            type = 'substitution';
-          }
-
-          this.pendingEditManager.handleChange(
-            uri, type, offset, insertedText, deletedText, currentText,
-          );
-
-          // Apply this change to currentText so the next change in the batch
-          // operates on correct text (LSP sends changes against updated state).
-          currentText = currentText.substring(0, offset) + insertedText + currentText.substring(endOffset);
+          // Update docStates.text so PEM crystallization sees post-edit text
+          const docState = this.docStates.get(uri);
+          if (docState) docState.text = currentText;
         }
       } catch (err) {
         this.connection.console.error(`textDocument/didChange (edit tracking) error: ${err}`);
@@ -496,6 +569,21 @@ export class ChangedownServer {
     if (isChangedownInitOptions(raw)) {
       const identity = (raw.reviewerIdentity || raw.author || '').trim();
       this.reviewerIdentity = identity || undefined;
+
+      // Apply promotion policy from initializationOptions
+      if (raw.promotion === 'never') {
+        this.promotionPolicy = 'never';
+      }
+
+      // Apply settlement config from initializationOptions (used by browser clients
+      // that can't load .changedown/config.toml from the filesystem)
+      if (raw.settlement) {
+        this.projectConfig = {
+          ...(this.projectConfig ?? DEFAULT_CONFIG),
+          settlement: { ...DEFAULT_CONFIG.settlement, ...raw.settlement },
+        };
+        this.coherenceThreshold = (this.projectConfig.coherence ?? DEFAULT_CONFIG.coherence).threshold;
+      }
     }
 
     if (params.rootUri) {
@@ -528,7 +616,9 @@ export class ChangedownServer {
           resolveProvider: false
         },
         // Folding ranges - L3 footnote sections + deletion hiding
-        foldingRangeProvider: true
+        foldingRangeProvider: true,
+        // Go to Definition - jump from change content to its footnote
+        definitionProvider: true
       }
     };
   }
@@ -610,6 +700,24 @@ export class ChangedownServer {
     const merged = [...parseChanges, synthetic];
     merged.sort((a, b) => a.range.start - b.range.start);
     return merged;
+  }
+
+  /**
+   * Check if edit tracking is enabled for a URI.
+   *
+   * Resolution order:
+   * 1. Client-side override (via changedown/setDocumentState notification)
+   * 2. Server-resolved state (file header → project config → default=true)
+   *
+   * The website sends setDocumentState with tracking.enabled=false for
+   * non-native mode, preventing edit crystallization on the web viewer.
+   */
+  public isTrackingEnabled(uri: string): boolean {
+    const override = this.trackingOverride.get(uri);
+    if (override !== undefined) return override;
+    const text = this.getDocumentText(uri);
+    if (!text) return true; // default: tracking enabled
+    return resolveTracking(text, this.projectTrackingDefault).enabled;
   }
 
   /**
@@ -789,7 +897,7 @@ export class ChangedownServer {
 
     const isL3 = this.workspace.isFootnoteNative(text);
 
-    if (!isL3) {
+    if (!isL3 && this.promotionPolicy !== 'never') {
       // Check if this is an L2 document with changes that should be promoted
       const l2Doc = this.workspace.parse(text, languageId);
       const l2Changes = l2Doc.getChanges();
@@ -852,7 +960,10 @@ export class ChangedownServer {
           this.broadcastDocumentState(uri);
           return;
         } catch (err) {
-          // Conversion failed — fall through to normal L2 handling
+          // Conversion or applyEdit failed — reset isPromoting so subsequent
+          // didChange events aren't silently skipped, then fall through to
+          // normal L2 handling.
+          state.isPromoting = false;
           this.connection.console?.error(
             `[promoteToL3] conversion error for ${uri}: ${err}`
           );
@@ -931,7 +1042,7 @@ export class ChangedownServer {
     // Skip if this didChange is the echo from a crystallize edit we just sent
     const isCrystallizeEcho = this.pendingCrystallizeEcho.delete(uri);
     const isL3 = this.workspace.isFootnoteNative(text);
-    if (!isL3 && !isCrystallizeEcho) {
+    if (!isL3 && !isCrystallizeEcho && this.promotionPolicy !== 'never') {
       const doc = this.workspace.parse(text, languageId);
       const changes = doc.getChanges();
       if (changes.length > 0) {
@@ -1039,6 +1150,23 @@ export class ChangedownServer {
       return createHover(params.position, changes, document.getText());
     } catch (err) {
       this.connection.console.error(`handleHover error: ${err}`);
+      return null;
+    }
+  }
+
+  /**
+   * Handle go-to-definition request
+   * Jump from change content to its footnote definition
+   */
+  public handleDefinition(params: DefinitionParams): Location | null {
+    try {
+      const document = this.documents.get(params.textDocument.uri);
+      if (!document) return null;
+      const offset = document.offsetAt(params.position);
+      const changes = this.getMergedChanges(params.textDocument.uri);
+      return getDefinitionForOffset(params.textDocument.uri, offset, changes);
+    } catch (err) {
+      this.connection.console.error(`handleDefinition error: ${err}`);
       return null;
     }
   }

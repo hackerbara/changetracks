@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import type { PendingOverlay, ChangeNode } from '@changedown/core';
 import { scanMaxCnId } from '@changedown/core';
 import type { BatchEditSender } from '../lsp-client';
-import { invalidateDecorationCache } from '../lsp-client';
+
 import { DocumentStateManager } from './document-state-manager';
 import { findSupportedEditor } from './shared';
 import type { ViewMode } from '../view-mode';
@@ -254,7 +254,7 @@ export class LspBridge implements vscode.Disposable {
                 await vscode.workspace.applyEdit(wsEdit);
 
                 // Invalidate stale cache immediately
-                invalidateDecorationCache(uri);
+                this.docStateManager.invalidateDecorationCache(uri);
 
                 // Update shadow and version immediately (not after debounce)
                 const state = this.docStateManager.getState(uri);

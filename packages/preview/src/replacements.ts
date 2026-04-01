@@ -254,6 +254,9 @@ function changeToReplacement(change: ChangeNode, src: string, options: PreviewOp
     // Bidirectional linking attribute for annotation sidebar
     const pairAttr = ` data-cn-pair="cn-pair-${change.range.start}"`;
 
+    // Navigation attribute: allows direct DOM lookup by change ID
+    const changeIdAttr = change.id ? ` data-change-id="${escapeAttr(change.id)}"` : '';
+
     // Move operations get dedicated classes with directional labels
     if (change.moveRole === 'from') {
         const content = src.slice(change.contentRange.start, change.contentRange.end);
@@ -266,7 +269,7 @@ function changeToReplacement(change: ChangeNode, src: string, options: PreviewOp
         return {
             start: change.range.start,
             end: change.range.end,
-            html: `<del class="cn-move-from ${sc}"${pairAttr}>${escapeHtml(content)}</del>${badge}${annotation}${label}`,
+            html: `<del class="cn-move-from ${sc}"${pairAttr}${changeIdAttr}>${escapeHtml(content)}</del>${badge}${annotation}${label}`,
         };
     }
     if (change.moveRole === 'to') {
@@ -277,7 +280,7 @@ function changeToReplacement(change: ChangeNode, src: string, options: PreviewOp
             ? `<a class="cn-move-label" href="#cn-fn-ref-${escapeAttr(pairedId)}" title="moved from ${escapeAttr(pairedId)}">&#x2190; moved here</a> `
             : '<span class="cn-move-label">&#x2190; moved here</span> ';
         const annotation = buildAnchorAnnotation(change, options.metadataDetail);
-        const moveToIns = injectAuthorColor(`<ins class="cn-move-to ${sc}"${pairAttr}>${sanitizeContentHtml(content)}</ins>`, change, options, authorMap);
+        const moveToIns = injectAuthorColor(`<ins class="cn-move-to ${sc}"${pairAttr}${changeIdAttr}>${sanitizeContentHtml(content)}</ins>`, change, options, authorMap);
         return {
             start: change.range.start,
             end: change.range.end,
@@ -289,7 +292,7 @@ function changeToReplacement(change: ChangeNode, src: string, options: PreviewOp
         case ChangeType.Insertion: {
             const content = change.modifiedText ?? src.slice(change.contentRange.start, change.contentRange.end);
             const annotation = buildAnchorAnnotation(change, options.metadataDetail);
-            const insHtml = injectAuthorColor(`<ins class="cn-ins ${sc}"${pairAttr}>${sanitizeContentHtml(content)}</ins>`, change, options, authorMap);
+            const insHtml = injectAuthorColor(`<ins class="cn-ins ${sc}"${pairAttr}${changeIdAttr}>${sanitizeContentHtml(content)}</ins>`, change, options, authorMap);
             return {
                 start: change.range.start,
                 end: change.range.end,
@@ -303,7 +306,7 @@ function changeToReplacement(change: ChangeNode, src: string, options: PreviewOp
             return {
                 start: change.range.start,
                 end: change.range.end,
-                html: `<del class="cn-del ${sc}"${pairAttr}>${sanitizeContentHtml(content)}</del>${badge}${annotation}`,
+                html: `<del class="cn-del ${sc}"${pairAttr}${changeIdAttr}>${sanitizeContentHtml(content)}</del>${badge}${annotation}`,
             };
         }
         case ChangeType.Substitution: {
@@ -315,7 +318,7 @@ function changeToReplacement(change: ChangeNode, src: string, options: PreviewOp
             return {
                 start: change.range.start,
                 end: change.range.end,
-                html: `<del class="cn-sub-del ${sc}"${pairAttr}>${sanitizeContentHtml(original)}</del>${insHtml}${badge}${annotation}`,
+                html: `<del class="cn-sub-del ${sc}"${pairAttr}${changeIdAttr}>${sanitizeContentHtml(original)}</del>${insHtml}${badge}${annotation}`,
             };
         }
         case ChangeType.Highlight: {
@@ -324,7 +327,7 @@ function changeToReplacement(change: ChangeNode, src: string, options: PreviewOp
             const content = change.originalText ?? src.slice(change.contentRange.start, change.contentRange.end);
             const annotation = buildAnchorAnnotation(change, options.metadataDetail);
 
-            const markHtml = `<mark class="cn-hl"${pairAttr}>${sanitizeContentHtml(content)}</mark>`;
+            const markHtml = `<mark class="cn-hl"${pairAttr}${changeIdAttr}>${sanitizeContentHtml(content)}</mark>`;
             return {
                 start: change.range.start,
                 end: change.range.end,
@@ -351,7 +354,7 @@ function changeToReplacement(change: ChangeNode, src: string, options: PreviewOp
             return {
                 start: change.range.start,
                 end: change.range.end,
-                html: `<span class="cn-comment"${commentPairAttr} title="${escapeHtml(comment)}">&#x1F4AC;</span>${badge}${annotation}`,
+                html: `<span class="cn-comment"${commentPairAttr}${changeIdAttr} title="${escapeHtml(comment)}">&#x1F4AC;</span>${badge}${annotation}`,
             };
         }
         default:

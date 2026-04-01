@@ -2,7 +2,7 @@
  * @fast tier step definitions for decoration tests (D3–D6).
  *
  * These tests run in-process via cucumber-js (no VS Code launch).
- * A vscode mock is installed before importing EditorDecorator/SpyEditor
+ * A vscode mock is installed before importing VSCodeDecorationTarget/SpyEditor
  * so that `require('vscode')` resolves to lightweight stubs.
  */
 
@@ -14,7 +14,9 @@ import { Given, When, Then, Before } from '@cucumber/cucumber';
 import { strict as assert } from 'assert';
 import { CriticMarkupParser, ChangeType, VirtualDocument } from '@changedown/core';
 import type { ChangeNode } from '@changedown/core';
-import { EditorDecorator } from 'changedown-vscode/internals';
+import { buildDecorationPlan, buildOverviewRulerPlan, applyPlan } from '@changedown/core/dist/host/index';
+import type { ViewMode } from '@changedown/core/dist/host/index';
+import { VSCodeDecorationTarget } from 'changedown-vscode/internals';
 import { SpyEditor, RecordedDecoration } from '../../helpers/SpyEditor';
 import type { ChangeDownWorld } from './world';
 
@@ -22,7 +24,7 @@ import type { ChangeDownWorld } from './world';
 
 declare module './world' {
     interface ChangeDownWorld {
-        decoratorInstance?: EditorDecorator;
+        decoratorInstance?: VSCodeDecorationTarget;
         decoratorStyle?: 'foreground' | 'background';
         decoratorAuthorColors?: 'auto' | 'always' | 'never';
         spyEditor?: SpyEditor;
@@ -38,7 +40,10 @@ Before({ tags: '@fast and (@D3 or @D4 or @D5 or @D6 or @D7 or @D8 or @D9 or @D10
     resetDecorationTypeCounter();
     this.decoratorStyle = 'foreground';
     this.decoratorAuthorColors = 'auto';
-    this.decoratorInstance = undefined;
+    if (this.decoratorInstance) {
+        this.decoratorInstance.dispose();
+        this.decoratorInstance = undefined;
+    }
     this.spyEditor = undefined;
     this.decorationText = undefined;
     this.parsedDoc = undefined;
@@ -47,14 +52,56 @@ Before({ tags: '@fast and (@D3 or @D4 or @D5 or @D6 or @D7 or @D8 or @D9 or @D10
 
 // ── Helpers ─────────────────────────────────────────────────────────
 
-function getOrCreateDecorator(world: ChangeDownWorld): EditorDecorator {
+function getOrCreateTarget(world: ChangeDownWorld): VSCodeDecorationTarget {
     if (!world.decoratorInstance) {
-        world.decoratorInstance = new EditorDecorator(
+        // VSCodeDecorationTarget requires a real editor passed via setEditor() before use.
+        // We pass null here; setEditor() is called in runDecorate() before applyPlan().
+        world.decoratorInstance = new VSCodeDecorationTarget(
+            null as any,
             world.decoratorStyle ?? 'foreground',
-            world.decoratorAuthorColors ?? 'auto'
         );
     }
     return world.decoratorInstance;
+}
+
+/** Normalize boolean viewMode to string (backward compat with test DSL). */
+function resolveViewMode(vm: ViewMode | boolean): ViewMode {
+    if (typeof vm === 'boolean') return vm ? 'review' : 'changes';
+    return vm;
+}
+
+/**
+ * Run a full decoration pass via the shared pipeline.
+ * Replaces the old EditorDecorator.decorate() method.
+ */
+function runDecorate(
+    target: VSCodeDecorationTarget,
+    spy: SpyEditor,
+    changes: ChangeNode[],
+    text: string,
+    viewMode: ViewMode | boolean,
+    showDelimiters: boolean,
+    authorColors: 'auto' | 'always' | 'never',
+): void {
+    const mode = resolveViewMode(viewMode);
+    const cursorOffset = text
+        ? (() => {
+            const pos = spy.selection.active;
+            let offset = 0;
+            const lines = text.split('\n');
+            for (let i = 0; i < pos.line && i < lines.length; i++) {
+                offset += lines[i].length + 1; // +1 for \n
+            }
+            offset += pos.character;
+            return offset;
+        })()
+        : 0;
+
+    const plan = buildDecorationPlan(changes, text, mode, cursorOffset, showDelimiters, authorColors);
+    const rulerPlan = buildOverviewRulerPlan(changes, mode);
+
+    target.setEditor(spy);
+    applyPlan(target, plan, rulerPlan, text, changes);
 }
 
 function resolveDecorationArray(spy: SpyEditor, name: string): RecordedDecoration[] {
@@ -90,7 +137,7 @@ Given('markup text:', function (this: ChangeDownWorld, docString: string) {
 Given('decorator style {string}', function (this: ChangeDownWorld, style: string) {
     assert.ok(style === 'foreground' || style === 'background', `Invalid style: ${style}`);
     this.decoratorStyle = style;
-    // Force re-creation of decorator
+    // Force re-creation of decoration target with new style
     if (this.decoratorInstance) {
         this.decoratorInstance.dispose();
         this.decoratorInstance = undefined;
@@ -337,122 +384,122 @@ Given('a sidecar deletion with originalText {string} at offset {int} to {int}', 
 
 When('I decorate in markup mode', function (this: ChangeDownWorld) {
     assert.ok(this.decorationText !== undefined, 'No markup text set');
-    const decorator = getOrCreateDecorator(this);
+    const target = getOrCreateTarget(this);
     const parser = new CriticMarkupParser();
     this.parsedDoc = parser.parse(this.decorationText!);
     this.spyEditor = new SpyEditor(0, 0);
-    decorator.decorate(this.spyEditor, this.parsedDoc, true, this.decorationText!, true);
+    runDecorate(target, this.spyEditor, this.parsedDoc!.getChanges(), this.decorationText!, true, true, this.decoratorAuthorColors ?? 'auto');
 });
 
 When('I decorate in markup mode with cursor at {int}:{int}', function (
     this: ChangeDownWorld, line: number, char: number
 ) {
     assert.ok(this.decorationText !== undefined, 'No markup text set');
-    const decorator = getOrCreateDecorator(this);
+    const target = getOrCreateTarget(this);
     const parser = new CriticMarkupParser();
     this.parsedDoc = parser.parse(this.decorationText!);
     this.spyEditor = new SpyEditor(line, char);
-    decorator.decorate(this.spyEditor, this.parsedDoc, true, this.decorationText!, true);
+    runDecorate(target, this.spyEditor, this.parsedDoc!.getChanges(), this.decorationText!, true, true, this.decoratorAuthorColors ?? 'auto');
 });
 
 When('I decorate in smart view mode', function (this: ChangeDownWorld) {
     assert.ok(this.decorationText !== undefined, 'No markup text set');
-    const decorator = getOrCreateDecorator(this);
+    const target = getOrCreateTarget(this);
     const parser = new CriticMarkupParser();
     this.parsedDoc = parser.parse(this.decorationText!);
     this.spyEditor = new SpyEditor(99, 0);
-    decorator.decorate(this.spyEditor, this.parsedDoc, false, this.decorationText!);
+    runDecorate(target, this.spyEditor, this.parsedDoc!.getChanges(), this.decorationText!, false, false, this.decoratorAuthorColors ?? 'auto');
 });
 
 When('I decorate in smart view mode with cursor at {int}:{int}', function (
     this: ChangeDownWorld, line: number, char: number
 ) {
     assert.ok(this.decorationText !== undefined, 'No markup text set');
-    const decorator = getOrCreateDecorator(this);
+    const target = getOrCreateTarget(this);
     const parser = new CriticMarkupParser();
     this.parsedDoc = parser.parse(this.decorationText!);
     this.spyEditor = new SpyEditor(line, char);
-    decorator.decorate(this.spyEditor, this.parsedDoc, false, this.decorationText!);
+    runDecorate(target, this.spyEditor, this.parsedDoc!.getChanges(), this.decorationText!, false, false, this.decoratorAuthorColors ?? 'auto');
 });
 
 When('I decorate in final mode', function (this: ChangeDownWorld) {
     assert.ok(this.decorationText !== undefined, 'No markup text set');
-    const decorator = getOrCreateDecorator(this);
+    const target = getOrCreateTarget(this);
     const parser = new CriticMarkupParser();
     this.parsedDoc = parser.parse(this.decorationText!);
     this.spyEditor = new SpyEditor(99, 0);
-    decorator.decorate(this.spyEditor, this.parsedDoc, 'settled', this.decorationText!);
+    runDecorate(target, this.spyEditor, this.parsedDoc!.getChanges(), this.decorationText!, 'settled', false, this.decoratorAuthorColors ?? 'auto');
 });
 
 When('I decorate in final mode with cursor at {int}:{int}', function (
     this: ChangeDownWorld, line: number, char: number
 ) {
     assert.ok(this.decorationText !== undefined, 'No markup text set');
-    const decorator = getOrCreateDecorator(this);
+    const target = getOrCreateTarget(this);
     const parser = new CriticMarkupParser();
     this.parsedDoc = parser.parse(this.decorationText!);
     this.spyEditor = new SpyEditor(line, char);
-    decorator.decorate(this.spyEditor, this.parsedDoc, 'settled', this.decorationText!);
+    runDecorate(target, this.spyEditor, this.parsedDoc!.getChanges(), this.decorationText!, 'settled', false, this.decoratorAuthorColors ?? 'auto');
 });
 
 When('I decorate in original mode', function (this: ChangeDownWorld) {
     assert.ok(this.decorationText !== undefined, 'No markup text set');
-    const decorator = getOrCreateDecorator(this);
+    const target = getOrCreateTarget(this);
     const parser = new CriticMarkupParser();
     this.parsedDoc = parser.parse(this.decorationText!);
     this.spyEditor = new SpyEditor(99, 0);
-    decorator.decorate(this.spyEditor, this.parsedDoc, 'raw', this.decorationText!);
+    runDecorate(target, this.spyEditor, this.parsedDoc!.getChanges(), this.decorationText!, 'raw', false, this.decoratorAuthorColors ?? 'auto');
 });
 
 When('I decorate in original mode with cursor at {int}:{int}', function (
     this: ChangeDownWorld, line: number, char: number
 ) {
     assert.ok(this.decorationText !== undefined, 'No markup text set');
-    const decorator = getOrCreateDecorator(this);
+    const target = getOrCreateTarget(this);
     const parser = new CriticMarkupParser();
     this.parsedDoc = parser.parse(this.decorationText!);
     this.spyEditor = new SpyEditor(line, char);
-    decorator.decorate(this.spyEditor, this.parsedDoc, 'raw', this.decorationText!);
+    runDecorate(target, this.spyEditor, this.parsedDoc!.getChanges(), this.decorationText!, 'raw', false, this.decoratorAuthorColors ?? 'auto');
 });
 
 When('I decorate in review mode with showDelimiters off', function (this: ChangeDownWorld) {
     assert.ok(this.decorationText !== undefined, 'No markup text set');
-    const decorator = getOrCreateDecorator(this);
+    const target = getOrCreateTarget(this);
     const parser = new CriticMarkupParser();
     this.parsedDoc = parser.parse(this.decorationText!);
     this.spyEditor = new SpyEditor(99, 0);
-    decorator.decorate(this.spyEditor, this.parsedDoc, 'review', this.decorationText!, false);
+    runDecorate(target, this.spyEditor, this.parsedDoc!.getChanges(), this.decorationText!, 'review', false, this.decoratorAuthorColors ?? 'auto');
 });
 
 When('I decorate in review mode with showDelimiters off and cursor at {int}:{int}', function (
     this: ChangeDownWorld, line: number, char: number
 ) {
     assert.ok(this.decorationText !== undefined, 'No markup text set');
-    const decorator = getOrCreateDecorator(this);
+    const target = getOrCreateTarget(this);
     const parser = new CriticMarkupParser();
     this.parsedDoc = parser.parse(this.decorationText!);
     this.spyEditor = new SpyEditor(line, char);
-    decorator.decorate(this.spyEditor, this.parsedDoc, 'review', this.decorationText!, false);
+    runDecorate(target, this.spyEditor, this.parsedDoc!.getChanges(), this.decorationText!, 'review', false, this.decoratorAuthorColors ?? 'auto');
 });
 
 When('I decorate in review mode with showDelimiters on', function (this: ChangeDownWorld) {
     assert.ok(this.decorationText !== undefined, 'No markup text set');
-    const decorator = getOrCreateDecorator(this);
+    const target = getOrCreateTarget(this);
     const parser = new CriticMarkupParser();
     this.parsedDoc = parser.parse(this.decorationText!);
     this.spyEditor = new SpyEditor(99, 0);
-    decorator.decorate(this.spyEditor, this.parsedDoc, 'review', this.decorationText!, true);
+    runDecorate(target, this.spyEditor, this.parsedDoc!.getChanges(), this.decorationText!, 'review', true, this.decoratorAuthorColors ?? 'auto');
 });
 
 When('I decorate in review mode with showDelimiters on and cursor at {int}:{int}', function (
     this: ChangeDownWorld, line: number, char: number
 ) {
     assert.ok(this.decorationText !== undefined, 'No markup text set');
-    const decorator = getOrCreateDecorator(this);
+    const target = getOrCreateTarget(this);
     const parser = new CriticMarkupParser();
     this.parsedDoc = parser.parse(this.decorationText!);
     this.spyEditor = new SpyEditor(line, char);
-    decorator.decorate(this.spyEditor, this.parsedDoc, 'review', this.decorationText!, true);
+    runDecorate(target, this.spyEditor, this.parsedDoc!.getChanges(), this.decorationText!, 'review', true, this.decoratorAuthorColors ?? 'auto');
 });
 
 // ── showDelimiters step definitions (smart view mode with cursor) ──
@@ -461,47 +508,47 @@ When('I decorate in smart view mode with showDelimiters on and cursor at {int}:{
     this: ChangeDownWorld, line: number, char: number
 ) {
     assert.ok(this.decorationText !== undefined, 'No markup text set');
-    const decorator = getOrCreateDecorator(this);
+    const target = getOrCreateTarget(this);
     const parser = new CriticMarkupParser();
     this.parsedDoc = parser.parse(this.decorationText!);
     this.spyEditor = new SpyEditor(line, char);
-    decorator.decorate(this.spyEditor, this.parsedDoc, 'changes', this.decorationText!, true);
+    runDecorate(target, this.spyEditor, this.parsedDoc!.getChanges(), this.decorationText!, 'changes', true, this.decoratorAuthorColors ?? 'auto');
 });
 
 When('I decorate in smart view mode with showDelimiters on', function (this: ChangeDownWorld) {
     assert.ok(this.decorationText !== undefined, 'No markup text set');
-    const decorator = getOrCreateDecorator(this);
+    const target = getOrCreateTarget(this);
     const parser = new CriticMarkupParser();
     this.parsedDoc = parser.parse(this.decorationText!);
     this.spyEditor = new SpyEditor(99, 0);
-    decorator.decorate(this.spyEditor, this.parsedDoc, 'changes', this.decorationText!, true);
+    runDecorate(target, this.spyEditor, this.parsedDoc!.getChanges(), this.decorationText!, 'changes', true, this.decoratorAuthorColors ?? 'auto');
 });
 
 When('I decorate in final mode with showDelimiters on', function (this: ChangeDownWorld) {
     assert.ok(this.decorationText !== undefined, 'No markup text set');
-    const decorator = getOrCreateDecorator(this);
+    const target = getOrCreateTarget(this);
     const parser = new CriticMarkupParser();
     this.parsedDoc = parser.parse(this.decorationText!);
     this.spyEditor = new SpyEditor(99, 0);
-    decorator.decorate(this.spyEditor, this.parsedDoc, 'settled', this.decorationText!, true);
+    runDecorate(target, this.spyEditor, this.parsedDoc!.getChanges(), this.decorationText!, 'settled', true, this.decoratorAuthorColors ?? 'auto');
 });
 
 When('I decorate in original mode with showDelimiters on', function (this: ChangeDownWorld) {
     assert.ok(this.decorationText !== undefined, 'No markup text set');
-    const decorator = getOrCreateDecorator(this);
+    const target = getOrCreateTarget(this);
     const parser = new CriticMarkupParser();
     this.parsedDoc = parser.parse(this.decorationText!);
     this.spyEditor = new SpyEditor(99, 0);
-    decorator.decorate(this.spyEditor, this.parsedDoc, 'raw', this.decorationText!, true);
+    runDecorate(target, this.spyEditor, this.parsedDoc!.getChanges(), this.decorationText!, 'raw', true, this.decoratorAuthorColors ?? 'auto');
 });
 
 When('I decorate the manual changes in markup mode', function (this: ChangeDownWorld) {
     assert.ok(this.decorationText !== undefined, 'No markup text set');
     assert.ok(this.manualChanges && this.manualChanges.length > 0, 'No manual changes set');
-    const decorator = getOrCreateDecorator(this);
+    const target = getOrCreateTarget(this);
     const doc = new VirtualDocument(this.manualChanges!);
     this.spyEditor = new SpyEditor(99, 0);
-    decorator.decorate(this.spyEditor, doc, true, this.decorationText!, true);
+    runDecorate(target, this.spyEditor, doc.getChanges(), this.decorationText!, true, true, this.decoratorAuthorColors ?? 'auto');
 });
 
 When('I decorate the manual changes in markup mode with cursor at {int}:{int}', function (
@@ -509,19 +556,19 @@ When('I decorate the manual changes in markup mode with cursor at {int}:{int}', 
 ) {
     assert.ok(this.decorationText !== undefined, 'No markup text set');
     assert.ok(this.manualChanges && this.manualChanges.length > 0, 'No manual changes set');
-    const decorator = getOrCreateDecorator(this);
+    const target = getOrCreateTarget(this);
     const doc = new VirtualDocument(this.manualChanges!);
     this.spyEditor = new SpyEditor(line, char);
-    decorator.decorate(this.spyEditor, doc, true, this.decorationText!, true);
+    runDecorate(target, this.spyEditor, doc.getChanges(), this.decorationText!, true, true, this.decoratorAuthorColors ?? 'auto');
 });
 
 When('I decorate the manual changes in smart view mode', function (this: ChangeDownWorld) {
     assert.ok(this.decorationText !== undefined, 'No markup text set');
     assert.ok(this.manualChanges && this.manualChanges.length > 0, 'No manual changes set');
-    const decorator = getOrCreateDecorator(this);
+    const target = getOrCreateTarget(this);
     const doc = new VirtualDocument(this.manualChanges!);
     this.spyEditor = new SpyEditor(99, 0);
-    decorator.decorate(this.spyEditor, doc, false, this.decorationText!);
+    runDecorate(target, this.spyEditor, doc.getChanges(), this.decorationText!, false, false, this.decoratorAuthorColors ?? 'auto');
 });
 
 When('I decorate the manual changes in smart view mode with cursor at {int}:{int}', function (
@@ -529,28 +576,28 @@ When('I decorate the manual changes in smart view mode with cursor at {int}:{int
 ) {
     assert.ok(this.decorationText !== undefined, 'No markup text set');
     assert.ok(this.manualChanges && this.manualChanges.length > 0, 'No manual changes set');
-    const decorator = getOrCreateDecorator(this);
+    const target = getOrCreateTarget(this);
     const doc = new VirtualDocument(this.manualChanges!);
     this.spyEditor = new SpyEditor(line, char);
-    decorator.decorate(this.spyEditor, doc, false, this.decorationText!);
+    runDecorate(target, this.spyEditor, doc.getChanges(), this.decorationText!, false, false, this.decoratorAuthorColors ?? 'auto');
 });
 
 When('I decorate the manual changes in final mode', function (this: ChangeDownWorld) {
     assert.ok(this.decorationText !== undefined, 'No markup text set');
     assert.ok(this.manualChanges && this.manualChanges.length > 0, 'No manual changes set');
-    const decorator = getOrCreateDecorator(this);
+    const target = getOrCreateTarget(this);
     const doc = new VirtualDocument(this.manualChanges!);
     this.spyEditor = new SpyEditor(99, 0);
-    decorator.decorate(this.spyEditor, doc, 'settled', this.decorationText!);
+    runDecorate(target, this.spyEditor, doc.getChanges(), this.decorationText!, 'settled', false, this.decoratorAuthorColors ?? 'auto');
 });
 
 When('I decorate the manual changes in original mode', function (this: ChangeDownWorld) {
     assert.ok(this.decorationText !== undefined, 'No markup text set');
     assert.ok(this.manualChanges && this.manualChanges.length > 0, 'No manual changes set');
-    const decorator = getOrCreateDecorator(this);
+    const target = getOrCreateTarget(this);
     const doc = new VirtualDocument(this.manualChanges!);
     this.spyEditor = new SpyEditor(99, 0);
-    decorator.decorate(this.spyEditor, doc, 'raw', this.decorationText!);
+    runDecorate(target, this.spyEditor, doc.getChanges(), this.decorationText!, 'raw', false, this.decoratorAuthorColors ?? 'auto');
 });
 
 // ── When steps: re-decorate (reuse existing spy to detect stale decorations) ──
@@ -559,36 +606,36 @@ When('I re-decorate the manual changes in final mode', function (this: ChangeDow
     assert.ok(this.decorationText !== undefined, 'No markup text set');
     assert.ok(this.manualChanges && this.manualChanges.length > 0, 'No manual changes set');
     assert.ok(this.spyEditor, 'No spy editor — run an initial decorate step first');
-    const decorator = getOrCreateDecorator(this);
+    const target = getOrCreateTarget(this);
     const doc = new VirtualDocument(this.manualChanges!);
-    decorator.decorate(this.spyEditor, doc, 'settled', this.decorationText!);
+    runDecorate(target, this.spyEditor, doc.getChanges(), this.decorationText!, 'settled', false, this.decoratorAuthorColors ?? 'auto');
 });
 
 When('I re-decorate the manual changes in original mode', function (this: ChangeDownWorld) {
     assert.ok(this.decorationText !== undefined, 'No markup text set');
     assert.ok(this.manualChanges && this.manualChanges.length > 0, 'No manual changes set');
     assert.ok(this.spyEditor, 'No spy editor — run an initial decorate step first');
-    const decorator = getOrCreateDecorator(this);
+    const target = getOrCreateTarget(this);
     const doc = new VirtualDocument(this.manualChanges!);
-    decorator.decorate(this.spyEditor, doc, 'raw', this.decorationText!);
+    runDecorate(target, this.spyEditor, doc.getChanges(), this.decorationText!, 'raw', false, this.decoratorAuthorColors ?? 'auto');
 });
 
 When('I re-decorate the manual changes in markup mode', function (this: ChangeDownWorld) {
     assert.ok(this.decorationText !== undefined, 'No markup text set');
     assert.ok(this.manualChanges && this.manualChanges.length > 0, 'No manual changes set');
     assert.ok(this.spyEditor, 'No spy editor — run an initial decorate step first');
-    const decorator = getOrCreateDecorator(this);
+    const target = getOrCreateTarget(this);
     const doc = new VirtualDocument(this.manualChanges!);
-    decorator.decorate(this.spyEditor, doc, true, this.decorationText!, true);
+    runDecorate(target, this.spyEditor, doc.getChanges(), this.decorationText!, true, true, this.decoratorAuthorColors ?? 'auto');
 });
 
 When('I re-decorate the manual changes in smart view mode', function (this: ChangeDownWorld) {
     assert.ok(this.decorationText !== undefined, 'No markup text set');
     assert.ok(this.manualChanges && this.manualChanges.length > 0, 'No manual changes set');
     assert.ok(this.spyEditor, 'No spy editor — run an initial decorate step first');
-    const decorator = getOrCreateDecorator(this);
+    const target = getOrCreateTarget(this);
     const doc = new VirtualDocument(this.manualChanges!);
-    decorator.decorate(this.spyEditor, doc, false, this.decorationText!);
+    runDecorate(target, this.spyEditor, doc.getChanges(), this.decorationText!, false, false, this.decoratorAuthorColors ?? 'auto');
 });
 
 // ── Then steps: count assertions ────────────────────────────────────

@@ -11,6 +11,8 @@
  */
 
 import type { AnnotationCard } from './annotation-extractor';
+import type { ViewMode } from '../view-mode';
+import { generateViewModeCSS } from '@changedown/preview';
 
 function generateNonce(): string {
     const array = new Uint8Array(16);
@@ -119,7 +121,7 @@ export interface PreviewHtmlOptions {
     bodyHtml: string;
     annotations: AnnotationCard[];
     stats: ImportStats;
-    currentViewMode: string;
+    currentViewMode: ViewMode;
 }
 
 function replaceUnsupportedImages(html: string): string {
@@ -279,52 +281,17 @@ body { font-family: var(--vscode-font-family); color: var(--vscode-foreground); 
 /* Hide footnote ref badges — sidebar provides annotation access; hover linkage uses data-cn-pair */
 .cn-ref { display: none; }
 
-/* ── Simple view: settled text + change gutter ── */
-[data-view-mode="simple"] .cn-del,
-[data-view-mode="simple"] .cn-sub-del,
-[data-view-mode="simple"] del.cn-move-from,
-[data-view-mode="simple"] .cn-move-label { display: none; }
-[data-view-mode="simple"] .cn-ins,
-[data-view-mode="simple"] .cn-sub-ins,
-[data-view-mode="simple"] ins.cn-move-to { text-decoration: none; }
-[data-view-mode="simple"] .cn-comment { display: none; }
-[data-view-mode="simple"] .cn-hl { background: none; padding: 0; }
-[data-view-mode="simple"] .cn-anchor-meta { display: none; }
-[data-view-mode="simple"] .cn-accepted { opacity: 1; }
-[data-view-mode="simple"] .cn-rejected { opacity: 1; font-style: normal; }
-[data-view-mode="simple"] .cn-footnotes { display: none; }
-[data-view-mode="simple"] .cn-ref { cursor: pointer; }
-[data-view-mode="simple"] .cn-ref a { color: var(--vscode-textLink-foreground); text-decoration: none; }
-/* Gutter: insertion (green) */
-[data-view-mode="simple"] .cn-document-card :is(p,li,h1,h2,h3,h4,h5,h6,blockquote,pre):has(ins.cn-ins) {
-  border-left: 3px solid #66BB6A; padding-left: 8px; margin-left: -12px;
-}
-.vscode-light [data-view-mode="simple"] .cn-document-card :is(p,li,h1,h2,h3,h4,h5,h6,blockquote,pre):has(ins.cn-ins) {
-  border-left-color: #1E824C;
-}
-/* Gutter: deletion only (red) */
-[data-view-mode="simple"] .cn-document-card :is(p,li,h1,h2,h3,h4,h5,h6,blockquote,pre):has(del.cn-del):not(:has(ins.cn-ins)) {
-  border-left: 3px solid #EF5350; padding-left: 8px; margin-left: -12px; min-height: 1.2em;
-}
-.vscode-light [data-view-mode="simple"] .cn-document-card :is(p,li,h1,h2,h3,h4,h5,h6,blockquote,pre):has(del.cn-del):not(:has(ins.cn-ins)) {
-  border-left-color: #C0392B;
-}
-/* Gutter: substitution (blue) */
-[data-view-mode="simple"] .cn-document-card :is(p,li,h1,h2,h3,h4,h5,h6,blockquote,pre):has(.cn-sub-del) {
-  border-left: 3px solid #64B5F6; padding-left: 8px; margin-left: -12px;
-}
-.vscode-light [data-view-mode="simple"] .cn-document-card :is(p,li,h1,h2,h3,h4,h5,h6,blockquote,pre):has(.cn-sub-del) {
-  border-left-color: #2980B9;
-}
+/* ── View mode CSS (shared from @changedown/preview) ── */
+${generateViewModeCSS()}
 </style>
 </head><body>
 <div class="cn-docx-toolbar">
   <span class="cn-toolbar-filename">${esc(fileName)}</span>
   <select class="cn-toolbar-viewmode" id="viewModeSelect">
-    <option value="allMarkup" ${sel('allMarkup')}>All Markup</option>
-    <option value="simple" ${sel('simple')}>Simple</option>
-    <option value="original" ${sel('original')}>Original</option>
-    <option value="final" ${sel('final')}>Final</option>
+    <option value="review" ${sel('review')}>All Markup</option>
+    <option value="changes" ${sel('changes')}>Simple</option>
+    <option value="raw" ${sel('raw')}>Original</option>
+    <option value="settled" ${sel('settled')}>Final</option>
   </select>
   <div class="cn-toolbar-stats">${statsHtml}</div>
   <div class="cn-toolbar-spacer"></div>

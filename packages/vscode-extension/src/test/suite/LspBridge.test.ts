@@ -1,13 +1,14 @@
 import * as assert from 'assert';
 import { LspBridge } from '../../managers/lsp-bridge';
 import { DocumentStateManager } from '../../managers/document-state-manager';
+import { DocumentStateManager as CoreDocumentStateManager } from '@changedown/core/dist/host/index';
 
 suite('LspBridge', () => {
     let bridge: LspBridge;
     let docStateManager: DocumentStateManager;
 
     setup(() => {
-        docStateManager = new DocumentStateManager(() => []);
+        docStateManager = new DocumentStateManager(() => [], new CoreDocumentStateManager());
         bridge = new LspBridge(docStateManager, () => null);
     });
 

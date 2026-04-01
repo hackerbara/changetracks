@@ -12,16 +12,14 @@ import { Given, When, Then } from '@cucumber/cucumber';
 import { strict as assert } from 'assert';
 import type { ChangeDownWorld } from './world';
 
-// Import via the internals barrel (the only way test package resolves extension modules).
-// transformRange and transformCachedDecorations live in range-transform.ts which has
-// no vscode-languageclient dependency, so they load cleanly in @fast tests.
-import {
-    transformRange,
-    transformCachedDecorations,
-    setCachedDecorationData,
-    getCachedDecorationData,
-    invalidateDecorationCache,
-} from 'changedown-vscode/internals';
+// transformRange is re-exported from core/host via the internals barrel.
+// The cache-level helpers (setCachedDecorations, getCachedDecorations, etc.)
+// now live on the core DocumentStateManager class.
+import { transformRange } from 'changedown-vscode/internals';
+import { DocumentStateManager as CoreDocumentStateManager } from '@changedown/core/dist/host/index';
+
+/** Shared core DSM instance for cache integration tests. */
+const coreDsm = new CoreDocumentStateManager();
 
 // ---------------------------------------------------------------------------
 // State for transformRange unit tests
@@ -81,14 +79,15 @@ Given(
             { id: 'test-1', type: 0, status: 0, range: { start: s1, end: e1 }, contentRange: { start: s1, end: e1 }, level: 0 as const, anchored: false },
             { id: 'test-2', type: 0, status: 0, range: { start: s2, end: e2 }, contentRange: { start: s2, end: e2 }, level: 0 as const, anchored: false },
         ] as any[];
-        setCachedDecorationData(uri, nodes, 1);
+        coreDsm.ensureState(uri, 'x'.repeat(Math.max(e1, e2)), 1);
+        coreDsm.setCachedDecorations(uri, nodes, 1);
     }
 );
 
 Given(
     'no cached decoration data for {string}',
     function (this: ChangeDownWorld, uri: string) {
-        invalidateDecorationCache(uri);
+        coreDsm.invalidateCache(uri);
     }
 );
 
@@ -96,14 +95,15 @@ When(
     'transformCachedDecorations is called with an insert of {int} chars at offset {int}',
     function (this: ChangeDownWorld, count: number, offset: number) {
         const uri = 'file:///test.md';
-        // Simulate a TextDocumentContentChangeEvent for an insert
         const contentChanges = [{
             rangeOffset: offset,
             rangeLength: 0,
             text: 'x'.repeat(count),
-            range: { start: { line: 0, character: offset }, end: { line: 0, character: offset } },
-        }] as any[];
-        this.ortTransformResult = transformCachedDecorations(uri, contentChanges, 2);
+        }];
+        const state = coreDsm.getState(uri);
+        const currentText = state?.text ?? '';
+        const newText = currentText.substring(0, offset) + 'x'.repeat(count) + currentText.substring(offset);
+        this.ortTransformResult = coreDsm.applyContentChange(uri, newText, 2, contentChanges);
     }
 );
 
@@ -115,18 +115,20 @@ When(
             rangeOffset: offset,
             rangeLength: count,
             text: '',
-            range: { start: { line: 0, character: offset }, end: { line: 0, character: offset + count } },
-        }] as any[];
-        this.ortTransformResult = transformCachedDecorations(uri, contentChanges, 2);
+        }];
+        const state = coreDsm.getState(uri);
+        const currentText = state?.text ?? '';
+        const newText = currentText.substring(0, offset) + currentText.substring(offset + count);
+        this.ortTransformResult = coreDsm.applyContentChange(uri, newText, 2, contentChanges);
     }
 );
 
 Then(
     'the cached ranges are {int}-{int} and {int}-{int}',
     function (this: ChangeDownWorld, s1: number, e1: number, s2: number, e2: number) {
-        const cached = getCachedDecorationData('file:///test.md');
-        assert.ok(cached, 'No cached data');
-        const changes = cached!.changes;
+        const state = coreDsm.getState('file:///test.md');
+        assert.ok(state, 'No state for URI');
+        const changes = state!.cachedChanges;
         assert.strictEqual(changes.length, 2, `Expected 2 nodes, got ${changes.length}`);
         assert.strictEqual(changes[0].range.start, s1);
         assert.strictEqual(changes[0].range.end, e1);

@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { Workspace, VirtualDocument, ChangeNode, scanMaxCnId } from '@changedown/core';
-import { getCachedDecorationData, migrateDecorationCache } from '../lsp-client';
+import { DocumentStateManager as CoreDocumentStateManager } from '@changedown/core/dist/host/index';
 import { ExtDocumentState, createExtDocumentState } from '../document-state';
 import { isSupported } from './shared';
 
@@ -31,6 +31,7 @@ export class DocumentStateManager implements vscode.Disposable {
 
     constructor(
         getPendingNodes: (uri: string) => ChangeNode[],
+        private readonly coreDsm: CoreDocumentStateManager,
         onRenameCleanup?: (oldUri: string) => void
     ) {
         this.workspace = new Workspace();
@@ -84,6 +85,11 @@ export class DocumentStateManager implements vscode.Disposable {
         this.docStates.delete(uri);
     }
 
+    /** Invalidate the core DSM decoration cache for a URI. */
+    invalidateDecorationCache(uri: string): void {
+        this.coreDsm.invalidateCache(uri);
+    }
+
     // ── scId allocation ────────────────────────────────────────────────────
 
     /**
@@ -126,19 +132,15 @@ export class DocumentStateManager implements vscode.Disposable {
      *   (for in-memory edit consumers: compactChangeFully, accept/reject, navigation).
      */
     getVirtualDocumentFor(uri: string, text: string, languageId?: string, parseFallback?: boolean): VirtualDocument {
-        const cached = getCachedDecorationData(uri);
+        const currentVersion = this.docStates.get(uri)?.version ?? 0;
+        const cachedChanges = this.coreDsm.getCachedDecorations(uri, currentVersion);
         const pendingNodes = this.getPendingNodes(uri);
 
-        if (cached) {
-            const currentVersion = this.docStates.get(uri)?.version ?? 0;
-            if (cached.documentVersion === currentVersion) {
-                // Cache is current — use LSP data
-                if (pendingNodes.length > 0) {
-                    return new VirtualDocument(DocumentStateManager.mergeWithPending(cached.changes, pendingNodes));
-                }
-                return new VirtualDocument(cached.changes);
+        if (cachedChanges) {
+            if (pendingNodes.length > 0) {
+                return new VirtualDocument(DocumentStateManager.mergeWithPending(cachedChanges, pendingNodes));
             }
-            // Cache is stale — fall through to local parse
+            return new VirtualDocument(cachedChanges);
         }
 
         // Fallback: local parse for non-decoration callers (navigation, accept/reject, etc.)
@@ -197,7 +199,7 @@ export class DocumentStateManager implements vscode.Disposable {
         }
 
         // Migrate decoration cache
-        migrateDecorationCache(oldUri, newUri);
+        this.coreDsm.migrateState(oldUri, newUri);
 
         // Comment threads: dispose and let them recreate on next decoration update
         this.onRenameCleanup?.(oldUri);

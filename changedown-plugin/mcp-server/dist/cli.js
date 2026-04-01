@@ -5591,17 +5591,6 @@ var init_three_zone_types = __esm({
   }
 });
 
-// ../../packages/core/dist-esm/renderers/decoration-intents.js
-var SUB_SEPARATOR_LEN;
-var init_decoration_intents = __esm({
-  "../../packages/core/dist-esm/renderers/decoration-intents.js"() {
-    "use strict";
-    init_types();
-    init_tokens();
-    SUB_SEPARATOR_LEN = TokenType.SubstitutionSeparator.length;
-  }
-});
-
 // ../../packages/core/dist-esm/renderers/formatters/plain-text.js
 function formatPlainText(doc) {
   const parts = [];
@@ -6237,7 +6226,6 @@ var init_dist_esm = __esm({
     init_at_resolver();
     init_op_parser();
     init_three_zone_types();
-    init_decoration_intents();
     init_formatters();
     init_view_builders();
     init_view_builder_utils();

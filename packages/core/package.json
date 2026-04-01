@@ -41,6 +41,21 @@
       "types": "./dist/edit-boundary/index.d.ts",
       "import": "./dist-esm/edit-boundary/index.js",
       "require": "./dist/edit-boundary/index.js"
+    },
+    "./host": {
+      "types": "./dist/host/index.d.ts",
+      "import": "./dist-esm/host/index.js",
+      "require": "./dist/host/index.js"
+    },
+    "./dist/host/index": {
+      "types": "./dist/host/index.d.ts",
+      "import": "./dist-esm/host/index.js",
+      "require": "./dist/host/index.js"
+    },
+    "./host/services": {
+      "types": "./dist/host/services/index.d.ts",
+      "import": "./dist-esm/host/services/index.js",
+      "require": "./dist/host/services/index.js"
     }
   }
 }

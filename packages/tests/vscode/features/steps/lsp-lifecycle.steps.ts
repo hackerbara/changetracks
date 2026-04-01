@@ -8,8 +8,7 @@
 
 import { Given, When, Then, Before } from '@cucumber/cucumber';
 import { strict as assert } from 'assert';
-import { createServer } from '@changedown/lsp-server/internals';
-import type { ChangedownServer } from '@changedown/lsp-server/internals';
+import { ChangedownServer } from '@changedown/lsp-server/internals';
 import { ensureL2 } from '@changedown/core';
 import type { ChangeDownWorld } from './world';
 
@@ -101,6 +100,7 @@ function createMockConnection(): any {
         onFoldingRanges: (h: any) => { handlers.foldingRanges = h; },
         onCodeAction: (h: any) => { handlers.codeAction = h; },
         onDocumentLinks: (h: any) => { handlers.documentLinks = h; },
+        onDefinition: (h: any) => { handlers.definition = h; },
         onRequest: (method: string, h: any) => { handlers[`request:${method}`] = h; },
         onNotification: (method: string, h: any) => { handlers[`notification:${method}`] = h; },
         sendDiagnostics: () => {},
@@ -115,7 +115,7 @@ function createMockConnection(): any {
 
 function setupServer(): ChangedownServer {
     const conn = createMockConnection();
-    return createServer(conn);
+    return new ChangedownServer(conn);
 }
 
 async function openDoc(server: ChangedownServer, text: string): Promise<void> {

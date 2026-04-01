@@ -5,13 +5,15 @@
 // Full parity with the install section of build-all.sh:
 //   1. Detect editors (Cursor, VS Code)
 //   2. Uninstall + reinstall .vsix extension
-//   3. Detect agents (Claude Code, OpenCode)
-//   4. Claude Code: marketplace add (local) + plugin install via CLI
-//   5. Cursor: MCP config, hooks, skill
-//   6. Plugin cache sync (overwrite dist/ so rebuilds take effect)
-//   7. OpenCode guidance
+//   3. Install CLI globally (cdown, changedown binaries)
+//   4. Detect agents (Claude Code, OpenCode)
+//   5. Claude Code: marketplace add (local) + plugin install via CLI
+//   6. Cursor: MCP config, hooks, skill
+//   7. Plugin cache sync (overwrite dist/ so rebuilds take effect)
+//   8. Mac wrapper binary
+//   9. OpenCode guidance
 
-import { existsSync, mkdirSync, writeFileSync, readFileSync, copyFileSync, cpSync, lstatSync, rmSync } from 'fs';
+import { existsSync, mkdirSync, writeFileSync, readFileSync, copyFileSync, cpSync, lstatSync, rmSync, symlinkSync } from 'fs';
 import { join, resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { execSync } from 'child_process';
@@ -207,7 +209,17 @@ if (editors.length > 0 && existsSync(vsixPath)) {
   console.log(`    Run ${bold('node scripts/build.mjs')} first to build from source.`);
 }
 
-// --- 3. Detect agents ---
+// --- 3. Install CLI globally ---
+console.log('\n  Installing CLI globally...');
+const cliDir = join(SC_ROOT, 'packages', 'cli');
+process.stdout.write('    npm install -g (changedown, cdown)... ');
+if (run(`npm install -g "${cliDir}"`)) {
+  console.log(`${green('ok')}`);
+} else {
+  console.log(`${red('FAIL')} — run manually: npm install -g "${cliDir}"`);
+}
+
+// --- 4. Detect agents ---
 console.log('\n  Detecting AI agents...');
 
 const claudePath = which('claude');
@@ -219,7 +231,7 @@ else console.log(`    ${dim('✗')} Claude Code — not found on PATH`);
 if (opencodePath) console.log(`    ${green('✓')} OpenCode (opencode)`);
 else console.log(`    ${dim('✗')} OpenCode — not found on PATH`);
 
-// --- 4. Claude Code plugin ---
+// --- 5. Claude Code plugin ---
 // Uses `claude plugin` CLI for proper marketplace registration and plugin install.
 // The marketplace source is the local dev repo so the plugin loads from local builds.
 // On subsequent runs (after rebuild), step 6 syncs fresh artifacts to the cache
@@ -227,7 +239,7 @@ else console.log(`    ${dim('✗')} OpenCode — not found on PATH`);
 if (claudePath) {
   console.log('\n  Setting up Claude Code plugin...');
 
-  // 4a. Register marketplace from local dev repo
+  // 5a. Register marketplace from local dev repo
   process.stdout.write('    Marketplace... ');
   if (run(`claude plugin marketplace add "${SC_ROOT}"`)) {
     console.log(`${green('ok')} (hackerbara → ${SC_ROOT})`);
@@ -235,7 +247,7 @@ if (claudePath) {
     console.log(`${red('FAIL')} — run manually: claude plugin marketplace add "${SC_ROOT}"`);
   }
 
-  // 4b. Install plugin (idempotent — reinstalls if already present)
+  // 5b. Install plugin (idempotent — reinstalls if already present)
   process.stdout.write('    Plugin install... ');
   if (run(`claude plugin install changedown@hackerbara`)) {
     console.log(`${green('ok')} (changedown@hackerbara)`);
@@ -244,12 +256,12 @@ if (claudePath) {
   }
 }
 
-// --- 5. Cursor MCP + hooks + skill ---
+// --- 6. Cursor MCP + hooks + skill ---
 const hasCursor = editors.some(e => e.cmd === 'cursor');
 if (hasCursor) {
   console.log('\n  Setting up Cursor MCP + hooks + skill...');
 
-  // 5a. MCP config
+  // 6a. MCP config
   const mcpServerPath = join(SC_ROOT, 'changedown-plugin', 'mcp-server', 'dist', 'index.js');
   const cursorMcpPath = join(home, '.cursor', 'mcp.json');
 
@@ -267,7 +279,7 @@ if (hasCursor) {
     console.log(`    ${yellow('!')} MCP server not built — run ${bold('node scripts/build.mjs')} first`);
   }
 
-  // 5b. Hooks (mirrors install-hooks.sh)
+  // 6b. Hooks (mirrors install-hooks.sh)
   const hooksScript = join(SC_ROOT, 'changedown-plugin', 'cursor', 'install-hooks.sh');
   process.stdout.write(`    Cursor hooks... `);
   if (existsSync(hooksScript)) {
@@ -280,7 +292,7 @@ if (hasCursor) {
     console.log(`${dim('skipped (install-hooks.sh not found)')}`);
   }
 
-  // 5c. Skill (always sync, not skip-if-exists)
+  // 6c. Skill (always sync, not skip-if-exists)
   const skillSrc = join(SC_ROOT, 'changedown-plugin', 'skills', 'changedown');
   const skillDest = join(home, '.cursor', 'skills', 'changedown');
   process.stdout.write(`    Cursor skill... `);
@@ -296,11 +308,11 @@ if (hasCursor) {
   }
 }
 
-// --- 6. Plugin cache sync (dev rebuild) ---
-// After `claude plugin install` (step 4), the plugin lives in a cache directory.
+// --- 7. Plugin cache sync (dev rebuild) ---
+// After `claude plugin install` (step 5), the plugin lives in a cache directory.
 // On subsequent builds we sync fresh dist/ artifacts into that cache so changes
 // take effect on next Claude Code restart — without needing `claude plugin update`.
-// The cache path is read from installed_plugins.json (set by step 4).
+// The cache path is read from installed_plugins.json (set by step 5).
 if (claudePath) {
   const installedPluginsPath = join(home, '.claude', 'plugins', 'installed_plugins.json');
   let pluginCache = null;
@@ -310,7 +322,7 @@ if (claudePath) {
     if (entry?.installPath && existsSync(entry.installPath)) {
       pluginCache = entry.installPath;
     }
-  } catch { /* not installed yet — step 4 may have been skipped or failed */ }
+  } catch { /* not installed yet — step 5 may have been skipped or failed */ }
 
   if (pluginCache) {
     console.log('\n  Syncing build artifacts to plugin cache...');
@@ -381,11 +393,33 @@ if (claudePath) {
 
     console.log(`    ${dim('Restart Claude Code to pick up changes.')}`);
   } else {
-    console.log(`\n  ${dim('No plugin cache found — run step 4 first (claude plugin install).')}`);
+    console.log(`\n  ${dim('No plugin cache found — run step 5 first (claude plugin install).')}`);
   }
 }
 
-// --- 7. OpenCode ---
+// --- 8. Mac wrapper binary ---
+const macBinary = join(SC_ROOT, 'packages', 'mac-wrapper', '.build', 'release', 'ChangeDown');
+if (platform() === 'darwin' && existsSync(macBinary)) {
+  console.log('\n  Installing mac-wrapper binary...');
+  const binDir = join(home, '.local', 'bin');
+  const linkPath = join(binDir, 'changedown-app');
+
+  if (!dryRun) mkdirSync(binDir, { recursive: true });
+
+  process.stdout.write(`    ${linkPath} → ${macBinary}... `);
+  if (!dryRun) {
+    try {
+      if (existsSync(linkPath) || lstatSync(linkPath).isSymbolicLink()) {
+        rmSync(linkPath);
+      }
+    } catch { /* doesn't exist yet */ }
+    symlinkSync(macBinary, linkPath);
+  }
+  console.log(`${green('ok')}`);
+  console.log(`    ${dim('Run: changedown-app [file.md]')}`);
+}
+
+// --- 9. OpenCode ---
 if (opencodePath) {
   console.log('\n  OpenCode detected.');
   console.log(`    Add to your project's opencode.json:`);
@@ -399,5 +433,5 @@ console.log(`
 
   Next step — set up a project:
     ${bold('cd /path/to/your/project')}
-    ${bold('npx changedown init')}
+    ${bold('changedown init')}
 `);

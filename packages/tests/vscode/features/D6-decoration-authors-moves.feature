@@ -31,7 +31,7 @@ Feature: D6 -- Per-author coloring and move decorations
     When I decorate the manual changes in markup mode
     Then insertions is empty
     And total setDecorations calls is 23
-    And author decoration call 22 has 2 ranges
+    And author decoration call 17 has 2 ranges
 
   Scenario: Two changes, different authors get different decoration types
     Given author colors mode "always"

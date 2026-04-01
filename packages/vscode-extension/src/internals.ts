@@ -7,7 +7,7 @@
  */
 
 // Decorator
-export { EditorDecorator } from './decorator';
+export { VSCodeDecorationTarget } from './decoration-target';
 
 // Hidden range search (cursor snap)
 export { findContainingHiddenRange } from './hidden-range-search';
@@ -68,14 +68,5 @@ export type { ChangeCardData, ReviewPanelState } from './review-panel';
 export { buildCommentsForChange, buildThreadDataForChanges } from './thread-data';
 export type { CommentData, ThreadData } from './thread-data';
 
-// Decoration cache helpers and optimistic range transform (used by @fast ORT1 tests).
-// All live in range-transform.ts — no vscode or vscode-languageclient dependency —
-// so @fast tier tests can import them without a full VS Code environment.
-// lsp-client.ts re-exports these same symbols for callers in the extension runtime.
-export {
-    getCachedDecorationData,
-    invalidateDecorationCache,
-    setCachedDecorationData,
-    transformRange,
-    transformCachedDecorations,
-} from './range-transform';
+// Optimistic range transform — now lives in @changedown/core/host.
+export { transformRange } from '@changedown/core/dist/host/index';

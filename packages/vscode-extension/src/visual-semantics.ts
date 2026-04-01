@@ -13,7 +13,8 @@ import * as vscode from 'vscode';
 import { ChangeType } from '@changedown/core';
 
 // Re-export platform-agnostic types and data from shared package
-export { ThemeColor, AUTHOR_PALETTE, CHANGE_COLORS, ChangeStyleInfo, getChangeStyle } from '@changedown/preview';
+export { ThemeColor, CHANGE_COLORS, ChangeStyleInfo, getChangeStyle } from '@changedown/preview';
+export { AUTHOR_PALETTE } from '@changedown/core/dist/host/index';
 
 // ---------------------------------------------------------------------------
 // Type label and icon helpers (shared by change-comments, timeline, panel)

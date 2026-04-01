@@ -4275,9 +4275,6 @@ function parseTrackingHeader(text) {
   return null;
 }
 
-// ../../packages/core/dist-esm/renderers/decoration-intents.js
-var SUB_SEPARATOR_LEN = TokenType.SubstitutionSeparator.length;
-
 // ../../packages/core/dist-esm/edit-boundary/state-machine.js
 var cmParser = new CriticMarkupParser();
 

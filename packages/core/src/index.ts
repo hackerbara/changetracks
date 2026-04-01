@@ -105,10 +105,6 @@ export {
   VIEW_NAME_ALIASES, VIEW_NAME_DISPLAY_NAMES, VIEW_NAMES,
   resolveViewName, nextViewName,
 } from './renderers/three-zone-types.js';
-export {
-  type DecorationIntent, type DecorationKind, type DecorationVisibility,
-  buildDecorationIntents,
-} from './renderers/decoration-intents.js';
 export { formatDocument, formatPlainText, formatAnsi, formatHtml, type ThreeZoneFormatOptions, type AnsiFormatOptions, type HtmlFormatOptions } from './renderers/formatters/index.js';
 export {
   buildViewDocument, buildReviewDocument, buildChangesDocument,

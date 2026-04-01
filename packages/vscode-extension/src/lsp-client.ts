@@ -16,7 +16,7 @@ import {
 } from 'vscode-languageclient/node';
 import { ChangeNode } from '@changedown/core';
 import type { ViewName, CoherenceStatusParams, ChangeCountParams, AllChangesResolvedParams, DecorationDataParams } from '@changedown/core';
-import { decorationCache, setCachedDecorationData } from './range-transform';
+import { DocumentStateManager as CoreDocumentStateManager } from '@changedown/core/dist/host/index';
 
 /**
  * Resolve reviewer identity from VS Code config.
@@ -164,6 +164,12 @@ class StatusBarManager {
  */
 let statusBarManager: StatusBarManager | undefined;
 
+let coreDsm: CoreDocumentStateManager | null = null;
+
+export function setCoreDsm(dsm: CoreDocumentStateManager): void {
+    coreDsm = dsm;
+}
+
 /**
  * Callback invoked when LSP sends decoration data.
  * Extension wires this to trigger controller refresh (decorations + notify).
@@ -238,17 +244,6 @@ export function setPromotionStartHandler(handler: PromotionStartHandler | null):
 export function setPromotionCompleteHandler(handler: PromotionCompleteHandler | null): void {
     promotionCompleteHandler = handler;
 }
-
-// Re-export cache helpers and optimistic range transform from range-transform.ts.
-// The implementations live there (no vscode-languageclient dependency) so @fast
-// tier tests can import them directly via the internals barrel.
-export {
-    getCachedDecorationData,
-    invalidateDecorationCache,
-    setCachedDecorationData,
-    transformRange,
-    transformCachedDecorations,
-} from './range-transform';
 
 /**
  * Batch edit sender type. Controller field only — no module-level state needed.
@@ -328,7 +323,7 @@ export function createLanguageClient(context: vscode.ExtensionContext): Language
     client.onNotification(
         'changedown/decorationData',
         (params: DecorationDataParams) => {
-            setCachedDecorationData(params.uri, params.changes, params.documentVersion ?? 0);
+            coreDsm?.setCachedDecorations(params.uri, params.changes, params.documentVersion ?? 0);
             decorationDataHandler?.(params.uri, params.changes);
             if (params.autoFoldLines?.length) {
                 autoFoldHandler?.(params.autoFoldLines);
@@ -434,11 +429,3 @@ export function getStatusBarCoherence(uri: string): { rate: number; unresolvedCo
     return statusBarManager?.getCoherence(uri);
 }
 
-export function migrateDecorationCache(oldUri: string, newUri: string): void {
-    if (decorationCache.has(oldUri)) {
-        if (!decorationCache.has(newUri)) {
-            decorationCache.set(newUri, decorationCache.get(oldUri)!);
-        }
-        decorationCache.delete(oldUri);
-    }
-}

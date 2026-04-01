@@ -180,7 +180,7 @@ export function changedownPlugin(md: any, getConfig?: () => PluginConfig): void 
                 if (token.type === 'inline' || !token.map) continue;
                 const rewrittenLine = token.map[0];
                 const originalLine = lineMap ? lineMap.toOriginal(rewrittenLine) : rewrittenLine;
-                token.attrSet('data-source-line', String(originalLine));
+                token.attrSet('data-source-line', String(originalLine + 1));
             }
         });
     }

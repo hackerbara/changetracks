@@ -15,10 +15,10 @@
     "packages/cursor-preview"
   ],
   "scripts": {
-    "build": "npm run build:core && npm run build:docx && npm run build:cli && npm run build:lsp && npm run build:ext && npm run build:plugin-opencode",
+    "build": "npm run build:core && npm run build:docx && npm run build:cli && npm run build:lsp && npm run build:ext && npm run build:plugin-opencode && npm run build:website && npm run build:native",
     "build:core": "cd packages/core && npm run build",
     "build:lsp": "cd packages/lsp-server && npm run build",
-    "build:ext": "cd packages/vscode-extension && npm run compile && npm run esbuild",
+    "build:ext": "cp packages/core/syntaxes/changedown.tmLanguage.json packages/vscode-extension/syntaxes/ && cd packages/vscode-extension && npm run compile && npm run esbuild",
     "build:plugin": "cd changedown-plugin/mcp-server && node esbuild.mjs && cd ../hooks-impl && node esbuild.mjs",
     "build:plugin-opencode": "cd packages/opencode-plugin && npm run build",
     "test": "npm test -w @changedown/tests",
@@ -43,7 +43,8 @@
     "packages/**/*.ts": "eslint"
   },
   "dependencies": {
-    "docx": "^9.5.1"
+    "docx": "^9.5.1",
+    "satori": "^0.26.0"
   },
   "overrides": {
     "serialize-javascript": "7.0.4"
@@ -51,6 +52,7 @@
   "devDependencies": {
     "@changesets/cli": "^2.29.8",
     "@cucumber/cucumber": "^12.7.0",
+    "@resvg/resvg-js": "^2.6.2",
     "@types/diff": "^7.0.2",
     "eslint": "^9.39.4",
     "eslint-plugin-import-x": "^4.16.2",

@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 
 /**
- * Minimal interface for the editor operations EditorDecorator needs.
+ * Minimal interface for the editor operations VSCodeDecorationTarget needs.
  * Allows injecting a spy/mock in tests.
  */
 export interface EditorPort {

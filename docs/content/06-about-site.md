@@ -1,7 +1,7 @@
 <!-- changedown.com/v1: untracked -->
 # About this site
 
-This site implements a minimal browser-based [Changedown](https://github.com/hackerbara/changedown) editor environment, using components of the Changedown Visual Studio Code extension. It is intended as a proof of concept and working lab, **will have bugs**! 
+This site implements a minimal browser-based [Changedown](https://github.com/hackerbara/changedown) editor environment, using components of the Changedown Visual Studio Code extension. It is intended as a proof of concept and working lab, and **will have bugs**! 
 
 It runs entirely in your browser. No server, no account, no data leaves your machine. Changedown editor enhancements flow through the standard Changedown LSP server, running on a Web Worker process. Pandoc is dynamically loaded from CDN for docx operations.
 

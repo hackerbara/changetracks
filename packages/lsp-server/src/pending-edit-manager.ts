@@ -14,12 +14,14 @@ import {
   type EditBoundaryState,
   type EditEvent,
   type EditBoundaryEffect as Effect,
+  type EditPendingOverlay,
   type FullCrystallizeEffect,
   type L2CrystallizeResult,
   type L3CrystallizeResult,
   type ProcessEventContext,
   DEFAULT_EDIT_BOUNDARY_CONFIG,
 } from '@changedown/core';
+import type { PendingOverlay } from './document-state';
 
 // ── Public types ───────────────────────────────────────────────────────
 
@@ -29,6 +31,7 @@ export interface CrystallizedEdit {
 }
 
 export type OnCrystallizeCallback = (edit: CrystallizedEdit) => void;
+export type OnOverlayChangeCallback = (uri: string, overlay: PendingOverlay | null) => void;
 
 // ── Per-URI state ──────────────────────────────────────────────────────
 
@@ -50,6 +53,7 @@ export class PendingEditManager {
 
   constructor(
     private readonly onCrystallize: OnCrystallizeCallback,
+    private readonly onOverlayChange: OnOverlayChangeCallback,
   ) {}
 
   // ── Public API ─────────────────────────────────────────────────────
@@ -269,9 +273,21 @@ export class PendingEditManager {
         case 'mergeAdjacent':
           // Handled atomically in core Task 5 — no-op on server.
           break;
-        case 'updatePendingOverlay':
-          // LSP server does not render overlays — no-op.
+        case 'updatePendingOverlay': {
+          const overlay = (effect as { type: 'updatePendingOverlay'; overlay: EditPendingOverlay | null }).overlay;
+          if (overlay) {
+            const pending = this.states.get(uri)?.boundary.pending;
+            this.onOverlayChange(uri, {
+              range: { start: overlay.anchorOffset, end: overlay.anchorOffset + overlay.currentLength },
+              text: overlay.currentText,
+              type: 'insertion',
+              scId: pending?.scId,
+            });
+          } else {
+            this.onOverlayChange(uri, null);
+          }
           break;
+        }
       }
     }
   }

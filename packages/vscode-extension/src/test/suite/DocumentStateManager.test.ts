@@ -1,11 +1,12 @@
 import * as assert from 'assert';
 import { DocumentStateManager } from '../../managers/document-state-manager';
+import { DocumentStateManager as CoreDocumentStateManager } from '@changedown/core/dist/host/index';
 
 suite('DocumentStateManager', () => {
     let manager: DocumentStateManager;
 
     setup(() => {
-        manager = new DocumentStateManager(() => []);
+        manager = new DocumentStateManager(() => [], new CoreDocumentStateManager());
     });
 
     teardown(() => {

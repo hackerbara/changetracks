@@ -1,9 +1,11 @@
 import * as vscode from 'vscode';
 import type { PendingOverlay } from '@changedown/core';
 import { Workspace, VirtualDocument, ChangeNode, scanMaxCnId, findFootnoteBlock, tryFindUniqueMatch, splitBodyAndFootnotes, parseContextualEditOp, isGhostNode, computeLineHash, FOOTNOTE_L3_EDIT_OP, DEFAULT_CONFIG } from '@changedown/core';
-import { EditorDecorator } from './decorator';
+import { DocumentStateManager as CoreDocumentStateManager } from '@changedown/core/dist/host/index';
+import { VSCodeDecorationTarget } from './decoration-target';
+import { buildDecorationPlan, buildOverviewRulerPlan, applyPlan } from '@changedown/core/dist/host/index';
 import { ViewMode, VIEW_MODE_LABELS, resolveViewName } from './view-mode';
-import { getCachedDecorationData, invalidateDecorationCache, transformCachedDecorations, getStatusBarCoherence } from './lsp-client';
+import { getStatusBarCoherence, setCoreDsm } from './lsp-client';
 import type { BatchEditSender } from './lsp-client';
 import { CoherenceManager } from './managers/coherence-manager';
 import { DecorationScheduler } from './managers/decoration-scheduler';
@@ -14,6 +16,7 @@ import { NavigationManager } from './managers/navigation-manager';
 import { ReviewLifecycleManager } from './managers/review-lifecycle-manager';
 import { ViewModeManager } from './managers/view-mode-manager';
 import { isSupported, setContextKey } from './managers/shared';
+import { positionToOffset } from './converters';
 
 import { getOutputChannel } from './output-channel';
 import type { ExtDocumentState } from './document-state';
@@ -29,7 +32,9 @@ export class ExtensionController {
     private viewModeStatusBar: vscode.StatusBarItem;
     /** Transition accessor: returns workspace from DocumentStateManager. */
     public get workspace(): Workspace { return this.docStateManager.workspace; }
-    private decorator: EditorDecorator;
+    private decorationTarget: VSCodeDecorationTarget;
+    private authorColors: 'auto' | 'always' | 'never' = 'auto';
+    private readonly coreDsm = new CoreDocumentStateManager();
 
     /** Fires when the set of changes may have changed. Payload: URIs of affected documents. */
     public get onDidChangeChanges() { return this.docStateManager.onDidChangeChanges; }
@@ -51,6 +56,7 @@ export class ExtensionController {
 
     /** Delegate: ensure per-document state bag exists. */
     private ensureDocState(uri: string, version: number, text: string): ExtDocumentState {
+        this.coreDsm.ensureState(uri, text, version);
         return this.docStateManager.ensureDocState(uri, version, text);
     }
 
@@ -68,16 +74,22 @@ export class ExtensionController {
         let getPendingNodes: (uri: string) => ChangeNode[] = () => [];
         this.docStateManager = new DocumentStateManager(
             (uri) => getPendingNodes(uri),
+            this.coreDsm,
             (oldUri) => this.editTracking?.getChangeComments()?.disposeThreadsForUri?.(vscode.Uri.parse(oldUri))
         );
+
+        // Wire core DSM into lsp-client so decoration data notifications are stored
+        setCoreDsm(this.coreDsm);
 
         // Read decoration style and author colors from configuration
         const config0 = vscode.workspace.getConfiguration('changedown');
         const rawStyle = config0.get<string>('decorationStyle', 'foreground');
         const decorationStyle = rawStyle === 'background' ? 'background' : 'foreground';
         const rawAuthorColors = config0.get<string>('authorColors', 'auto');
-        const authorColors = (rawAuthorColors === 'always' || rawAuthorColors === 'never') ? rawAuthorColors : 'auto' as const;
-        this.decorator = new EditorDecorator(decorationStyle, authorColors);
+        this.authorColors = (rawAuthorColors === 'always' || rawAuthorColors === 'never') ? rawAuthorColors : 'auto';
+        // decorationTarget is initialized lazily in updateDecorations() with a real editor,
+        // but we need a non-null instance. Use a placeholder cast; setEditor() is called before use.
+        this.decorationTarget = new VSCodeDecorationTarget(null as any, decorationStyle);
 
         // Read default view mode and showDelimiters from configuration.
         // ViewModeManager is created below after LspBridge (needs both).
@@ -95,13 +107,14 @@ export class ExtensionController {
                     const newStyle = rawNewStyle === 'background' ? 'background' : 'foreground';
                     const rawNewAuthorColors = cfg.get<string>('authorColors', 'auto');
                     const newAuthorColors = (rawNewAuthorColors === 'always' || rawNewAuthorColors === 'never') ? rawNewAuthorColors : 'auto' as const;
-                    const oldDecorator = this.decorator;
+                    const oldTarget = this.decorationTarget;
                     try {
-                        this.decorator = new EditorDecorator(newStyle, newAuthorColors);
-                        oldDecorator.dispose();
+                        this.authorColors = newAuthorColors;
+                        this.decorationTarget = new VSCodeDecorationTarget(null as any, newStyle);
+                        oldTarget.dispose();
                     } catch (err: any) {
-                        this.decorator = oldDecorator; // restore old, don't dispose
-                        getOutputChannel()?.appendLine(`[config] decorator recreation failed: ${err.message}`);
+                        this.decorationTarget = oldTarget; // restore old, don't dispose
+                        getOutputChannel()?.appendLine(`[config] decoration target recreation failed: ${err.message}`);
                     }
 
                     // Re-apply decorations to all visible editors
@@ -170,6 +183,11 @@ export class ExtensionController {
             this.lspBridge,
             {
                 updateDecorations: (editor) => this.updateDecorations(editor),
+                clearDecorations: (editor) => {
+                    this.decorationTarget.setEditor(editor);
+                    this.decorationTarget.clear();
+                },
+                forceHiddenRecreate: () => this.decorationTarget.forceHiddenRecreate(),
                 scheduleNotifyChanges: (uris?) => this.scheduleNotifyChanges(uris),
                 getChangesForDocument: (doc) => this.getChangesForDocument(doc),
                 updateStatusBar: () => this.updateStatusBar(),
@@ -185,7 +203,7 @@ export class ExtensionController {
             this.docStateManager,
             this.viewModeManager,
             this.lspBridge,
-            () => this.decorator.getHiddenOffsets(),
+            () => this.decorationTarget.getHiddenOffsets(),
         );
 
         // ReviewLifecycleManager: owns all review/lifecycle command handlers.
@@ -423,7 +441,10 @@ export class ExtensionController {
                 // Provides instant visual feedback while LSP round-trip is in flight.
                 // LSP push (decorationData) overwrites with authoritative data.
                 if (!this.localParseHotPath) {
-                    const transformed = transformCachedDecorations(docUri, event.contentChanges, event.document.version);
+                    const transformed = this.coreDsm.applyContentChange(
+                        docUri, currentText, event.document.version,
+                        event.contentChanges.map(c => ({ rangeOffset: c.rangeOffset, rangeLength: c.rangeLength, text: c.text })),
+                    );
                     if (transformed) {
                         this.decorationScheduler.scheduleUpdate(editor);
                     }
@@ -481,7 +502,7 @@ export class ExtensionController {
                     this.navigationManager.updateChangeAtCursorContext(editor);
                     // LSP-driven: scheduleDecorationUpdate only when cache has data (cursor unfolding)
                     const uri = editor.document.uri.toString();
-                    if (getCachedDecorationData(uri)) {
+                    if (this.coreDsm.getState(uri)?.cachedChanges?.length) {
                         this.decorationScheduler.scheduleUpdate(editor);
                     }
                     // Send overlay to LSP (cursor move may have flushed)
@@ -536,7 +557,7 @@ export class ExtensionController {
                 this.docStateManager.removeState(uri);
                 this.coherenceManager.removeState(uri);
                 this.statusBarCleaner?.(uri);
-                invalidateDecorationCache(uri);
+                this.coreDsm.removeState(uri);
                 this.editTracking.getChangeComments()?.disposeThreadsForUri?.(doc.uri);
             } catch (err: any) {
                 getOutputChannel()?.appendLine(`[onDidCloseTextDocument] ${err.message}\n${err.stack}`);
@@ -793,6 +814,18 @@ export class ExtensionController {
         this.statusBarCleaner = cleaner;
     }
 
+    /** Invalidate the core DSM decoration cache for a URI (used by test commands). */
+    public invalidateDecorationCache(uri: string): void {
+        this.coreDsm.invalidateCache(uri);
+    }
+
+    /** Get cached decoration change count for a URI, or undefined if no cache (used by test commands). */
+    public getCachedDecorationCount(uri: string): number | undefined {
+        const state = this.coreDsm.getState(uri);
+        if (!state || state.cacheVersion < 0) return undefined;
+        return state.cachedChanges.length;
+    }
+
     /**
      * Send a lifecycle LSP request and apply the returned edits to the active editor.
      * Delegates to LspBridge.
@@ -839,40 +872,59 @@ export class ExtensionController {
     }
 
     public updateDecorations(editor: vscode.TextEditor) {
-        if (!isSupported(editor.document)) {
-            return;
-        }
-        // Skip comment input editors — they appear in visibleTextEditors with
-        // a comment:// URI containing 'commentinput-' and pass isSupported()
-        // because the URI includes '.md'. Decorating them is a no-op that
-        // causes an O(N) storm (186 calls per view mode change).
-        if (editor.document.uri.toString().includes('commentinput-')) {
-            return;
-        }
+        if (!isSupported(editor.document)) return;
+        if (editor.document.uri.toString().includes('commentinput-')) return;
         if (this.viewModeManager.isProjectedViewActive) return;
 
         try {
             const text = editor.document.getText();
-            const languageId = editor.document.languageId;
-            const uri = editor.document.uri.toString();
-
-            // If hot path enabled, always parse locally for instant decoration
-            if (this.localParseHotPath) {
-                const virtualDoc = this.workspace.parse(text, languageId);
-                this.decorator.decorate(editor, virtualDoc, this.viewModeManager.viewMode, text, this.viewModeManager.showDelimiters);
+            if (!text) {
+                this.decorationTarget.setEditor(editor);
+                this.decorationTarget.clear();
                 return;
             }
 
-            const virtualDoc = this.getVirtualDocumentFor(uri, text, languageId, true);
-            const changes = virtualDoc.getChanges();
-            getOutputChannel()?.appendLine(`[updateDecorations] uri=${uri.split('/').pop()}, changes=${changes.length}, mode=${this.viewModeManager.viewMode}`);
+            const languageId = editor.document.languageId;
+            const uri = editor.document.uri.toString();
 
-            this.decorator.decorate(editor, virtualDoc, this.viewModeManager.viewMode, text, this.viewModeManager.showDelimiters);
+            let changes: ChangeNode[];
+            if (this.localParseHotPath) {
+                const virtualDoc = this.workspace.parse(text, languageId);
+                changes = virtualDoc.getChanges();
+            } else {
+                const virtualDoc = this.getVirtualDocumentFor(uri, text, languageId, true);
+                changes = virtualDoc.getChanges();
+                getOutputChannel()?.appendLine(
+                    `[updateDecorations] uri=${uri.split('/').pop()}, changes=${changes.length}, mode=${this.viewModeManager.viewMode}`
+                );
+            }
+
+            // Log unresolved ghost nodes
+            const ch = getOutputChannel();
+            if (ch) {
+                for (const change of changes) {
+                    if (change.anchored === false && change.level >= 2) {
+                        ch.appendLine(`[decorator] skipping unresolved L3 node id=${change.id} type=${change.type}`);
+                    }
+                }
+            }
+
+            const cursorOffset = positionToOffset(text, editor.selection.active);
+            const plan = buildDecorationPlan(
+                changes, text, this.viewModeManager.viewMode,
+                cursorOffset, this.viewModeManager.showDelimiters, this.authorColors,
+            );
+            const rulerPlan = buildOverviewRulerPlan(changes, this.viewModeManager.viewMode);
+
+            this.decorationTarget.setEditor(editor);
+            applyPlan(this.decorationTarget, plan, rulerPlan, text, changes);
             // Do not notify here: notify only from handleDecorationDataUpdate.
             // Notifying on every decoration run (including selection-driven runs) caused comment
             // threads to collapse when clicking into the reply input.
         } catch (err: any) {
-            getOutputChannel()?.appendLine(`[updateDecorations] Error for ${editor.document.uri.fsPath}: ${err.message}\n${err.stack}`);
+            getOutputChannel()?.appendLine(
+                `[updateDecorations] Error for ${editor.document.uri.fsPath}: ${err.message}\n${err.stack}`
+            );
         }
     }
 
@@ -1123,7 +1175,7 @@ export class ExtensionController {
         this.decorationScheduler.dispose();
         this.editTracking.dispose();
         this.navigationManager.dispose();
-        this.decorator.dispose();
+        this.decorationTarget.dispose();
         this.coherenceManager.dispose();
         this.lspBridge.dispose();
         this.docStateManager.dispose();

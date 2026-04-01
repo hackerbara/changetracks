@@ -1,0 +1,95 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "ChangeDown CriticMarkup",
+  "scopeName": "text.changedown.criticmarkup",
+  "injectionSelector": "L:text.html.markdown -markup.fenced_code -markup.raw",
+  "patterns": [
+    { "include": "#insertion" },
+    { "include": "#deletion" },
+    { "include": "#substitution" },
+    { "include": "#highlight" },
+    { "include": "#comment" },
+    { "include": "#footnote-ref" }
+  ],
+  "repository": {
+    "insertion": {
+      "name": "markup.inserted.critic",
+      "begin": "(\\{\\+\\+)",
+      "beginCaptures": {
+        "1": { "name": "punctuation.definition.inserted.begin.critic" }
+      },
+      "end": "(\\+\\+\\})",
+      "endCaptures": {
+        "1": { "name": "punctuation.definition.inserted.end.critic" }
+      },
+      "patterns": [
+        { "include": "$base" }
+      ]
+    },
+    "deletion": {
+      "name": "markup.deleted.critic",
+      "begin": "(\\{--)",
+      "beginCaptures": {
+        "1": { "name": "punctuation.definition.deleted.begin.critic" }
+      },
+      "end": "(--\\})",
+      "endCaptures": {
+        "1": { "name": "punctuation.definition.deleted.end.critic" }
+      },
+      "patterns": [
+        { "include": "$base" }
+      ]
+    },
+    "substitution": {
+      "name": "markup.changed.critic",
+      "begin": "(\\{~~)",
+      "beginCaptures": {
+        "1": { "name": "punctuation.definition.changed.begin.critic" }
+      },
+      "end": "(~~\\})",
+      "endCaptures": {
+        "1": { "name": "punctuation.definition.changed.end.critic" }
+      },
+      "patterns": [
+        {
+          "match": "(~>)",
+          "name": "punctuation.separator.changed.critic"
+        },
+        { "include": "$base" }
+      ]
+    },
+    "highlight": {
+      "name": "markup.highlight.critic",
+      "begin": "(\\{==)",
+      "beginCaptures": {
+        "1": { "name": "punctuation.definition.highlight.begin.critic" }
+      },
+      "end": "(==\\})",
+      "endCaptures": {
+        "1": { "name": "punctuation.definition.highlight.end.critic" }
+      },
+      "patterns": [
+        { "include": "$base" }
+      ]
+    },
+    "comment": {
+      "name": "comment.block.critic",
+      "begin": "(\\{>>)",
+      "beginCaptures": {
+        "1": { "name": "punctuation.definition.comment.begin.critic" }
+      },
+      "end": "(<<\\})",
+      "endCaptures": {
+        "1": { "name": "punctuation.definition.comment.end.critic" }
+      }
+    },
+    "footnote-ref": {
+      "match": "(\\[\\^)(cn-\\d+(?:\\.\\d+)?)(\\])",
+      "captures": {
+        "1": { "name": "punctuation.definition.footnote.begin.changedown" },
+        "2": { "name": "entity.name.footnote.changedown" },
+        "3": { "name": "punctuation.definition.footnote.end.changedown" }
+      }
+    }
+  }
+}

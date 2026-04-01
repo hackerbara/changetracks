@@ -1,0 +1,4 @@
+.build/
+ChangeDown.app/
+ChangeDown-*.zip
+ChangeDown-*.zip.sha256

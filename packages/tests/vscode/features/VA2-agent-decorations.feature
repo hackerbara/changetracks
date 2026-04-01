@@ -98,7 +98,7 @@ Feature: Agent Content Decorations - Footnoted Changes
     And parsed change 1 has author "@ai:claude"
     And parsed change 2 has author "@alice"
     And insertions is empty
-    And total setDecorations calls is 24
+    And total setDecorations calls is 26
 
   Scenario: Single agent author uses semantic colors
     Given markup text:
@@ -109,7 +109,7 @@ Feature: Agent Content Decorations - Footnoted Changes
       """
     When I decorate in markup mode
     Then insertions count is 1
-    And total setDecorations calls is 22
+    And total setDecorations calls is 24
 
   # ─── Cursor-Aware Unfolding with Footnotes ───────────────────────
 

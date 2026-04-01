@@ -1,5 +1,6 @@
 import { ChangeNode } from '@changedown/core';
-import { AUTHOR_PALETTE, ThemeColor } from './palette.js';
+import { AUTHOR_PALETTE } from '@changedown/core/host';
+import type { ThemeColor } from './palette.js';
 
 export class PreviewAuthorColorMap {
     private map: Map<string, number> = new Map();

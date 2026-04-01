@@ -71,6 +71,10 @@ const steps = [
   { name: '@changedown/mcp', dir: 'changedown-plugin/mcp-server', cmd: 'node esbuild.mjs' },
   { name: 'hooks-impl (plugin)', dir: 'changedown-plugin/hooks-impl', cmd: 'node esbuild.mjs' },
   { name: '@changedown/opencode-plugin', dir: 'packages/opencode-plugin', cmd: 'npm run build' },
+  { name: '@changedown/website-v2', dir: 'website-v2', cmd: 'npm run build' },
+  { name: 'native SPA bundle', dir: 'website-v2', cmd: 'npx vite build --config vite.config.native.ts' },
+  { name: 'mac-wrapper (Swift)', dir: 'packages/mac-wrapper', cmd: 'swift build -c release', optional: true },
+  { name: 'Package .app', dir: '.', cmd: 'node scripts/package-app.mjs', optional: true },
 ];
 
 const TOTAL = steps.length + 1; // +1 for vsix packaging
@@ -100,13 +104,17 @@ if (!values['package-only']) {
       execSync(s.cmd, { cwd: dir, stdio: 'pipe', shell: true });
       process.stdout.write(`${green('ok')}\n`);
     } catch (e) {
-      process.stdout.write(`${red('FAIL')}\n`);
-      const stderr = e.stderr?.toString() || e.stdout?.toString() || '';
-      const lines = stderr.split('\n').slice(0, 15);
-      for (const line of lines) {
-        console.log(`    ${dim(line)}`);
+      if (s.optional) {
+        process.stdout.write(`${dim('skipped (build failed — optional)')}\n`);
+      } else {
+        process.stdout.write(`${red('FAIL')}\n`);
+        const stderr = e.stderr?.toString() || e.stdout?.toString() || '';
+        const lines = stderr.split('\n').slice(0, 15);
+        for (const line of lines) {
+          console.log(`    ${dim(line)}`);
+        }
+        failed++;
       }
-      failed++;
     }
   }
 } else {

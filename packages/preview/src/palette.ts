@@ -25,18 +25,6 @@ export const CHANGE_COLORS = {
     move:      { light: '#8E44AD', dark: '#CE93D8' } as ThemeColor,
 } as const;
 
-/**
- * Per-author palette. Authors are assigned colors in insertion order,
- * cycling when there are more than 5 distinct authors.
- */
-export const AUTHOR_PALETTE: ThemeColor[] = [
-    { light: '#1E824C', dark: '#66BB6A' },  // Green
-    { light: '#8E44AD', dark: '#CE93D8' },  // Purple
-    { light: '#E67E22', dark: '#FFB74D' },  // Orange
-    { light: '#16A085', dark: '#4DB6AC' },  // Teal
-    { light: '#2980B9', dark: '#64B5F6' },  // Blue
-];
-
 // ---------------------------------------------------------------------------
 // Style mapping
 // ---------------------------------------------------------------------------
