@@ -8,8 +8,8 @@
 
 
 # In progress
-
-- **Deeper batch edit tool shaping** — Benchmark harness measuring agent compliance and change quality across models. Shaping the tool interface to match how agents naturally work.
+- **DecorationPlan Refactor** - Extend and unify text, delimeter, and footnote decoration into a unified plan/state, easing integration for other editors and opening up advanced ghost text shenaningans and other display hacks cleanly for VS Code.
+- **Deeper batch edit tool shaping** — Preliminary benchmarks on the compact CriticMarkup DSL + Hashlines MCP edit tool show dramatic tool call and token efficiencies. Agent compliance and success for large edit batches is improving with the projected multi-view matching cascade and edit session replay, but still hesitant for certain tasks and errors occasionally, particularly on complex character matches. 
 - **VS Code editor ergonomics** — Deeper review actions and threaded discussion in the review panel, comments, and other surfaces. Cleaner UX for reattaching unresolved edit anchors.
 - **Agent ergonomics** — Better MCP surface for deep review actions and file/project tracking state awareness. Clearer agent hospitality post tool blocking.
 - **Developer SDK** - Refine/refactor various parts of codebase and produce a more coherent developer starting experience.
