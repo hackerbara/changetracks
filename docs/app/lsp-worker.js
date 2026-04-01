@@ -9177,6 +9177,19 @@ ${JSON.stringify(message, null, 4)}`);
           metadata.imageMetadata = imageMeta;
         }
       }
+      function applyEquationExtraMetadata(def, metadata) {
+        if (!def.extraMetadata)
+          return;
+        const equationMeta = {};
+        for (const [key, value] of Object.entries(def.extraMetadata)) {
+          if (key.startsWith("equation-")) {
+            equationMeta[key] = value;
+          }
+        }
+        if (Object.keys(equationMeta).length > 0) {
+          metadata.equationMetadata = equationMeta;
+        }
+      }
       var CriticMarkupParser = class _CriticMarkupParser {
         constructor() {
           this.idBase = 0;
@@ -9666,6 +9679,7 @@ ${JSON.stringify(message, null, 4)}`);
               node.metadata.resolution = def.resolution;
             }
             applyImageExtraMetadata(def, node.metadata);
+            applyEquationExtraMetadata(def, node.metadata);
             if (def.startLine !== void 0) {
               node.footnoteLineRange = { startLine: def.startLine, endLine: def.endLine ?? def.startLine };
             }
@@ -9728,6 +9742,7 @@ ${JSON.stringify(message, null, 4)}`);
               if (def.resolution)
                 node.metadata.resolution = def.resolution;
               applyImageExtraMetadata(def, node.metadata);
+              applyEquationExtraMetadata(def, node.metadata);
               if (def.startLine !== void 0) {
                 node.footnoteLineRange = { startLine: def.startLine, endLine: def.endLine ?? def.startLine };
               }
@@ -11978,6 +11993,10 @@ ${JSON.stringify(message, null, 4)}`);
                 if (!current.imageMetadata)
                   current.imageMetadata = {};
                 current.imageMetadata[key] = value;
+              } else if (key.startsWith("equation-")) {
+                if (!current.equationMetadata)
+                  current.equationMetadata = {};
+                current.equationMetadata[key] = value;
               }
               continue;
             }
@@ -12047,6 +12066,9 @@ ${JSON.stringify(message, null, 4)}`);
             }
             if (fn.imageMetadata) {
               node.metadata.imageMetadata = fn.imageMetadata;
+            }
+            if (fn.equationMetadata) {
+              node.metadata.equationMetadata = fn.equationMetadata;
             }
             if (resolutionPath !== void 0) {
               node.resolutionPath = resolutionPath;
@@ -17487,6 +17509,10 @@ ${sidecarSection}
                 if (!info.imageMetadata)
                   info.imageMetadata = {};
                 info.imageMetadata["merge-detected"] = metaMatch[2];
+              } else if (metaMatch && metaMatch[1].startsWith("equation-")) {
+                if (!info.equationMetadata)
+                  info.equationMetadata = {};
+                info.equationMetadata[metaMatch[1]] = metaMatch[2];
               }
             }
             info.endLine = j;
