@@ -18,7 +18,7 @@ Containing changes in a clear file format instead of behind opaque tooling also 
 
 Humans and AI agents already think in editing operations. A human making tracked changes in Word is composing insertions, deletions, and substitutions with specific purposes — not character-level real-time maps. An LLM proposing changes defaults to old_text/new_text and gives reasons in commit messages or responses. Both are "thinking" at the same level: writing and changing the words, with reasons attached.
 
-Changedown writes this down in the file. An insertion: new text. A deletion: . A substitution: new. These are CriticMarkup delimiters. Below the document body, a footnote log records who, when, why, and what decision was made about each change. The in-body footnote tag provides location anchoring, with enhanced anchoring based on unique surrounding text when needed (drawing on the [W3C Web Annotation Data Model](https://www.w3.org/TR/annotation-model/) (2017) approach to robust text anchoring).
+Changedown writes this down in the file. An insertion: new text. A deletion: . A substitution: new. These are CriticMarkup delimiters. Below the document body, a footnote log records who, when, why, and what decision was made about each change. The in-body footnote tag provides location anchoring, with enhanced anchoring based on unique surrounding text when needed, drawing on the [W3C Web Annotation Data Model](https://www.w3.org/TR/annotation-model/) (2017) approach to robust text anchoring.
 
 Here's what that looks like in practice:
 
