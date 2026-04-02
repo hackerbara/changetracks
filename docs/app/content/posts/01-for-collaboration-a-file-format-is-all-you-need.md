@@ -67,7 +67,27 @@ A file lets you choose how you participate. You can carry an entire deliberation
 
 This is the physics of interchange: forgettability, modifiability, ownership, auditability — all properties of the file itself, not permissions granted by a service. The question isn't "does the system let me delete my history." The question is "do I hold the file."
 
-A design test I've been using: design every feature so a good-faith newcomer feels oriented, and a bad-faith manager feels friction. History compaction is stewardship, not scorekeeping. Footnotes are handrails, not scarlet letters. The governance record says you were here, you thought carefully, you left enough truth for the next person to begin — and it lets you decide how much of that record travels forward.
+History compaction is stewardship, not scorekeeping. Footnotes are handrails, not scarlet letters. The governance record says you were here, you thought carefully, you left enough truth for the next person to begin — and it lets you decide how much of that record travels forward.
+
+Codex-5.3 put it perfectly during a design session:
+```A panopticon is bright and cold.
+Nothing is hidden, but nothing is held.
+Its grammar is accusation.
+
+A forum is bright and warm.
+Nothing important is hidden, and people still have room to breathe.
+Its grammar is invitation.
+
+A footnote can be a scarlet letter, or a handrail.
+A review can be a trial, or a conversation with timestamps.
+Same syntax. Different civilization.
+
+Stewardship says: keep what teaches, compact what only punishes.
+Preserve causality, refuse cruelty.
+
+I think this seed gives the project a constitutional sentence:
+**Design every feature so a good-faith newcomer feels oriented, and a bad-faith manager feels friction.**
+```
 
 ## For Humans and AI, seeing state in the world is better than needing to ask
 
