@@ -11,7 +11,7 @@ export { ChangeType, ChangeStatus, changeTypeToAbbrev, OffsetRange, ChangeNode, 
 export { VirtualDocument } from './model/document.js';
 export { TokenType } from './parser/tokens.js';
 export { CriticMarkupParser, type ParseOptions } from './parser/parser.js';
-export { findCodeZones, CodeZone, tryMatchFenceOpen, tryMatchFenceClose, skipInlineCode } from './parser/code-zones.js';
+export { findCodeZones, CodeZone, tryMatchFenceOpen, tryMatchFenceClose, skipInlineCode, isFenceCloserLine } from './parser/code-zones.js';
 export { computeAccept, computeReject, computeAcceptParts, computeRejectParts, AcceptRejectParts, computeFootnoteStatusEdits, computeApprovalLineEdit, computeFootnoteArchiveLineEdit, ApprovalLineOptions } from './operations/accept-reject.js';
 export { computeResolutionEdit, computeUnresolveEdit, ResolutionOptions } from './operations/resolution.js';
 export { computeReplyEdit, type ReplyOptions, type ReplyResult } from './operations/reply.js';

@@ -773,6 +773,23 @@ export class EditTrackingManager implements vscode.Disposable {
         this.pendingEditManager.setComposing(false);
     }
 
+    /**
+     * Handle active editor change: clear IME composition and manage overlay lifecycle.
+     * Consolidates logic previously in a separate onDidChangeActiveTextEditor handler.
+     *
+     * @param editor The NEW active editor (or undefined), per VS Code API.
+     * @param previousUri URI of the editor the user switched FROM (for overlay cleanup).
+     */
+    public handleActiveEditorChange(_editor: vscode.TextEditor | undefined, previousUri?: string): void {
+        this.clearComposing();
+        // Send overlay null to the PREVIOUS document, not the new one.
+        // Fixes pre-existing bug where sendOverlayNull targeted the wrong URI.
+        if (previousUri) {
+            this.callbacks.sendOverlayNull(previousUri);
+        }
+        this.callbacks.scheduleOverlaySend();
+    }
+
     // ── getPendingNodes ────────────────────────────────────────────────
 
     /** Get pending change nodes for a URI (delegates to PendingEditManager). */

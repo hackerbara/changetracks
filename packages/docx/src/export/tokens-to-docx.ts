@@ -20,9 +20,15 @@ import {
   BookmarkStart,
   BookmarkEnd,
   UnderlineType,
+  Math as DocxMath,
+  MathRun,
   type ICommentOptions,
   type ParagraphChild,
 } from 'docx';
+
+import { latexToDocxMath } from './math-builder.js';
+import type { MathPatchInfo } from '../shared/math-types.js';
+import { MATH_PLACEHOLDER_PREFIX } from '../shared/math-types.js';
 
 import { basename } from '../shared/basename.js';
 
@@ -31,12 +37,14 @@ import {
   ChangeType,
   ChangeStatus,
   computeSettledText,
+  initHashline,
   settleAcceptedChangesOnly,
   settleRejectedChangesOnly,
   type ChangeNode,
 } from '@changedown/core';
 
 import { parseInlineSegments, type InlineSegment, type TextSegment, type LinkSegment } from './inline-segments.js';
+import { simpleHash } from '../shared/hash.js';
 import { buildCommentChain, type CommentReply } from './comment-builder.js';
 import type { CommentPatchInfo, ImagePatchInfo, HyperlinkPatchInfo } from '../shared/patch-types.js';
 import { resolveImageDimensions, buildImageRun } from './image-builder.js';
@@ -66,6 +74,7 @@ export interface DocxConversionResult {
   commentPatchInfos: CommentPatchInfo[];
   imagePatchInfos: ImagePatchInfo[];
   hyperlinkPatchInfos: HyperlinkPatchInfo[];
+  mathPatchInfos: MathPatchInfo[];
   stats: {
     insertions: number;
     deletions: number;
@@ -220,6 +229,9 @@ function segmentToParagraphChild(seg: InlineSegment, mediaDir?: string, fileRead
       const imageRun = tryBuildImageRun(seg.path, mediaDir, fileReader);
       return imageRun ? [imageRun] : seg.altText ? [new TextRun({ text: seg.altText })] : [];
     }
+    case 'math': {
+      return [latexToDocxMath(seg.latex, seg.displayMode)];
+    }
   }
 }
 
@@ -238,6 +250,12 @@ function segmentToTrackedRun(
       { kind: 'text', text: seg.altText },
       changeType, ctx, author, date,
     );
+  }
+
+  if (seg.kind === 'math') {
+    // Math inside tracked ins/del — emit the equation as a Math element
+    // (tracked-change wrapping around Math is not supported by OOXML)
+    return [latexToDocxMath(seg.latex, seg.displayMode)];
   }
 
   if (seg.kind === 'link') {
@@ -278,6 +296,7 @@ interface ConversionContext {
   commentPatchInfos: CommentPatchInfo[];
   imagePatchInfos: ImagePatchInfo[];
   hyperlinkPatchInfos: HyperlinkPatchInfo[];
+  mathPatchInfos: MathPatchInfo[];
   mediaDir?: string;
   fileReader?: (path: string) => Uint8Array | null;
   defaultDpi?: number;
@@ -321,6 +340,47 @@ function buildRepliesFromDiscussion(node: ChangeNode): CommentReply[] {
       depth: d.depth,
     };
   });
+}
+
+// ============================================================================
+// Math helpers
+// ============================================================================
+
+const MATH_DISPLAY_REGEX = /^\$\$([\s\S]+)\$\$$/;
+const MATH_INLINE_REGEX = /^\$([^\$]+)\$$/;
+
+/**
+ * Try to build a Math element from a ChangeNode's content.
+ * Uses cached OMML (fast-path) when the stored latex hash matches;
+ * falls back to KaTeX conversion otherwise.
+ * Returns null when the content is not a math expression.
+ */
+function tryBuildMathFromNode(
+  content: string,
+  node: ChangeNode,
+  ctx: ConversionContext,
+): DocxMath | null {
+  const displayMatch = content.match(MATH_DISPLAY_REGEX);
+  const inlineMatch = !displayMatch ? content.match(MATH_INLINE_REGEX) : null;
+  if (!displayMatch && !inlineMatch) return null;
+
+  const latex = displayMatch ? displayMatch[1] : inlineMatch![1];
+  const isDisplay = !!displayMatch;
+  const eqMeta = node.metadata?.equationMetadata;
+
+  // OMML cache fast-path: only use when hash matches to ensure round-trip fidelity
+  if (eqMeta?.['equation-omml'] && eqMeta?.['equation-latex-hash']) {
+    const currentHash = simpleHash(latex);
+    if (currentHash === eqMeta['equation-latex-hash']) {
+      const ommlXml = Buffer.from(eqMeta['equation-omml'], 'base64').toString('utf-8');
+      const placeholder = `${MATH_PLACEHOLDER_PREFIX}${ctx.mathPatchInfos.length}`;
+      ctx.mathPatchInfos.push({ placeholder, ommlXml });
+      return new DocxMath({ children: [new MathRun(placeholder)] });
+    }
+  }
+
+  // KaTeX conversion fallback
+  return latexToDocxMath(latex, isDisplay);
 }
 
 /**
@@ -440,8 +500,15 @@ function changeNodeToDocxChildren(
 
     case ChangeType.Highlight: {
       // The core parser uses originalText for highlight content, and
-      // metadata.comment for an attached {>>comment<<} (merged into node).
+      // metadata.comment for an attached  (merged into node).
       const highlightContent = node.originalText || node.modifiedText || '';
+
+      // Math inside highlight — emit Math object (OMML cache or KaTeX fallback)
+      const highlightMath = tryBuildMathFromNode(highlightContent, node, ctx);
+      if (highlightMath) {
+        children.push(highlightMath);
+        break;
+      }
 
       // Image inside highlight — emit ImageRun with metadata (no tracked change wrapping)
       const highlightImageRun = tryBuildImageFromNode(highlightContent, node, ctx);
@@ -458,7 +525,7 @@ function changeNodeToDocxChildren(
         break;
       }
 
-      // Check for attached comment (core parser merges {==text==}{>>comment<<}
+      // Check for attached comment (core parser merges text
       // into a single Highlight node with metadata.comment)
       if (node.metadata?.comment) {
         const cId = ctx.nextCommentId();
@@ -557,7 +624,7 @@ function changeNodeToDocxChildren(
       // Standalone comment (not attached to a highlight)
       const cId = ctx.nextCommentId();
       // For footnote-style comments, text lives in metadata.discussion[0].text.
-      // For inline {>>text<<} comments, text lives in metadata.comment or modifiedText.
+      // For inline  comments, text lives in metadata.comment or modifiedText.
       const disc = node.metadata?.discussion;
       let commentText: string;
       let commentAuthor: string;
@@ -720,7 +787,7 @@ function isSkippableLine(line: string): boolean {
   if (/^\[\^sc-/.test(line)) return true;
   // Skip footnote continuation lines (indented lines following [^cn-N]: definitions)
   if (/^\s{4}@/.test(line)) return true;
-  if (/^\s{4}(approved|rejected|revised|previous|image-dimensions|image-[\w-]+|merge-detected):/.test(line)) return true;
+  if (/^\s{4}(approved|rejected|revised|previous|image-dimensions|image-[\w-]+|merge-detected|equation-[\w-]+):/.test(line)) return true;
   return false;
 }
 
@@ -778,16 +845,17 @@ function parseBullet(content: string): {
  * @param options - Conversion options (mode, comments)
  * @returns Paragraphs, comment definitions, patch infos, and statistics
  */
-export function changesToDocxParagraphs(
+export async function changesToDocxParagraphs(
   markdown: string,
   options: DocxConversionOptions
-): DocxConversionResult {
+): Promise<DocxConversionResult> {
   const counters = createCounters();
 
   const commentDefs: ICommentOptions[] = [];
   const commentPatchInfos: CommentPatchInfo[] = [];
   const imagePatchInfos: ImagePatchInfo[] = [];
   const hyperlinkPatchInfos: HyperlinkPatchInfo[] = [];
+  const mathPatchInfos: MathPatchInfo[] = [];
   const stats = {
     insertions: 0,
     deletions: 0,
@@ -802,7 +870,9 @@ export function changesToDocxParagraphs(
     text = computeSettledText(markdown);
   } else if (options.mode === 'settled') {
     // Settle accepted changes (apply them) and rejected changes (revert them),
-    // leaving only proposed changes as tracked changes in the output
+    // leaving only proposed changes as tracked changes in the output.
+    // L2 settlement generates LINE:HASH edit-op lines; requires xxhash-wasm.
+    await initHashline();
     text = settleAcceptedChangesOnly(markdown).settledContent;
     text = settleRejectedChangesOnly(text).settledContent;
   }
@@ -820,6 +890,7 @@ export function changesToDocxParagraphs(
     commentPatchInfos,
     imagePatchInfos,
     hyperlinkPatchInfos,
+    mathPatchInfos,
     mediaDir: options.mediaDir,
     fileReader: options.fileReader,
     defaultDpi: options.defaultDpi,
@@ -947,6 +1018,7 @@ export function changesToDocxParagraphs(
     commentPatchInfos,
     imagePatchInfos,
     hyperlinkPatchInfos,
+    mathPatchInfos: ctx.mathPatchInfos,
     stats: {
       insertions: stats.insertions,
       deletions: stats.deletions,

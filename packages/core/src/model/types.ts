@@ -100,6 +100,7 @@ export interface ChangeNode {
     resolution?: Resolution;
     imageDimensions?: { widthIn: number; heightIn: number };
     imageMetadata?: Record<string, string>;
+    equationMetadata?: Record<string, string>;
   };
   moveRole?: 'from' | 'to';
   groupId?: string;

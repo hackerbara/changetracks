@@ -6,6 +6,7 @@ import type {
   RunFragment,
   DrawingElement,
 } from './xml-metadata-extractor.js';
+import type { MathElement } from '../shared/math-types.js';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -22,6 +23,7 @@ export interface EnrichmentMap {
     spanIndex: number
   ): RevisionEnrichment | undefined;
   getImageEnrichment(imageSrc: string): DrawingElement | undefined;
+  getMathEnrichment(index: number): MathElement | undefined;
 }
 
 // ─── Normalization ────────────────────────────────────────────────────────────
@@ -544,6 +546,16 @@ function correlateRevisions(
   return enrichments;
 }
 
+// ─── Math map ─────────────────────────────────────────────────────────────────
+
+function buildMathMap(metadata: ExtractedMetadata): Map<number, MathElement> {
+  const map = new Map<number, MathElement>();
+  for (const elem of (metadata.mathElements ?? [])) {
+    map.set(elem.index, elem);
+  }
+  return map;
+}
+
 // ─── Main entry point ─────────────────────────────────────────────────────────
 
 export function buildEnrichmentMap(
@@ -559,6 +571,9 @@ export function buildEnrichmentMap(
   // 3. Build image map (with document-order verification)
   const imageMap = buildImageMap(ast, metadata);
 
+  // 4. Build math map (indexed by document order)
+  const mathMap = buildMathMap(metadata);
+
   return {
     getRevisionEnrichment(
       blockPath: number[],
@@ -570,6 +585,10 @@ export function buildEnrichmentMap(
     getImageEnrichment(imageSrc: string): DrawingElement | undefined {
       const filename = basename(imageSrc);
       return imageMap.get(filename);
+    },
+
+    getMathEnrichment(index: number): MathElement | undefined {
+      return mathMap.get(index);
     },
   };
 }

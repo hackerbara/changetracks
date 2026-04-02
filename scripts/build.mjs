@@ -6,7 +6,7 @@
 // core → cli → lsp-server → vscode-extension → mcp-server → hooks-impl → opencode-plugin
 // Then packages .vsix.
 
-import { existsSync, readdirSync, readFileSync, unlinkSync } from 'fs';
+import { existsSync, readdirSync, readFileSync, rmSync, unlinkSync } from 'fs';
 import { join, resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { execSync } from 'child_process';
@@ -84,9 +84,24 @@ let step = 0;
 console.log(`\n  ${bold('Building ChangeDown (all packages)')}\n`);
 
 if (!values['package-only']) {
-  // Clean stale .tsbuildinfo before building
-  process.stdout.write(`  ${dim('Cleaning stale .tsbuildinfo files...')}`);
+  // Full clean: remove all build artifacts to guarantee a fresh build
+  process.stdout.write(`  ${dim('Cleaning build artifacts...')}`);
   cleanTsBuildInfo(ROOT);
+  const distDirs = [
+    'packages/core/dist', 'packages/core/dist-esm', 'packages/docx/dist',
+    'packages/cli/dist', 'packages/lsp-server/dist', 'packages/vscode-extension/out',
+    'changedown-plugin/mcp-server/dist', 'changedown-plugin/hooks-impl/dist',
+  ];
+  for (const d of distDirs) {
+    const full = join(ROOT, d);
+    if (existsSync(full)) rmSync(full, { recursive: true, force: true });
+  }
+  // Remove stale .vsix files
+  try {
+    for (const f of readdirSync(join(ROOT, 'packages/vscode-extension'))) {
+      if (f.endsWith('.vsix')) unlinkSync(join(ROOT, 'packages/vscode-extension', f));
+    }
+  } catch { /* ignore */ }
   process.stdout.write(` ${green('ok')}\n\n`);
 
   for (const s of steps) {

@@ -334,9 +334,120 @@ Use the language's native comment syntax:
 For changes spanning multiple lines, use range delimiters (see **Range Delimiters** section above):
 
 ```python
-# new` | In the `~>` separator |
+# {~~ proposed 2026-02-10 
+def calculate_total(items):
+    return sum(
+        item.price * (1 - item.discount)
+        for item in items
+        if item.active
+    )
+# ~~}
+
+# -- ChangeDown --
+# : @carol | 2026-02-10 | sub | proposed
+#     original:
+#       def calculate_total(items):
+#           total = 0
+#           for item in items:
+#               total += item.price
+#           return total
+#     @carol 2026-02-10: Refactored to list comprehension with discount support
+```
+
+The new code is live and executable between the range markers. The old code lives in the footnote under `original:`. Accept = delete marker lines, keep code. Reject = restore from footnote.
+
+### Move Operations
+
+Use dotted IDs to link deletion and insertion as one logical operation:
+
+```python
+# ## Range Delimiters (Block-Level Changes)
+
+CriticMarkup delimiters can be split across lines to bracket a block of content. This "range" form handles multi-line changes — new sections, large refactors, AI-generated code blocks — where wrapping every line in inline markers would create noise.
+
+### Format
+
+**Opening marker:** the delimiter, optional metadata, on its own line.
+
+```
+{<delimiter> [status] [date] [footnote-ref]
+```
+
+**Closing marker:** bare delimiter only.
+
+```
+<delimiter>}
+```
+
+Where `<delimiter>` is `++`, `~~`, or `--`. All fields after the delimiter are optional.
+
+**Disambiguation rule:** An opening delimiter is a range marker if and only if it appears as the first non-whitespace content on its line. Everything else is inline. Same rule for closing delimiters.
+
+### Insertion Range
+
+```markdown
+{++ proposed 2026-02-10 
+
+## New Section
+
+This entire section is proposed as one unit.
+
+++}
+```
+
+Accept = delete marker lines, content stays. Reject = delete everything between markers inclusive.
+
+### Substitution Range
+
+```markdown
+{~~ proposed 2026-02-10 
+
+## Authentication (Revised)
+
+The API uses OAuth 2.0 with JWT tokens for all public endpoints.
+
+~~}
+
+: @alice | 2026-02-10 | sub | proposed
+    original:
+      ## Authentication
+      The API uses API keys for all endpoints.
+    @alice 2026-02-10: Upgraded security model per compliance review
+```
+
+New content is live between the markers. Old content lives in the footnote under `original:` — not inline. This keeps the document readable and avoids doubling token cost for LLMs.
+
+### Deletion Range
+
+```markdown
+{-- proposed 2026-02-10  --}
+```
+
+Collapsed to a single line since there is no content to bracket. Deleted content lives in the footnote under `original:`.
+
+### In Code Files
+
+Same syntax, wrapped in language-native comments:
+
+```python
+# {++ proposed 2026-02-10 
+class BatchProcessor:
+    def __init__(self, batch_size=100):
+        self.batch_size = batch_size
+# ++}
+```
+
+Code between the markers is live and executable. The markers are comment lines only.
+
+### Inline vs. Range
+
+Both forms coexist. The choice is about scale:
+
+| Change scope | Form | Old content location |
+|-------------|------|---------------------|
+| Single line | Inline: `{~~old~>new~~}` | In the `~>` separator |
 | Multi-line | Range: `{~~ ... ~~}` | In footnote `original:` field |
-| Section/block | Range: ` ... ` | N/A (insertion) or footnote |
+| Section/block | Range: `{++ ... ++}` | N/A (insertion) or footnote |
 
 ### Constraints
 

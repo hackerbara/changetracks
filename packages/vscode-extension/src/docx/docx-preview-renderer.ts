@@ -1,4 +1,5 @@
 import MarkdownIt = require('markdown-it');
+import markdownItKatex = require('@traptitech/markdown-it-katex');
 import { parseForFormat, ChangeType } from '@changedown/core';
 import type { ViewMode } from '../view-mode';
 import { changedownPlugin, PluginConfig } from '@changedown/preview';
@@ -33,6 +34,7 @@ export function renderMarkdownToHtml(
         isDarkTheme,
     };
 
+    md.use(markdownItKatex, { throwOnError: false });
     md.use(changedownPlugin, () => config);
 
     let src = markdown;

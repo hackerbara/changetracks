@@ -27,13 +27,13 @@ export class NavigationManager implements vscode.Disposable {
     private readonly docStateManager: DocumentStateManager;
     private readonly viewModeManager: ViewModeManager;
     private readonly lspBridge: LspBridge;
-    private readonly getHiddenOffsets: () => ReadonlyArray<{ start: number; end: number }>;
+    private readonly getHiddenOffsets: (editor: vscode.TextEditor) => ReadonlyArray<{ start: number; end: number }>;
 
     constructor(
         docStateManager: DocumentStateManager,
         viewModeManager: ViewModeManager,
         lspBridge: LspBridge,
-        getHiddenOffsets: () => ReadonlyArray<{ start: number; end: number }>,
+        getHiddenOffsets: (editor: vscode.TextEditor) => ReadonlyArray<{ start: number; end: number }>,
     ) {
         this.docStateManager = docStateManager;
         this.viewModeManager = viewModeManager;
@@ -235,7 +235,7 @@ export class NavigationManager implements vscode.Disposable {
     ): void {
         if (this.isSnappingCursor) return;
 
-        const hiddenRanges = this.getHiddenOffsets();
+        const hiddenRanges = this.getHiddenOffsets(editor);
         if (hiddenRanges.length === 0) return;
 
         const docUri = editor.document.uri.toString();

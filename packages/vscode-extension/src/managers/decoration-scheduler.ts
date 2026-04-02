@@ -7,9 +7,8 @@ import { isSupported } from './shared';
  * Coalesces rapid document/selection events into a single parse + decorate
  * run to avoid renderer CPU spikes (keystrokes, cursor moves).
  *
- * The actual decoration work (`updateDecorations`) stays in controller.ts
- * for now — it accesses too many manager internals — and is provided as
- * a `performUpdate` callback.
+ * The actual decoration work (`updateDecorations`) lives in DecorationManager
+ * and is provided as a `performUpdate` callback.
  *
  * afterUpdate is called after performUpdate in the scheduled (debounced)
  * path only (not in updateNow). It is used for cursor-context and status
@@ -20,7 +19,7 @@ export class DecorationScheduler implements vscode.Disposable {
     private timeout: ReturnType<typeof setTimeout> | null = null;
     private pendingUri: string | null = null;
     private readonly performUpdate: (editor: vscode.TextEditor) => void;
-    private readonly afterUpdate: ((editor: vscode.TextEditor) => void) | undefined;
+    private afterUpdate: ((editor: vscode.TextEditor) => void) | undefined;
 
     constructor(opts: {
         performUpdate: (editor: vscode.TextEditor) => void;
@@ -28,6 +27,11 @@ export class DecorationScheduler implements vscode.Disposable {
     }) {
         this.performUpdate = opts.performUpdate;
         this.afterUpdate = opts.afterUpdate;
+    }
+
+    /** Set the afterUpdate callback (for late-binding after construction). */
+    setAfterUpdate(fn: (editor: vscode.TextEditor) => void): void {
+        this.afterUpdate = fn;
     }
 
     /**

@@ -39,14 +39,17 @@ suite('ViewModeManager (class)', () => {
             () => {},
         );
         const lspStub = new LspBridge(docStateStub, () => undefined);
+        const decorationManagerStub = {
+            clearDecorations: () => {},
+            forceHiddenRecreate: () => {},
+            updateAllVisible: () => {},
+        };
         const callbacks = {
-            updateDecorations: () => {},
             scheduleNotifyChanges: () => {},
-            getChangesForDocument: () => [],
             updateStatusBar: () => {},
             setContextKey: () => {},
         };
-        return new ViewModeManager(docStateStub, lspStub, callbacks, initialViewMode, initialShowDelimiters);
+        return new ViewModeManager(docStateStub, lspStub, decorationManagerStub, callbacks, initialViewMode, initialShowDelimiters);
     }
 
     test('constructor sets initial viewMode from argument', () => {

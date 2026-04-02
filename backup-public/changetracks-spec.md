@@ -1,3 +1,4 @@
+<!-- changedown.com/v1: tracked -->
 # ChangeDown Format Specification
 
 ChangeDown encodes change tracking and deliberation directly into text files. Changes, discussion, approvals, and revision history live in the file itself — readable by any text editor, parseable by any tool. No external database. No proprietary format.
@@ -10,16 +11,16 @@ Five change types:
 
 | Type | Syntax | Example |
 |------|--------|---------|
-| Insertion | `text` | `added this` |
-| Deletion | `` | `` |
-| Substitution | `new` | `after` |
-| Highlight | `text` | `important` |
-| Comment | `` | `` |
+| Insertion | `{++text++}` | `{++added this++}` |
+| Deletion | `{--text--}` | `{--removed this--}` |
+| Substitution | `{~~old~>new~~}` | `{~~before~>after~~}` |
+| Highlight | `{==text==}` | `{==important==}` |
+| Comment | `{>>text<<}` | `{>>a note<<}` |
 
 Highlights can have attached comments with no whitespace between:
 
 ```
-Rate limiting is set to 100 req/min
+{==Rate limiting is set to 100 req/min==}{>>seems low for production<<}
 ```
 
 All types support multi-line content. Substitutions use `~>` to separate old text from new.
@@ -29,10 +30,10 @@ All types support multi-line content. Substitutions use `~>` to separate old tex
 Each change has a footnote reference linking it to structured metadata:
 
 ```markdown
-The API should use GraphQL for the public interface.
+The API should use {~~REST~>GraphQL~~}[^cn-1] for the public interface.
 ```
 
-`[^cn-1]` is a standard markdown footnote reference. All IDs use the `ct-` prefix. IDs are document-unique and monotonically increasing — new changes always use the next integer after the highest existing ID, even if earlier IDs have been removed by compaction.
+{~~`` is a standard markdown footnote reference. IDs are document-unique and monotonically increasing.~>`[^cn-1]` is a standard markdown footnote reference. All IDs use the `ct-` prefix. IDs are document-unique and monotonically increasing — new changes always use the next integer after the highest existing ID, even if earlier IDs have been removed by compaction.~~}[^cn-18.1][^cn-1]
 
 The footnote definition carries author, date, type, and status:
 
@@ -44,7 +45,7 @@ The footnote definition carries author, date, type, and status:
 |-------|--------|-------|
 | Author | `@alice`, `@ai:claude-opus-4.6` | `@name` for humans, `@ai:model` for AI |
 | Date | `2024-01-15` | ISO 8601 date |
-| Type | `ins`, `del`, `sub`, `highlight`, `comment`, `move` | Change type (`move` for grouped operations) |
+{~~| Type | `ins`, `del`, `sub`, `highlight`, `comment` | Change type |~>| Type | `ins`, `del`, `sub`, `highlight`, `comment`, `move` | Change type (`move` for grouped operations) |~~}[^cn-18.2]
 | Status | `proposed`, `accepted`, `rejected` | Three statuses only |
 
 Withdrawal is self-rejection — the original author rejecting their own change.
@@ -88,9 +89,9 @@ Context anchors the change to surrounding text, with braces marking the changed 
 Multi-change operations use dotted IDs under a shared parent:
 
 ```markdown
-
+{--moved text--}[^cn-17.1]
 ...
-moved text
+{++moved text++}[^cn-17.2]
 ```
 
 ```
@@ -116,7 +117,15 @@ Accept/reject works at both levels: accept `ct-17` resolves all children; reject
       r2 @alice 2024-01-18: "OAuth 2.0 with JWT tokens"
 ```
 
-**Supersede.** A different author proposes an alternative to an existing change. The original is rejected and a new change is created with a cross-reference:
+{~~**Supersede.** A different author proposes an alternative to an existing change. The original stays inline. The alternative lives in the footnote:
+
+```
+: @alice | 2024-01-15 | sub | proposed
+    proposed-text: @bob 2024-01-17: "gRPC"
+    @bob 2024-01-17: gRPC is better suited for internal services.
+```
+
+Both remain proposed until a reviewer decides.~>**Supersede.** A different author proposes an alternative to an existing change. The original is rejected and a new change is created with a cross-reference:
 
 ```
 [^cn-1]: @alice | 2024-01-15 | sub | rejected
@@ -127,7 +136,7 @@ Accept/reject works at both levels: accept `ct-17` resolves all children; reject
     @bob 2024-01-17: gRPC is better suited for internal services.
 ```
 
-The cross-references (`supersedes:` / `superseded-by:`) link the two changes so tools and readers can follow the chain.
+The cross-references (`supersedes:` / `superseded-by:`) link the two changes so tools and readers can follow the chain.~~}[^cn-18.3][^cn-1]
 
 ## File Tracking Header
 
@@ -146,7 +155,7 @@ ChangeDown is designed for asynchronous collaboration, not real-time co-editing.
 **What merges cleanly without coordination:**
 
 - Discussion. Comments are append-only — two people commenting on the same change never conflicts. Merge is set union, ordered by timestamp.
-- Non-overlapping proposals. Changes to different parts of the file can be applied in any order. Duplicate IDs from parallel branches are renumbered during merge.
+{~~- Non-overlapping proposals. Changes to different parts of the file can be applied in any order.~>- Non-overlapping proposals. Changes to different parts of the file can be applied in any order. Duplicate IDs from parallel branches are renumbered during merge.~~}[^cn-20]
 
 **What requires a reviewer:**
 
@@ -172,11 +181,11 @@ No special archive syntax. Compaction is just editing — a tool can offer "clea
 ```markdown
 # API Design Document
 
-The API should use GraphQL for the public interface
+The API should use {~~REST~>GraphQL~~}[^cn-1] for the public interface
 and gRPC for internal service communication.
 
-Authentication uses OAuth 2.0 with JWT tokens for
-all endpoints. {==Rate limiting is set to 100 req/min==}{>>seems low<<}[^cn-3].
+Authentication uses {++OAuth 2.0 with JWT tokens++}[^cn-2] for
+{~~all endpoints. {==Rate limiting is set to 100 req/min==}{>>seems low<<}.~>all endpoints. {==Rate limiting is set to 100 req/min==}{>>seems low<<}[^cn-3].~~}[^cn-18.4][^cn-3]
 
 [^cn-1]: @alice | 2024-01-15 | sub | accepted
     approved: @eve 2024-01-20
@@ -199,3 +208,25 @@ all endpoints. {==Rate limiting is set to 100 req/min==}{>>seems low<<}[^cn-3].
       @dave 2024-01-19: I can run load tests next week.
     open -- awaiting load test results from @dave
 ```
+
+
+[^cn-1]: ai:claude-opus-4.6 | 2026-03-15 | creation | proposed
+    ai:claude-opus-4.6 2026-03-15T02:08:24Z: File created
+
+[^cn-18.1]: @ai:claude-opus-4.6 | 2026-03-15 | sub | proposed
+    @ai:claude-opus-4.6 2026-03-15T02:17:39Z: Clarify ct- prefix is mandatory and explain ID allocation after compaction gaps~~}
+
+[^cn-18.2]: @ai:claude-opus-4.6 | 2026-03-15 | sub | proposed
+    @ai:claude-opus-4.6 2026-03-15T02:17:39Z: Add move as a recognized type for grouped operations~~}
+
+[^cn-18.3]: @ai:claude-opus-4.6 | 2026-03-15 | sub | proposed
+    @ai:claude-opus-4.6 2026-03-15T02:17:39Z: Fix supersede mechanics to match implementation: separate footnotes with cross-references instead of shadow proposal model~~}
+
+[^cn-18.4]: @ai:claude-opus-4.6 | 2026-03-15 | sub | proposed
+    @ai:claude-opus-4.6 2026-03-15T02:17:39Z: Fix footnote ref placement: ref goes after the attached comment, not between highlight and comment~~}
+
+[^cn-18]: @ai:claude-opus-4.6 | 2026-03-15 | group | proposed
+    @ai:claude-opus-4.6 2026-03-15T02:17:39Z: propose_batch
+
+[^cn-20]: @ai:claude-opus-4.6 | 2026-03-15 | sub | proposed
+    @ai:claude-opus-4.6 2026-03-15T02:18:17Z: Add note about ID renumbering on merge~~}

@@ -1,6 +1,7 @@
+import katex from 'katex';
 import { ChangeNode, ChangeType, ChangeStatus, Approval, Revision, DiscussionComment, Resolution, findCodeZones, CodeZone } from '@changedown/core';
 import { PreviewAuthorColorMap } from './author-colors.js';
-import { escapeHtml, sanitizeContentHtml } from './escape-html.js';
+import { escapeHtml, restoreWhitelistedTags } from './escape-html.js';
 
 export interface PreviewOptions {
     showFootnotes: boolean;
@@ -240,6 +241,68 @@ function buildAnchorAnnotation(
     return '';
 }
 
+// ===== Pre-render math pipeline =====
+
+const DISPLAY_MATH_RE = /(?<!\\)\$\$([\s\S]*?)(?<!\\)\$\$/g;
+const INLINE_MATH_RE = /(?<!\\)\$([^\n$]+?)(?<!\\)\$/g;
+const KATEX_SENTINEL = '\x00KR';
+
+/** Cache KaTeX renders — same LaTeX always produces the same HTML. */
+const katexCache = new Map<string, string>();
+
+function cachedKatexRender(latex: string, displayMode: boolean): string {
+    const key = displayMode ? `D:${latex}` : `I:${latex}`;
+    let html = katexCache.get(key);
+    if (html === undefined) {
+        html = katex.renderToString(latex, { displayMode, throwOnError: false });
+        katexCache.set(key, html);
+    }
+    return html;
+}
+
+/**
+ * Pre-renders LaTeX math expressions to KaTeX HTML, replacing them with
+ * sentinel placeholders. This must happen BEFORE HTML escaping and change
+ * tag wrapping, because display math ($$...$$) requires $$ at column 0
+ * for markdown-it's block rule — which fails when buried inside <ins>/<del>.
+ */
+function preRenderMath(content: string): { result: string; regions: string[] } {
+    const regions: string[] = [];
+
+    function renderRegions(text: string, regex: RegExp, displayMode: boolean): string {
+        return text.replace(regex, (match, latex) => {
+            try {
+                const html = cachedKatexRender(
+                    displayMode ? latex.trim() : latex,
+                    displayMode,
+                );
+                regions.push(html);
+                return KATEX_SENTINEL + (regions.length - 1) + '\x00';
+            } catch {
+                return match;
+            }
+        });
+    }
+
+    let result = renderRegions(content, DISPLAY_MATH_RE, true);
+    result = renderRegions(result, INLINE_MATH_RE, false);
+    return { result, regions };
+}
+
+const KATEX_RESTORE_RE = /\x00KR(\d+)\x00/g;
+
+/**
+ * Prepares change content for HTML rendering: pre-renders math to KaTeX HTML,
+ * HTML-escapes everything else, restores whitelisted inline tags, then restores
+ * the rendered KaTeX HTML.
+ */
+function prepareChangeContent(content: string): string {
+    const { result: withSentinels, regions } = preRenderMath(content);
+    let safe = restoreWhitelistedTags(escapeHtml(withSentinels));
+    safe = safe.replace(KATEX_RESTORE_RE, (_m, idx) => regions[Number(idx)]);
+    return safe;
+}
+
 /**
  * Converts a single ChangeNode into an HTML replacement.
  * Returns null if the node should be skipped entirely.
@@ -280,7 +343,7 @@ function changeToReplacement(change: ChangeNode, src: string, options: PreviewOp
             ? `<a class="cn-move-label" href="#cn-fn-ref-${escapeAttr(pairedId)}" title="moved from ${escapeAttr(pairedId)}">&#x2190; moved here</a> `
             : '<span class="cn-move-label">&#x2190; moved here</span> ';
         const annotation = buildAnchorAnnotation(change, options.metadataDetail);
-        const moveToIns = injectAuthorColor(`<ins class="cn-move-to ${sc}"${pairAttr}${changeIdAttr}>${sanitizeContentHtml(content)}</ins>`, change, options, authorMap);
+        const moveToIns = injectAuthorColor(`<ins class="cn-move-to ${sc}"${pairAttr}${changeIdAttr}>${prepareChangeContent(content)}</ins>`, change, options, authorMap);
         return {
             start: change.range.start,
             end: change.range.end,
@@ -292,7 +355,8 @@ function changeToReplacement(change: ChangeNode, src: string, options: PreviewOp
         case ChangeType.Insertion: {
             const content = change.modifiedText ?? src.slice(change.contentRange.start, change.contentRange.end);
             const annotation = buildAnchorAnnotation(change, options.metadataDetail);
-            const insHtml = injectAuthorColor(`<ins class="cn-ins ${sc}"${pairAttr}${changeIdAttr}>${sanitizeContentHtml(content)}</ins>`, change, options, authorMap);
+            const prepared = prepareChangeContent(content);
+            const insHtml = injectAuthorColor(`<ins class="cn-ins ${sc}"${pairAttr}${changeIdAttr}>${prepared}</ins>`, change, options, authorMap);
             return {
                 start: change.range.start,
                 end: change.range.end,
@@ -302,23 +366,26 @@ function changeToReplacement(change: ChangeNode, src: string, options: PreviewOp
         case ChangeType.Deletion: {
             const content = change.originalText ?? src.slice(change.contentRange.start, change.contentRange.end);
             const annotation = buildAnchorAnnotation(change, options.metadataDetail);
+            const prepared = prepareChangeContent(content);
             // Deletion spans always use fixed CSS deletion color — no per-author override
             return {
                 start: change.range.start,
                 end: change.range.end,
-                html: `<del class="cn-del ${sc}"${pairAttr}${changeIdAttr}>${sanitizeContentHtml(content)}</del>${badge}${annotation}`,
+                html: `<del class="cn-del ${sc}"${pairAttr}${changeIdAttr}>${prepared}</del>${badge}${annotation}`,
             };
         }
         case ChangeType.Substitution: {
             const original = change.originalText ?? '';
             const modified = change.modifiedText ?? '';
             const annotation = buildAnchorAnnotation(change, options.metadataDetail);
+            const preparedOriginal = prepareChangeContent(original);
+            const preparedModified = prepareChangeContent(modified);
             // Author color applies only to the insertion side; deletion side stays fixed red
-            const insHtml = injectAuthorColor(`<ins class="cn-sub-ins ${sc}">${sanitizeContentHtml(modified)}</ins>`, change, options, authorMap);
+            const insHtml = injectAuthorColor(`<ins class="cn-sub-ins ${sc}">${preparedModified}</ins>`, change, options, authorMap);
             return {
                 start: change.range.start,
                 end: change.range.end,
-                html: `<del class="cn-sub-del ${sc}"${pairAttr}${changeIdAttr}>${sanitizeContentHtml(original)}</del>${insHtml}${badge}${annotation}`,
+                html: `<del class="cn-sub-del ${sc}"${pairAttr}${changeIdAttr}>${preparedOriginal}</del>${insHtml}${badge}${annotation}`,
             };
         }
         case ChangeType.Highlight: {
@@ -326,12 +393,12 @@ function changeToReplacement(change: ChangeNode, src: string, options: PreviewOp
             // They mark "what is being discussed", not "what changed".
             const content = change.originalText ?? src.slice(change.contentRange.start, change.contentRange.end);
             const annotation = buildAnchorAnnotation(change, options.metadataDetail);
+            const prepared = prepareChangeContent(content);
 
-            const markHtml = `<mark class="cn-hl"${pairAttr}${changeIdAttr}>${sanitizeContentHtml(content)}</mark>`;
             return {
                 start: change.range.start,
                 end: change.range.end,
-                html: `${markHtml}${badge}${annotation}`,
+                html: `<mark class="cn-hl"${pairAttr}${changeIdAttr}>${prepared}</mark>${badge}${annotation}`,
             };
         }
         case ChangeType.Comment: {

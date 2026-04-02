@@ -1,10 +1,41 @@
 import { toChangeDownAuthor } from '../shared/author-mapper.js';
 import { basename } from '../shared/basename.js';
 import { toShortDate } from '../shared/date-utils.js';
+import { simpleHash } from '../shared/hash.js';
 import type { ImportStats } from '../types.js';
 import type { EnrichmentMap, RevisionEnrichment } from './correlation-engine.js';
 import type { PandocAst, PandocBlock, PandocInline } from './pandoc-runner.js';
 import type { DocxComment, DrawingElement, RunFragment } from './xml-metadata-extractor.js';
+
+// ---------------------------------------------------------------------------
+// Math helpers
+// ---------------------------------------------------------------------------
+
+/** Strip Word SEQ field codes from Pandoc-generated LaTeX */
+function stripSeqFieldCodes(latex: string): string {
+  return latex.replace(/#\s*\([\s\\]*SEQ[\s\\]*Equation[^)]*\)/g, '').trim();
+}
+
+/** Undo Pandoc's markdown escaping of LaTeX special characters */
+function unescapePandocLatex(latex: string): string {
+  return latex.replace(/\\([_{}])/g, '$1');
+}
+
+/**
+ * Strip a lone trailing backslash left over after cleanup.
+ *
+ * Pandoc sometimes emits trailing `\ ` (forced space). After `.trim()` in
+ * `stripSeqFieldCodes`, the space is removed, leaving a bare `\`. A lone
+ * trailing backslash is not valid LaTeX and, worse, it escapes the `$`
+ * delimiter when the expression is wrapped as `$...\$`, preventing
+ * markdown-it-katex from recognising the closing delimiter.
+ */
+function stripTrailingBackslash(latex: string): string {
+  if (latex.endsWith('\\') && !latex.endsWith('\\\\')) {
+    return latex.slice(0, -1).trimEnd();
+  }
+  return latex;
+}
 
 // ---------------------------------------------------------------------------
 // Options
@@ -51,6 +82,7 @@ export function astToMarkup(
 ): { markdown: string; stats: ImportStats } {
   // Per-call mutable state
   let cnIdCounter = 0;
+  let mathIndex = 0;
   const footnotes: Footnote[] = [];
   let currentBlockPath: number[] = [];
   let currentSpanIndex = 0;
@@ -627,7 +659,7 @@ export function astToMarkup(
 
         if (hasDimensions || hasPositionMetadata) {
           const cnId = addChangeFootnote(
-            '@system', new Date().toISOString(), 'image', 'proposed',
+            'system', new Date().toISOString(), 'image', 'proposed',
             hasDimensions ? { width: widthAttr![1], height: heightAttr![1] } : undefined,
           );
           addImagePositionMetadata(cnId, src);
@@ -673,8 +705,19 @@ export function astToMarkup(
         return `~~${renderInlineContent(node.c)}~~`;
       case 'Code':
         return `\`${node.c[1]}\``;
-      case 'Link':
-        return `[${renderInlineContent(node.c[1])}](${node.c[2][0]})`;
+      case 'Link': {
+        const linkUrl: string = node.c[2][0];
+        const linkContent = node.c[1];
+        // Word cross-reference links (#_Ref...) wrapping math are dead links
+        // in markdown — unwrap so $$ delimiters aren't buried inside [...]
+        if (linkUrl.startsWith('#_Ref')) {
+          const hasMath = linkContent.some((n: PandocInline) => n.t === 'Math');
+          if (hasMath) {
+            return renderInlineContent(linkContent);
+          }
+        }
+        return `[${renderInlineContent(linkContent)}](${linkUrl})`;
+      }
       case 'Image':
         return `![${renderInlineContent(node.c[1])}](${node.c[2][0]})`;
       case 'Superscript':
@@ -702,10 +745,37 @@ export function astToMarkup(
         return '';
       case 'Cite':
         return renderInlineContent(node.c[1]);
-      case 'Math':
-        return node.c[0].t === 'InlineMath'
-          ? `$${node.c[1]}$`
-          : `$$${node.c[1]}$$`;
+      case 'Math': {
+        const isDisplay = node.c[0].t === 'DisplayMath';
+        const rawLatex: string = node.c[1];
+        const cleanedLatex = stripTrailingBackslash(stripSeqFieldCodes(unescapePandocLatex(rawLatex)));
+        const delim = isDisplay ? '$$' : '$';
+        const mathContent = `${delim}${cleanedLatex}${delim}`;
+
+        // Check for correlated OMML enrichment
+        const mathEnrichment = options.enrichment?.getMathEnrichment(mathIndex);
+        mathIndex++;
+
+        if (mathEnrichment) {
+          const ommlBase64 = Buffer.from(mathEnrichment.ommlXml).toString('base64');
+          const latexHash = simpleHash(cleanedLatex);
+          const cnId = addChangeFootnote('system', new Date().toISOString(), 'equation', 'proposed');
+          const extraLines: string[] = [
+            `equation-omml: ${ommlBase64}`,
+            `equation-latex-hash: ${latexHash}`,
+          ];
+          if (isDisplay) {
+            extraLines.push('equation-display: true');
+          }
+          addFootnoteExtraLines(cnId, extraLines);
+          const wrapped = `{==${mathContent}==}[^cn-${cnId}]`;
+          // Display math needs blank lines so math_block sees $$ at column 0
+          return isDisplay ? `\n\n${wrapped}\n\n` : wrapped;
+        }
+
+        // Display math needs blank lines even without enrichment
+        return isDisplay ? `\n\n${mathContent}\n\n` : mathContent;
+      }
       default:
         return '';
     }

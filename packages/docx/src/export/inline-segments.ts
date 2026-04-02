@@ -24,7 +24,13 @@ export type ImageSegment = {
   path: string;
 };
 
-export type InlineSegment = TextSegment | LinkSegment | ImageSegment;
+export type MathSegment = {
+  kind: 'math';
+  latex: string;
+  displayMode: boolean;
+};
+
+export type InlineSegment = TextSegment | LinkSegment | ImageSegment | MathSegment;
 
 /**
  * State-machine inline parser. Walks text character by character,
@@ -73,6 +79,28 @@ export function parseInlineSegments(text: string): InlineSegment[] {
         pos++;
       }
       continue;
+    }
+
+    // Display math: $$...$$ (check before inline $ to match longest first)
+    if (text[pos] === '$' && text[pos + 1] === '$') {
+      const end = text.indexOf('$$', pos + 2);
+      if (end !== -1) {
+        flush();
+        segments.push({ kind: 'math', latex: text.slice(pos + 2, end), displayMode: true });
+        pos = end + 2;
+        continue;
+      }
+    }
+
+    // Inline math: $...$ (require non-space, non-$ after opening $ to disambiguate from literal $)
+    if (text[pos] === '$' && text[pos + 1] !== '$' && text[pos + 1] !== ' ' && text[pos + 1] !== undefined) {
+      const end = text.indexOf('$', pos + 1);
+      if (end !== -1 && text[end - 1] !== ' ') {
+        flush();
+        segments.push({ kind: 'math', latex: text.slice(pos + 1, end), displayMode: false });
+        pos = end + 1;
+        continue;
+      }
     }
 
     // *** — toggle bold + italics

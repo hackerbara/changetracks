@@ -13,8 +13,10 @@
 import JSZip from 'jszip';
 import type { ImagePatchInfo, MediaInjection } from '../shared/image-types.js';
 import type { CommentPatchInfo, HyperlinkPatchInfo } from '../shared/patch-types.js';
+import type { MathPatchInfo } from '../shared/math-types.js';
 import { wrapTrackedImages, injectMediaFiles } from './image-patch.js';
 import { wrapTrackedHyperlinks } from './hyperlink-patch.js';
+import { injectCachedMath } from './math-patch.js';
 
 export type { CommentPatchInfo } from '../shared/patch-types.js';
 
@@ -56,6 +58,7 @@ export async function patchDocxForWordOnline(
   imagePatchInfos?: ImagePatchInfo[],
   mediaInjections?: MediaInjection[],
   hyperlinkPatchInfos?: HyperlinkPatchInfo[],
+  mathPatchInfos?: MathPatchInfo[],
 ): Promise<Uint8Array> {
   const zip = await JSZip.loadAsync(buffer);
 
@@ -99,6 +102,11 @@ export async function patchDocxForWordOnline(
       docXml = result.docXml;
       zip.file('word/_rels/document.xml.rels', result.relsXml);
     }
+  }
+
+  // --- Math OMML cache injection ---
+  if (mathPatchInfos && mathPatchInfos.length > 0) {
+    docXml = injectCachedMath(docXml, mathPatchInfos);
   }
 
   zip.file('word/document.xml', docXml);

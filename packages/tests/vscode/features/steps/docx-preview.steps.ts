@@ -10,6 +10,7 @@ import { strict as assert } from 'assert';
 import { CriticMarkupParser } from '@changedown/core';
 import { buildAnnotationCards, renderMarkdownToHtml, buildLoadingHtml, buildErrorHtml, buildChoiceHtml, buildPreviewHtml } from 'changedown-vscode/internals';
 import type { AnnotationCard, ImportStats } from 'changedown-vscode/internals';
+import type { ViewName } from '@changedown/core';
 import type { ChangeDownWorld } from './world';
 
 // -- Extend World with DOCX preview test state ----------------------------
@@ -190,7 +191,7 @@ When('I build preview HTML', function (this: ChangeDownWorld) {
         bodyHtml: this.previewBodyHtml!,
         annotations: this.previewAnnotations ?? [],
         stats: this.previewStats ?? { insertions: 0, deletions: 0, substitutions: 0, comments: 0, authors: [] },
-        currentViewMode: 'allMarkup',
+        currentViewMode: 'review',
     });
 });
 
@@ -201,13 +202,13 @@ When('I build preview HTML with view mode {string}', function (this: ChangeDownW
         bodyHtml: this.previewBodyHtml!,
         annotations: this.previewAnnotations ?? [],
         stats: this.previewStats ?? { insertions: 0, deletions: 0, substitutions: 0, comments: 0, authors: [] },
-        currentViewMode: viewMode,
+        currentViewMode: viewMode as ViewName,
     });
 });
 
 When('I render markdown to preview HTML in {string} mode', function (this: ChangeDownWorld, viewMode: string) {
     assert.ok(this.docxPreviewMarkdown !== undefined, 'No markdown set');
-    this.docxPreviewHtml = renderMarkdownToHtml(this.docxPreviewMarkdown!, false, viewMode);
+    this.docxPreviewHtml = renderMarkdownToHtml(this.docxPreviewMarkdown!, false, viewMode as ViewName);
 });
 
 Then('the webview HTML contains {string}', function (this: ChangeDownWorld, expected: string) {

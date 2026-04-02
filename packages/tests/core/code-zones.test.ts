@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { findCodeZones } from '@changedown/core/internals';
+import { findCodeZones, isFenceCloserLine } from '@changedown/core/internals';
 
 describe('findCodeZones', () => {
 
@@ -226,5 +226,35 @@ describe('findCodeZones', () => {
       const zones = findCodeZones(text);
       expect(zones).toHaveLength(3);
     });
+  });
+});
+
+describe('isFenceCloserLine', () => {
+  it('matches backtick fence closer', () => {
+    expect(isFenceCloserLine('```')).toBe(true);
+  });
+  it('matches tilde fence closer', () => {
+    expect(isFenceCloserLine('~~~')).toBe(true);
+  });
+  it('matches with leading spaces (up to 3)', () => {
+    expect(isFenceCloserLine('   ```')).toBe(true);
+  });
+  it('rejects 4+ leading spaces', () => {
+    expect(isFenceCloserLine('    ```')).toBe(false);
+  });
+  it('matches with trailing whitespace', () => {
+    expect(isFenceCloserLine('```   ')).toBe(true);
+  });
+  it('rejects trailing non-whitespace', () => {
+    expect(isFenceCloserLine('```[^cn-1]')).toBe(false);
+  });
+  it('rejects too-short run', () => {
+    expect(isFenceCloserLine('``')).toBe(false);
+  });
+  it('matches longer runs', () => {
+    expect(isFenceCloserLine('`````')).toBe(true);
+  });
+  it('rejects empty string', () => {
+    expect(isFenceCloserLine('')).toBe(false);
   });
 });

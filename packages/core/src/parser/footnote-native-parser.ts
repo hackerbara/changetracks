@@ -56,10 +56,11 @@ export function parseContextualEditOp(
   let opEnd = -1;
 
   if (opener === '{~~') {
-    // Substitution: find ~~} that is NOT part of ~> separator
+    // Substitution: use the *last* ~~} so newText may contain a ~~} substring
+    // before the true closer (indexOf would truncate early).
     const searchFrom = opStart + opener.length;
-    const closerIdx = opString.indexOf('~~}', searchFrom);
-    opEnd = closerIdx !== -1 ? closerIdx + 3 : -1;
+    const closerIdx = opString.lastIndexOf('~~}');
+    opEnd = closerIdx >= searchFrom ? closerIdx + 3 : -1;
   } else if (opener === '{>>') {
     // Comment: closer is optional
     const searchFrom = opStart + opener.length;
@@ -131,6 +132,8 @@ interface ParsedFootnote {
   imageDimensions?: { widthIn: number; heightIn: number };
   /** Additional image metadata key-value pairs from `image-*:` lines */
   imageMetadata?: Record<string, string>;
+  /** Additional equation metadata key-value pairs from `equation-*:` lines */
+  equationMetadata?: Record<string, string>;
 }
 
 export class FootnoteNativeParser {
@@ -349,6 +352,9 @@ export class FootnoteNativeParser {
         } else if (key.startsWith('image-') || key === 'merge-detected') {
           if (!current.imageMetadata) current.imageMetadata = {};
           current.imageMetadata[key] = value;
+        } else if (key.startsWith('equation-')) {
+          if (!current.equationMetadata) current.equationMetadata = {};
+          current.equationMetadata[key] = value;
         }
         continue;
       }
@@ -388,7 +394,7 @@ export class FootnoteNativeParser {
       const status = this.resolveStatus(fn.status);
 
       // Parse the CriticMarkup op to extract text content.
-      // For contextual format (e.g. "Protocol {++o++}verview"), extract the
+      // For contextual format (e.g. "Protocol overview"), extract the
       // CriticMarkup portion first — parseOp expects the string to start with
       // a CriticMarkup delimiter.
       let parsedOp: ReturnType<typeof parseOp> | null = null;
@@ -445,6 +451,9 @@ export class FootnoteNativeParser {
       }
       if (fn.imageMetadata) {
         node.metadata!.imageMetadata = fn.imageMetadata;
+      }
+      if (fn.equationMetadata) {
+        node.metadata!.equationMetadata = fn.equationMetadata;
       }
       if (resolutionPath !== undefined) {
         node.resolutionPath = resolutionPath;

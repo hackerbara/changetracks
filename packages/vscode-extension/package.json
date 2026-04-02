@@ -1,8 +1,8 @@
 {
     "name": "changedown-vscode",
-    "displayName": "ChangeDown",
-    "description": "The Human UI for the Agentic Markdown Era",
-    "version": "0.1.0",
+    "displayName": "Changedown",
+    "description": "Track changes in Markdown, for humans and AI",
+    "version": "0.3.1",
     "publisher": "changedown",
     "license": "MIT",
     "repository": {
@@ -13,6 +13,7 @@
     "engines": {
         "vscode": "^1.80.0"
     },
+    "icon": "images/icon.png",
     "categories": [
         "Other"
     ],
@@ -307,7 +308,9 @@
                 "viewType": "changedown.docxEditor",
                 "displayName": "ChangeDown DOCX Editor",
                 "selector": [
-                    { "filenamePattern": "*.docx" }
+                    {
+                        "filenamePattern": "*.docx"
+                    }
                 ],
                 "priority": "default"
             }
@@ -317,7 +320,7 @@
                 {
                     "id": "changedown",
                     "title": "ChangeDown",
-                    "icon": "media/activity-bar-icon.svg"
+                    "icon": "images/sidebar-icon.svg"
                 }
             ]
         },
@@ -644,7 +647,9 @@
             {
                 "scopeName": "text.changedown.criticmarkup",
                 "path": "./syntaxes/changedown.tmLanguage.json",
-                "injectTo": ["text.html.markdown"]
+                "injectTo": [
+                    "text.html.markdown"
+                ]
             }
         ],
         "configuration": {
@@ -751,7 +756,12 @@
                 },
                 "changedown.gutterStrategy": {
                     "type": "string",
-                    "enum": ["auto", "assume-unchanged", "proposed-api", "off"],
+                    "enum": [
+                        "auto",
+                        "assume-unchanged",
+                        "proposed-api",
+                        "off"
+                    ],
                     "default": "auto",
                     "markdownDescription": "Controls how ChangeDown manages gutter diff indicators for markdown files.\n- `auto`: Use proposed API if available (Cursor), otherwise use assume-unchanged\n- `assume-unchanged`: Silence Git's gutter via git index flags. **Note:** flagged files are hidden from `git status`, `git add .`, and `git stash` until all changes are settled.\n- `proposed-api`: Only use proposed registerQuickDiffProvider (no fallback — gutter may be noisy in VS Code stable)\n- `off`: Don't manage gutter — both Git and ChangeDown decorations show"
                 },
@@ -863,7 +873,11 @@
                 "changedown.codeLensMode": {
                     "type": "string",
                     "default": "cursor",
-                    "enum": ["cursor", "always", "off"],
+                    "enum": [
+                        "cursor",
+                        "always",
+                        "off"
+                    ],
                     "enumDescriptions": [
                         "Show CodeLens only for the line under the cursor (recommended)",
                         "Show CodeLens for all proposed changes",
@@ -876,20 +890,37 @@
         },
         "markdown.markdownItPlugins": true,
         "markdown.previewStyles": [
-            "./media/preview.css"
+            "./media/preview.css",
+            "./media/katex.min.css"
         ],
         "semanticTokenScopes": [
             {
                 "language": "markdown",
                 "scopes": {
-                    "changedown-insertion": ["markup.inserted.changedown"],
-                    "changedown-deletion": ["markup.deleted.changedown"],
-                    "changedown-highlight": ["markup.highlight.changedown"],
-                    "changedown-comment": ["comment.block.changedown"],
-                    "changedown-subOriginal": ["markup.deleted.substitution.changedown"],
-                    "changedown-subModified": ["markup.inserted.substitution.changedown"],
-                    "changedown-moveFrom": ["markup.deleted.move.changedown"],
-                    "changedown-moveTo": ["markup.inserted.move.changedown"]
+                    "changedown-insertion": [
+                        "markup.inserted.changedown"
+                    ],
+                    "changedown-deletion": [
+                        "markup.deleted.changedown"
+                    ],
+                    "changedown-highlight": [
+                        "markup.highlight.changedown"
+                    ],
+                    "changedown-comment": [
+                        "comment.block.changedown"
+                    ],
+                    "changedown-subOriginal": [
+                        "markup.deleted.substitution.changedown"
+                    ],
+                    "changedown-subModified": [
+                        "markup.inserted.substitution.changedown"
+                    ],
+                    "changedown-moveFrom": [
+                        "markup.deleted.move.changedown"
+                    ],
+                    "changedown-moveTo": [
+                        "markup.inserted.move.changedown"
+                    ]
                 }
             }
         ],
@@ -1028,12 +1059,14 @@
         "test:features:slow": "npm run compile && npm run test:slow -w @changedown/tests-vscode"
     },
     "dependencies": {
-        "changedown": "file:../cli",
         "@changedown/core": "file:../core",
         "@changedown/docx": "file:../docx",
         "@changedown/lsp-server": "file:../lsp-server",
         "@changedown/preview": "file:../preview",
+        "@traptitech/markdown-it-katex": "^3.6.0",
+        "changedown": "file:../cli",
         "diff": "^8.0.3",
+        "katex": "^0.16.44",
         "markdown-it": "^14.1.1",
         "smol-toml": "^1.3.0",
         "vscode-languageclient": "^9.0.1"

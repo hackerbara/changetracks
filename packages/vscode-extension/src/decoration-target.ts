@@ -294,14 +294,9 @@ export class VSCodeDecorationTarget implements DecorationTarget {
     }
 
     /**
-     * Force dispose and recreate the hidden decoration type.
-     *
-     * VS Code's renderer caches CSS `display: none` across setDecorations calls.
-     * The existing dispose/recreate in setDecorations('hidden', ...) only fires on
-     * had-ranges→zero-ranges transitions. But when view mode switches, hidden ranges
-     * shift (e.g. delimiter-only → full-deletion) and the cached CSS from old ranges
-     * can persist, causing stale visual state. Calling this before re-decorating
-     * after a mode switch flushes the CSS cache.
+     * Force a dispose/recreate of the hiddenType decoration type.
+     * Call before re-decorating after a view mode switch to flush VS Code's
+     * CSS renderer cache so the display:none CSS takes effect in the new mode.
      */
     public forceHiddenRecreate(): void {
         this.hiddenType.dispose();
@@ -419,7 +414,6 @@ export class VSCodeDecorationTarget implements DecorationTarget {
      */
     clear(): void {
         this.lastHiddenOffsets = [];
-        this.hadHiddenRanges = false;
 
         for (const type of this.fixedTypes.values()) {
             this.editor.setDecorations(type, []);

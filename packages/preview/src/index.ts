@@ -8,5 +8,6 @@ export type { PluginConfig } from './plugin.js';
 export { AuthorColorMap, buildDecorationPlan } from '@changedown/core/host';
 export type { DecorationPlan, OffsetDecoration, AuthorDecorationRole, ViewMode } from '@changedown/core/host';
 export { generatePreviewCSS, generateViewModeCSS } from './generate-css.js';
+export { generateKatexCSS } from './generate-katex-css.js';
 export { createPreviewRenderer } from './preview-renderer.js';
 export type { PreviewRenderer, PreviewRendererOptions, RenderResult as PreviewRenderResult } from './preview-renderer.js';

@@ -32,7 +32,7 @@ export async function exportDocx(
   }
 
   // Step 1: Convert markdown to paragraphs
-  const result = changesToDocxParagraphs(markdown, {
+  const result = await changesToDocxParagraphs(markdown, {
     mode,
     comments,
     mediaDir: options?.mediaDir,
@@ -71,6 +71,7 @@ export async function exportDocx(
       result.imagePatchInfos,
       undefined,
       result.hyperlinkPatchInfos,
+      result.mathPatchInfos,
     );
   }
 

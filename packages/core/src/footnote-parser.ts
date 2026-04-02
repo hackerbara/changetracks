@@ -25,7 +25,7 @@ export interface FootnoteInfo {
   /** @deprecated Use timestamp.date */
   date: string;           // e.g. "2026-02-17"
   timestamp: Timestamp;   // parsed timestamp from the footnote header
-  type: 'ins' | 'del' | 'sub' | 'comment' | 'highlight' | 'image' | string;  // e.g. "sub", "ins", "image"
+  type: 'ins' | 'del' | 'sub' | 'comment' | 'highlight' | 'image' | 'equation' | string;  // e.g. "sub", "ins", "image"
   status: string;         // e.g. "proposed", "accepted", "rejected"
   reason: string;         // the "reason: ..." value, or empty
   replyCount: number;     // number of thread reply lines
@@ -37,6 +37,8 @@ export interface FootnoteInfo {
   imageDimensions?: { widthIn: number; heightIn: number };
   /** Bag of image-* positioning metadata (e.g. image-float, image-h-anchor, image-wrap) */
   imageMetadata?: Record<string, string>;
+  /** Bag of equation-* metadata (e.g. equation-omml, equation-latex-hash) */
+  equationMetadata?: Record<string, string>;
 }
 
 // Use shared FOOTNOTE_THREAD_REPLY from footnote-patterns.ts
@@ -109,6 +111,9 @@ export function parseFootnotes(content: string): Map<string, FootnoteInfo> {
         } else if (metaMatch && metaMatch[1] === 'merge-detected') {
           if (!info.imageMetadata) info.imageMetadata = {};
           info.imageMetadata['merge-detected'] = metaMatch[2];
+        } else if (metaMatch && metaMatch[1].startsWith('equation-')) {
+          if (!info.equationMetadata) info.equationMetadata = {};
+          info.equationMetadata[metaMatch[1]] = metaMatch[2];
         }
       }
       info.endLine = j;

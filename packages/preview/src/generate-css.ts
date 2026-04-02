@@ -44,6 +44,14 @@ export function generatePreviewCSS(theme: 'dark' | 'light' = 'dark'): string {
     }
   }
 
+  // Override browser default <mark> styling: UA stylesheets set color to black,
+  // which makes highlighted text invisible on dark backgrounds.
+  rules.push('.cn-hl { color: inherit }');
+
+  // KaTeX equations inherit color from their wrapper — ensure they use the
+  // page's text color, not the browser's <mark> default.
+  rules.push('.katex { color: inherit }');
+
   return rules.join('\n');
 }
 
@@ -106,3 +114,4 @@ export function generateViewModeCSS(): string {
   border-left-color: #2980B9;
 }`;
 }
+

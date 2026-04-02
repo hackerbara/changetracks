@@ -414,6 +414,33 @@ function tryMatchFenceClose(text, position, fenceMarkerCode, fenceLength) {
   }
   return pos;
 }
+function isFenceCloserLine(line) {
+  let pos = 0;
+  let spaces = 0;
+  while (spaces < 3 && pos < line.length && line.charCodeAt(pos) === 32) {
+    spaces++;
+    pos++;
+  }
+  if (pos >= line.length)
+    return false;
+  const marker = line.charCodeAt(pos);
+  if (marker !== 96 && marker !== 126)
+    return false;
+  let runLength = 0;
+  while (pos < line.length && line.charCodeAt(pos) === marker) {
+    runLength++;
+    pos++;
+  }
+  if (runLength < 3)
+    return false;
+  while (pos < line.length) {
+    const c = line.charCodeAt(pos);
+    if (c !== 32 && c !== 9)
+      return false;
+    pos++;
+  }
+  return true;
+}
 function skipInlineCode(text, position) {
   let openEnd = position;
   while (openEnd < text.length && text.charCodeAt(openEnd) === 96) {
@@ -549,8 +576,27 @@ function formatL3EditOpLine(lineNumber, hash, editOp) {
   return `    ${lineNumber}:${hash} ${editOp}`;
 }
 function buildContextualL3EditOp(params) {
-  const { changeType, originalText, currentText, lineContent, lineNumber, hash, column, anchorLen } = params;
-  const rawOp = buildEditOpFromParts(CHANGE_TYPE_KEY[changeType], originalText, currentText);
+  const { changeType, lineContent, lineNumber, hash, column, anchorLen } = params;
+  let originalText = params.originalText ?? "";
+  let currentText = params.currentText ?? "";
+  const typeKey = CHANGE_TYPE_KEY[changeType];
+  let rawOp = buildEditOpFromParts(typeKey, originalText, currentText);
+  if (lineContent.length > 0 && anchorLen > 0) {
+    const col = Math.max(0, Math.min(column, lineContent.length));
+    const end = Math.min(col + anchorLen, lineContent.length);
+    const bodySlice = lineContent.slice(col, end);
+    if (changeType === ChangeType.Insertion && rawOp === "{++++}" && bodySlice.length > 0) {
+      currentText = bodySlice;
+      rawOp = buildEditOpFromParts(typeKey, originalText, currentText);
+    }
+    if (changeType === ChangeType.Substitution && rawOp === "{~~~>~~}") {
+      if (bodySlice.length > 0)
+        currentText = bodySlice;
+      if (!originalText && currentText)
+        originalText = UNKNOWN_PRIOR_SUB;
+      rawOp = buildEditOpFromParts(typeKey, originalText, currentText);
+    }
+  }
   if (!lineContent) {
     return formatL3EditOpLine(lineNumber, hash, rawOp);
   }
@@ -607,7 +653,7 @@ function scanMaxCnId(text) {
   }
   return max;
 }
-var CHANGE_TYPE_KEY;
+var CHANGE_TYPE_KEY, UNKNOWN_PRIOR_SUB;
 var init_footnote_generator = __esm({
   "../../packages/core/dist-esm/operations/footnote-generator.js"() {
     "use strict";
@@ -621,6 +667,7 @@ var init_footnote_generator = __esm({
       [ChangeType.Highlight]: "highlight",
       [ChangeType.Comment]: "comment"
     };
+    UNKNOWN_PRIOR_SUB = "\u2026";
   }
 });
 
@@ -666,6 +713,19 @@ function applyImageExtraMetadata(def, metadata) {
   }
   if (Object.keys(imageMeta).length > 0) {
     metadata.imageMetadata = imageMeta;
+  }
+}
+function applyEquationExtraMetadata(def, metadata) {
+  if (!def.extraMetadata)
+    return;
+  const equationMeta = {};
+  for (const [key, value] of Object.entries(def.extraMetadata)) {
+    if (key.startsWith("equation-")) {
+      equationMeta[key] = value;
+    }
+  }
+  if (Object.keys(equationMeta).length > 0) {
+    metadata.equationMetadata = equationMeta;
   }
 }
 var CriticMarkupParser;
@@ -1168,6 +1228,7 @@ var init_parser = __esm({
             node.metadata.resolution = def.resolution;
           }
           applyImageExtraMetadata(def, node.metadata);
+          applyEquationExtraMetadata(def, node.metadata);
           if (def.startLine !== void 0) {
             node.footnoteLineRange = { startLine: def.startLine, endLine: def.endLine ?? def.startLine };
           }
@@ -1230,6 +1291,7 @@ var init_parser = __esm({
             if (def.resolution)
               node.metadata.resolution = def.resolution;
             applyImageExtraMetadata(def, node.metadata);
+            applyEquationExtraMetadata(def, node.metadata);
             if (def.startLine !== void 0) {
               node.footnoteLineRange = { startLine: def.startLine, endLine: def.endLine ?? def.startLine };
             }
@@ -2563,8 +2625,8 @@ function parseContextualEditOp(opString) {
   let opEnd = -1;
   if (opener === "{~~") {
     const searchFrom = opStart + opener.length;
-    const closerIdx = opString.indexOf("~~}", searchFrom);
-    opEnd = closerIdx !== -1 ? closerIdx + 3 : -1;
+    const closerIdx = opString.lastIndexOf("~~}");
+    opEnd = closerIdx >= searchFrom ? closerIdx + 3 : -1;
   } else if (opener === "{>>") {
     const searchFrom = opStart + opener.length;
     const closerIdx = opString.indexOf("<<}", searchFrom);
@@ -2801,6 +2863,10 @@ var init_footnote_native_parser = __esm({
               if (!current.imageMetadata)
                 current.imageMetadata = {};
               current.imageMetadata[key] = value;
+            } else if (key.startsWith("equation-")) {
+              if (!current.equationMetadata)
+                current.equationMetadata = {};
+              current.equationMetadata[key] = value;
             }
             continue;
           }
@@ -2870,6 +2936,9 @@ var init_footnote_native_parser = __esm({
           }
           if (fn.imageMetadata) {
             node.metadata.imageMetadata = fn.imageMetadata;
+          }
+          if (fn.equationMetadata) {
+            node.metadata.equationMetadata = fn.equationMetadata;
           }
           if (resolutionPath !== void 0) {
             node.resolutionPath = resolutionPath;
@@ -3287,6 +3356,17 @@ function buildSegmentsWithZoneAwareness(text, parts, zones) {
     if (ref && findContainingCodeZone(part.offset, zones)) {
       segments.push(part.text);
       deferredRefs.push({ ref, origLineIndex: offsetToLine(part.offset) });
+    } else if (ref && zones.length > 0) {
+      const targetLineIdx = offsetToLine(part.offset);
+      const lineStartOff = targetLineIdx === 0 ? 0 : lineBreaks[targetLineIdx - 1] + 1;
+      const lineEndOff = targetLineIdx < lineBreaks.length ? lineBreaks[targetLineIdx] : text.length;
+      const targetLine = text.slice(lineStartOff, lineEndOff);
+      if (isFenceCloserLine(targetLine)) {
+        segments.push(part.text);
+        deferredRefs.push({ ref, origLineIndex: targetLineIdx + 1 });
+      } else {
+        segments.push(part.text + ref);
+      }
     } else {
       segments.push(part.text + ref);
     }
@@ -3309,9 +3389,30 @@ function buildSegmentsWithZoneAwareness(text, parts, zones) {
   for (const [lineIdx, refs] of refsByLine) {
     if (lineIdx < lines.length) {
       lines[lineIdx] = lines[lineIdx] + refs.join("");
+    } else {
+      while (lines.length <= lineIdx)
+        lines.push("");
+      lines[lineIdx] = refs.join("");
     }
   }
   return lines.join("\n");
+}
+function recoverL2EditOpPayload(change, sourceText) {
+  let orig = change.originalText ?? "";
+  let cur = change.modifiedText ?? "";
+  if (change.type === ChangeType.Insertion) {
+    if (!cur && change.contentRange) {
+      cur = sourceText.slice(change.contentRange.start, change.contentRange.end);
+    }
+  } else if (change.type === ChangeType.Substitution) {
+    if (!cur && change.modifiedRange) {
+      cur = sourceText.slice(change.modifiedRange.start, change.modifiedRange.end);
+    }
+    if (!orig && change.originalRange) {
+      orig = sourceText.slice(change.originalRange.start, change.originalRange.end);
+    }
+  }
+  return { originalText: orig, currentText: cur };
 }
 function settleAcceptedChangesOnly(text) {
   if (isL3Format(text)) {
@@ -3325,7 +3426,79 @@ function settleAcceptedChangesOnly(text) {
   }
   const parts = [...accepted].sort((a, b) => a.range.start - b.range.start).map(computeAcceptParts);
   const zones = findCodeZones(text);
-  const settledContent = buildSegmentsWithZoneAwareness(text, parts, zones);
+  const rawSettledContent = buildSegmentsWithZoneAwareness(text, parts, zones);
+  const { bodyLines, footnoteLines } = splitBodyAndFootnotes(rawSettledContent.split("\n"));
+  const refRe = footnoteRefGlobal();
+  const cleanBodyLines = bodyLines.map((line) => line.replace(refRe, ""));
+  const refIndex = /* @__PURE__ */ new Map();
+  for (let i = 0; i < bodyLines.length; i++) {
+    const refPattern = /\[\^cn-[\w.]+\]/g;
+    let rm;
+    while ((rm = refPattern.exec(bodyLines[i])) !== null) {
+      refIndex.set(rm[0], { lineIdx: i, col: rm.index });
+    }
+  }
+  const footnoteHeaderIndex = /* @__PURE__ */ new Map();
+  for (let i = 0; i < footnoteLines.length; i++) {
+    const idMatch = footnoteLines[i].match(/^\[\^(cn-[\w.]+)\]:/);
+    if (idMatch)
+      footnoteHeaderIndex.set(idMatch[1], i);
+  }
+  const scanRe = footnoteRefGlobal();
+  const editOpInsertions = [];
+  for (const change of accepted) {
+    const { originalText: effOrig, currentText: effCur } = recoverL2EditOpPayload(change, text);
+    const refPos = refIndex.get(`[^${change.id}]`);
+    if (!refPos)
+      continue;
+    const { lineIdx, col: refColInLine } = refPos;
+    let anchorLen;
+    switch (change.type) {
+      case ChangeType.Insertion:
+      case ChangeType.Substitution:
+        anchorLen = effCur.length;
+        break;
+      case ChangeType.Deletion:
+        anchorLen = 0;
+        break;
+      case ChangeType.Highlight:
+        anchorLen = (change.originalText ?? "").length;
+        break;
+      default:
+        anchorLen = 0;
+        break;
+    }
+    scanRe.lastIndex = 0;
+    let precedingRefBytes = 0;
+    let m;
+    while ((m = scanRe.exec(bodyLines[lineIdx])) !== null) {
+      if (m.index >= refColInLine)
+        break;
+      precedingRefBytes += m[0].length;
+    }
+    const changeCol = Math.max(0, refColInLine - precedingRefBytes - anchorLen);
+    const lineNumber = lineIdx + 1;
+    const hash = computeLineHash(lineIdx, cleanBodyLines[lineIdx], cleanBodyLines);
+    const editOpLine = buildContextualL3EditOp({
+      changeType: change.type,
+      originalText: effOrig,
+      currentText: effCur,
+      lineContent: cleanBodyLines[lineIdx],
+      lineNumber,
+      hash,
+      column: changeCol,
+      anchorLen
+    });
+    const headerLine = footnoteHeaderIndex.get(change.id);
+    if (headerLine !== void 0) {
+      editOpInsertions.push({ headerLine, editOpLine });
+    }
+  }
+  editOpInsertions.sort((a, b) => b.headerLine - a.headerLine);
+  for (const { headerLine, editOpLine } of editOpInsertions) {
+    footnoteLines.splice(headerLine + 1, 0, editOpLine);
+  }
+  const settledContent = [...bodyLines, "", ...footnoteLines].join("\n");
   return { settledContent, settledIds };
 }
 function settleRejectedChangesOnly(text) {
@@ -3462,6 +3635,7 @@ var init_settled_text = __esm({
     init_footnote_patterns();
     init_code_zones();
     init_format_aware_parse();
+    init_footnote_generator();
   }
 });
 

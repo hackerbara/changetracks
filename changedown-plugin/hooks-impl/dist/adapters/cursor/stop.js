@@ -412,9 +412,29 @@ var CHANGE_TYPE_KEY = {
   [ChangeType.Highlight]: "highlight",
   [ChangeType.Comment]: "comment"
 };
+var UNKNOWN_PRIOR_SUB = "\u2026";
 function buildContextualL3EditOp(params) {
-  const { changeType, originalText, currentText, lineContent, lineNumber, hash, column, anchorLen } = params;
-  const rawOp = buildEditOpFromParts(CHANGE_TYPE_KEY[changeType], originalText, currentText);
+  const { changeType, lineContent, lineNumber, hash, column, anchorLen } = params;
+  let originalText = params.originalText ?? "";
+  let currentText = params.currentText ?? "";
+  const typeKey = CHANGE_TYPE_KEY[changeType];
+  let rawOp = buildEditOpFromParts(typeKey, originalText, currentText);
+  if (lineContent.length > 0 && anchorLen > 0) {
+    const col = Math.max(0, Math.min(column, lineContent.length));
+    const end = Math.min(col + anchorLen, lineContent.length);
+    const bodySlice = lineContent.slice(col, end);
+    if (changeType === ChangeType.Insertion && rawOp === "{++++}" && bodySlice.length > 0) {
+      currentText = bodySlice;
+      rawOp = buildEditOpFromParts(typeKey, originalText, currentText);
+    }
+    if (changeType === ChangeType.Substitution && rawOp === "{~~~>~~}") {
+      if (bodySlice.length > 0)
+        currentText = bodySlice;
+      if (!originalText && currentText)
+        originalText = UNKNOWN_PRIOR_SUB;
+      rawOp = buildEditOpFromParts(typeKey, originalText, currentText);
+    }
+  }
   if (!lineContent) {
     return formatL3EditOpLine(lineNumber, hash, rawOp);
   }
@@ -514,6 +534,19 @@ function applyImageExtraMetadata(def, metadata) {
   }
   if (Object.keys(imageMeta).length > 0) {
     metadata.imageMetadata = imageMeta;
+  }
+}
+function applyEquationExtraMetadata(def, metadata) {
+  if (!def.extraMetadata)
+    return;
+  const equationMeta = {};
+  for (const [key, value] of Object.entries(def.extraMetadata)) {
+    if (key.startsWith("equation-")) {
+      equationMeta[key] = value;
+    }
+  }
+  if (Object.keys(equationMeta).length > 0) {
+    metadata.equationMetadata = equationMeta;
   }
 }
 var CriticMarkupParser = class _CriticMarkupParser {
@@ -1005,6 +1038,7 @@ var CriticMarkupParser = class _CriticMarkupParser {
         node.metadata.resolution = def.resolution;
       }
       applyImageExtraMetadata(def, node.metadata);
+      applyEquationExtraMetadata(def, node.metadata);
       if (def.startLine !== void 0) {
         node.footnoteLineRange = { startLine: def.startLine, endLine: def.endLine ?? def.startLine };
       }
@@ -1067,6 +1101,7 @@ var CriticMarkupParser = class _CriticMarkupParser {
         if (def.resolution)
           node.metadata.resolution = def.resolution;
         applyImageExtraMetadata(def, node.metadata);
+        applyEquationExtraMetadata(def, node.metadata);
         if (def.startLine !== void 0) {
           node.footnoteLineRange = { startLine: def.startLine, endLine: def.endLine ?? def.startLine };
         }
@@ -1730,8 +1765,8 @@ function parseContextualEditOp(opString) {
   let opEnd = -1;
   if (opener === "{~~") {
     const searchFrom = opStart + opener.length;
-    const closerIdx = opString.indexOf("~~}", searchFrom);
-    opEnd = closerIdx !== -1 ? closerIdx + 3 : -1;
+    const closerIdx = opString.lastIndexOf("~~}");
+    opEnd = closerIdx >= searchFrom ? closerIdx + 3 : -1;
   } else if (opener === "{>>") {
     const searchFrom = opStart + opener.length;
     const closerIdx = opString.indexOf("<<}", searchFrom);
@@ -1944,6 +1979,10 @@ var FootnoteNativeParser = class {
           if (!current.imageMetadata)
             current.imageMetadata = {};
           current.imageMetadata[key] = value;
+        } else if (key.startsWith("equation-")) {
+          if (!current.equationMetadata)
+            current.equationMetadata = {};
+          current.equationMetadata[key] = value;
         }
         continue;
       }
@@ -2013,6 +2052,9 @@ var FootnoteNativeParser = class {
       }
       if (fn.imageMetadata) {
         node.metadata.imageMetadata = fn.imageMetadata;
+      }
+      if (fn.equationMetadata) {
+        node.metadata.equationMetadata = fn.equationMetadata;
       }
       if (resolutionPath !== void 0) {
         node.resolutionPath = resolutionPath;

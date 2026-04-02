@@ -48,10 +48,17 @@ build_pkg() {
 echo "${BOLD}Building ChangeDown (all packages) [legacy]${RESET}"
 echo ""
 
-# Clean stale .tsbuildinfo files that cause incremental builds to skip output
-# generation when dist/ was deleted. This is cheap (~2ms) and prevents the
-# "dist exists in tsbuildinfo but not on disk" class of silent build failures.
+# Full clean: remove all build artifacts to guarantee a fresh build.
+# Cleans dist/, out/, .tsbuildinfo, and .vsix files.
+printf "${BOLD}Cleaning build artifacts...${RESET} "
 find "$ROOT" -name '*.tsbuildinfo' -not -path '*/node_modules/*' -delete 2>/dev/null || true
+for clean_dir in packages/core/dist packages/core/dist-esm packages/docx/dist packages/cli/dist \
+                 packages/lsp-server/dist packages/vscode-extension/out \
+                 changedown-plugin/mcp-server/dist changedown-plugin/hooks-impl/dist; do
+  rm -rf "$ROOT/$clean_dir" 2>/dev/null || true
+done
+rm -f "$ROOT"/packages/vscode-extension/*.vsix 2>/dev/null || true
+printf "${GREEN}ok${RESET}\n"
 
 build_pkg "@changedown/core"        "packages/core"                    "npm run build"
 build_pkg "@changedown/docx"        "packages/docx"                    "npx tsc"

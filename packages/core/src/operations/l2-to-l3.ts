@@ -19,7 +19,7 @@
 import { ChangeNode, ChangeType, ChangeStatus } from '../model/types.js';
 import { CriticMarkupParser } from '../parser/parser.js';
 import { computeLineHash, initHashline } from '../hashline.js';
-import { footnoteRefGlobal, FOOTNOTE_DEF_START, FOOTNOTE_CONTINUATION, splitBodyAndFootnotes } from '../footnote-patterns.js';
+import { footnoteRefGlobal, FOOTNOTE_DEF_START, FOOTNOTE_CONTINUATION, FOOTNOTE_L3_EDIT_OP, splitBodyAndFootnotes } from '../footnote-patterns.js';
 import { buildContextualL3EditOp } from './footnote-generator.js';
 
 // ─── Body text replacement ────────────────────────────────────────────────────
@@ -128,14 +128,20 @@ export async function convertL2ToL3(text: string): Promise<string> {
   // Note: The parser already includes [^cn-N] in change.range for L2 changes,
   // so refs attached to CriticMarkup were already removed in Step 1.
   // This step removes any standalone refs remaining in the body (not footnotes).
+
+  // Save pre-ref-strip body for offset→line lookups. cumulativeDeltas (computed
+  // below) are offsets into the post-step-1 body, which still contains refs.
+  // Using lineStarts from the ref-stripped body would cause offset drift when
+  // orphan refs (no matching footnote def) are stripped in this step.
+  const preRefBodyStr = cleanBodyLines.join('\n');
+  const preRefLineStarts = buildLineStarts(preRefBodyStr);
+
   const refRe = footnoteRefGlobal();
   cleanBodyLines = cleanBodyLines.map(line => line.replace(refRe, ''));
 
   // ── Step 5: For each change, find the anchor line in the clean body ────────
   // Map change.id → pre-formatted L3 edit-op line string
   const anchorMap = new Map<string, string>();
-  const bodyStr = cleanBodyLines.join('\n');
-  const lineStarts = buildLineStarts(bodyStr);
 
   // Precompute cumulative offset deltas for each change in ascending order.
   // cumulativeDeltas[i] = change.range.start shifted by all preceding edits.
@@ -149,7 +155,10 @@ export async function convertL2ToL3(text: string): Promise<string> {
 
   for (let changeIdx = 0; changeIdx < sortedAsc.length; changeIdx++) {
     const change = sortedAsc[changeIdx];
-    const shiftedLineNum = offsetToLineNumber(lineStarts, cumulativeDeltas[changeIdx]);
+
+    // Use preRefLineStarts for offset→line lookup because cumulativeDeltas are
+    // offsets into the post-step-1 body (before ref stripping).
+    const shiftedLineNum = offsetToLineNumber(preRefLineStarts, cumulativeDeltas[changeIdx]);
     let lineNum = shiftedLineNum;
 
     // Clamp to valid body line range
@@ -157,9 +166,11 @@ export async function convertL2ToL3(text: string): Promise<string> {
 
     const lineIdx = lineNum - 1;
     const lineContent = cleanBodyLines[lineIdx] ?? '';
-    const lineStart = lineStarts[lineIdx] ?? 0;
+    // Use preRefLineStarts for column computation since cumulativeDeltas are
+    // offsets into the pre-ref-strip body.
+    const preRefLineStart = preRefLineStarts[lineIdx] ?? 0;
     const changeCol = Math.max(0, Math.min(
-      cumulativeDeltas[changeIdx] - lineStart,
+      cumulativeDeltas[changeIdx] - preRefLineStart,
       lineContent.length,
     ));
 
@@ -230,7 +241,10 @@ export async function convertL2ToL3(text: string): Promise<string> {
 
       if (changeId) {
         const anchor = anchorMap.get(changeId);
-        if (anchor) {
+        // Only inject if no existing edit-op line follows the header
+        const nextLine = footnoteLines[i];
+        const hasExistingEditOp = nextLine && FOOTNOTE_L3_EDIT_OP.test(nextLine);
+        if (anchor && !hasExistingEditOp) {
           rebuiltFootnotes.push(anchor);
         }
       }

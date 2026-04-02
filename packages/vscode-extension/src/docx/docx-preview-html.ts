@@ -12,7 +12,7 @@
 
 import type { AnnotationCard } from './annotation-extractor';
 import type { ViewMode } from '../view-mode';
-import { generateViewModeCSS } from '@changedown/preview';
+import { generateViewModeCSS, generateKatexCSS } from '@changedown/preview';
 
 function generateNonce(): string {
     const array = new Uint8Array(16);
@@ -283,6 +283,9 @@ body { font-family: var(--vscode-font-family); color: var(--vscode-foreground); 
 
 /* ── View mode CSS (shared from @changedown/preview) ── */
 ${generateViewModeCSS()}
+
+/* ── KaTeX math rendering CSS ── */
+${generateKatexCSS()}
 </style>
 </head><body>
 <div class="cn-docx-toolbar">

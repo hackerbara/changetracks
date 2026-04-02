@@ -199,6 +199,42 @@ export function tryMatchFenceClose(text: string, position: number, fenceMarkerCo
 }
 
 /**
+ * Checks whether a single line matches a CommonMark fence close pattern:
+ * 0-3 leading spaces + 3+ backticks/tildes (all same char) + optional trailing whitespace.
+ *
+ * Unlike tryMatchFenceClose, this operates on a standalone line string
+ * rather than a position in a larger text buffer, and does not require
+ * knowing the opening fence's marker or length.
+ */
+export function isFenceCloserLine(line: string): boolean {
+  let pos = 0;
+  let spaces = 0;
+  while (spaces < 3 && pos < line.length && line.charCodeAt(pos) === 32) {
+    spaces++;
+    pos++;
+  }
+  if (pos >= line.length) return false;
+
+  const marker = line.charCodeAt(pos);
+  if (marker !== 96 && marker !== 126) return false; // backtick or tilde
+
+  let runLength = 0;
+  while (pos < line.length && line.charCodeAt(pos) === marker) {
+    runLength++;
+    pos++;
+  }
+  if (runLength < 3) return false;
+
+  while (pos < line.length) {
+    const c = line.charCodeAt(pos);
+    if (c !== 32 && c !== 9) return false; // only whitespace after markers
+    pos++;
+  }
+
+  return true;
+}
+
+/**
  * Detects an inline code span starting at `position` (which must be a backtick).
  * Counts the opening backtick run, then scans forward for a matching closing run
  * of the same length (CommonMark section 6.1).

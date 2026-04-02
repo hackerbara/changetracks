@@ -73,6 +73,20 @@ function applyImageExtraMetadata(def: FootnoteDefinition, metadata: NonNullable<
   }
 }
 
+/** Propagate extraMetadata equation fields from a FootnoteDefinition to ChangeNode.metadata. */
+function applyEquationExtraMetadata(def: FootnoteDefinition, metadata: NonNullable<ChangeNode['metadata']>): void {
+  if (!def.extraMetadata) return;
+  const equationMeta: Record<string, string> = {};
+  for (const [key, value] of Object.entries(def.extraMetadata)) {
+    if (key.startsWith('equation-')) {
+      equationMeta[key] = value;
+    }
+  }
+  if (Object.keys(equationMeta).length > 0) {
+    metadata.equationMetadata = equationMeta;
+  }
+}
+
 export interface ParseOptions {
   /**
    * When true (default), the parser skips CriticMarkup inside fenced code blocks
@@ -669,6 +683,7 @@ export class CriticMarkupParser {
       }
 
       applyImageExtraMetadata(def, node.metadata);
+      applyEquationExtraMetadata(def, node.metadata);
 
       // Propagate footnote line range and reply count
       if (def.startLine !== undefined) {
@@ -729,6 +744,7 @@ export class CriticMarkupParser {
         if (def.resolution) node.metadata!.resolution = def.resolution;
 
         applyImageExtraMetadata(def, node.metadata!);
+        applyEquationExtraMetadata(def, node.metadata!);
 
         // Propagate footnote line range and reply count
         if (def.startLine !== undefined) {

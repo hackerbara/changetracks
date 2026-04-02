@@ -1,9 +1,9 @@
 import * as vscode from 'vscode';
-import type { ChangeNode } from '@changedown/core';
 import { ViewMode, VIEW_MODE_LABELS, nextViewMode } from '../view-mode';
 
 import { ProjectedView } from '../projected-view';
 import { DocumentStateManager } from './document-state-manager';
+import { DecorationManager } from './decoration-manager';
 import { LspBridge } from './lsp-bridge';
 import { isSupported } from './shared';
 
@@ -12,12 +12,7 @@ import { isSupported } from './shared';
  * cannot own directly (they depend on other manager internals).
  */
 export interface ViewModeCallbacks {
-    updateDecorations(editor: vscode.TextEditor): void;
-    clearDecorations(editor: vscode.TextEditor): void;
-    /** Flush hidden type CSS cache (dispose/recreate). Call before re-decorating after mode switch. */
-    forceHiddenRecreate(): void;
     scheduleNotifyChanges(uris?: vscode.Uri[]): void;
-    getChangesForDocument(doc: vscode.TextDocument): ChangeNode[];
     updateStatusBar(): void;
     setContextKey(key: string, value: any): void;
 }
@@ -34,6 +29,7 @@ export class ViewModeManager implements vscode.Disposable {
     private readonly projectedView = new ProjectedView();
     private readonly docStateManager: DocumentStateManager;
     private readonly lspBridge: LspBridge;
+    private readonly decorationManager: DecorationManager;
     private readonly callbacks: ViewModeCallbacks;
 
     private readonly _onDidChangeViewMode = new vscode.EventEmitter<ViewMode>();
@@ -43,12 +39,14 @@ export class ViewModeManager implements vscode.Disposable {
     constructor(
         docStateManager: DocumentStateManager,
         lspBridge: LspBridge,
+        decorationManager: DecorationManager,
         callbacks: ViewModeCallbacks,
         initialViewMode: ViewMode,
         initialShowDelimiters: boolean,
     ) {
         this.docStateManager = docStateManager;
         this.lspBridge = lspBridge;
+        this.decorationManager = decorationManager;
         this.callbacks = callbacks;
         this._viewMode = initialViewMode;
         this._showDelimiters = initialShowDelimiters;
@@ -111,7 +109,7 @@ export class ViewModeManager implements vscode.Disposable {
                 // Clear stale decorations before buffer replacement — offset-based
                 // hidden ranges from the previous mode would corrupt the shorter
                 // projected text.
-                this.callbacks.clearDecorations(editor);
+                this.decorationManager.clearDecorations(editor);
                 this.lspBridge.batchEdit('start', uri);
                 viewState.isConverting = true;
                 try {
@@ -139,7 +137,7 @@ export class ViewModeManager implements vscode.Disposable {
                     this.docStateManager.invalidateDecorationCache(uri);
                     // Clear decorations between exit and re-enter — exit restores
                     // text but no decoration pass runs, so stale decorations persist.
-                    this.callbacks.clearDecorations(editor);
+                    this.decorationManager.clearDecorations(editor);
                     await this.projectedView.enter(editor, mode as 'settled' | 'raw');
                 } finally {
                     viewState.isConverting = false;
@@ -159,16 +157,9 @@ export class ViewModeManager implements vscode.Disposable {
         }
 
         // Update decorations for all visible editors (skip for projected view — no markup to decorate)
-        // Filter out comment input editors to avoid O(N) decoration storm.
         if (mode !== 'settled' && mode !== 'raw') {
-            // Flush hidden type CSS cache before re-decorating — VS Code's renderer
-            // can retain stale display:none CSS when hidden ranges shift between modes.
-            this.callbacks.forceHiddenRecreate();
-            vscode.window.visibleTextEditors.forEach(e => {
-                if (isSupported(e.document) && !e.document.uri.toString().includes('commentinput-')) {
-                    this.callbacks.updateDecorations(e);
-                }
-            });
+            this.decorationManager.forceHiddenRecreate();
+            this.decorationManager.updateAllVisible();
         }
 
         // Fire change event so panel refreshes when view mode changes
@@ -198,7 +189,7 @@ export class ViewModeManager implements vscode.Disposable {
         const exitUri = this.projectedView.originalUri.toString();
         // Clear stale decorations before exit — editor may be briefly visible
         // during file switch with corrupted hidden ranges.
-        this.callbacks.clearDecorations(editor);
+        this.decorationManager.clearDecorations(editor);
         this.lspBridge.batchEdit('start', exitUri);
         const exitState = this.docStateManager.ensureDocState(exitUri, 0, '');
         exitState.isConverting = true;

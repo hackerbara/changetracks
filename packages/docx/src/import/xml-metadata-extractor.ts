@@ -1,5 +1,6 @@
 import { XMLParser } from 'fast-xml-parser';
 import JSZip from 'jszip';
+import type { MathElement } from '../shared/math-types.js';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -51,6 +52,7 @@ export interface ExtractedMetadata {
   drawings: DrawingElement[];
   relationships: Map<string, string>;
   comments: CommentData;
+  mathElements: MathElement[];
 }
 
 // ─── Parser configs ──────────────────────────────────────────────────────────
@@ -185,6 +187,7 @@ export async function extractMetadata(
     drawings: extractDrawings(parsedDocumentOrdered),
     relationships: extractRelationships(parsedRels),
     comments: extractCommentData(parsedComments, parsedDocumentOrdered),
+    mathElements: extractMathElements(documentXml),
   };
 }
 
@@ -197,6 +200,66 @@ async function readZipEntry(
   const entry = zip.file(path);
   if (!entry) return null;
   return entry.async('string');
+}
+
+// ─── Math extraction ─────────────────────────────────────────────────────────
+
+/**
+ * Extract all OMML math elements from raw document.xml string.
+ *
+ * Strategy:
+ * 1. Find all <m:oMathPara> blocks — these are display-mode equations.
+ * 2. Find all <m:oMath> elements that are NOT nested inside an <m:oMathPara>.
+ *    (Each <m:oMathPara> contains an <m:oMath> child, which we skip to avoid
+ *    double-counting. The oMathPara XML is stored as the display element.)
+ * 3. Sort all found elements by document position and assign sequential indices.
+ *
+ * Uses regex on raw XML string rather than the parsed AST because fast-xml-parser's
+ * preserveOrder format does not retain raw XML strings for subtrees, and we need
+ * the verbatim OMML for downstream MathML/KaTeX conversion.
+ */
+function extractMathElements(documentXml: string | null): MathElement[] {
+  if (!documentXml) return [];
+
+  const allMath: Array<{ xml: string; pos: number; display: boolean }> = [];
+
+  // First pass: find all m:oMathPara blocks (display math).
+  // The lazy [\s\S]*? works correctly here because oMathPara elements do not nest.
+  const displayRegex = /<m:oMathPara[\s>][\s\S]*?<\/m:oMathPara>/g;
+  const displayRanges: Array<{ start: number; end: number }> = [];
+  let displayMatch: RegExpExecArray | null;
+  while ((displayMatch = displayRegex.exec(documentXml)) !== null) {
+    const start = displayMatch.index;
+    const end = start + displayMatch[0].length;
+    displayRanges.push({ start, end });
+    allMath.push({ xml: displayMatch[0], pos: start, display: true });
+  }
+
+  // Second pass: find all m:oMath elements not contained within an oMathPara.
+  // (oMathPara wraps an oMath child; we use the oMathPara XML for display mode
+  // and skip oMath children that fall inside those ranges.)
+  // NOTE: The lazy [\s\S]*? matches to the first </m:oMath>. This is correct
+  // for the OOXML spec where <m:oMath> does not nest inside <m:oMath>, though
+  // <m:oMath> can appear inside <m:e> sub-expressions. If nesting occurs in
+  // real documents, this regex would need a tag-depth counter approach instead.
+  const inlineRegex = /<m:oMath[\s>][\s\S]*?<\/m:oMath>/g;
+  let inlineMatch: RegExpExecArray | null;
+  while ((inlineMatch = inlineRegex.exec(documentXml)) !== null) {
+    const pos = inlineMatch.index;
+    const isInsideDisplay = displayRanges.some(r => pos >= r.start && pos < r.end);
+    if (!isInsideDisplay) {
+      allMath.push({ xml: inlineMatch[0], pos, display: false });
+    }
+  }
+
+  // Sort by document position and assign sequential indices.
+  allMath.sort((a, b) => a.pos - b.pos);
+
+  return allMath.map((m, idx) => ({
+    ommlXml: m.xml,
+    displayMode: m.display,
+    index: idx,
+  }));
 }
 
 // ─── Ordered-format body accessor ────────────────────────────────────────────

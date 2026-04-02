@@ -1,21 +1,26 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeAll } from 'vitest';
 import {
   computeSettledText,
   computeOriginalText,
   settleAcceptedChangesOnly,
   settleRejectedChangesOnly,
   computeSettledReplace,
+  initHashline,
   ChangeType,
   ChangeStatus,
   ChangeNode,
 } from '@changedown/core/internals';
+import { parseForFormat, isL3Format } from '@changedown/core';
+
+beforeAll(async () => { await initHashline(); });
 
 describe('settleAcceptedChangesOnly', () => {
   it('settles single accepted insertion to clean text and returns its id', () => {
     const input = 'Hello {++beautiful ++}[^cn-1]world\n\n[^cn-1]: @alice | 2026-02-11 | insertion | accepted';
     const { settledContent, settledIds } = settleAcceptedChangesOnly(input);
     // Layer 1 settlement: markup removed but footnote ref and definition preserved
-    expect(settledContent).toBe('Hello beautiful [^cn-1]world\n\n[^cn-1]: @alice | 2026-02-11 | insertion | accepted');
+    expect(settledContent).toContain('Hello beautiful [^cn-1]world');
+    expect(settledContent).toContain('[^cn-1]: @alice | 2026-02-11 | insertion | accepted');
     expect(settledIds).toEqual(['cn-1']);
   });
 
@@ -29,11 +34,12 @@ describe('settleAcceptedChangesOnly', () => {
     const { settledContent, settledIds } = settleAcceptedChangesOnly(input);
     expect(settledIds.includes('cn-1')).toBeTruthy();
     expect(settledIds.includes('cn-2')).toBeTruthy();
-    // No duplication — each substitution's new text appears exactly once
+    // No duplication — each substitution's new text appears exactly once in body
     expect(settledContent.includes('256-bit[^cn-1] ECDSA[^cn-2]')).toBeTruthy();
-    // Original text should NOT appear
-    expect(!settledContent.includes('256 bits for')).toBeTruthy();
-    expect(!settledContent.includes('ECDSA keys')).toBeTruthy();
+    // Original text should NOT appear in the body (it may appear in edit-op lines)
+    const bodyLines = settledContent.split('\n\n')[0];
+    expect(!bodyLines.includes('256 bits for')).toBeTruthy();
+    expect(!bodyLines.includes('ECDSA keys')).toBeTruthy();
   });
 
   it('settles three accepted changes on the same line in correct order', () => {
@@ -363,7 +369,9 @@ describe('sequential settlement stability', () => {
     ].join('\n');
     const { settledContent: after1 } = settleAcceptedChangesOnly(input1);
     expect(after1.includes('text with new[^cn-1]')).toBeTruthy();
-    expect(!after1.includes('old')).toBeTruthy();
+    // Original text should NOT appear in the body (edit-op lines in footnotes may contain it)
+    const body1 = after1.split('\n\n')[0];
+    expect(!body1.includes('old')).toBeTruthy();
 
     // Cycle 2: new substitution on the same line (now contains [^cn-1])
     const input2 = after1.replace(
@@ -372,8 +380,9 @@ describe('sequential settlement stability', () => {
     ) + '\n[^cn-2]: @bob | 2026-01-02 | sub | accepted\n    reason: second change';
     const { settledContent: after2 } = settleAcceptedChangesOnly(input2);
     expect(after2.includes('text with newer[^cn-2][^cn-1]')).toBeTruthy();
-    // No duplication
-    expect(after2.match(/newer/g)?.length).toBe(1);
+    // No duplication in the body (edit-op lines in footnotes may also contain it)
+    const body2 = after2.split('\n\n')[0];
+    expect(body2.match(/newer/g)?.length).toBe(1);
   });
 
   it('handles accept + reject on same line', () => {
@@ -415,8 +424,9 @@ describe('sequential settlement stability', () => {
       + '\n[^cn-3]: @c | 2026-01-03 | sub | accepted\n    r: c3';
     const { settledContent: r3 } = settleAcceptedChangesOnly(input3);
     expect(r3.includes('delta[^cn-3][^cn-2][^cn-1]')).toBeTruthy();
-    // Exactly one occurrence
-    expect(r3.match(/delta/g)?.length).toBe(1);
+    // Exactly one occurrence in the body (edit-op lines in footnotes may also contain it)
+    const body3 = r3.split('\n\n')[0];
+    expect(body3.match(/delta/g)?.length).toBe(1);
   });
 });
 
@@ -477,5 +487,203 @@ describe('computeSettledReplace', () => {
     expect(
       () => computeSettledReplace(fakeNode),
     ).toThrow(/Unknown ChangeType/);
+  });
+});
+
+describe('settleAcceptedChangesOnly — edit-op generation', () => {
+  it('T1.1: accepted insertion + substitution produce edit-op lines', () => {
+    const input = [
+      'Hello {++beautiful ++}[^cn-1]world. The {~~quick~>fast~~}[^cn-2] fox.',
+      '',
+      '[^cn-1]: @alice | 2026-02-11 | ins | accepted',
+      '    reason: add adj',
+      '[^cn-2]: @bob | 2026-02-11 | sub | accepted',
+      '    reason: synonym',
+    ].join('\n');
+    const { settledContent, settledIds } = settleAcceptedChangesOnly(input);
+
+    expect(settledIds).toEqual(['cn-1', 'cn-2']);
+
+    // Body: markup removed, refs preserved
+    const body = settledContent.split('\n\n')[0];
+    expect(body).toBe('Hello beautiful [^cn-1]world. The fast[^cn-2] fox.');
+
+    // cn-1 footnote block has an edit-op line with LINE:HASH and insertion op
+    expect(settledContent).toMatch(/\[.cn-1\]:.*\n\s+1:[0-9a-f]{2} \{\+\+beautiful \+\+\}/);
+
+    // cn-2 footnote block has an edit-op line with LINE:HASH and substitution op
+    expect(settledContent).toMatch(/\[.cn-2\]:.*\n\s+1:[0-9a-f]{2} \{~~quick~>fast~~\}/);
+  });
+
+  it('T1.2: hybrid file — accepted get edit-ops, proposed left untouched', () => {
+    const input = [
+      'Start {++added ++}[^cn-4]middle {~~old~>new~~}[^cn-5] end.',
+      '',
+      '[^cn-4]: @alice | 2026-02-11 | ins | accepted',
+      '    reason: add word',
+      '[^cn-5]: @bob | 2026-02-11 | sub | proposed',
+      '    reason: pending review',
+    ].join('\n');
+    const { settledContent, settledIds } = settleAcceptedChangesOnly(input);
+
+    // Only accepted change is settled
+    expect(settledIds).toEqual(['cn-4']);
+
+    // Body: cn-4 markup resolved, cn-5 markup preserved
+    const body = settledContent.split('\n\n')[0];
+    expect(body).toContain('added [^cn-4]middle');
+    expect(body).toContain('{~~old~>new~~}[^cn-5]');
+
+    // cn-4 footnote has an edit-op line
+    expect(settledContent).toMatch(/\[.cn-4\]:.*\n\s+1:[0-9a-f]{2} \{\+\+added \+\+\}/);
+
+    // cn-5 footnote does NOT have an edit-op line (still proposed)
+    const cn5Block = settledContent.split('[^cn-5]:')[1];
+    expect(cn5Block).not.toMatch(/^\s+\d+:[0-9a-f]{2}\s/m);
+  });
+
+  it('T1.3: settled output with edit-ops parses as L3 via parseForFormat', () => {
+    const input = [
+      'Hello {++beautiful ++}[^cn-1]world.',
+      '',
+      '[^cn-1]: @alice | 2026-02-11 | ins | accepted',
+      '    reason: add adj',
+    ].join('\n');
+    const { settledContent } = settleAcceptedChangesOnly(input);
+
+    // After settlement with edit-ops, the output is recognized as L3
+    expect(isL3Format(settledContent)).toBe(true);
+
+    // Parsing the L3 output recovers the change
+    const doc = parseForFormat(settledContent);
+    const changes = doc.getChanges();
+    expect(changes.length).toBe(1);
+    expect(changes[0].id).toBe('cn-1');
+    expect(changes[0].type).toBe(ChangeType.Insertion);
+    expect(changes[0].status).toBe(ChangeStatus.Accepted);
+  });
+
+  it('T1.4: accepted deletion produces deletion edit-op', () => {
+    const input = [
+      'Hello {--ugly --}[^cn-3]world.',
+      '',
+      '[^cn-3]: @carol | 2026-02-11 | del | accepted',
+      '    reason: remove adj',
+    ].join('\n');
+    const { settledContent } = settleAcceptedChangesOnly(input);
+
+    // Body: deleted text removed, ref preserved
+    const body = settledContent.split('\n\n')[0];
+    expect(body).toBe('Hello [^cn-3]world.');
+
+    // cn-3 footnote has a deletion edit-op line
+    expect(settledContent).toMatch(/\[.cn-3\]:.*\n\s+1:[0-9a-f]{2} \{--ugly --\}/);
+  });
+});
+
+describe('settleAcceptedChangesOnly — fence closer safety', () => {
+  it('does not place ref on code fence closer line', () => {
+    // The accepted insertion sits right before a code fence closer.
+    // After settlement, the ref [^cn-1] must NOT end up on the ``` line.
+    const input = [
+      '```',
+      'code {++extra++}[^cn-1]',
+      '```',
+      '',
+      'After the fence.',
+      '',
+      '[^cn-1]: @test | 2026-01-01 | insertion | accepted',
+    ].join('\n');
+
+    const { settledContent } = settleAcceptedChangesOnly(input);
+    const lines = settledContent.split('\n');
+
+    // The ``` line should be clean — no refs on fence closer lines
+    const fenceLines = lines.filter(l => l.trim().startsWith('```') || l.trim().startsWith('~~~'));
+    for (const fl of fenceLines) {
+      expect(fl).not.toContain('[^cn-');
+    }
+  });
+
+  it('defers ref when deletion of fence closer is accepted (propose-change round-trip)', () => {
+    // Simulates what propose_change produces when deleting a fence closer:
+    // The CriticMarkup wraps the ``` itself, so while proposed, the ref is safe
+    // (line contains {--```--}[^cn-1] which can't match as a fence closer).
+    // After settlement, the deletion removes the ```, and the ref must not
+    // land on whatever becomes the fence closer line.
+    const input = [
+      'Some text before.',
+      '```',
+      'code block',
+      '{--```--}[^cn-1]',
+      'After the fence.',
+      '',
+      '[^cn-1]: @test | 2026-01-01 | deletion | accepted',
+    ].join('\n');
+
+    const { settledContent, settledIds } = settleAcceptedChangesOnly(input);
+    expect(settledIds).toContain('cn-1');
+
+    const lines = settledContent.split('\n');
+
+    // The deletion was accepted, so the ``` is removed. The fence closer line
+    // (the remaining ```) should not have a ref on it.
+    const fenceLines = lines.filter(l => l.trim().startsWith('```') || l.trim().startsWith('~~~'));
+    for (const fl of fenceLines) {
+      expect(fl).not.toContain('[^cn-');
+    }
+  });
+
+  it('defers ref when substitution replaces text adjacent to fence closer', () => {
+    // Substitution where old text is on the line just before a fence closer.
+    // After settlement, the ref should not migrate onto the ``` line.
+    const input = [
+      '```python',
+      '{~~old code~>new code~~}[^cn-1]',
+      '```',
+      '',
+      'Paragraph after.',
+      '',
+      '[^cn-1]: @test | 2026-01-01 | substitution | accepted',
+    ].join('\n');
+
+    const { settledContent, settledIds } = settleAcceptedChangesOnly(input);
+    expect(settledIds).toContain('cn-1');
+
+    const lines = settledContent.split('\n');
+
+    // Verify the closing ``` is clean
+    const closerLine = lines.find(l => l.trim() === '```');
+    expect(closerLine).toBeDefined();
+    expect(closerLine).not.toContain('[^cn-');
+
+    // The ref should be on the substituted content line, not the fence closer
+    const refLine = lines.find(l => l.includes('[^cn-1]'));
+    expect(refLine).toBeDefined();
+    expect(refLine).toContain('new code');
+  });
+
+  it('defers ref when insertion lands right before fence closer line', () => {
+    // An insertion whose text ends right at the boundary before a fence closer.
+    // The CriticMarkup protects the ref during the proposed state, but after
+    // settlement the ref must not end up on the ``` line.
+    const input = [
+      '```',
+      'existing code',
+      '{++added line\n++}[^cn-1]```',
+      '',
+      'After fence.',
+      '',
+      '[^cn-1]: @test | 2026-01-01 | insertion | accepted',
+    ].join('\n');
+
+    const { settledContent } = settleAcceptedChangesOnly(input);
+    const lines = settledContent.split('\n');
+
+    // No fence line should contain a ref
+    const fenceLines = lines.filter(l => l.trim().startsWith('```') || l.trim().startsWith('~~~'));
+    for (const fl of fenceLines) {
+      expect(fl).not.toContain('[^cn-');
+    }
   });
 });

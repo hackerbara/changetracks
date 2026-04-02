@@ -33,7 +33,7 @@ and deterministic.
 A change starts as bare markup:
 
 ```markdown
-The API should use GraphQL for the public interface.
+The API should use {~~REST~>GraphQL~~} for the public interface.
 ```
 
 That's **Level 0** — CriticMarkup, no metadata. The substrate.
@@ -41,17 +41,17 @@ That's **Level 0** — CriticMarkup, no metadata. The substrate.
 Add an adjacent comment and it becomes **Level 1** — metadata without ceremony:
 
 ```markdown
-GraphQL
+{~~REST~>GraphQL~~}{>>@alice | 2026-01-15 | sub | proposed<<}
 ```
 
-The `` comment carries pipe-separated fields: `@author`, date, type,
+The `{>>...<<}` comment carries pipe-separated fields: `@author`, date, type,
 status, free text. Same `|` separator at every level. Order is flexible. Use as
 few or as many fields as needed.
 
 Add a footnote reference and it becomes **Level 2** — full deliberation:
 
 ```markdown
-The API should use GraphQL for the public interface.
+The API should use {~~REST~>GraphQL~~}[^cn-1] for the public interface.
 
 [^cn-1]: @alice | 2024-01-15 | sub | proposed
     context: "The API should use {REST} for the public interface"
@@ -68,13 +68,13 @@ at each step.
 
 | Type         | Syntax           | Example                   |
 |--------------|------------------|---------------------------|
-| Insertion    | `text`     | `added this`        |
-| Deletion     | ``     | ``      |
-| Substitution | `new` | `after`     |
-| Highlight    | `text`     | `important`         |
-| Comment      | ``     | ``            |
+| Insertion    | `{++text++}`     | `{++added this++}`        |
+| Deletion     | `{--text--}`     | `{--removed this--}`      |
+| Substitution | `{~~old~>new~~}` | `{~~before~>after~~}`     |
+| Highlight    | `{==text==}`     | `{==important==}`         |
+| Comment      | `{>>text<<}`     | `{>>a note<<}`            |
 
-Highlights attach comments with no whitespace: `text`.
+Highlights attach comments with no whitespace: `{==text==}{>>comment<<}`.
 All types support multi-line content. Inline CriticMarkup MUST NOT nest.
 
 ### Range Changes
@@ -110,7 +110,7 @@ Dotted IDs under a shared parent: `cn-17.1`, `cn-17.2`. The parent is the logica
 operation; children are components. One level only — `cn-17.1.1` is never valid.
 Accept the parent → resolves all children. Reject a child → carves out one exception.
 
-A change may carry multiple refs: `slow` signals
+A change may carry multiple refs: `{~~quick~>slow~~}[^cn-1][^cn-2]` signals
 cn-2 supersedes cn-1.
 
 ## 4. The Footnote
@@ -229,11 +229,11 @@ compatibility. Producers MUST emit exactly 2.
 The edit-op line embeds the operation in its surrounding context:
 
 ```
-    3:a1 Protocol newverview
+    3:a1 Protocol {~~old~>new~~}verview
 ```
 
 Context expands to word boundaries until the embedded string is unique on its
-line. For deletions: `contextBeforecontextAfter` — the joined
+line. For deletions: `contextBefore{--deleted--}contextAfter` — the joined
 context locates the deletion point.
 
 ## 6. The Projection
@@ -380,10 +380,10 @@ The API should use GraphQL for the public interface
 and gRPC for internal service communication.
 
 Authentication uses OAuth 2.0 with JWT tokens for
-all endpoints. Rate limiting is set to 100 req/min.
+all endpoints. {==Rate limiting is set to 100 req/min==}{>>seems low<<}[^cn-3].
 
 [^cn-1]: @alice | 2024-01-15 | sub | accepted
-    4:e2 should use GraphQL for the public
+    4:e2 should use {~~REST~>GraphQL~~} for the public
     approved: @eve 2024-01-20
     approved: @bob 2024-01-21
     @dave 2024-01-16: GraphQL increases client complexity.
@@ -392,7 +392,7 @@ all endpoints. Rate limiting is set to 100 req/min.
     resolved @dave 2024-01-17
 
 [^cn-2]: @alice | 2024-01-15 | ins | accepted
-    7:91 uses OAuth 2.0 with JWT tokens for
+    7:91 uses {++OAuth 2.0 with JWT tokens++} for
     approved: @eve 2024-01-20
     @bob 2024-01-16 [question]: What about latency for gRPC?
       @alice 2024-01-17: Sub-millisecond on our test cluster.

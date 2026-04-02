@@ -81,11 +81,39 @@ export interface ContextualEditOpParams {
  * stripped. `column` must be the offset on this stripped line.
  *
  * Returns: `    LINE:HASH contextBefore{op}contextAfter`
+ *
+ * When originalText/currentText are empty but anchorLen and lineContent identify a
+ * body slice, the insertion/substitution payload is filled from that slice so
+ * footnotes do not record empty `{++++}` / `{~~~>~~}` (unknown prior side of a
+ * substitution uses an ellipsis).
  */
-export function buildContextualL3EditOp(params: ContextualEditOpParams): string {
-  const { changeType, originalText, currentText, lineContent, lineNumber, hash, column, anchorLen } = params;
+const UNKNOWN_PRIOR_SUB = '\u2026';
 
-  const rawOp = buildEditOpFromParts(CHANGE_TYPE_KEY[changeType], originalText, currentText);
+export function buildContextualL3EditOp(params: ContextualEditOpParams): string {
+  const { changeType, lineContent, lineNumber, hash, column, anchorLen } = params;
+
+  let originalText = params.originalText ?? '';
+  let currentText = params.currentText ?? '';
+  const typeKey = CHANGE_TYPE_KEY[changeType];
+
+  // Callers sometimes pass empty originalText/currentText while the body still
+  // holds the new text — producing `{~~~>~~}` / `{++++}` and anchorLen 0, which
+  // breaks column math. Recover payload from the body slice when possible.
+  let rawOp = buildEditOpFromParts(typeKey, originalText, currentText);
+  if (lineContent.length > 0 && anchorLen > 0) {
+    const col = Math.max(0, Math.min(column, lineContent.length));
+    const end = Math.min(col + anchorLen, lineContent.length);
+    const bodySlice = lineContent.slice(col, end);
+    if (changeType === ChangeType.Insertion && rawOp === '{++++}' && bodySlice.length > 0) {
+      currentText = bodySlice;
+      rawOp = buildEditOpFromParts(typeKey, originalText, currentText);
+    }
+    if (changeType === ChangeType.Substitution && rawOp === '{~~~>~~}') {
+      if (bodySlice.length > 0) currentText = bodySlice;
+      if (!originalText && currentText) originalText = UNKNOWN_PRIOR_SUB;
+      rawOp = buildEditOpFromParts(typeKey, originalText, currentText);
+    }
+  }
 
   if (!lineContent) {
     return formatL3EditOpLine(lineNumber, hash, rawOp);

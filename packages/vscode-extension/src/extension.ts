@@ -20,6 +20,7 @@ import type { PendingOverlay } from '@changedown/core';
 import type { ViewMode } from './view-mode';
 import { SIDECAR_BLOCK_MARKER } from '@changedown/core';
 import { changedownPlugin } from '@changedown/preview';
+import markdownItKatex = require('@traptitech/markdown-it-katex');
 import { setOutputChannel } from './output-channel';
 import { registerChangeCommands, registerScmCommands, registerCommentCommands, registerTestCommands, registerSetupCommands, type ChangeCommandsContext } from './commands';
 import { DocxEditorProvider } from './docx/docx-editor-provider';
@@ -587,6 +588,7 @@ export async function activate(context: vscode.ExtensionContext) {
     // Markdown preview: register CriticMarkup rendering plugin
     return {
         extendMarkdownIt(md: any) {
+            md.use(markdownItKatex, { throwOnError: false });
             return md.use(changedownPlugin);
         }
     };

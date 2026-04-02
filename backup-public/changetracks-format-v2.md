@@ -69,16 +69,16 @@ Five change types using CriticMarkup delimiters:
 
 | Type         | Syntax            | Example                        |
 |--------------|-------------------|--------------------------------|
-| Insertion    | `text`      | `added this`             |
-| Deletion     | ``      | ``           |
-| Substitution | `new`  | `after`          |
-| Highlight    | `text`      | `important`              |
-| Comment      | ``      | ``                 |
+| Insertion    | `{++text++}`      | `{++added this++}`             |
+| Deletion     | `{--text--}`      | `{--removed this--}`           |
+| Substitution | `{~~old~>new~~}`  | `{~~before~>after~~}`          |
+| Highlight    | `{==text==}`      | `{==important==}`              |
+| Comment      | `{>>text<<}`      | `{>>a note<<}`                 |
 
-Highlights can attach comments with no whitespace: `text`.
+Highlights can attach comments with no whitespace: `{==text==}{>>comment<<}`.
 
 All types support multi-line content. Substitutions use `~>` to separate old text
-from new. Inline CriticMarkup MUST NOT nest — `text with {--other--} inside`
+from new. Inline CriticMarkup MUST NOT nest — `{++text with {--other--} inside++}`
 is malformed. CriticMarkup appearing in footnote discussion text is literal content,
 not parsed as markup.
 
@@ -107,12 +107,13 @@ delimiters. Everything else is inline.
 Example — insertion range:
 
 ```markdown
- proposed 2026-02-10 [^ct-1]
+{++ proposed 2026-02-10 [^ct-1]
 
 ## New Section
 
 This entire section is proposed as one unit.
 
+++}
 ```
 
 Accept = delete marker lines, content stays. Reject = delete everything between
@@ -129,17 +130,17 @@ carries the metadata**.
 CriticMarkup with no metadata, no IDs, no footnotes. The common substrate.
 
 ```markdown
-The API should use GraphQL for the public interface.
+The API should use {~~REST~>GraphQL~~} for the public interface.
 ```
 
 ### 4.2 Level 1 — Adjacent Comment
 
-An attached comment (``, no whitespace between change and comment) carries
+An attached comment (`{>>...<<}`, no whitespace between change and comment) carries
 metadata with pipe-separated fields. Same `|` separator as Level 2 footnote headers.
 No `[^ct-N]` required.
 
 ```markdown
-GraphQL
+{~~REST~>GraphQL~~}{>>@alice | 2026-01-15 | sub | proposed<<}
 ```
 
 Conventions: `@name` or `@ai:model` for author, ISO 8601 for date,
@@ -152,7 +153,7 @@ Use as few or as many fields as needed.
 threading, discussion, multiple reviewer approvals, revision history, context anchoring.
 
 ```markdown
-The API should use GraphQL[^ct-1] for the public interface.
+The API should use {~~REST~>GraphQL~~}[^ct-1] for the public interface.
 
 [^ct-1]: @alice | 2024-01-15 | sub | proposed
     @alice 2024-01-15: GraphQL reduces over-fetching for dashboard clients.
@@ -188,9 +189,9 @@ line and no body lines is valid (minimal metadata, no discussion).
 Multi-change operations use dotted IDs under a shared parent:
 
 ```markdown
-[^ct-17.1]
+{--moved text--}[^ct-17.1]
 ...
-moved text[^ct-17.2]
+{++moved text++}[^ct-17.2]
 ```
 
 Parent `ct-17` is the logical operation. Children `ct-17.1`, `ct-17.2` are its
@@ -199,7 +200,7 @@ components. One level of nesting only — `ct-17.1.1` is never valid.
 Accept `ct-17` resolves all children. Reject `ct-17.2` carves out one exception.
 
 A change may carry multiple footnote references when alternatives exist:
-`slow[^ct-1][^ct-2]` signals that ct-2 is an alternative to ct-1
+`{~~quick~>slow~~}[^ct-1][^ct-2]` signals that ct-2 is an alternative to ct-1
 (see `superseded-by:` in §6.3).
 
 ## 6. Footnote Format
@@ -238,7 +239,7 @@ Example:
 
 ```
 [^ct-1]: @alice | 2026-03-15 | sub | accepted
-    5:a3 Protocol newverview
+    5:a3 Protocol {~~old~>new~~}verview
     approved: @bob 2026-03-16 "Correct terminology"
 ```
 
@@ -411,16 +412,16 @@ of 2 or more hex characters for forward compatibility, but MUST produce exactly 
 The edit-op line embeds the CriticMarkup operation within surrounding body text:
 
 ```
-    3:a1 Protocol newverview
+    3:a1 Protocol {~~old~>new~~}verview
 ```
 
-`contextBefore` is `"Protocol "`. The operation is `new`. `contextAfter`
+`contextBefore` is `"Protocol "`. The operation is `{~~old~>new~~}`. `contextAfter`
 is `"verview"`. The context expands to word boundaries until the embedded string
 is unique on the target line. This is the format's anchor — it locates the change
 unambiguously.
 
 For deletions (where the deleted text is absent from the body), the context is the
-text surrounding the deletion point: `contextBeforecontextAfter`.
+text surrounding the deletion point: `contextBefore{--deleted text--}contextAfter`.
 The joined context (`contextBefore` + `contextAfter`) locates the deletion point.
 
 ### 7.4 Status-Aware Demotion (L3 → L2)
@@ -440,7 +441,7 @@ L2 with a decided change and preserved edit-op:
 The document uses OAuth2 with PKCE flow for authentication.
 
 [^ct-1]: @alice | 2026-03-15 | ins | accepted
-    5:a3 uses OAuth2 with PKCE flow for authentication
+    5:a3 uses {++OAuth2 with PKCE flow++} for authentication
     approved: @bob 2026-03-16 "Correct approach"
 ```
 
@@ -538,10 +539,10 @@ The API should use GraphQL for the public interface
 and gRPC for internal service communication.
 
 Authentication uses OAuth 2.0 with JWT tokens for
-all endpoints. Rate limiting is set to 100 req/min[^ct-3].
+all endpoints. {==Rate limiting is set to 100 req/min==}{>>seems low<<}[^ct-3].
 
 [^ct-1]: @alice | 2024-01-15 | sub | accepted
-    4:e2 should use GraphQL for the public
+    4:e2 should use {~~REST~>GraphQL~~} for the public
     approved: @eve 2024-01-20
     approved: @bob 2024-01-21
     context: "The API should use {REST} for the public interface"
@@ -551,7 +552,7 @@ all endpoints. Rate limiting is set to 100 req/min[^ct-3].
     resolved @dave 2024-01-17
 
 [^ct-2]: @alice | 2024-01-15 | ins | accepted
-    7:91 uses OAuth 2.0 with JWT tokens for
+    7:91 uses {++OAuth 2.0 with JWT tokens++} for
     approved: @eve 2024-01-20
     @bob 2024-01-16 [question]: What about latency for gRPC?
       @alice 2024-01-17: Sub-millisecond on our test cluster.

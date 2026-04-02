@@ -1,4 +1,5 @@
 import MarkdownIt from 'markdown-it';
+import markdownItKatex from '@traptitech/markdown-it-katex';
 import { CriticMarkupParser, computeSettledView, computeOriginalText } from '@changedown/core';
 import type { ChangeNode } from '@changedown/core';
 import type { ViewMode } from '@changedown/core/host';
@@ -36,6 +37,16 @@ function makeConfig(viewMode: ViewMode, opts: PreviewRendererOptions): PluginCon
   };
 }
 
+/**
+ * Apply the KaTeX math plugin to a MarkdownIt instance.
+ * Handles $...$ (inline) and $$...$$ (display) delimiters.
+ * throwOnError is false: invalid LaTeX renders as an error span rather than
+ * throwing and breaking the entire preview.
+ */
+function applyMathPlugin(md: MarkdownIt): void {
+  md.use(markdownItKatex, { throwOnError: false });
+}
+
 /** Add data-source-line attributes to block tokens for scroll sync. */
 function addSourceLinePlugin(md: MarkdownIt): void {
   for (const rule of ['paragraph_open', 'heading_open', 'blockquote_open', 'list_item_open', 'hr', 'code_block', 'fence'] as const) {
@@ -64,6 +75,7 @@ export function createPreviewRenderer(opts: PreviewRendererOptions = {}): Previe
     if (pluginMd && lastPluginViewMode === viewMode) return pluginMd;
     const config = makeConfig(viewMode, opts);
     const instance = new MarkdownIt({ html: true, linkify: true });
+    applyMathPlugin(instance);
     changedownPlugin(instance, () => config);
     // sourceMap handled by changedownPlugin when emitSourceMap is true
     pluginMd = instance;
@@ -74,6 +86,7 @@ export function createPreviewRenderer(opts: PreviewRendererOptions = {}): Previe
   function getPlainMd(): MarkdownIt {
     if (plainMd) return plainMd;
     plainMd = new MarkdownIt({ html: true, linkify: true });
+    applyMathPlugin(plainMd);
     if (opts.sourceMap) addSourceLinePlugin(plainMd);
     return plainMd;
   }

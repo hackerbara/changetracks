@@ -1,6 +1,6 @@
 {
   "name": "@changedown/preview",
-  "version": "0.0.1",
+  "version": "0.1.1",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -18,7 +18,9 @@
   },
   "dependencies": {
     "@changedown/core": "file:../core",
-    "diff": "^7.0.0"
+    "@traptitech/markdown-it-katex": "^3.6.0",
+    "diff": "^7.0.0",
+    "katex": "^0.16.44"
   },
   "peerDependencies": {
     "markdown-it": "^14.0.0"

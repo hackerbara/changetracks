@@ -2,8 +2,9 @@ import { ChangeNode, ChangeType, ChangeStatus, TextEdit } from '../model/types.j
 import { computeReject, computeAcceptParts, computeRejectParts, AcceptRejectParts } from './accept-reject.js';
 import { computeLineHash } from '../hashline.js';
 import { FOOTNOTE_DEF_START, footnoteRefGlobal, isL3Format, splitBodyAndFootnotes } from '../footnote-patterns.js';
-import { findCodeZones, CodeZone } from '../parser/code-zones.js';
+import { findCodeZones, CodeZone, isFenceCloserLine } from '../parser/code-zones.js';
 import { parseForFormat } from '../format-aware-parse.js';
+import { buildContextualL3EditOp } from './footnote-generator.js';
 
 /**
  * Computes a TextEdit that "settles" a single CriticMarkup change node using
@@ -337,8 +338,20 @@ function buildSegmentsWithZoneAwareness(
       // Edit is inside a code zone — emit text without ref, defer ref to end of line
       segments.push(part.text);
       deferredRefs.push({ ref, origLineIndex: offsetToLine(part.offset) });
+    } else if (ref && zones.length > 0) {
+      // Fence-closer guard (only needed when document has code zones)
+      const targetLineIdx = offsetToLine(part.offset);
+      const lineStartOff = targetLineIdx === 0 ? 0 : lineBreaks[targetLineIdx - 1] + 1;
+      const lineEndOff = targetLineIdx < lineBreaks.length ? lineBreaks[targetLineIdx] : text.length;
+      const targetLine = text.slice(lineStartOff, lineEndOff);
+      if (isFenceCloserLine(targetLine)) {
+        segments.push(part.text);
+        deferredRefs.push({ ref, origLineIndex: targetLineIdx + 1 });
+      } else {
+        segments.push(part.text + ref);
+      }
     } else {
-      // Normal placement — ref inline
+      // No code zones or no ref — place inline
       segments.push(part.text + ref);
     }
 
@@ -373,10 +386,39 @@ function buildSegmentsWithZoneAwareness(
   for (const [lineIdx, refs] of refsByLine) {
     if (lineIdx < lines.length) {
       lines[lineIdx] = lines[lineIdx] + refs.join('');
+    } else {
+      // Target line doesn't exist (fence closer was last line) — append new line
+      while (lines.length <= lineIdx) lines.push('');
+      lines[lineIdx] = refs.join('');
     }
   }
 
   return lines.join('\n');
+}
+
+/**
+ * When optional text fields are empty but markup ranges are present, recover
+ * old/new strings from the source document (L2 settlement edit-op generation).
+ */
+function recoverL2EditOpPayload(
+  change: ChangeNode,
+  sourceText: string,
+): { originalText: string; currentText: string } {
+  let orig = change.originalText ?? '';
+  let cur = change.modifiedText ?? '';
+  if (change.type === ChangeType.Insertion) {
+    if (!cur && change.contentRange) {
+      cur = sourceText.slice(change.contentRange.start, change.contentRange.end);
+    }
+  } else if (change.type === ChangeType.Substitution) {
+    if (!cur && change.modifiedRange) {
+      cur = sourceText.slice(change.modifiedRange.start, change.modifiedRange.end);
+    }
+    if (!orig && change.originalRange) {
+      orig = sourceText.slice(change.originalRange.start, change.originalRange.end);
+    }
+  }
+  return { originalText: orig, currentText: cur };
 }
 
 /**
@@ -390,12 +432,13 @@ function buildSegmentsWithZoneAwareness(
  *
  * For L3: no-op. The body is already the Current projection (accepted text
  * present), and edit-op lines must be preserved per ADR-C §2.
+ *
+ * Synchronous: L2 edit-op generation uses `computeLineHash`, which requires
+ * xxhash-wasm. Call `await initHashline()` once before the first L2 settlement
+ * (CLI/LSP do this at startup; async callers such as DOCX export await
+ * `initHashline` before calling this).
  */
 export function settleAcceptedChangesOnly(text: string): { settledContent: string; settledIds: string[] } {
-  // L3 accepted settlement is a no-op per ADR-C §2 / Compaction spec §1:
-  // the body is already the Current projection (accepted text present),
-  // and edit-op lines must be preserved for coherence verification.
-  // Only the status field changed (done by applyReview). Nothing else to do.
   if (isL3Format(text)) {
     return { settledContent: text, settledIds: [] };
   }
@@ -414,7 +457,104 @@ export function settleAcceptedChangesOnly(text: string): { settledContent: strin
     .map(computeAcceptParts);
 
   const zones = findCodeZones(text);
-  const settledContent = buildSegmentsWithZoneAwareness(text, parts, zones);
+  const rawSettledContent = buildSegmentsWithZoneAwareness(text, parts, zones);
+
+  // ─── Edit-op generation ────────────────────────────────────────────────
+  // After settlement the body contains accepted text inline with [^cn-N] refs.
+  // We need to generate LINE:HASH edit-op lines and splice them into each
+  // accepted change's footnote block.
+
+  const { bodyLines, footnoteLines } = splitBodyAndFootnotes(rawSettledContent.split('\n'));
+
+  // Build ref-stripped body for column computation and hashing
+  const refRe = footnoteRefGlobal();
+  const cleanBodyLines = bodyLines.map(line => line.replace(refRe, ''));
+
+  // Pre-index: ref marker → { lineIdx, col } for O(1) lookup per change
+  const refIndex = new Map<string, { lineIdx: number; col: number }>();
+  for (let i = 0; i < bodyLines.length; i++) {
+    const refPattern = /\[\^cn-[\w.]+\]/g;
+    let rm: RegExpExecArray | null;
+    while ((rm = refPattern.exec(bodyLines[i])) !== null) {
+      refIndex.set(rm[0], { lineIdx: i, col: rm.index });
+    }
+  }
+
+  // Pre-index: change ID → footnote header line for O(1) lookup per change
+  const footnoteHeaderIndex = new Map<string, number>();
+  for (let i = 0; i < footnoteLines.length; i++) {
+    const idMatch = footnoteLines[i].match(/^\[\^(cn-[\w.]+)\]:/);
+    if (idMatch) footnoteHeaderIndex.set(idMatch[1], i);
+  }
+
+  // Single regex for scanning preceding refs (reused across iterations)
+  const scanRe = footnoteRefGlobal();
+
+  const editOpInsertions: Array<{ headerLine: number; editOpLine: string }> = [];
+
+  for (const change of accepted) {
+    const { originalText: effOrig, currentText: effCur } = recoverL2EditOpPayload(change, text);
+
+    // Look up ref position from pre-built index
+    const refPos = refIndex.get(`[^${change.id}]`);
+    if (!refPos) continue;
+    const { lineIdx, col: refColInLine } = refPos;
+
+    let anchorLen: number;
+    switch (change.type) {
+      case ChangeType.Insertion:
+      case ChangeType.Substitution:
+        anchorLen = effCur.length;
+        break;
+      case ChangeType.Deletion:
+        anchorLen = 0;
+        break;
+      case ChangeType.Highlight:
+        anchorLen = (change.originalText ?? '').length;
+        break;
+      default:
+        anchorLen = 0;
+        break;
+    }
+
+    // Column on ref-stripped line: subtract bytes of preceding refs on this line
+    scanRe.lastIndex = 0;
+    let precedingRefBytes = 0;
+    let m: RegExpExecArray | null;
+    while ((m = scanRe.exec(bodyLines[lineIdx])) !== null) {
+      if (m.index >= refColInLine) break;
+      precedingRefBytes += m[0].length;
+    }
+    const changeCol = Math.max(0, refColInLine - precedingRefBytes - anchorLen);
+
+    const lineNumber = lineIdx + 1;
+    const hash = computeLineHash(lineIdx, cleanBodyLines[lineIdx], cleanBodyLines);
+
+    const editOpLine = buildContextualL3EditOp({
+      changeType: change.type,
+      originalText: effOrig,
+      currentText: effCur,
+      lineContent: cleanBodyLines[lineIdx],
+      lineNumber,
+      hash,
+      column: changeCol,
+      anchorLen,
+    });
+
+    const headerLine = footnoteHeaderIndex.get(change.id);
+    if (headerLine !== undefined) {
+      editOpInsertions.push({ headerLine, editOpLine });
+    }
+  }
+
+  // Splice edit-op lines into footnote blocks in reverse order to avoid index invalidation
+  editOpInsertions.sort((a, b) => b.headerLine - a.headerLine);
+  for (const { headerLine, editOpLine } of editOpInsertions) {
+    footnoteLines.splice(headerLine + 1, 0, editOpLine);
+  }
+
+  // Reassemble: body + blank line + footnotes
+  const settledContent = [...bodyLines, '', ...footnoteLines].join('\n');
 
   return { settledContent, settledIds };
 }
