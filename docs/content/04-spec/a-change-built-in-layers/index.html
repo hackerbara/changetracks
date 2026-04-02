@@ -1,0 +1,697 @@
+<!DOCTYPE html><html lang="en" data-astro-cid-fzx4jmue> <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover"><title>A Change, Built in Layers — Changedown</title><link rel="canonical" href="https://changedown.com/content/04-spec/a-change-built-in-layers/"><meta name="description" content="A change in ChangeDown starts simple and gains structure as needed. The three levels are concentric — each adds a container around the previous one. A reader encountering the format for the first time sees the simplest possible version. A tool producing changes emits the richest."><meta name="robots" content="index, follow"><meta property="og:title" content="A Change, Built in Layers"><meta property="og:type" content="article"><meta property="og:image" content="https://changedown.com/og-images/content-04-spec-a-change-built-in-layers--a-change-built-in-layers.png"><meta property="og:url" content="https://changedown.com/content/04-spec/a-change-built-in-layers/"><meta property="og:description" content="A change in ChangeDown starts simple and gains structure as needed. The three levels are concentric — each adds a container around the previous one. A reader encountering the format for the first time sees the simplest possible version. A tool producing changes emits the richest."><meta property="og:site_name" content="Changedown"><meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="A Change, Built in Layers"><meta name="twitter:image" content="https://changedown.com/og-images/content-04-spec-a-change-built-in-layers--a-change-built-in-layers.png"><meta name="twitter:description" content="A change in ChangeDown starts simple and gains structure as needed. The three levels are concentric — each adds a container around the previous one. A reader encountering the format for the first time sees the simplest possible version. A tool producing changes emits the richest."><link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet"><link rel="stylesheet" href="/app/assets/main.css"><link rel="stylesheet" href="/app/assets/editor.css"><style>body{margin:0;background:#18181b}
+</style></head> <body data-astro-cid-fzx4jmue> <div id="app" data-content-path="/content/04-spec.md" data-astro-cid-fzx4jmue> <div class="app"><input type="file" accept=".docx" style="display:none;"/><header class="header"><div class="header-left"><button class="sidebar-toggle" title="Hide sidebar" aria-label="Toggle sidebar"><svg width="18" height="18" viewBox="0 0 18 18" fill="none"><rect x="2" y="4" width="14" height="1.5" rx="0.75" fill="currentColor"></rect><rect x="2" y="8.25" width="14" height="1.5" rx="0.75" fill="currentColor"></rect><rect x="2" y="12.5" width="14" height="1.5" rx="0.75" fill="currentColor"></rect></svg></button><span class="header-brand" style="cursor:pointer;"><span class="header-brand-mark">◆</span>changedown</span><a class="social-link" href="https://github.com/hackerbara" target="_blank" rel="noopener" title="GitHub"><svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path></svg></a><a class="social-link" href="https://x.com/hackerbara" target="_blank" rel="noopener" title="X / Twitter"><svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M12.6.75h2.454l-5.36 6.142L16 15.25h-4.937l-3.867-5.07-4.425 5.07H.316l5.733-6.57L0 .75h5.063l3.495 4.633L12.601.75Zm-.86 13.028h1.36L4.323 2.145H2.865l8.875 11.633Z"></path></svg></a></div><div class="header-center"><div class="view-slider"><button data-slot="preview" class="vs-btn vs-preview active" aria-pressed="true">Preview</button><div class="vs-divider"></div><div class="vs-file-section dimmed"><div class="vs-file-options"><button data-slot="markup" class="vs-btn vs-sub " aria-pressed="false">Markup</button><button data-slot="changes" class="vs-btn vs-sub " aria-pressed="false">Simple</button></div></div></div></div><div class="header-right"></div></header><div class="mobile-view-bar"><div class="view-slider"><button data-slot="preview" class="vs-btn vs-preview active" aria-pressed="true">Preview</button><div class="vs-divider"></div><div class="vs-file-section dimmed"><div class="vs-file-options"><button data-slot="markup" class="vs-btn vs-sub " aria-pressed="false">Markup</button><button data-slot="changes" class="vs-btn vs-sub " aria-pressed="false">Changes</button></div></div></div><button class="mobile-delimiters-btn active" title="Hide delimiters" aria-label="Hide delimiters"><svg width="16" height="16" viewBox="0 0 14 14" fill="none"><path d="M4.5 2C3.12 2 2 3.34 2 5s1.12 3 2.5 3M9.5 2C10.88 2 12 3.34 12 5s-1.12 3-2.5 3M4.5 8C3.12 8 2 9.34 2 11s1.12 3 2.5 3M9.5 8C10.88 8 12 9.34 12 11s-1.12 3-2.5 3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"></path></svg></button><div class="action-dropdown-wrapper"><button class="action-menu-btn">Import/Export</button></div></div><div class="action-bar"><button class="action-btn sidebar-toggle-mobile" aria-label="Toggle sidebar"><svg width="16" height="16" viewBox="0 0 18 18" fill="none"><rect x="2" y="4" width="14" height="1.5" rx="0.75" fill="currentColor"></rect><rect x="2" y="8.25" width="14" height="1.5" rx="0.75" fill="currentColor"></rect><rect x="2" y="12.5" width="14" height="1.5" rx="0.75" fill="currentColor"></rect></svg>Files</button><button class="action-btn action-btn-accent"><svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 1v8M3 6l4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path><path d="M1 11v2h12v-2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path></svg>Import DOCX</button><div class="export-dropdown"><button class="action-btn" title="Export document"><svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 9V1M3 4l4-4 4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path><path d="M1 11v2h12v-2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path></svg>Export<svg width="8" height="8" viewBox="0 0 8 8" fill="none" class="action-btn-caret"><path d="M1.5 3L4 5.5 6.5 3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"></path></svg></button></div><button class="action-btn"><svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 1v12M1 7h12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"></path></svg>New</button><button class="action-btn active" title="Hide delimiters"><svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M4.5 2C3.12 2 2 3.34 2 5s1.12 3 2.5 3M9.5 2C10.88 2 12 3.34 12 5s-1.12 3-2.5 3M4.5 8C3.12 8 2 9.34 2 11s1.12 3 2.5 3M9.5 8C10.88 8 12 9.34 12 11s-1.12 3-2.5 3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"></path></svg>Delimiters</button></div><div class="app-body"><div class="app-sidebar"><button class="pane-hide-btn sidebar-hide-btn" title="Hide files">×</button><div class="sidebar"><div class="sidebar-header">Files</div><div class="sidebar-tree"></div></div></div><main class="app-main preview-only"><div class="split-pane split-pane-preview"><div class="markdown-body ct-dark" data-view-mode="review" style="width:100%;height:100%;overflow:auto;overscroll-behavior-y:contain;padding:20px 28px;"><!-- changedown.com/v1: untracked -->
+<h1 id="the-changedown-format"><a href="#the-changedown-format" style="color: inherit; text-decoration: none" class="heading-anchor">The ChangeDown Format</a></h1>
+<p>Changes happen in tools — editors, agents, import pipelines. The record of <em>why</em> a change was made lives somewhere else: a PR comment, a Slack thread, a review UI. When the file moves to a new repository, a new team, or a new decade, the context doesn't follow. The change and its reasoning are separated at birth.</p>
+<p>ChangeDown puts the reason next to the change, in the file itself.</p>
+<p>The inline syntax is <a href="https://github.com/CriticMarkup/CriticMarkup-toolkit">CriticMarkup</a>, created by Gabe Weatherhead and Erik Hess in 2013 — a plain-text vocabulary for editorial markup. ChangeDown extends CriticMarkup with identity, deliberation, and content-addressed anchoring, using standard markdown footnotes as the container. The result is a file that carries its own editorial history: who proposed what, why, what the pushback was, and what happened next. No external database. No proprietary format. Any text editor can read it.</p>
+<p>The format is a universal interchange. Any system that produces changes to a markdown file — a human typing, an AI agent calling MCP tools, a DOCX import pipeline, a CRDT sync layer — can emit well-formed ChangeDown and enter the same deliberation record. The format specifies what crosses the boundary between transient editing and durable record — the point where activity becomes a well-formed footnote with identity, anchoring, and provenance. What crosses that boundary is the format's concern. What happens upstream is not.</p>
+<p>The format has two serializations of the same artifact. <strong>L2</strong> is the on-disk representation: inline CriticMarkup in the body, footnote references linking to metadata blocks. Human-readable without tooling. <strong>L3</strong> is the computational projection: clean body text with no delimiters, footnotes enriched with content-addressed anchors. L3 is the layer that enables MCP-equipped agents to work effectively — content-addressed coordinates give agents stable references for sequential edits, batch operations, and parallel multi-agent work without coordinate invalidation between calls. L2 → L3 → L2 is lossless and deterministic.</p>
+<hr>
+<h2 id="a-change-built-in-layers"><a href="#a-change-built-in-layers" style="color: inherit; text-decoration: none" class="heading-anchor">A Change, Built in Layers</a></h2>
+<p>A change in ChangeDown starts simple and gains structure as needed. The three levels are concentric — each adds a container around the previous one. A reader encountering the format for the first time sees the simplest possible version. A tool producing changes emits the richest.</p>
+<h3 id="level-0-bare-markup"><a href="#level-0-bare-markup" style="color: inherit; text-decoration: none" class="heading-anchor">Level 0 — Bare Markup</a></h3>
+<p>CriticMarkup defines five inline constructs:</p>
+<table>
+<thead>
+<tr>
+<th>Type</th>
+<th>Syntax</th>
+<th>Example</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Insertion</td>
+<td><code>{++text++}</code></td>
+<td><code>{++added this++}</code></td>
+</tr>
+<tr>
+<td>Deletion</td>
+<td><code>{--text--}</code></td>
+<td><code>{--removed this--}</code></td>
+</tr>
+<tr>
+<td>Substitution</td>
+<td><code>{~~old~&gt;new~~}</code></td>
+<td><code>{~~REST~&gt;GraphQL~~}</code></td>
+</tr>
+<tr>
+<td>Highlight</td>
+<td><code>{==text==}</code></td>
+<td><code>{==important==}</code></td>
+</tr>
+<tr>
+<td>Comment</td>
+<td><code>{&gt;&gt;text&lt;&lt;}</code></td>
+<td><code>{&gt;&gt;needs citation&lt;&lt;}</code></td>
+</tr>
+</tbody>
+</table>
+<p>Any markdown file containing these constructs is a valid CriticMarkup document. This is Level 0 — the substrate. No attribution, no IDs, just the change:</p>
+<pre><code class="language-changedown">The API should use {~~REST~&gt;GraphQL~~} for the public interface.
+</code></pre>
+<h3 id="level-1-attribution"><a href="#level-1-attribution" style="color: inherit; text-decoration: none" class="heading-anchor">Level 1 — Attribution</a></h3>
+<p>Attach a comment with no whitespace after the closing delimiter, and metadata travels with the change:</p>
+<pre><code class="language-changedown">The API should use {~~REST~&gt;GraphQL~~}{&gt;&gt;@alice | 2024-01-15 | sub | proposed&lt;&lt;} for the public interface.
+</code></pre>
+<p>The comment carries pipe-separated fields: <code>@author</code>, date, type, status. Same <code>|</code> separator at every level, flexible field order. Use as few or as many fields as needed. Level 1 adds identity without ceremony.</p>
+<h3 id="level-2-full-deliberation"><a href="#level-2-full-deliberation" style="color: inherit; text-decoration: none" class="heading-anchor">Level 2 — Full Deliberation</a></h3>
+<p>Add a footnote reference on the change and a footnote definition block, and the change gains a full deliberation record:</p>
+<pre><code class="language-changedown">The API should use {~~REST~&gt;GraphQL~~}[^cn-1] for the public interface.
+
+[^cn-1]: @alice | 2024-01-15 | sub | proposed
+    @alice 2024-01-15: GraphQL reduces over-fetching for dashboard clients.
+    @dave 2024-01-16: But increases client complexity.
+      @alice 2024-01-16: See benchmarks in PR #42.
+        @dave 2024-01-17: Fair point. Benchmarks are convincing.
+    resolved @dave 2024-01-17
+</code></pre>
+<p>The footnote header carries identity and status. The body carries threaded discussion, resolution markers, approval records, and revision history. This is what tools produce and what the review panel displays.</p>
+<h3 id="level-transitions"><a href="#level-transitions" style="color: inherit; text-decoration: none" class="heading-anchor">Level Transitions</a></h3>
+<p>Each level is a strict superset: Level 2 is valid Level 1 is valid Level 0. Promotion adds a container — L0 → L1 adds a comment, L1 → L2 adds a footnote.</p>
+<p>Compaction is the inverse direction, but it is not merely stripping containers. Compaction operates on an arbitrary slice of footnotes — the file's deliberation history — and decides what to carry forward. A compaction pass targets specific decided or consumed footnotes, removes their definitions, inserts a compaction-boundary marker at the frontier, and VCS preserves the full history at each step. The deliberation record is what you are deciding about: which threads have served their purpose, which decisions are load-bearing enough to keep. Compaction is stewardship of the file's memory, not mechanical cleanup.</p>
+<hr>
+<h2 id="change-types"><a href="#change-types" style="color: inherit; text-decoration: none" class="heading-anchor">Change Types</a></h2>
+<p>Five inline change types using CriticMarkup delimiters:</p>
+<table>
+<thead>
+<tr>
+<th>Type</th>
+<th>Syntax</th>
+<th>Body result when accepted</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Insertion</td>
+<td><code>{++text++}</code></td>
+<td>text is added</td>
+</tr>
+<tr>
+<td>Deletion</td>
+<td><code>{--text--}</code></td>
+<td>text is removed</td>
+</tr>
+<tr>
+<td>Substitution</td>
+<td><code>{~~old~&gt;new~~}</code></td>
+<td>old is replaced with new</td>
+</tr>
+<tr>
+<td>Highlight</td>
+<td><code>{==text==}</code></td>
+<td>text is unchanged (annotation)</td>
+</tr>
+<tr>
+<td>Comment</td>
+<td><code>{&gt;&gt;text&lt;&lt;}</code></td>
+<td>no body text (annotation only)</td>
+</tr>
+</tbody>
+</table>
+<p>Highlights attach comments with no whitespace: <code>{==text==}{&gt;&gt;reason&lt;&lt;}</code>. All types support multi-line content. Substitutions use <code>~&gt;</code> to separate old text from new.</p>
+<p>The comment closer <code>&lt;&lt;}</code> is required in Level 0 and Level 1 CriticMarkup. In Level 2, the <code>{&gt;&gt;reason</code> annotation attached to an edit-op in a footnote does not require a closing <code>&lt;&lt;}</code> — the annotation extends to end of line. Standalone comments in the body (<code>{&gt;&gt;text&lt;&lt;}</code>) always require the closer.</p>
+<p>Inline CriticMarkup must not nest — <code>{++text with {--other--} inside++}</code> is malformed. CriticMarkup appearing inside footnote discussion text is literal content, not parsed as markup.</p>
+<h3 id="range-changes-deferred"><a href="#range-changes-deferred" style="color: inherit; text-decoration: none" class="heading-anchor">Range Changes (Deferred)</a></h3>
+<p>Range-change syntax is intentionally out of scope for this draft.</p>
+<p>This version focuses on stable core semantics: inline changes, identity, footnote structure, anchoring, projection semantics, coherence, and stewardship. Range operations can return in a follow-up revision once parser and conversion behavior are locked with explicit conformance tests.</p>
+<hr>
+<h2 id="identity"><a href="#identity" style="color: inherit; text-decoration: none" class="heading-anchor">Identity</a></h2>
+<h3 id="authors"><a href="#authors" style="color: inherit; text-decoration: none" class="heading-anchor">Authors</a></h3>
+<p><code>@name</code> for humans. <code>@ai:model</code> for AI agents — for example, <code>@ai:claude-opus-4.6</code>. The <code>@ai:</code> namespace is structural: it tells every reader that this participant is a language model, not a person wearing a handle. Identity is governance, not cosmetics. Flattening human and AI attribution into a single namespace corrupts the deliberation record.</p>
+<h3 id="change-ids"><a href="#change-ids" style="color: inherit; text-decoration: none" class="heading-anchor">Change IDs</a></h3>
+<p><code>[^cn-N]</code> — a standard markdown footnote reference. The <code>cn-</code> prefix is mandatory. IDs are document-unique and monotonically increasing. New changes take the next integer after the highest existing ID, even after compaction removes earlier ones. For grouped changes, the parent number determines the next available ID: if <code>cn-17.2</code> is the highest, the next standalone ID is <code>cn-18</code>.</p>
+<p>A footnote with only a header line and no body is valid — minimal metadata, no discussion. Definitions appear in <code>cn-N</code> order.</p>
+<h3 id="grouped-changes"><a href="#grouped-changes" style="color: inherit; text-decoration: none" class="heading-anchor">Grouped Changes</a></h3>
+<p>Multi-change operations use dotted IDs under a shared parent: <code>cn-17.1</code>, <code>cn-17.2</code>. The parent is the logical operation; children are its components. One level of nesting only — <code>cn-17.1.1</code> is never valid.</p>
+<p>The parent footnote <code>cn-17</code> carries the <code>move</code> (or other compound) type and the group-level status. It has no inline CriticMarkup in the body — it is a metadata-only footnote. Its children (<code>cn-17.1</code>, <code>cn-17.2</code>, etc.) carry the individual edit-ops and inline markup. When the parent is accepted, all children with <code>proposed</code> status are accepted. When a child is individually rejected, that child is carved out but the parent remains proposed until explicitly decided.</p>
+<p>Example of a grouped move operation:</p>
+<pre><code class="language-changedown">{--The intro paragraph here.--}[^cn-17.1]
+
+...
+
+{++The intro paragraph here.++}[^cn-17.2]
+
+[^cn-17]: @alice | 2024-03-01 | move | proposed
+    note: Move intro from section 3 to section 1
+
+[^cn-17.1]: @alice | 2024-03-01 | del | proposed
+    3:b2 {--The intro paragraph here.--}
+
+[^cn-17.2]: @alice | 2024-03-01 | ins | proposed
+    12:f1 {++The intro paragraph here.++}
+</code></pre>
+<p>Accepting the parent resolves all still-proposed children. Rejecting a child carves out one exception.</p>
+<hr>
+<h2 id="the-footnote"><a href="#the-footnote" style="color: inherit; text-decoration: none" class="heading-anchor">The Footnote</a></h2>
+<p>The footnote is the deliberation record. Everything that makes a change more than a text diff lives here.</p>
+<h3 id="parser-philosophy"><a href="#parser-philosophy" style="color: inherit; text-decoration: none" class="heading-anchor">Parser Philosophy</a></h3>
+<p>The format is designed so humans can write footnotes by hand and get them mostly right. Parsers should be generous in what they accept: tolerate blank lines in footnotes and preserve unrecognized metadata lines for forward compatibility.</p>
+<p>The spec defines canonical producer output. Parsers should prefer compatibility over brittleness for reasonable variations.</p>
+<h3 id="header"><a href="#header" style="color: inherit; text-decoration: none" class="heading-anchor">Header</a></h3>
+<pre><code>[^cn-N]: @author | date | type | status
+</code></pre>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Values</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>@author</code></td>
+<td><code>@alice</code>, <code>@ai:claude-opus-4.6</code></td>
+</tr>
+<tr>
+<td><code>date</code></td>
+<td><code>2024-01-15</code> (always YYYY-MM-DD in header)</td>
+</tr>
+<tr>
+<td><code>type</code></td>
+<td><code>ins</code>, <code>del</code>, <code>sub</code>, <code>highlight</code>, <code>comment</code>, <code>move</code>. Parsers also accept long forms (<code>insertion</code>, <code>deletion</code>, <code>substitution</code>) and additional abbreviations (<code>hi</code> and <code>hig</code> for highlight, <code>com</code> for comment)</td>
+</tr>
+<tr>
+<td><code>status</code></td>
+<td><code>proposed</code>, <code>accepted</code>, <code>rejected</code></td>
+</tr>
+</tbody>
+</table>
+<p>The <code>move</code> type is used on the parent footnote of a grouped move operation; the component children use <code>del</code> and <code>ins</code>. Additional types <code>image</code> and <code>equation</code> are used for media import metadata.</p>
+<p>Three statuses only. Withdrawal is self-rejection — the original author rejecting their own change.</p>
+<h3 id="the-edit-op-line"><a href="#the-edit-op-line" style="color: inherit; text-decoration: none" class="heading-anchor">The Edit-Op Line</a></h3>
+<p>The anchor that locates a change in the body text:</p>
+<pre><code>    LINE:HASH contextBefore{op}contextAfter
+</code></pre>
+<p>4-space indent. <code>LINE</code> is a 1-indexed line number. <code>HASH</code> is 2 lowercase hex characters (see <a href="#the-anchor">The Anchor</a>). The CriticMarkup operation is embedded within surrounding body text so the string is unique on its line.</p>
+<p>The edit-op line is present in L3 for all changes. In L2, it is preserved for decided (accepted/rejected) changes as the coherence verification record. Proposed changes in L2 do not carry an edit-op line — the inline CriticMarkup in the body is their anchor.</p>
+<p>The edit-op line is the bridge between the footnote and the body. <a href="#the-anchor">The Anchor</a> covers in detail how edit-ops are produced, how they survive body edits, and how they are used in the resolution protocol.</p>
+<h3 id="metadata-keywords"><a href="#metadata-keywords" style="color: inherit; text-decoration: none" class="heading-anchor">Metadata Keywords</a></h3>
+<p>All metadata lines are 4-space indented and follow a <code>keyword: value</code> pattern.</p>
+<table>
+<thead>
+<tr>
+<th>Keyword</th>
+<th>Purpose</th>
+<th>Repeatable</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>context:</code></td>
+<td>Surrounding text with <code>{braces}</code> on changed span</td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>approved:</code></td>
+<td><code>@author date &quot;reason&quot;</code></td>
+<td>Yes</td>
+</tr>
+<tr>
+<td><code>rejected:</code></td>
+<td>Same pattern</td>
+<td>Yes</td>
+</tr>
+<tr>
+<td><code>request-changes:</code></td>
+<td>Between approval and rejection</td>
+<td>Yes</td>
+</tr>
+<tr>
+<td><code>revisions:</code></td>
+<td>Amendment history; <code>r1</code>, <code>r2</code> entries below</td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>supersedes:</code></td>
+<td><code>cn-N</code> — this replaces cn-N</td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>superseded-by:</code></td>
+<td><code>cn-N</code> — cn-N replaces this</td>
+<td>Yes</td>
+</tr>
+<tr>
+<td><code>proposed-text:</code></td>
+<td>Text for footnote-resident alternative</td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>previous:</code></td>
+<td>Pre-amendment text</td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>original:</code></td>
+<td>Pre-change content for range sub/del</td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>reason:</code></td>
+<td>Short annotation for the change</td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>note:</code></td>
+<td>Free-form annotation</td>
+<td>Yes</td>
+</tr>
+</tbody>
+</table>
+<p>The <code>revisions:</code> block uses indented sub-entries, each prefixed with a revision label (<code>r1</code>, <code>r2</code>, etc.):</p>
+<pre><code>    revisions:
+        r1 @alice 2024-01-18: Softened wording per feedback
+            previous: reliable
+        r2 @alice 2024-01-20: Expanded scope
+            previous: production-ready
+</code></pre>
+<p>Each revision entry is indented 8 spaces (4 for footnote body + 4 for revision nesting). The <code>previous:</code> sub-line records the prior edit-op so the full amendment history is recoverable. Revision labels are sequential and never reused.</p>
+<p>Parsers should preserve all indented <code>key: value</code> lines verbatim, whether or not the keyword is recognized. This makes the format forward-compatible — new keywords can be added without breaking existing parsers.</p>
+<h3 id="discussion"><a href="#discussion" style="color: inherit; text-decoration: none" class="heading-anchor">Discussion</a></h3>
+<p>Comments start with <code>@author date:</code> at 4-space indent:</p>
+<pre><code>    @carol 2024-01-17: Why robust? Simple was intentional.
+</code></pre>
+<p>Replies indent 2 spaces deeper than the parent:</p>
+<pre><code>    @carol 2024-01-17: Why robust? Simple was intentional.
+      @alice 2024-01-17: Simple undersells our capabilities.
+        @dave 2024-01-18: Agreed with Alice.
+</code></pre>
+<p>No depth cap. Multi-line comments continue until the next <code>@author date:</code> line, resolution marker, or end of footnote. Blank lines are tolerated.</p>
+<p><code>@mentions</code> mid-line (not at <code>@author date:</code> position) are attention signals, not authorship.</p>
+<p><strong>Comment labels</strong> (optional): <code>[suggestion]</code>, <code>[issue]</code>, <code>[question]</code>, <code>[praise]</code>, <code>[todo]</code>, <code>[thought]</code>, <code>[nitpick]</code>. Blocking modifier: <code>[issue/blocking]</code>, <code>[todo/blocking]</code>.</p>
+<pre><code>    @bob 2024-01-16 [question]: What about latency requirements?
+    @carol 2024-01-17 [issue/blocking]: 100/min feels low for production.
+</code></pre>
+<h3 id="resolution-markers"><a href="#resolution-markers" style="color: inherit; text-decoration: none" class="heading-anchor">Resolution Markers</a></h3>
+<pre><code>    resolved @dave 2024-01-17
+    resolved @carol 2024-01-18: Addressed by r2
+    open -- awaiting load test results from @dave
+    open
+</code></pre>
+<p>ASCII keywords. Grep-able. <code>resolved @author date: reason</code> and <code>open</code> / <code>open -- reason</code>.</p>
+<h3 id="line-type-identification"><a href="#line-type-identification" style="color: inherit; text-decoration: none" class="heading-anchor">Line Type Identification</a></h3>
+<p>Each footnote body line self-identifies by its first token:</p>
+<table>
+<thead>
+<tr>
+<th>Pattern</th>
+<th>Type</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Known keyword + <code>:</code></td>
+<td>Metadata</td>
+</tr>
+<tr>
+<td>Digits + <code>:</code> + hex (e.g. <code>5:a3 ...</code>)</td>
+<td>Edit-op line</td>
+</tr>
+<tr>
+<td><code>@author date:</code></td>
+<td>Discussion</td>
+</tr>
+<tr>
+<td><code>resolved</code> / <code>open</code></td>
+<td>Resolution marker</td>
+</tr>
+<tr>
+<td>Indented under <code>revisions:</code></td>
+<td>Revision entry</td>
+</tr>
+<tr>
+<td>Indented, no match</td>
+<td>Continuation</td>
+</tr>
+</tbody>
+</table>
+<p>Continuation lines must start with whitespace. A non-indented line that matches no pattern terminates the footnote block.</p>
+<h3 id="footnote-section-boundary"><a href="#footnote-section-boundary" style="color: inherit; text-decoration: none" class="heading-anchor">Footnote Section Boundary</a></h3>
+<p>The <strong>footnote section</strong> begins at the first <code>[^cn-N]:</code> definition line that is not inside a fenced code block. All subsequent lines belong to the footnote section until the end of the file, with one exception: a line that is not indented and does not start a new footnote definition terminates the preceding footnote but does not end the footnote section — it is treated as a non-footnote line within the section (e.g., a blank line between definitions).</p>
+<p>The body is everything before the footnote section. There is no requirement for a blank line between the body and the first footnote definition, but producers should emit one for readability. A file with no <code>[^cn-N]:</code> definitions has no footnote section — the entire file is body.</p>
+<p>Footnote definitions must not be interleaved with body content. All definitions appear after the body, in <code>cn-N</code> order. A parser encountering a <code>[^cn-N]:</code> definition followed by non-indented, non-definition body text should treat this as a malformed document.</p>
+<h3 id="a-change-through-its-lifecycle"><a href="#a-change-through-its-lifecycle" style="color: inherit; text-decoration: none" class="heading-anchor">A Change Through Its Lifecycle</a></h3>
+<p>The substitution from the opening section — <code>REST</code> → <code>GraphQL</code> — through its full lifecycle.</p>
+<p><strong>1. Propose.</strong> Alice creates the change. The file now contains:</p>
+<pre><code class="language-changedown">The API should use {~~REST~&gt;GraphQL~~}[^cn-1] for the public interface.
+
+[^cn-1]: @alice | 2024-01-15 | sub | proposed
+    @alice 2024-01-15: GraphQL reduces over-fetching for dashboard clients.
+</code></pre>
+<p><strong>2. Discuss.</strong> Dave pushes back. Alice responds with evidence:</p>
+<pre><code>    @dave 2024-01-16: GraphQL increases client complexity.
+      @alice 2024-01-16: But reduces over-fetching. See PR #42.
+        @dave 2024-01-17: Fair point. Benchmarks are convincing.
+    resolved @dave 2024-01-17
+</code></pre>
+<p><strong>3. Accept.</strong> Eve and Bob approve. The status changes:</p>
+<pre><code class="language-changedown">[^cn-1]: @alice | 2024-01-15 | sub | accepted
+    4:e2 should use {~~REST~&gt;GraphQL~~} for the public
+    approved: @eve 2024-01-20
+    approved: @bob 2024-01-21
+    @alice 2024-01-15: GraphQL reduces over-fetching for dashboard clients.
+    @dave 2024-01-16: GraphQL increases client complexity.
+      @alice 2024-01-16: But reduces over-fetching. See PR #42.
+        @dave 2024-01-17: Fair point. Benchmarks are convincing.
+    resolved @dave 2024-01-17
+</code></pre>
+<p>The body now reads <code>GraphQL</code> as clean text. The edit-op line records the original operation for coherence verification.</p>
+<p><strong>4. Compact.</strong> Later, the team compacts decided footnotes. cn-1 is removed, a compaction boundary is inserted, and VCS preserves the full thread in history:</p>
+<pre><code class="language-changedown">The API should use GraphQL for the public interface.
+
+[^cn-2]: compaction-boundary
+</code></pre>
+<p>The body carries the decided text. The deliberation is recoverable from VCS. The file moves on.</p>
+<hr>
+<h2 id="the-anchor"><a href="#the-anchor" style="color: inherit; text-decoration: none" class="heading-anchor">The Anchor</a></h2>
+<p>A change knows where it lives. But the body moves — lines added, deleted, rewritten by other authors. Two problems compound: each edit shifts the coordinates of subsequent edits, and concurrent changes rewrite the body between edits. The anchor must survive both.</p>
+<p>In L2 with proposed changes, inline CriticMarkup IS the anchor — the change is physically present in the body text. In L3, and in L2 for decided changes, the body is clean text and the anchor must locate the change from outside.</p>
+<p>The body text looks different depending on the projection. The format defines three canonical projections:</p>
+<table>
+<thead>
+<tr>
+<th>Projection</th>
+<th>Proposed ops</th>
+<th>Accepted ops</th>
+<th>Rejected ops</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Current</strong> (on-disk)</td>
+<td>Applied as-if-accepted</td>
+<td>Applied</td>
+<td>Rejection applied</td>
+<td>Anchor surface, the body as it reads now</td>
+</tr>
+<tr>
+<td><strong>Decided</strong></td>
+<td>Excluded (unapplied)</td>
+<td>Applied</td>
+<td>Rejection applied</td>
+<td>What's been finalized — no speculation</td>
+</tr>
+<tr>
+<td><strong>Original</strong></td>
+<td>Excluded</td>
+<td>Excluded</td>
+<td>Excluded</td>
+<td>Base text before any tracking</td>
+</tr>
+</tbody>
+</table>
+<p>The L3 body is the <strong>Current</strong> projection — the actual bytes in the file. Every footnote's LINE:HASH and contextual embedding resolves against Current. The <strong>Decided</strong> projection shows only finalized decisions (computed by unapplying proposed changes). The <strong>Original</strong> projection reconstructs the base text via the scrub replay's backward pass.</p>
+<p>The anchor system works across these projections — an edit-op written against one body state resolves against the same logical text even when the projection has changed.</p>
+<h3 id="linehash"><a href="#linehash" style="color: inherit; text-decoration: none" class="heading-anchor">LINE:HASH</a></h3>
+<p>A content-addressed coordinate, inspired by Bölük's line-hash addressing (<a href="https://blog.can.ac/2026/02/12/the-harness-problem/">&quot;The Harness Problem,&quot;</a> 2026). Bölük's insight: content-addressed lines eliminate the mechanical failures that plague text-matching approaches to agent editing. ChangeDown extends the concept — the hash serves as a <strong>freshness indicator</strong> per line. When the hash matches, the line content hasn't changed and the coordinate is trustworthy. When it doesn't, the system knows to relocate rather than silently operating on stale data.</p>
+<p>The hash is computed as:</p>
+<ol>
+<li>Strip trailing <code>\r</code> from the line</li>
+<li>Remove all footnote references matching <code>[^cn-[\w.]+]</code></li>
+<li>Remove all whitespace</li>
+<li>Compute <code>xxHash32</code> (seed 0) of the resulting UTF-8 bytes</li>
+<li>Take the result modulo 256</li>
+<li>Format as exactly 2 lowercase hexadecimal characters (<code>00</code> through <code>ff</code>)</li>
+</ol>
+<p>Step 2 makes the hash <strong>view-independent</strong>: the same line produces the same hash whether read in L2 (with <code>[^cn-N]</code> refs inline) or L3 (refs stripped). This is critical for round-trip stability — an edit-op written in L3 resolves correctly when the file is stored as L2.</p>
+<p><strong>Blank lines</strong> use structural context: <code>hash(prevNonBlank + &quot;\0&quot; + nextNonBlank + &quot;\0&quot; + distFromPrev)</code>, where <code>distFromPrev</code> is the number of lines between this blank line and the previous non-blank line (1 means immediately adjacent). For consecutive blank lines, each gets a different <code>distFromPrev</code> value (1, 2, 3, ...), ensuring unique hashes. <code>prevNonBlank</code> and <code>nextNonBlank</code> are the <strong>stripped</strong> content of those lines — the same stripping from steps 1-3 is applied (remove trailing <code>\r</code>, remove footnote refs, remove whitespace) before using them as hash input. At file boundaries: if no previous non-blank line exists, <code>prevNonBlank</code> is the empty string; same for <code>nextNonBlank</code>.</p>
+<p><code>5:a3</code> means line 5, hash <code>a3</code>. Producers emit exactly 2 hex characters. Parsers accept 2 or more for forward compatibility.</p>
+<h3 id="contextual-embedding"><a href="#contextual-embedding" style="color: inherit; text-decoration: none" class="heading-anchor">Contextual Embedding</a></h3>
+<p>The edit-op line embeds the CriticMarkup operation within surrounding body text, creating an unambiguous anchor within the target line:</p>
+<pre><code class="language-changedown">    4:e2 should use {~~REST~&gt;GraphQL~~} for the public
+</code></pre>
+<p><code>should use </code> is the context before. <code>{~~REST~&gt;GraphQL~~}</code> is the operation. <code> for the public</code> is the context after. The combined string appears exactly once on line 4 — any parser can recover the operation's exact column position.</p>
+<p>This is a simplified, line-scoped variant of the W3C Web Annotation Data Model's TextQuoteSelector (<code>{prefix, exact, suffix}</code> for robust anchoring in dynamic documents). ChangeDown scopes the anchor to a single line because files have VCS history as the authoritative recovery path — full-document anchoring is over-engineered for this use case.</p>
+<p>For deletions (where the deleted text is absent from the body), the edit-op embeds the deletion operation in context: <code>contextBefore{--text--}contextAfter</code>. The surrounding context locates where the deletion occurred.</p>
+<h3 id="contextual-uniqueness-guarantee"><a href="#contextual-uniqueness-guarantee" style="color: inherit; text-decoration: none" class="heading-anchor">Contextual Uniqueness Guarantee</a></h3>
+<p>Every produced edit-op is contextually unique within its line. The context expansion algorithm:</p>
+<ol>
+<li>Start with the operation's column span in the body</li>
+<li>Expand alternately right then left, one character at a time</li>
+<li>At each step, check: does this substring appear exactly once on the line?</li>
+<li>When unique, snap to word boundaries (extend to nearest space characters)</li>
+<li>Verify uniqueness still holds after word-boundary snap; revert to character-level if broken</li>
+<li>Full line is always unique (terminal case)</li>
+</ol>
+<p>This guarantee means any parser can unambiguously recover the operation's exact position from the edit-op line alone. The right-first expansion bias keeps <code>contextBefore</code> short when possible, anchoring within the nearest word.</p>
+<h3 id="line-and-hash-based-relocation"><a href="#line-and-hash-based-relocation" style="color: inherit; text-decoration: none" class="heading-anchor">Line and Hash Based Relocation</a></h3>
+<p>When the edit-op's line number is stale — lines were added or removed above the target — the system uses the hash as a relocation key.</p>
+<p><strong>The relocation protocol:</strong></p>
+<ol>
+<li><strong>Check the stated line.</strong> Compute the hash at the expected line number. If it matches, done. This is the O(1) fast path and the common case.</li>
+<li><strong>Scan for hash match.</strong> Build a hash-to-line map for the entire file. If the hash appears exactly once elsewhere, relocate to that line. If the hash is ambiguous (appears on multiple lines — possible since mod-256 produces only 256 values), fail and ask the caller to re-read with fresh coordinates.</li>
+</ol>
+<p>The hash is a <strong>freshness gate</strong>: when it matches, the coordinate is trustworthy. When it doesn't, the system relocates rather than silently applying to the wrong line. This is what makes sequential agent edits safe — each edit-op carries its own freshness proof.</p>
+<h3 id="the-text-matching-cascade"><a href="#the-text-matching-cascade" style="color: inherit; text-decoration: none" class="heading-anchor">The Text Matching Cascade</a></h3>
+<p>Once the correct line is identified (via hash match or relocation), the system locates the operation's text <em>within</em> that line. The matching cascade relaxes constraints progressively:</p>
+<ol>
+<li><strong>Exact</strong> — literal string match</li>
+<li><strong>Ref-transparent</strong> — strip footnote references from both haystack and needle, then match. Strips both <code>[^cn-N]</code> (standard refs) and <code>[cn-N]</code> (without caret — agents sometimes copy this form from view output). Handles agents that copied a ref from the view.</li>
+<li><strong>Normalized</strong> — NFKC Unicode normalization (compatibility decomposition + canonical composition). Collapses fullwidth letters, expands ligatures, normalizes NBSP to space. Does NOT convert smart quotes or en-dashes to ASCII — those are preserved as distinct characters. Handles LLMs that produce Unicode compatibility variants.</li>
+<li><strong>Whitespace-collapsed</strong> — collapse all whitespace runs to a single space. Handles text with different line wrapping than the source.</li>
+<li><strong>Decided-text</strong> (code: <code>committed-text</code>) — strip pending CriticMarkup using decided semantics (accepted changes stay, proposals reverted), then match. Handles agents targeting the decided text when the file has pending proposals inline.</li>
+<li><strong>Current-text</strong> (code: <code>settled-text</code>) — strip all CriticMarkup using Current projection semantics, then match. Handles agents targeting the Current projection view.</li>
+</ol>
+<p>Each level is ambiguity-checked: if the target appears more than once at any level, the match fails rather than guessing. If all levels fail, the system checks for Unicode confusable characters and reports them diagnostically.</p>
+<h3 id="error-behavior"><a href="#error-behavior" style="color: inherit; text-decoration: none" class="heading-anchor">Error Behavior</a></h3>
+<p>When the matching cascade fails entirely — the old text in a substitution or deletion cannot be found on the target line at any cascade level — the system must not silently skip the change or apply it elsewhere. The change is marked <strong>unresolved</strong>. Unresolved changes are preserved in the footnote with their last-known coordinates. Tools should surface unresolved changes to the user for manual intervention.</p>
+<p>When two changes target the same line, each edit-op's contextual embedding distinguishes them — the uniqueness guarantee ensures non-overlapping substrings. When two changes target the same column range (overlapping edits), this is a conflict. The second change to be applied fails to resolve because its old text has been modified by the first. Conflict resolution is outside the format's scope — tools must detect and surface overlapping edits rather than silently merging them.</p>
+<p>The cascade is gated: levels 1-4 handle surface-level mismatches. Levels 5-6 handle view-projection mismatches — they only activate when the line contains CriticMarkup.</p>
+<h3 id="the-scrub-replay"><a href="#the-scrub-replay" style="color: inherit; text-decoration: none" class="heading-anchor">The Scrub Replay</a></h3>
+<p>The universal recovery mechanism. When hash relocation and the matching cascade cannot resolve a change — the body has drifted too far through accumulated edits — the scrub replay reconstructs the correct intermediate body state by replaying the entire edit history.</p>
+<p><strong>The protocol:</strong></p>
+<ol>
+<li><strong>Backward pass.</strong> Process operations in reverse log order, un-applying each to reconstruct body₀ — the original body before any changes were applied. For each operation: find its text in the current body state, record the position, then reverse the operation (remove inserted text, restore deleted text, revert substituted text).</li>
+<li><strong>Forward pass.</strong> Re-apply operations in log order, starting from body₀. Each operation is verified against its intermediate body state — the body as it existed when that specific change was created. This detects <strong>consumption</strong>: a later operation absorbing an earlier one (e.g., a substitution that replaces text containing a previous insertion).</li>
+</ol>
+<p>This is structurally identical to Eg-walker's retreat/advance model (Kleppmann and Gentle, EuroSys 2025).</p>
+<p>The forward pass also produces <strong>fresh anchors</strong> — updated LINE:HASH coordinates and contextual edit-ops for any changes whose positions shifted. These fresh anchors can be written back to the file, re-establishing coherence at arbitrary length. The replay is idempotent: running it on an already-coherent file produces identical anchors.</p>
+<hr>
+<h2 id="the-l3-projection"><a href="#the-l3-projection" style="color: inherit; text-decoration: none" class="heading-anchor">The L3 Projection</a></h2>
+<h3 id="why-l3-exists"><a href="#why-l3-exists" style="color: inherit; text-decoration: none" class="heading-anchor">Why L3 Exists</a></h3>
+<p>L2 is the on-disk truth. So why compute a second form?</p>
+<p><strong>For editors.</strong> The L3 body is what most humans think of as &quot;the working document&quot; — the text as it currently reads, without CriticMarkup delimiters in the buffer. This matters for integration with editors like VS Code and Monaco, which are particular about characters in their text buffer. Decorations, syntax highlighting, and cursor positioning all work better on clean text. The footnote log is consumed by the review panel and decoration engine, not by the text buffer.</p>
+<p><strong>For agents.</strong> L3's content-addressed coordinates (LINE:HASH) give agents stable references. An agent can read the file, get coordinates, propose a batch of changes, and each coordinate carries its own freshness proof via the hash. Without L3, agents would need to parse CriticMarkup delimiters to find their edit targets — fragile and error-prone.</p>
+<h3 id="why-l2-is-the-on-disk-format"><a href="#why-l2-is-the-on-disk-format" style="color: inherit; text-decoration: none" class="heading-anchor">Why L2 Is the On-Disk Format</a></h3>
+<p>L2 keeps CriticMarkup inline in the body. The advantage is <strong>durability and local coherence.</strong> An agent or human reading just a few lines of an L2 file immediately sees what's proposed, what's been changed, who did it. A grep across a codebase catches pending changes. A diff shows the markup in context. There is no separate data structure to lose — the body carries its own editorial state.</p>
+<p>L3 is the better <em>working</em> format. L2 is the better <em>storage</em> format. The round-trip between them is lossless.</p>
+<h3 id="the-l3-body"><a href="#the-l3-body" style="color: inherit; text-decoration: none" class="heading-anchor">The L3 Body</a></h3>
+<p>The L3 body is the <strong>Current projection</strong>: the document as it reads now, with all editorial decisions applied.</p>
+<p>Proposed changes appear as-if-accepted (insertions present, deletions removed, substitutions show new text). Accepted changes are the same. Rejected changes have their rejection applied — rejected insertions are removed, rejected deletions restore the original text, rejected substitutions revert to the original text. This is not naive &quot;accept-all&quot; — it is the body as it currently stands, with every decision reflected.</p>
+<table>
+<thead>
+<tr>
+<th>Change state</th>
+<th>Body contains</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Proposed insertion</td>
+<td>The inserted text</td>
+</tr>
+<tr>
+<td>Proposed deletion</td>
+<td>Nothing (deleted text absent)</td>
+</tr>
+<tr>
+<td>Proposed substitution</td>
+<td>The new text</td>
+</tr>
+<tr>
+<td>Accepted (any)</td>
+<td>Same as proposed</td>
+</tr>
+<tr>
+<td>Rejected insertion</td>
+<td>Nothing (insertion removed)</td>
+</tr>
+<tr>
+<td>Rejected deletion</td>
+<td>The original text (restored)</td>
+</tr>
+<tr>
+<td>Rejected substitution</td>
+<td>The original text (restored)</td>
+</tr>
+<tr>
+<td>Highlight</td>
+<td>The highlighted text (unchanged)</td>
+</tr>
+<tr>
+<td>Comment</td>
+<td>Nothing (no body text)</td>
+</tr>
+</tbody>
+</table>
+<p>No CriticMarkup delimiters appear in the body. The footnote log is authoritative; the body is one materialization of it.</p>
+<h3 id="l2-l3-conversion"><a href="#l2-l3-conversion" style="color: inherit; text-decoration: none" class="heading-anchor">L2 → L3 Conversion</a></h3>
+<ol>
+<li>Parse the L2 text with a CriticMarkup parser to extract all changes</li>
+<li>Strip all CriticMarkup from the body in <strong>reverse document order</strong> — process changes from the end of the file toward the beginning. This preserves character offsets: removing a change at line 50 does not shift the positions of changes at lines 1-49. For each change, apply Current-projection semantics: proposed/accepted insertions keep inserted text, proposed/accepted deletions remove deleted text, proposed/accepted substitutions keep new text; rejected insertions are removed, and rejected deletions/substitutions restore original text.</li>
+<li>Strip all inline <code>[^cn-N]</code> footnote references from the body</li>
+<li>Compute line hashes on the resulting clean body</li>
+<li>For each change, build a contextual edit-op with the uniqueness guarantee</li>
+<li>Prepend the edit-op as the first body line in each footnote definition</li>
+<li>Return the assembled L3 text</li>
+</ol>
+<h3 id="l3-l2-demotion"><a href="#l3-l2-demotion" style="color: inherit; text-decoration: none" class="heading-anchor">L3 → L2 Demotion</a></h3>
+<p>Demotion is fully materialized from projection semantics:</p>
+<table>
+<thead>
+<tr>
+<th>State</th>
+<th>Body on demotion</th>
+<th>Footnote on demotion</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Proposed</td>
+<td>Re-insert CriticMarkup at anchor position</td>
+<td>Strip edit-op line</td>
+</tr>
+<tr>
+<td>Accepted</td>
+<td>Body remains clean decided text</td>
+<td>Keep edit-op line</td>
+</tr>
+<tr>
+<td>Rejected</td>
+<td>Body remains clean with rejection applied</td>
+<td>Keep edit-op line</td>
+</tr>
+</tbody>
+</table>
+<h3 id="round-trip-invariant"><a href="#round-trip-invariant" style="color: inherit; text-decoration: none" class="heading-anchor">Round-Trip Invariant</a></h3>
+<p>L2 → L3 → L2 is lossless and deterministic. Footnote headers and body lines are preserved verbatim. The matching cascade re-locates changes in the body even if the body has been edited between conversion cycles.</p>
+<hr>
+<h2 id="coherence"><a href="#coherence" style="color: inherit; text-decoration: none" class="heading-anchor">Coherence</a></h2>
+<h3 id="resolution"><a href="#resolution" style="color: inherit; text-decoration: none" class="heading-anchor">Resolution</a></h3>
+<p>Each footnote is <strong>resolved</strong> or <strong>unresolved</strong>. Binary. No intermediate states. The mechanism that succeeded — hash match, relocation, cascade, replay — is diagnostic metadata. It is not a property of the file.</p>
+<p><strong>Redundancy</strong> is orthogonal. A resolved footnote is <strong>active</strong> (its effect is visible in the body) or <strong>consumed</strong> (its effect was absorbed by a later operation). Consumption is computed by replay, not stored in the format.</p>
+<h3 id="body-log-coherence"><a href="#body-log-coherence" style="color: inherit; text-decoration: none" class="heading-anchor">Body-Log Coherence</a></h3>
+<p>A file is coherent when every footnote resolves against its <strong>intermediate body state</strong> — the body as it existed when that footnote was created. The footnote log is an ordered sequence; each operation was applied to a specific body state.</p>
+<p>Decided changes retain their full edit-op lines. Any tool can verify coherence locally: does the body at the stated line contain the text described by the edit-op? If yes, coherence holds for that footnote.</p>
+<h3 id="slices-and-compaction"><a href="#slices-and-compaction" style="color: inherit; text-decoration: none" class="heading-anchor">Slices and Compaction</a></h3>
+<p>A file may contain changes <code>cn-190</code> through <code>cn-195</code> with everything before compacted away. A <strong>compaction boundary</strong> marks the start of the current slice:</p>
+<pre><code>[^cn-7]: compaction-boundary
+</code></pre>
+<p>The boundary uses the next <code>cn-N</code> ID in log order. Attribution and metadata are optional:</p>
+<pre><code>[^cn-12]: @alice | 2026-03-20 | compaction-boundary
+    note: Sprint 4 cleanup
+</code></pre>
+<p>Compaction boundaries are excluded from change counts and coherence calculations. They are never auto-removed.</p>
+<p>Within a slice, the body at the boundary is ground truth, each footnote carries its full edit-op and governance metadata, and the resolution protocol works on the window only. A slice is self-describing: any tool can verify body-log coherence for everything in the window without history beyond the boundary.</p>
+<hr>
+<h2 id="stewardship"><a href="#stewardship" style="color: inherit; text-decoration: none" class="heading-anchor">Stewardship</a></h2>
+<p>Every footnote is a record of someone thinking in public. The same mechanism that makes decisions legible can make them punitive — accountability infrastructure that optimizes surveillance over collaboration.</p>
+<p>The format's design stance is <strong>forum, not panopticon</strong>: accountability with agency, not surveillance with automation. Three structural properties enforce this.</p>
+<p><strong>Compaction is stewardship, not garbage collection.</strong> Compaction removes footnotes while VCS preserves history. Compaction boundaries record the threshold but not a ledger. Attribution on boundaries is optional — the format does not mandate disclosure of what was compacted or why. Participants choose how they enter the record and how much of it they carry forward.</p>
+<p><strong>Trace decay is governed, not automatic.</strong> The format supports lifecycle states — keep, compress, archive, drop — with an explicit preservation floor: change identity, operation semantics, decision outcome, and at least one reason for each decided path are non-droppable. No trace is dropped without explicit human authority.</p>
+<p><strong>The file is a forum people enter at different depths.</strong> Level 0 carries no identity. Level 1 carries what you choose to attach. Level 2 carries full deliberation — but the reader controls the projection, not the format. The Current projection shows the working document. The Decided projection shows only finalized decisions. No default surface exposes author-ranking metrics. Decision lineage is first-class; punitive extraction is structurally harder.</p>
+<p><em>Design every feature so a good-faith newcomer feels oriented, and a bad-faith manager feels friction.</em></p>
+<hr>
+<h2 id="practical-details"><a href="#practical-details" style="color: inherit; text-decoration: none" class="heading-anchor">Practical Details</a></h2>
+<h3 id="file-header"><a href="#file-header" style="color: inherit; text-decoration: none" class="heading-anchor">File Header</a></h3>
+<pre><code>&lt;!-- changedown.com/v1: tracked --&gt;
+</code></pre>
+<p>First line of the file, or first line after YAML frontmatter. Tools auto-insert on first tracked edit. Supports <code>untracked</code> to explicitly opt out.</p>
+<p><strong>Precedence</strong> (highest wins):</p>
+<ol>
+<li><strong>File header</strong> — <code>&lt;!-- changedown.com/v1: tracked|untracked --&gt;</code> in the file itself</li>
+<li><strong>Project config</strong> — <code>.changedown/config.toml</code></li>
+<li><strong>Global default</strong> — <code>tracked</code> for files matching include globs, <code>untracked</code> otherwise</li>
+</ol>
+<h3 id="timestamps"><a href="#timestamps" style="color: inherit; text-decoration: none" class="heading-anchor">Timestamps</a></h3>
+<p>The header date field is always <code>YYYY-MM-DD</code>. Event lines (discussion, approvals, rejections, revisions, resolution markers) accept the full spectrum:</p>
+<table>
+<thead>
+<tr>
+<th>Format</th>
+<th>Example</th>
+<th>When used</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Date-only</td>
+<td><code>2026-02-17</code></td>
+<td>Human-written, always OK</td>
+</tr>
+<tr>
+<td>Informal time</td>
+<td><code>2026-02-17 2:30pm</code></td>
+<td>Human-written with time</td>
+</tr>
+<tr>
+<td>Full ISO 8601</td>
+<td><code>2026-02-17T14:32:05Z</code></td>
+<td>System-generated events</td>
+</tr>
+</tbody>
+</table>
+<p>System events use full ISO 8601 UTC. Human timestamps are stored exactly as written — never normalized, never rewritten.</p>
+<h3 id="code-files"><a href="#code-files" style="color: inherit; text-decoration: none" class="heading-anchor">Code Files</a></h3>
+<p><em>Conceptual — no implementation exists. Active conceptual development.</em></p>
+<p>The format is designed to work within language-native comments (<code>#</code>, <code>//</code>, <code>--</code>, <code>&lt;!-- --&gt;</code>, <code>/* */</code>). All three participation levels, range delimiters, and footnote definitions would work in comment syntax, with code between range markers remaining live and executable. This is a natural extension of the format's design but has not been implemented or tested.</p>
+<hr>
+<h2 id="complete-example"><a href="#complete-example" style="color: inherit; text-decoration: none" class="heading-anchor">Complete Example</a></h2>
+<p>A concise L2 snapshot: decided changes remain verifiable via edit-op records, while one proposed change keeps deliberation open inline.</p>
+<pre><code class="language-changedown">&lt;!-- changedown.com/v1: tracked --&gt;
+# API Design Document
+
+The API should use GraphQL for the public interface
+and gRPC for internal service communication.
+
+Authentication uses OAuth 2.0 with JWT tokens for
+all endpoints. {==Rate limiting is set to 100 req/min.==}[^cn-3]
+
+[^cn-1]: @alice | 2024-01-15 | sub | accepted
+    4:e2 should use {~~REST~&gt;GraphQL~~} for the public
+    approved: @eve 2024-01-20
+    approved: @bob 2024-01-21
+    @alice 2024-01-15: GraphQL reduces over-fetching for dashboard clients.
+    @dave 2024-01-16: GraphQL increases client complexity.
+      @alice 2024-01-16: But reduces over-fetching. See PR #42.
+        @dave 2024-01-17: Fair point. Benchmarks are convincing.
+    resolved @dave 2024-01-17
+
+[^cn-2]: @alice | 2024-01-15 | ins | accepted
+    7:91 uses {++OAuth 2.0 with JWT tokens for++}
+    approved: @eve 2024-01-20
+    @bob 2024-01-16 [question]: What about latency for gRPC?
+      @alice 2024-01-17: Sub-millisecond on our test cluster.
+    resolved @bob 2024-01-18
+
+[^cn-3]: @carol | 2024-01-17 | highlight | proposed
+    @carol 2024-01-17 [issue/blocking]: 100/min feels low for production.
+      @alice 2024-01-18: Depends on infrastructure costs.
+      @dave 2024-01-19 [todo]: I can run load tests next week.
+    open -- awaiting load test results from @dave
+</code></pre>
+<p>Three changes, three authors.</p>
+<p>The decided changes (<code>cn-1</code>, <code>cn-2</code>) have no inline CriticMarkup in the body; their edit-op lines remain for coherence verification.</p>
+<p>The proposed highlight (<code>cn-3</code>) keeps deliberation open with a blocking issue and unresolved thread state.</p>
+<hr>
+<h2 id="references"><a href="#references" style="color: inherit; text-decoration: none" class="heading-anchor">References</a></h2>
+<ul>
+<li>
+<p><strong>CriticMarkup.</strong> Gabe Weatherhead and Erik Hess (2013). <a href="https://github.com/CriticMarkup/CriticMarkup-toolkit">CriticMarkup-toolkit</a>. The inline change syntax that ChangeDown extends.</p>
+</li>
+<li>
+<p><strong>The Harness Problem.</strong> Can Bölük (2026). <a href="https://blog.can.ac/2026/02/12/the-harness-problem/">&quot;I Improved 15 LLMs at Coding in One Afternoon.&quot;</a> Content-addressed line hashing as the inspiration for LINE:HASH coordinates.</p>
+</li>
+<li>
+<p><strong>W3C Web Annotation Data Model.</strong> <a href="https://www.w3.org/TR/annotation-model/#text-quote-selector">TextQuoteSelector</a>. The conceptual ancestor of contextual embedding — <code>{prefix, exact, suffix}</code> for robust anchoring in dynamic documents.</p>
+</li>
+<li>
+<p><strong>Eg-walker.</strong> Martin Kleppmann and Matthew Gentle (EuroSys 2025). The retreat/advance model for intermediate-state verification that grounds the scrub replay protocol.</p>
+</li>
+<li>
+<p><strong>Algorithm Visualizations.</strong> Interactive walkthroughs of coordinate resolution, text matching, and scrub replay. <em>(Forthcoming.)</em></p>
+</li>
+</ul>
+</div></div></main></div><div class="change-panel "><div class="panel-header"><span class="panel-toggle">▾</span><span>0 changes · 0 accepted · 0 rejected</span></div><div class="panel-entries"></div></div></div> </div> <script type="module" src="/app/main.js"></script> </body> </html>
