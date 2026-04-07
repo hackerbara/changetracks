@@ -11,10 +11,13 @@ import { join, resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { execSync } from 'child_process';
 import { parseArgs } from 'util';
+import { platform } from 'os';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const ROOT = resolve(__dirname, '..');
+const IS_DARWIN = platform() === 'darwin';
+const MAC_WRAPPER_BINARY = join(ROOT, 'packages', 'mac-wrapper', '.build', 'release', 'ChangeDown');
 
 // --- Colors ---
 const green = (s) => `\x1b[32m${s}\x1b[0m`;
@@ -119,7 +122,12 @@ if (!values['package-only']) {
       execSync(s.cmd, { cwd: dir, stdio: 'pipe', shell: true });
       process.stdout.write(`${green('ok')}\n`);
     } catch (e) {
-      if (s.optional) {
+      // On macOS, if Swift produced a binary, packaging ChangeDown.app must succeed (single bundle lifecycle).
+      const packageAppRequired =
+        IS_DARWIN &&
+        s.name === 'Package .app' &&
+        existsSync(MAC_WRAPPER_BINARY);
+      if (s.optional && !packageAppRequired) {
         process.stdout.write(`${dim('skipped (build failed — optional)')}\n`);
       } else {
         process.stdout.write(`${red('FAIL')}\n`);

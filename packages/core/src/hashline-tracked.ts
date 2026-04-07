@@ -20,7 +20,7 @@ import {
   FOOTNOTE_DEF_STATUS_VALUE,
 } from './footnote-patterns.js';
 
-// ─── settledLine ────────────────────────────────────────────────────────────
+// ─── currentLine ────────────────────────────────────────────────────────────
 
 /**
  * Strip CriticMarkup from a single line using accept-all semantics.
@@ -34,7 +34,7 @@ import {
  *
  * Does NOT use the full parser — regex-based for speed on single lines.
  */
-export function settledLine(line: string): string {
+export function currentLine(line: string): string {
   let result = line;
 
   // Order: substitutions first (contain ~> which could confuse other patterns),
@@ -49,7 +49,7 @@ export function settledLine(line: string): string {
   return result;
 }
 
-// ─── computeSettledLineHash ─────────────────────────────────────────────────
+// ─── computeCurrentLineHash ─────────────────────────────────────────────────
 
 /**
  * Compute a settled-content hash for a line.
@@ -57,15 +57,15 @@ export function settledLine(line: string): string {
  *
  * @param idx - Line index (passed through to computeLineHash for API compat)
  * @param line - The raw line content (with CriticMarkup)
- * @param allSettledLines - Optional pre-computed settled versions of all lines
+ * @param allCurrentLines - Optional pre-computed settled versions of all lines
  *   for context-aware hashing. When provided, blank lines hash differently
  *   based on surrounding content (eliminates the frequency-attractor problem).
- *   Callers should pre-compute this once via `lines.map(l => settledLine(l))`
+ *   Callers should pre-compute this once via `lines.map(l => currentLine(l))`
  *   and pass it to each call to avoid O(n²) redundant work.
  * @returns 2-char lowercase hex hash of the settled content
  */
-export function computeSettledLineHash(idx: number, line: string, allSettledLines?: string[]): string {
-  return computeLineHash(idx, settledLine(line), allSettledLines);
+export function computeCurrentLineHash(idx: number, line: string, allCurrentLines?: string[]): string {
+  return computeLineHash(idx, currentLine(line), allCurrentLines);
 }
 
 // ─── formatTrackedHashLines ─────────────────────────────────────────────────

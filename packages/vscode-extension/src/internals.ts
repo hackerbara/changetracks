@@ -17,7 +17,6 @@ export { EditorPort } from './view/EditorPort';
 
 // Visual semantics
 export {
-    CHANGE_COLORS,
     AUTHOR_PALETTE,
     getChangeStyle,
     typeLabel,
@@ -51,7 +50,6 @@ export type { PluginConfig } from '@changedown/preview';
 // Git integration (used by @integration tier tests that run inside Extension Host)
 export { getPreviousVersion } from './git-integration';
 export { annotateFromGit } from './annotate-command';
-export { ExtensionController } from './controller';
 
 // DOCX preview
 export { buildAnnotationCards } from './docx/annotation-extractor';
@@ -68,5 +66,6 @@ export type { ChangeCardData, ReviewPanelState } from './review-panel';
 export { buildCommentsForChange, buildThreadDataForChanges } from './thread-data';
 export type { CommentData, ThreadData } from './thread-data';
 
-// Optimistic range transform — now lives in @changedown/core/host.
-export { transformRange } from '@changedown/core/dist/host/index';
+// Core host re-exports (consumed by tests/vscode and decoration-fast steps)
+export { transformRange, DECORATION_STYLES } from '@changedown/core/host';
+export type { DecorationStyleDef } from '@changedown/core/host';

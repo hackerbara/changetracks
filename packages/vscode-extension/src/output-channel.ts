@@ -2,9 +2,8 @@ import * as vscode from 'vscode';
 
 /**
  * Shared output channel reference.
- * Breaks the circular dependency: extension.ts → controller.ts → extension.ts
- * by providing a mutable reference that extension.ts sets after creation,
- * and controller.ts / PendingEditManager.ts read via getOutputChannel().
+ * Provides a mutable reference that extension.ts sets after creation,
+ * and managers read via getOutputChannel() for logging.
  */
 let channel: vscode.OutputChannel | undefined;
 

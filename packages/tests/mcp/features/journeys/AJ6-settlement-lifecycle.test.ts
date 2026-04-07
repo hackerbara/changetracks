@@ -275,10 +275,10 @@ describe('AJ6: Settlement lifecycle', () => {
 
       const settleData = ctx.parseResult(settleResult);
       expect(settleData.settled).toBeDefined();
-      const settledIds = settleData.settled as string[];
-      expect(settledIds).toContain('cn-1');
-      expect(settledIds).toContain('cn-2');
-      expect(settledIds).toContain('cn-3');
+      const appliedIds = settleData.settled as string[];
+      expect(appliedIds).toContain('cn-1');
+      expect(appliedIds).toContain('cn-2');
+      expect(appliedIds).toContain('cn-3');
 
       // Accepted changes compacted: new text in body, no substitution markup for them
       const diskAfter = await ctx.readDisk(filePath);

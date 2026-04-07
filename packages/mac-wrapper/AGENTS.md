@@ -9,29 +9,33 @@ Native macOS shell for the ChangeDown website-v2 SPA. Wraps the web app in a WKW
 | File | Role |
 |------|------|
 | `Package.swift` | Swift Package Manager manifest. Target: macOS 14+, Swift 5.9. Single executable target `ChangeDown` from `Sources/ChangeDownApp/`. |
-| `Sources/ChangeDownApp/ChangeDownApp.swift` | App entry point, AppDelegate, window setup, native menus, CLI arg parsing, WKWebView config, JS bridge (WKScriptMessageHandler), file injection logic. |
+| `Sources/ChangeDownApp/ChangeDownApp.swift` | App entry point, AppDelegate, window setup, native menus, CLI arg parsing, WKWebView config, JS bridge (WKScriptMessageHandler), file injection logic. Terminal launches hand off to Launch Services via `NSWorkspace.openApplication` so the shell returns immediately. |
 | `Sources/ChangeDownApp/LocalServer.swift` | NWListener (Network.framework) HTTP server. Serves dist files on localhost with proper MIME types. Random port, falls back to `loadFileURL` if server fails. |
 | `../../website-v2/vite.config.native.ts` | Vite config for the native build. Extends the base website config. Outputs to `packages/mac-wrapper/dist/`. |
 | `../../website-v2/native.html` | Entry HTML for the native bundle (uses relative `./` paths, not `/app/`). |
 | `dist/` | Build output (gitignored). Contains `native.html`, `main.js`, `lsp-worker.js`, `assets/`, `content/`. |
+| `ChangeDown.app/` | Produced by **`node scripts/package-app.mjs`** after Swift + `dist/` exist. **This is the canonical shipped layout** (Contents/MacOS + Resources/dist). |
 | `intro-fixture-changedown.md` | Test fixture file for manual testing with CLI arg. |
 
-## Build Commands
+## Build Commands (single bundle lifecycle)
+
+From **repo root**, a full viewer build is included in the same paths as the rest of the monorepo:
+
+- **`./scripts/build-all.sh`** (default) runs **`node scripts/build.mjs`** then **`node scripts/install.mjs`**. **`build.mjs`** runs native SPA → **`swift build -c release`** → **`node scripts/package-app.mjs`** → **`ChangeDown.app`**. On macOS, if the Swift binary exists, packaging **must** succeed (no silent skip).
+- **`./scripts/build-all.sh --old`** runs the legacy bash pipeline; on macOS it also runs **`package-app.mjs`** after Swift when the binary exists (parity with **`build.mjs`**).
+- **`npm run build:package-app`** runs only **`node scripts/package-app.mjs`** (expects native **`dist/`** + Swift binary already built).
+
+Or run **`node scripts/build.mjs`** alone if you do not want **`install.mjs`**.
+
+Manual steps (equivalent):
 
 ```bash
-# 1. Build native SPA bundle (from repo root or website-v2/)
 cd website-v2 && npx vite build --config vite.config.native.ts
-
-# 2. Build Swift binary
 cd packages/mac-wrapper && swift build -c release
-# Binary: .build/release/ChangeDown
-
-# Debug build (faster, includes symbols)
-swift build
-# Binary: .build/debug/ChangeDown
+cd ../.. && node scripts/package-app.mjs
 ```
 
-Both steps are required. The Swift binary serves the dist directory -- without it, the app shows a "Build not found" error page.
+**`cdviewer`** (from `node scripts/install.mjs`) symlinks to **`ChangeDown.app/Contents/MacOS/ChangeDown`**, not to `.build/release/ChangeDown`.
 
 ## Critical: base path difference
 
@@ -70,7 +74,7 @@ Swift calls `webView.evaluateJavaScript(script)`. Used for:
 
 ### Error capture
 
-A `WKUserScript` injected at `atDocumentStart` captures `error`, `unhandledrejection`, `console.log`, `console.warn`, and fetch responses. All are forwarded to NSLog via the bridge. This means JS errors appear in the terminal when running the binary.
+A `WKUserScript` injected at `atDocumentStart` captures `error`, `unhandledrejection`, `console.log`, `console.warn`, and fetch responses. All are forwarded to NSLog via the bridge.
 
 ## File Injection Flow
 
@@ -83,8 +87,9 @@ A `WKUserScript` injected at `atDocumentStart` captures `error`, `unhandledrejec
 
 `distCandidates()` searches in order:
 1. `CHANGEDOWN_DIST` env var
-2. Relative to executable (for both `packages/mac-wrapper/dist` and `website-v2/dist`)
-3. Relative to CWD
-4. Hardcoded development paths
+2. Inside `.app` bundle (`Bundle.main` → `Contents/Resources/dist/`)
+3. Relative to executable (for both `packages/mac-wrapper/dist` and `website-v2/dist`)
+4. Relative to CWD
+5. Hardcoded development paths
 
 The first candidate containing `native.html` or `index.html` wins.

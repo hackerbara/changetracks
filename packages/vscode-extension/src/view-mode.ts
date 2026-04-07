@@ -1,67 +1,38 @@
 /**
- * View modes for document display.
+ * View mode types and helpers for the VS Code extension.
  *
- * Canonical names (from core):
- *   review   = All Markup
- *   changes  = Simple Markup
- *   settled  = Final
- *   raw      = Original
- *
- * This module re-exports the canonical ViewName from core as ViewMode,
- * keeping backward compatibility with extension code that uses ViewMode.
+ * Canonical definitions (ViewMode, VIEW_MODES, VIEW_MODE_LABELS,
+ * nextViewMode, resolveViewMode) live in @changedown/core. This module
+ * re-exports them plus extension-specific helpers that don't belong in core.
  */
-import {
-    type ViewName,
-    VIEW_NAMES,
-    VIEW_NAME_DISPLAY_NAMES,
-    nextViewName,
-    resolveViewName,
-    type ChangeNode,
-    ChangeType,
-} from '@changedown/core';
 
-/** ViewMode is an alias for the canonical ViewName from core. */
-export type ViewMode = ViewName;
+import type { ChangeNode, ViewMode } from '@changedown/core';
+export type { ViewMode } from '@changedown/core';
+export { VIEW_MODES, VIEW_MODE_LABELS, VIEW_MODE_ALIASES, nextViewMode, resolveViewMode } from '@changedown/core';
+import { isTypeVisibleInMode } from '@changedown/core/host';
+import type { BuiltinView } from '@changedown/core/host';
 
-/** Display labels for each view mode. */
-export const VIEW_MODE_LABELS: Record<ViewMode, string> = VIEW_NAME_DISPLAY_NAMES;
-
-/** Ordered list of view modes for cycling. */
-export const VIEW_MODES: ViewMode[] = [...VIEW_NAMES];
-
-/** Cycle to the next view mode. */
-export function nextViewMode(current: ViewMode): ViewMode {
-    return nextViewName(current);
-}
+export const VIEW_LABELS: Record<BuiltinView, string> = {
+    review: 'Review',
+    simple: 'Simple',
+    final: 'Final',
+    original: 'Original',
+    raw: 'Raw',
+};
 
 /**
- * Resolve any alias (legacy or canonical) to a ViewMode.
- * Used when reading user config that uses old display names.
- */
-export { resolveViewName };
-
-/**
- * Returns true if a change should be navigable in the given view mode.
- * Simple mode deletions return true because cursor arrival reveals them.
+ * Determine whether a change is user-visible in a given view mode.
+ * Used by the navigation manager to filter navigable changes.
+ *
+ * Delegates to core's isTypeVisibleInMode for type-based visibility,
+ * plus extension-specific showDelimiters gating for settled refs.
  */
 export function isChangeVisibleInMode(
     change: ChangeNode,
     viewMode: ViewMode,
-    showDelimiters: boolean
+    showDelimiters: boolean,
 ): boolean {
     // Settled refs: visible only when showDelimiters is on
-    if (change.settled && !showDelimiters) return false;
-
-    if (viewMode === 'settled') {
-        // Final mode: hide deletions
-        if (change.type === ChangeType.Deletion) return false;
-        return true;
-    }
-    if (viewMode === 'raw') {
-        // Original mode: hide insertions
-        if (change.type === ChangeType.Insertion) return false;
-        return true;
-    }
-    // Review and Simple modes: all changes navigable
-    return true;
+    if (change.decided && !showDelimiters) return false;
+    return isTypeVisibleInMode(change.type, viewMode);
 }

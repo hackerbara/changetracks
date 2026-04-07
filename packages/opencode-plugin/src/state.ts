@@ -33,8 +33,8 @@ export interface ActiveGroup {
  *     `resolveHash`) — these support the MCP read/write session binding
  *     protocol that the opencode plugin does not participate in.
  *
- *   - Extended hash entry fields (`committed`, `settledView`, `rawLineNum`)
- *     for multi-view hash resolution — opencode only needs `raw` + `settled`.
+ *   - Extended hash entry fields (`committed`, `currentView`, `rawLineNum`)
+ *     for multi-view hash resolution — opencode only needs `raw` + `current`.
  *
  *   - Different `beginGroup` semantics: the MCP server version uses
  *     `(knownMaxId || 0) + 1` (each group independent), while this version
@@ -54,7 +54,7 @@ export class SessionState {
   private counters: Map<string, number> = new Map();
   private globalMaxId: number = 0;
   private activeGroup: ActiveGroup | null = null;
-  private fileHashes: Map<string, Array<{ line: number; raw: string; settled: string }>> = new Map();
+  private fileHashes: Map<string, Array<{ line: number; raw: string; current: string }>> = new Map();
 
   /**
    * Starts a new change group. Allocates the next available global ID
@@ -197,7 +197,7 @@ export class SessionState {
    * Called by `read_tracked_file` after computing hashline output.
    * Overwrites any previously recorded hashes for the same file path.
    */
-  recordFileHashes(filePath: string, hashes: Array<{ line: number; raw: string; settled: string }>): void {
+  recordFileHashes(filePath: string, hashes: Array<{ line: number; raw: string; current: string }>): void {
     this.fileHashes.set(filePath, hashes);
   }
 
@@ -205,7 +205,7 @@ export class SessionState {
    * Returns the recorded per-line hashes for a file, or undefined if
    * the file has not been read via `read_tracked_file` in this session.
    */
-  getRecordedHashes(filePath: string): Array<{ line: number; raw: string; settled: string }> | undefined {
+  getRecordedHashes(filePath: string): Array<{ line: number; raw: string; current: string }> | undefined {
     return this.fileHashes.get(filePath);
   }
 }

@@ -11,7 +11,7 @@ import {
   ChangeNode, ChangeType,
   findFootnoteBlockStart, FOOTNOTE_L3_EDIT_OP, FOOTNOTE_DEF_START,
 } from '@changedown/core';
-import type { ViewName } from '@changedown/core';
+import type { ViewMode } from '@changedown/core';
 import type { CursorState } from './code-lens';
 
 /**
@@ -53,7 +53,7 @@ export function computeAutoFoldLines(text: string): number[] | undefined {
 export function createFoldingRanges(
   changes: ChangeNode[],
   text: string,
-  viewMode: ViewName | undefined,
+  viewMode: ViewMode | undefined,
   cursorState: CursorState | null,
 ): FoldingRange[] {
   const ranges: FoldingRange[] = [];
@@ -63,7 +63,7 @@ export function createFoldingRanges(
   if (viewMode === 'changes') {
     for (const change of changes) {
       if (change.type !== ChangeType.Deletion) continue;
-      if (change.settled) continue;
+      if (change.decided) continue;
 
       const startLine = offsetToLine(text, change.range.start);
       const endLine = offsetToLine(text, change.range.end);

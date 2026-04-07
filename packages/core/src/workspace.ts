@@ -12,7 +12,7 @@ import { insertComment as commentInsert } from './operations/comment.js';
 import { SIDECAR_BLOCK_MARKER } from './constants.js';
 import { isL3Format } from './footnote-patterns.js';
 import { parseForFormat } from './format-aware-parse.js';
-import { computeSettledText, computeOriginalText, type SettledTextOptions } from './operations/settled-text.js';
+import { computeCurrentText, computeOriginalText, type CurrentTextOptions } from './operations/current-text.js';
 
 export class Workspace {
   private criticParser = new CriticMarkupParser();
@@ -200,15 +200,15 @@ export class Workspace {
    * Computes the settled (accept-all) view of a document.
    * Routes through format detection so L3 documents are handled correctly.
    */
-  settledText(text: string, options?: SettledTextOptions): string {
-    return computeSettledText(text, options);
+  settledText(text: string, options?: CurrentTextOptions): string {
+    return computeCurrentText(text, options);
   }
 
   /**
    * Computes the original (reject-all) view of a document.
    * Routes through format detection so L3 documents are handled correctly.
    */
-  originalText(text: string, options?: SettledTextOptions): string {
+  originalText(text: string, options?: CurrentTextOptions): string {
     return computeOriginalText(text, options);
   }
 

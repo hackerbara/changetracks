@@ -13,7 +13,7 @@ installVscodeMock();
 import { When, Then, Before } from '@cucumber/cucumber';
 import { strict as assert } from 'assert';
 import { ChangeType, ChangeStatus } from '@changedown/core';
-import { CHANGE_COLORS, AUTHOR_PALETTE, getChangeStyle } from 'changedown-vscode/internals';
+import { AUTHOR_PALETTE, getChangeStyle, DECORATION_STYLES } from 'changedown-vscode/internals';
 import type { ChangeStyleInfo, ThemeColor } from 'changedown-vscode/internals';
 import type { ChangeDownWorld } from './world';
 
@@ -51,19 +51,19 @@ const CHANGE_STATUS_MAP: Record<string, ChangeStatus> = {
 
 Then('the color palette has entry {string}', function (this: ChangeDownWorld, typeName: string) {
     assert.ok(
-        (CHANGE_COLORS as Record<string, unknown>)[typeName],
-        `CHANGE_COLORS should have "${typeName}" entry`
+        (DECORATION_STYLES as Record<string, unknown>)[typeName],
+        `DECORATION_STYLES should have "${typeName}" entry`
     );
 });
 
 Then('insertion foreground has light and dark variants', function () {
-    assert.ok(CHANGE_COLORS.insertion.light, 'insertion should have light color');
-    assert.ok(CHANGE_COLORS.insertion.dark, 'insertion should have dark color');
+    assert.ok(DECORATION_STYLES.insertion.light.color, 'insertion should have light color');
+    assert.ok(DECORATION_STYLES.insertion.dark.color, 'insertion should have dark color');
 });
 
 Then('deletion foreground has light and dark variants', function () {
-    assert.ok(CHANGE_COLORS.deletion.light, 'deletion should have light color');
-    assert.ok(CHANGE_COLORS.deletion.dark, 'deletion should have dark color');
+    assert.ok(DECORATION_STYLES.deletion.light.color, 'deletion should have light color');
+    assert.ok(DECORATION_STYLES.deletion.dark.color, 'deletion should have dark color');
 });
 
 Then('the author palette has {int} entries', function (this: ChangeDownWorld, expected: number) {
@@ -126,10 +126,10 @@ Then('strikethrough is {word}', function (this: ChangeDownWorld, expected: strin
 
 Then('the foreground matches the insertion color', function (this: ChangeDownWorld) {
     assert.ok(this.changeStyle, 'No change style computed');
-    assert.deepStrictEqual(this.changeStyle.foreground, CHANGE_COLORS.insertion);
+    assert.deepStrictEqual(this.changeStyle.foreground, { light: DECORATION_STYLES.insertion.light.color, dark: DECORATION_STYLES.insertion.dark.color });
 });
 
 Then('the foreground matches the move color', function (this: ChangeDownWorld) {
     assert.ok(this.changeStyle, 'No change style computed');
-    assert.deepStrictEqual(this.changeStyle.foreground, CHANGE_COLORS.move as ThemeColor);
+    assert.deepStrictEqual(this.changeStyle.foreground, { light: DECORATION_STYLES.moveFrom.light.color, dark: DECORATION_STYLES.moveFrom.dark.color });
 });

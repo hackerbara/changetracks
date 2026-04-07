@@ -8,7 +8,7 @@ import { computeSupersedeResult, countFootnoteHeadersWithStatus } from '@changed
 import { toRelativePath } from '../path-utils.js';
 import { SessionState } from '../state.js';
 import { rerecordState } from '../state-utils.js';
-import { settleRejectedChanges } from './settle.js';
+import { applyRejectedChanges } from './settle.js';
 /**
  * Tool definition for the supersede_change MCP tool.
  * Atomically rejects an old change and proposes a replacement,
@@ -146,8 +146,8 @@ export async function handleSupersedeChange(
 
     // 6. Settle rejected changes if auto_on_reject is enabled (policy decision)
     if (config.settlement.auto_on_reject) {
-      const { settledContent } = settleRejectedChanges(fileContent);
-      fileContent = settledContent;
+      const { currentContent } = applyRejectedChanges(fileContent);
+      fileContent = currentContent;
     }
 
     // 7. Write back to disk

@@ -22,6 +22,9 @@ export function changeTypeToAbbrev(type: ChangeType): string {
   }
 }
 
+/** Three canonical projections per ADR-B. */
+export type Projection = 'current' | 'decided' | 'original' | 'none';
+
 export enum ChangeStatus {
   Proposed = 'Proposed',
   Accepted = 'Accepted',
@@ -104,7 +107,7 @@ export interface ChangeNode {
   };
   moveRole?: 'from' | 'to';
   groupId?: string;
-  settled?: boolean;
+  decided?: boolean;
   anchored: boolean;  // true = [^cn-N] exists in file; false = parse-assigned
   footnoteRefStart?: number;  // byte offset where [^cn-N] starts (set by parser for L2 anchored changes)
   /** Line range of the footnote definition block in the raw text (0-based, inclusive). */
@@ -119,6 +122,18 @@ export interface ChangeNode {
   consumptionType?: 'full' | 'partial';
   /** Updated LINE:HASH edit-op line computed by the scrub replay. */
   freshAnchor?: string;
+  // ── L3 SDK projection fields (all optional, backward compatible) ──
+  projection?: Projection;
+  anchor?: { kind: 'offset'; offset: number; length: number }
+         | { kind: 'line-hash'; line: number; hash: string; embedding?: string }
+         | { kind: 'contextual'; context: string };
+  supersedes?: string[];
+  supersededBy?: string;
+  parent?: string;
+  children?: string[];
+  activeSpan?: { start: number; end: number };
+  targetRegion?: { start: number; end: number };
+  intermediateBody?: string;
 }
 
 /**

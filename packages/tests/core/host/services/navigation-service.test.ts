@@ -95,4 +95,30 @@ describe('NavigationService', () => {
     service.updateCursorContext(uri, 18); // still in cn-1
     expect(listener).not.toHaveBeenCalled();
   });
+
+  describe('filter param', () => {
+    it('nextChange with filter skips non-matching changes', () => {
+      // Only allow cn-2 and cn-3; starting before all changes
+      const filter = (c: ChangeNode) => c.id !== 'cn-1';
+      const result = service.nextChange(uri, 5, filter);
+      expect(result?.id).toBe('cn-2');
+    });
+
+    it('nextChange without filter iterates all (backward compat)', () => {
+      const result = service.nextChange(uri, 5);
+      expect(result?.id).toBe('cn-1');
+    });
+
+    it('previousChange with filter skips non-matching changes', () => {
+      // Only allow cn-1 and cn-2; starting after all changes
+      const filter = (c: ChangeNode) => c.id !== 'cn-3';
+      const result = service.previousChange(uri, 65, filter);
+      expect(result?.id).toBe('cn-2');
+    });
+
+    it('previousChange without filter iterates all (backward compat)', () => {
+      const result = service.previousChange(uri, 65);
+      expect(result?.id).toBe('cn-3');
+    });
+  });
 });

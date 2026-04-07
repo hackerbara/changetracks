@@ -6,12 +6,12 @@ Feature: VS1 — Visual semantics shared color palette and style mapping
 
   # ── Color palette completeness ─────────────────────────────────────
 
-  Scenario: CHANGE_COLORS has all five types
+  Scenario: DECORATION_STYLES has all change type entries
     Then the color palette has entry "insertion"
     And the color palette has entry "deletion"
     And the color palette has entry "highlight"
     And the color palette has entry "comment"
-    And the color palette has entry "move"
+    And the color palette has entry "moveFrom"
 
   Scenario: Each foreground color has light and dark variants
     Then insertion foreground has light and dark variants

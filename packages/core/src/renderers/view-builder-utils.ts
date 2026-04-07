@@ -1,6 +1,6 @@
 import { parseForFormat } from '../format-aware-parse.js';
 import { nodeStatus, type ChangeNode } from '../model/types.js';
-import type { DeliberationHeader, ViewName } from './three-zone-types.js';
+import type { DeliberationHeader, ViewMode } from './three-zone-types.js';
 
 const REF_EXTRACT_RE = /\[\^(cn-\d+(?:\.\d+)?)\]/g;
 
@@ -8,7 +8,7 @@ export interface BuildHeaderOptions {
   filePath: string;
   trackingStatus: 'tracked' | 'untracked';
   protocolMode: string;
-  defaultView: ViewName;
+  defaultView: ViewMode;
   viewPolicy: string;
   changes: ChangeNode[];
   lineRange?: { start: number; end: number; total: number };

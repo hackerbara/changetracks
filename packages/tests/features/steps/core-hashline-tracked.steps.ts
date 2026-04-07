@@ -2,8 +2,8 @@ import { Given, When, Then } from '@cucumber/cucumber';
 import assert from 'node:assert/strict';
 import { ChangeDownWorld } from './world.js';
 import {
-  settledLine,
-  computeSettledLineHash,
+  currentLine,
+  computeCurrentLineHash,
   formatTrackedHashLines,
   formatTrackedHeader,
   initHashline,
@@ -26,7 +26,7 @@ declare module './world.js' {
 }
 
 // =============================================================================
-// settledLine steps
+// currentLine steps
 // =============================================================================
 
 Given('the settled line input is {string}', function (this: ChangeDownWorld, text: string) {
@@ -38,7 +38,7 @@ Given('the settled line input is:', function (this: ChangeDownWorld, text: strin
 });
 
 When('I compute the settled line output', function (this: ChangeDownWorld) {
-  this.htSettledOutput = settledLine(this.htInput);
+  this.htSettledOutput = currentLine(this.htInput);
 });
 
 Then('the settled line output is {string}', function (this: ChangeDownWorld, expected: string) {
@@ -54,7 +54,7 @@ Then('the settled line output is empty', function (this: ChangeDownWorld) {
 });
 
 // =============================================================================
-// computeSettledLineHash steps
+// computeCurrentLineHash steps
 // =============================================================================
 
 Given('the hashline module is ready', async function (this: ChangeDownWorld) {
@@ -70,14 +70,14 @@ Given('the hashline module is ready', async function (this: ChangeDownWorld) {
 When(
   'I compute the settled hash at index {int} for {string}',
   function (this: ChangeDownWorld, idx: number, text: string) {
-    this.htHash = computeSettledLineHash(idx, text);
+    this.htHash = computeCurrentLineHash(idx, text);
   },
 );
 
 When(
   'I compute the settled hash at index {int} for:',
   function (this: ChangeDownWorld, idx: number, text: string) {
-    this.htHash = computeSettledLineHash(idx, text);
+    this.htHash = computeCurrentLineHash(idx, text);
   },
 );
 

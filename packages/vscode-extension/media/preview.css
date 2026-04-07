@@ -1,34 +1,41 @@
-/* Super Critic — CriticMarkup styles for VS Code markdown preview.
- * Light/dark theming via vscode-light/vscode-dark body classes.
+/* ChangeDown — CriticMarkup styles for markdown preview.
+ * Light/dark theming via vscode-light/vscode-dark body classes (VS Code)
+ * or ct-light/ct-dark body classes (browser / standalone).
  * Color values match visual-semantics.ts — manual sync. */
 
 /* === Insertions === */
-.vscode-light .cn-ins { color: #1E824C; }
-.vscode-dark .cn-ins  { color: #66BB6A; }
+.vscode-light .cn-ins, .cn-light .cn-ins { color: #1E824C; }
+.vscode-dark .cn-ins, .cn-dark .cn-ins   { color: #66BB6A; }
 
 /* === Deletions === */
-.vscode-light .cn-del { color: #C0392B; text-decoration: line-through; }
-.vscode-dark .cn-del  { color: #EF5350; text-decoration: line-through; }
+.vscode-light .cn-del, .cn-light .cn-del { color: #C0392B; text-decoration: line-through; }
+.vscode-dark .cn-del, .cn-dark .cn-del   { color: #EF5350; text-decoration: line-through; }
 
 /* === Substitution (deletion side) === */
-.vscode-light .cn-sub-del { color: #C0392B; text-decoration: line-through; }
-.vscode-dark .cn-sub-del  { color: #EF5350; text-decoration: line-through; }
+.vscode-light .cn-sub-del, .cn-light .cn-sub-del { color: #C0392B; text-decoration: line-through; }
+.vscode-dark .cn-sub-del, .cn-dark .cn-sub-del   { color: #EF5350; text-decoration: line-through; }
 
 /* === Substitution (insertion side) === */
-.vscode-light .cn-sub-ins { color: #1E824C; }
-.vscode-dark .cn-sub-ins  { color: #66BB6A; }
+.vscode-light .cn-sub-ins, .cn-light .cn-sub-ins { color: #1E824C; }
+.vscode-dark .cn-sub-ins, .cn-dark .cn-sub-ins   { color: #66BB6A; }
 
 /* === Highlights === */
-.cn-hl { background: rgba(255,255,0,0.3); padding: 0 2px; border-radius: 2px; }
+/* color: inherit overrides the browser UA <mark> default (black text),
+   which makes highlighted content invisible on dark backgrounds. */
+.cn-hl { background: rgba(255,255,0,0.3); padding: 0 2px; border-radius: 2px; color: inherit; }
+
+/* KaTeX equations must inherit text color from the page, not from
+   browser defaults on wrapper elements. */
+.katex { color: inherit; }
 
 /* === Comments === */
 .cn-comment { cursor: help; font-size: 0.85em; color: var(--vscode-descriptionForeground, #666); }
 
 /* === Move operations === */
-.vscode-light .cn-move-from { color: #8E44AD; text-decoration: line-through; }
-.vscode-dark .cn-move-from  { color: #CE93D8; text-decoration: line-through; }
-.vscode-light .cn-move-to   { color: #8E44AD; text-decoration: underline; }
-.vscode-dark .cn-move-to    { color: #CE93D8; text-decoration: underline; }
+.vscode-light .cn-move-from, .cn-light .cn-move-from { color: #8E44AD; text-decoration: line-through; }
+.vscode-dark .cn-move-from, .cn-dark .cn-move-from   { color: #CE93D8; text-decoration: line-through; }
+.vscode-light .cn-move-to, .cn-light .cn-move-to     { color: #8E44AD; text-decoration: underline; }
+.vscode-dark .cn-move-to, .cn-dark .cn-move-to       { color: #CE93D8; text-decoration: underline; }
 
 /* === Status modifiers === */
 .cn-accepted { opacity: 0.6; }
@@ -42,8 +49,8 @@
     border-radius: 3px;
     font-family: var(--vscode-editor-font-family, monospace);
 }
-.vscode-light .cn-ref { color: #2980B9; background: rgba(41,128,185,0.1); }
-.vscode-dark .cn-ref   { color: #64B5F6; background: rgba(100,181,246,0.15); }
+.vscode-light .cn-ref, .cn-light .cn-ref { color: #2980B9; background: rgba(41,128,185,0.1); }
+.vscode-dark .cn-ref, .cn-dark .cn-ref   { color: #64B5F6; background: rgba(100,181,246,0.15); }
 
 /* === Footnote definitions panel === */
 .cn-footnotes {
@@ -57,8 +64,8 @@
     padding: 0.4em 0.6em;
     border-radius: 4px;
 }
-.vscode-light .cn-footnote { background: rgba(0,0,0,0.03); }
-.vscode-dark .cn-footnote  { background: rgba(255,255,255,0.04); }
+.vscode-light .cn-footnote, .cn-light .cn-footnote { background: rgba(0,0,0,0.03); }
+.vscode-dark .cn-footnote, .cn-dark .cn-footnote   { background: rgba(255,255,255,0.04); }
 
 .cn-ref-badge {
     font-weight: bold;
@@ -74,12 +81,12 @@
     font-size: 0.8em;
     font-weight: 500;
 }
-.vscode-light .cn-fn-status.cn-proposed { background: rgba(41,128,185,0.15); color: #2980B9; }
-.vscode-dark .cn-fn-status.cn-proposed  { background: rgba(100,181,246,0.2); color: #64B5F6; }
-.vscode-light .cn-fn-status.cn-accepted { background: rgba(30,130,76,0.15); color: #1E824C; }
-.vscode-dark .cn-fn-status.cn-accepted  { background: rgba(102,187,106,0.2); color: #66BB6A; }
-.vscode-light .cn-fn-status.cn-rejected { background: rgba(192,57,43,0.15); color: #C0392B; }
-.vscode-dark .cn-fn-status.cn-rejected  { background: rgba(239,83,80,0.2); color: #EF5350; }
+.vscode-light .cn-fn-status.cn-proposed, .cn-light .cn-fn-status.cn-proposed { background: rgba(41,128,185,0.15); color: #2980B9; }
+.vscode-dark .cn-fn-status.cn-proposed, .cn-dark .cn-fn-status.cn-proposed   { background: rgba(100,181,246,0.2); color: #64B5F6; }
+.vscode-light .cn-fn-status.cn-accepted, .cn-light .cn-fn-status.cn-accepted { background: rgba(30,130,76,0.15); color: #1E824C; }
+.vscode-dark .cn-fn-status.cn-accepted, .cn-dark .cn-fn-status.cn-accepted   { background: rgba(102,187,106,0.2); color: #66BB6A; }
+.vscode-light .cn-fn-status.cn-rejected, .cn-light .cn-fn-status.cn-rejected { background: rgba(192,57,43,0.15); color: #C0392B; }
+.vscode-dark .cn-fn-status.cn-rejected, .cn-dark .cn-fn-status.cn-rejected   { background: rgba(239,83,80,0.2); color: #EF5350; }
 
 .cn-fn-comment { margin-top: 0.3em; color: var(--vscode-foreground, #333); }
 
@@ -113,12 +120,12 @@ pre code .cn-move-to {
     font-size: 0.85em;
 }
 .cn-fn-verdict-label { font-weight: 600; }
-.vscode-light .cn-fn-approval { background: rgba(30,130,76,0.08); }
-.vscode-dark .cn-fn-approval  { background: rgba(102,187,106,0.1); }
-.vscode-light .cn-fn-rejection { background: rgba(192,57,43,0.08); }
-.vscode-dark .cn-fn-rejection  { background: rgba(239,83,80,0.1); }
-.vscode-light .cn-fn-request-changes { background: rgba(230,126,34,0.08); }
-.vscode-dark .cn-fn-request-changes  { background: rgba(255,183,77,0.1); }
+.vscode-light .cn-fn-approval, .cn-light .cn-fn-approval { background: rgba(30,130,76,0.08); }
+.vscode-dark .cn-fn-approval, .cn-dark .cn-fn-approval   { background: rgba(102,187,106,0.1); }
+.vscode-light .cn-fn-rejection, .cn-light .cn-fn-rejection { background: rgba(192,57,43,0.08); }
+.vscode-dark .cn-fn-rejection, .cn-dark .cn-fn-rejection   { background: rgba(239,83,80,0.1); }
+.vscode-light .cn-fn-request-changes, .cn-light .cn-fn-request-changes { background: rgba(230,126,34,0.08); }
+.vscode-dark .cn-fn-request-changes, .cn-dark .cn-fn-request-changes   { background: rgba(255,183,77,0.1); }
 .cn-fn-reviewer { font-weight: 500; }
 .cn-fn-reason { color: var(--vscode-descriptionForeground, #666); }
 
@@ -141,8 +148,8 @@ pre code .cn-move-to {
     border-radius: 3px;
     font-size: 0.9em;
 }
-.vscode-light .cn-discussion-comment { background: rgba(0,0,0,0.02); }
-.vscode-dark .cn-discussion-comment  { background: rgba(255,255,255,0.03); }
+.vscode-light .cn-discussion-comment, .cn-light .cn-discussion-comment { background: rgba(0,0,0,0.02); }
+.vscode-dark .cn-discussion-comment, .cn-dark .cn-discussion-comment   { background: rgba(255,255,255,0.03); }
 
 /* Comment text body */
 .cn-fn-text { color: var(--vscode-foreground, #333); }
@@ -155,8 +162,8 @@ pre code .cn-move-to {
     font-size: 0.8em;
     font-weight: 500;
 }
-.vscode-light .cn-label { background: rgba(41,128,185,0.12); color: #2980B9; }
-.vscode-dark .cn-label   { background: rgba(100,181,246,0.15); color: #64B5F6; }
+.vscode-light .cn-label, .cn-light .cn-label { background: rgba(41,128,185,0.12); color: #2980B9; }
+.vscode-dark .cn-label, .cn-dark .cn-label   { background: rgba(100,181,246,0.15); color: #64B5F6; }
 
 /* === Deliberation: Resolution === */
 .cn-fn-resolution {
@@ -167,10 +174,10 @@ pre code .cn-move-to {
     font-weight: 500;
 }
 .cn-fn-resolution-icon { margin-right: 0.3em; }
-.vscode-light .cn-resolved { background: rgba(30,130,76,0.1); color: #1E824C; }
-.vscode-dark .cn-resolved  { background: rgba(102,187,106,0.12); color: #66BB6A; }
-.vscode-light .cn-open { background: rgba(230,126,34,0.1); color: #E67E22; }
-.vscode-dark .cn-open  { background: rgba(255,183,77,0.12); color: #FFB74D; }
+.vscode-light .cn-resolved, .cn-light .cn-resolved { background: rgba(30,130,76,0.1); color: #1E824C; }
+.vscode-dark .cn-resolved, .cn-dark .cn-resolved   { background: rgba(102,187,106,0.12); color: #66BB6A; }
+.vscode-light .cn-open, .cn-light .cn-open { background: rgba(230,126,34,0.1); color: #E67E22; }
+.vscode-dark .cn-open, .cn-dark .cn-open   { background: rgba(255,183,77,0.12); color: #FFB74D; }
 
 /* === Footnote anchor linking === */
 .cn-ref a {
@@ -195,8 +202,8 @@ pre code .cn-move-to {
     opacity: 0.7;
     margin: 0 0.3em;
 }
-.vscode-light .cn-move-label { color: #8E44AD; }
-.vscode-dark .cn-move-label  { color: #CE93D8; }
+.vscode-light .cn-move-label, .cn-light .cn-move-label { color: #8E44AD; }
+.vscode-dark .cn-move-label, .cn-dark .cn-move-label   { color: #CE93D8; }
 .cn-move-label:hover { opacity: 1; text-decoration: underline; }
 
 /* === Anchor metadata (summary + projected modes) === */
@@ -211,12 +218,12 @@ pre code .cn-move-to {
     padding: 0 0.3em;
     border-radius: 2px;
 }
-.vscode-light .cn-anchor-status.cn-proposed { background: rgba(41,128,185,0.12); }
-.vscode-dark .cn-anchor-status.cn-proposed  { background: rgba(100,181,246,0.15); }
-.vscode-light .cn-anchor-status.cn-accepted { background: rgba(30,130,76,0.12); }
-.vscode-dark .cn-anchor-status.cn-accepted  { background: rgba(102,187,106,0.15); }
-.vscode-light .cn-anchor-status.cn-rejected { background: rgba(192,57,43,0.12); }
-.vscode-dark .cn-anchor-status.cn-rejected  { background: rgba(239,83,80,0.15); }
+.vscode-light .cn-anchor-status.cn-proposed, .cn-light .cn-anchor-status.cn-proposed { background: rgba(41,128,185,0.12); }
+.vscode-dark .cn-anchor-status.cn-proposed, .cn-dark .cn-anchor-status.cn-proposed   { background: rgba(100,181,246,0.15); }
+.vscode-light .cn-anchor-status.cn-accepted, .cn-light .cn-anchor-status.cn-accepted { background: rgba(30,130,76,0.12); }
+.vscode-dark .cn-anchor-status.cn-accepted, .cn-dark .cn-anchor-status.cn-accepted   { background: rgba(102,187,106,0.15); }
+.vscode-light .cn-anchor-status.cn-rejected, .cn-light .cn-anchor-status.cn-rejected { background: rgba(192,57,43,0.12); }
+.vscode-dark .cn-anchor-status.cn-rejected, .cn-dark .cn-anchor-status.cn-rejected   { background: rgba(239,83,80,0.15); }
 
 /* === Projected mode: richer anchor metadata === */
 .cn-anchor-projected { display: inline-flex; gap: 0.3em; align-items: baseline; }
@@ -229,11 +236,68 @@ pre code .cn-move-to {
     opacity: 0.8;
 }
 .cn-anchor-approvals { font-size: 0.85em; }
-.vscode-light .cn-anchor-approvals { color: #1E824C; }
-.vscode-dark .cn-anchor-approvals  { color: #66BB6A; }
+.vscode-light .cn-anchor-approvals, .cn-light .cn-anchor-approvals { color: #1E824C; }
+.vscode-dark .cn-anchor-approvals, .cn-dark .cn-anchor-approvals   { color: #66BB6A; }
 
 /* Discussion-only footnote container (projected mode) */
 .cn-fn-discussion-only {
     border-top: none;
     padding-top: 0.5em;
+}
+
+/* === Changes view mode: simplified preview ===
+ * Deletions hidden, insertions shown as plain text (green tint preserved),
+ * change gutters indicate which paragraphs contain edits.
+ * Activated by data-view-mode="changes" attribute on the preview container.
+ *
+ * KEEP IN SYNC with generateViewModeCSS() in src/generate-css.ts —
+ * that function returns these same rules as a string for webview consumers. */
+
+/* Hide deletions, move sources, move labels */
+[data-view-mode="changes"] .cn-del,
+[data-view-mode="changes"] .cn-sub-del,
+[data-view-mode="changes"] del.cn-move-from,
+[data-view-mode="changes"] .cn-move-label { display: none; }
+
+/* Insertions as plain text (keep green color, remove underline) */
+[data-view-mode="changes"] .cn-ins,
+[data-view-mode="changes"] .cn-sub-ins,
+[data-view-mode="changes"] ins.cn-move-to { text-decoration: none; }
+
+/* Hide comments, highlights, metadata, footnotes, ref badges */
+[data-view-mode="changes"] .cn-comment { display: none; }
+[data-view-mode="changes"] .cn-hl { background: none; padding: 0; }
+[data-view-mode="changes"] .cn-anchor-meta { display: none; }
+[data-view-mode="changes"] .cn-footnotes { display: none; }
+[data-view-mode="changes"] .cn-ref { display: none; }
+
+/* Reset status dimming — in simplified view, all text reads at full opacity */
+[data-view-mode="changes"] .cn-accepted { opacity: 1; }
+[data-view-mode="changes"] .cn-rejected { opacity: 1; font-style: normal; }
+
+/* Change gutter: insertion (green) */
+[data-view-mode="changes"] :is(p,li,h1,h2,h3,h4,h5,h6,blockquote,pre):has(ins.cn-ins) {
+  border-left: 3px solid #66BB6A; padding-left: 8px; margin-left: -12px;
+}
+.vscode-light [data-view-mode="changes"] :is(p,li,h1,h2,h3,h4,h5,h6,blockquote,pre):has(ins.cn-ins),
+.cn-light [data-view-mode="changes"] :is(p,li,h1,h2,h3,h4,h5,h6,blockquote,pre):has(ins.cn-ins) {
+  border-left-color: #1E824C;
+}
+
+/* Change gutter: deletion only (red) — paragraph has deletion but no insertion */
+[data-view-mode="changes"] :is(p,li,h1,h2,h3,h4,h5,h6,blockquote,pre):has(del.cn-del):not(:has(ins.cn-ins)) {
+  border-left: 3px solid #EF5350; padding-left: 8px; margin-left: -12px; min-height: 1.2em;
+}
+.vscode-light [data-view-mode="changes"] :is(p,li,h1,h2,h3,h4,h5,h6,blockquote,pre):has(del.cn-del):not(:has(ins.cn-ins)),
+.cn-light [data-view-mode="changes"] :is(p,li,h1,h2,h3,h4,h5,h6,blockquote,pre):has(del.cn-del):not(:has(ins.cn-ins)) {
+  border-left-color: #C0392B;
+}
+
+/* Change gutter: substitution (blue) */
+[data-view-mode="changes"] :is(p,li,h1,h2,h3,h4,h5,h6,blockquote,pre):has(.cn-sub-del) {
+  border-left: 3px solid #64B5F6; padding-left: 8px; margin-left: -12px;
+}
+.vscode-light [data-view-mode="changes"] :is(p,li,h1,h2,h3,h4,h5,h6,blockquote,pre):has(.cn-sub-del),
+.cn-light [data-view-mode="changes"] :is(p,li,h1,h2,h3,h4,h5,h6,blockquote,pre):has(.cn-sub-del) {
+  border-left-color: #2980B9;
 }

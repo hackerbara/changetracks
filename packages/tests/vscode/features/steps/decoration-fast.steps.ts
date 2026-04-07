@@ -14,8 +14,9 @@ import { Given, When, Then, Before } from '@cucumber/cucumber';
 import { strict as assert } from 'assert';
 import { CriticMarkupParser, ChangeType, VirtualDocument } from '@changedown/core';
 import type { ChangeNode } from '@changedown/core';
-import { buildDecorationPlan, buildOverviewRulerPlan, applyPlan } from '@changedown/core/dist/host/index';
-import type { ViewMode } from '@changedown/core/dist/host/index';
+import { buildDecorationPlan, buildOverviewRulerPlan, applyPlan } from '@changedown/core/host';
+import type { ViewMode, DisplayOptions } from '@changedown/core/host';
+import { makeView } from '../../helpers/view-test-utils';
 import { VSCodeDecorationTarget } from 'changedown-vscode/internals';
 import { SpyEditor, RecordedDecoration } from '../../helpers/SpyEditor';
 import type { ChangeDownWorld } from './world';
@@ -97,8 +98,14 @@ function runDecorate(
         })()
         : 0;
 
-    const plan = buildDecorationPlan(changes, text, mode, cursorOffset, showDelimiters, authorColors);
-    const rulerPlan = buildOverviewRulerPlan(changes, mode);
+    const displayOverrides: Partial<DisplayOptions> = {
+        delimiters: showDelimiters ? 'show' : 'hide',
+        authorColors,
+    };
+    const view = makeView(mode, { display: displayOverrides });
+
+    const plan = buildDecorationPlan(changes, text, view, 'L2', cursorOffset);
+    const rulerPlan = buildOverviewRulerPlan(changes, view);
 
     target.setEditor(spy);
     applyPlan(target, plan, rulerPlan, text, changes);

@@ -30,7 +30,7 @@ import { buildContextualL3EditOp } from './footnote-generator.js';
  *
  * The L3 body is the "accepted-all" view — every change is applied as if accepted,
  * regardless of status. The change status is preserved in the footnote definition.
- * This mirrors the settled-text.ts accept-all semantics.
+ * This mirrors the current-text.ts accept-all semantics.
  *
  * Exception: rejected insertions and rejected substitutions still strip their
  * inserted/modified text from the body (the text was never accepted), while

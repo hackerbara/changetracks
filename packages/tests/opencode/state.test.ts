@@ -142,8 +142,8 @@ describe('SessionState', () => {
   describe('file hashes', () => {
     it('recordFileHashes stores hashes', () => {
       const hashes = [
-        { line: 1, raw: 'abc123', settled: 'def456' },
-        { line: 2, raw: 'ghi789', settled: 'jkl012' },
+        { line: 1, raw: 'abc123', current: 'def456' },
+        { line: 2, raw: 'ghi789', current: 'jkl012' },
       ];
 
       state.recordFileHashes('/test/file.ts', hashes);
@@ -158,8 +158,8 @@ describe('SessionState', () => {
     });
 
     it('recordFileHashes overwrites previous hashes', () => {
-      const hashes1 = [{ line: 1, raw: 'abc', settled: 'def' }];
-      const hashes2 = [{ line: 1, raw: 'xyz', settled: 'uvw' }];
+      const hashes1 = [{ line: 1, raw: 'abc', current: 'def' }];
+      const hashes2 = [{ line: 1, raw: 'xyz', current: 'uvw' }];
 
       state.recordFileHashes('/test/file.ts', hashes1);
       state.recordFileHashes('/test/file.ts', hashes2);

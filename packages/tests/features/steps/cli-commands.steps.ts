@@ -250,7 +250,7 @@ Then(
 // NOTE: "the settled content contains {string}" and
 //       "the settled content does not contain {string}" are defined in
 //       core-operations.steps.ts and reused here. When computing settlement,
-//       we also set this.settledContent so those steps work.
+//       we also set this.currentContent so those steps work.
 // =============================================================================
 
 Given(
@@ -264,8 +264,8 @@ When(
   'I compute settlement',
   function (this: ChangeDownWorld) {
     this.settlementResult = computeSettlement(this.settlementInput);
-    // Bridge: set settledContent so existing core-operations Then steps work
-    this.settledContent = this.settlementResult.settledContent;
+    // Bridge: set currentContent so existing core-operations Then steps work
+    this.currentContent = this.settlementResult.currentContent;
   },
 );
 
@@ -274,7 +274,7 @@ When(
   function (this: ChangeDownWorld) {
     // Dry-run: compute but do not overwrite the input
     this.settlementResult = computeSettlement(this.settlementInput);
-    this.settledContent = this.settlementResult.settledContent;
+    this.currentContent = this.settlementResult.currentContent;
   },
 );
 
@@ -282,7 +282,7 @@ When(
   'I compute settlement again on the settled content',
   function (this: ChangeDownWorld) {
     assert.ok(this.settlementResult, 'No first settlement result');
-    this.settlementSecondResult = computeSettlement(this.settlementResult.settledContent);
+    this.settlementSecondResult = computeSettlement(this.settlementResult.currentContent);
   },
 );
 
@@ -290,7 +290,7 @@ Then(
   'the settled count is {int}',
   function (this: ChangeDownWorld, expected: number) {
     assert.ok(this.settlementResult, 'No settlement result');
-    assert.strictEqual(this.settlementResult.settledCount, expected);
+    assert.strictEqual(this.settlementResult.appliedCount, expected);
   },
 );
 
@@ -298,7 +298,7 @@ Then(
   'the settled content is unchanged',
   function (this: ChangeDownWorld) {
     assert.ok(this.settlementResult, 'No settlement result');
-    assert.strictEqual(this.settlementResult.settledContent, this.settlementInput);
+    assert.strictEqual(this.settlementResult.currentContent, this.settlementInput);
   },
 );
 
@@ -306,7 +306,7 @@ Then(
   'the second settled count is {int}',
   function (this: ChangeDownWorld, expected: number) {
     assert.ok(this.settlementSecondResult, 'No second settlement result');
-    assert.strictEqual(this.settlementSecondResult.settledCount, expected);
+    assert.strictEqual(this.settlementSecondResult.appliedCount, expected);
   },
 );
 
@@ -316,8 +316,8 @@ Then(
     assert.ok(this.settlementResult, 'No first settlement result');
     assert.ok(this.settlementSecondResult, 'No second settlement result');
     assert.strictEqual(
-      this.settlementResult.settledContent,
-      this.settlementSecondResult.settledContent,
+      this.settlementResult.currentContent,
+      this.settlementSecondResult.currentContent,
     );
   },
 );

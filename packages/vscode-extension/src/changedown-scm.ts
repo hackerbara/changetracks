@@ -2,10 +2,14 @@ import * as vscode from 'vscode';
 import { getScmIntegrationMode } from './scm-integration-mode';
 import { toResolvedUri, toGitOriginalUri } from './resolved-content-provider';
 import { ScmHybridIndex } from './scm-hybrid-index';
-import type { ExtensionController } from './controller';
 import { recordScmIntegrationEvent } from './scm-integration-mode';
 import { GitGutterManager, GUTTER_STRATEGY } from './git-gutter-manager';
 import type { GutterStrategy } from './git-gutter-manager';
+
+export interface ScmControllerContext {
+    onDidChangeChanges(listener: (uris: vscode.Uri[]) => void): vscode.Disposable;
+    getChangesForDocument(doc: vscode.TextDocument): { length: number }[] | import('@changedown/core').ChangeNode[];
+}
 
 const SYNC_FROM_OPEN_DEBOUNCE_MS = 300;
 
@@ -23,9 +27,9 @@ export class ChangedownSCM implements vscode.Disposable {
 
   constructor(
     context: vscode.ExtensionContext,
-    getController: () => ExtensionController | null,
+    getController: () => ScmControllerContext | null,
     private gutterManager?: GitGutterManager,
-    private gutterStrategy: GutterStrategy = GUTTER_STRATEGY.AUTO
+    private gutterStrategy: GutterStrategy = GUTTER_STRATEGY.AUTO,
   ) {
     this.sourceControl = vscode.scm.createSourceControl(
       'changedown',
@@ -127,7 +131,7 @@ export class ChangedownSCM implements vscode.Disposable {
 
   private pendingSyncUris: vscode.Uri[] | null = null;
 
-  private scheduleSyncFromOpenDocuments(getController: () => ExtensionController | null, uris?: vscode.Uri[]): void {
+  private scheduleSyncFromOpenDocuments(getController: () => ScmControllerContext | null, uris?: vscode.Uri[]): void {
     if (uris?.length) {
       this.pendingSyncUris = this.pendingSyncUris ? [...this.pendingSyncUris, ...uris] : [...uris];
     }
@@ -143,7 +147,7 @@ export class ChangedownSCM implements vscode.Disposable {
     }, SYNC_FROM_OPEN_DEBOUNCE_MS);
   }
 
-  private syncFromOpenDocuments(getController: () => ExtensionController | null, uris?: vscode.Uri[]): void {
+  private syncFromOpenDocuments(getController: () => ScmControllerContext | null, uris?: vscode.Uri[]): void {
     if (!this.index) return;
     const docs = uris?.length
       ? uris

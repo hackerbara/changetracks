@@ -187,7 +187,7 @@ export const FOOTNOTE_L3_EDIT_OP = /^ {4}(\d+):([0-9a-fA-F]{2,}) (.*)/;
  *
  * This is the single source of truth for L3 detection. Used by
  * Workspace.isFootnoteNative() and standalone functions like
- * computeSettledText() that need format detection without a Workspace.
+ * computeCurrentText() that need format detection without a Workspace.
  */
 export function isL3Format(text: string): boolean {
   // Find the first footnote definition that is NOT inside a code zone.

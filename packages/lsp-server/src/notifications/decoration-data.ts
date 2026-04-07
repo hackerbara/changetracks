@@ -10,6 +10,7 @@
 import { Connection } from 'vscode-languageserver';
 import { ChangeNode, ChangeType, isGhostNode } from '@changedown/core';
 import type { DecorationDataParams, ChangeCountParams, AllChangesResolvedParams, CoherenceStatusParams } from '@changedown/core';
+import { LSP_METHOD } from '@changedown/core/host';
 
 /**
  * Send decoration data notification to client.
@@ -33,7 +34,7 @@ export function sendDecorationData(
   if (autoFoldLines?.length) {
     params.autoFoldLines = autoFoldLines;
   }
-  connection.sendNotification('changedown/decorationData', params);
+  connection.sendNotification(LSP_METHOD.DECORATION_DATA, params);
 }
 
 /**
@@ -47,7 +48,7 @@ export function sendCoherenceStatus(
   threshold: number,
 ): void {
   const params: CoherenceStatusParams = { uri, coherenceRate, unresolvedCount, threshold };
-  connection.sendNotification('changedown/coherenceStatus', params);
+  connection.sendNotification(LSP_METHOD.COHERENCE_STATUS, params);
 }
 
 /**
@@ -96,11 +97,11 @@ export function sendChangeCount(
   }
 
   const params: ChangeCountParams = { uri, counts };
-  connection.sendNotification('changedown/changeCount', params);
+  connection.sendNotification(LSP_METHOD.CHANGE_COUNT, params);
 
   // Send all changes resolved notification if no changes remain
   if (counts.total === 0) {
     const resolvedParams: AllChangesResolvedParams = { uri };
-    connection.sendNotification('changedown/allChangesResolved', resolvedParams);
+    connection.sendNotification(LSP_METHOD.ALL_CHANGES_RESOLVED, resolvedParams);
   }
 }

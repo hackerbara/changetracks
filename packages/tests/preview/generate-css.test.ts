@@ -2,9 +2,9 @@ import { describe, it, expect } from 'vitest';
 import { generateViewModeCSS } from '@changedown/preview';
 
 describe('generateViewModeCSS', () => {
-  it('returns CSS string containing changes mode selectors', () => {
+  it('returns CSS string containing simple (changes) mode selectors', () => {
     const css = generateViewModeCSS();
-    expect(css).toContain('[data-view-mode="changes"]');
+    expect(css).toContain('[data-view-name="simple"]');
   });
 
   it('contains hiding rules for deletions', () => {

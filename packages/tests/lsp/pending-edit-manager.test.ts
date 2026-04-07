@@ -272,31 +272,31 @@ describe('PendingEditManager', () => {
   describe('Pause threshold', () => {
     it('should default to 2000ms pause threshold', () => {
       const { manager } = createTestHarness();
-      expect(manager.getPauseThreshold()).toBe(2000);
+      expect(manager.getPauseThresholdMs()).toBe(2000);
     });
 
-    it('should set 500ms at sensitivity 1.0', () => {
+    it('should set 500ms directly', () => {
       const { manager } = createTestHarness();
-      manager.setPauseThreshold(1.0);
-      expect(manager.getPauseThreshold()).toBe(500);
+      manager.setPauseThresholdMs(500);
+      expect(manager.getPauseThresholdMs()).toBe(500);
     });
 
-    it('should set 1000ms at sensitivity 0.75', () => {
+    it('should set 1000ms directly', () => {
       const { manager } = createTestHarness();
-      manager.setPauseThreshold(0.75);
-      expect(manager.getPauseThreshold()).toBe(1000);
+      manager.setPauseThresholdMs(1000);
+      expect(manager.getPauseThresholdMs()).toBe(1000);
     });
 
-    it('should set Infinity at sensitivity 0', () => {
+    it('should disable timer when ms <= 0', () => {
       const { manager } = createTestHarness();
-      manager.setPauseThreshold(0);
-      expect(manager.getPauseThreshold()).toBe(Infinity);
+      manager.setPauseThresholdMs(0);
+      expect(manager.getPauseThresholdMs()).toBe(0);
     });
 
-    it('should set 4000ms at sensitivity 0.25', () => {
+    it('should set 4000ms directly', () => {
       const { manager } = createTestHarness();
-      manager.setPauseThreshold(0.25);
-      expect(manager.getPauseThreshold()).toBe(4000);
+      manager.setPauseThresholdMs(4000);
+      expect(manager.getPauseThresholdMs()).toBe(4000);
     });
   });
 

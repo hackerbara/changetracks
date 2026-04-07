@@ -1,5 +1,5 @@
 // packages/benchmarks/harness/verify.ts
-import { computeSettledText, parseFootnotes, type FootnoteInfo } from "@changedown/core";
+import { computeCurrentText, parseFootnotes, type FootnoteInfo } from "@changedown/core";
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { SurfaceId } from "./workflows.js";
@@ -84,7 +84,7 @@ export interface VerificationResult {
 // --- Scoring Functions ---
 
 export function scoreCorrections(
-  settledText: string,
+  currentText: string,
   corrections: Correction[]
 ): {
   results: CorrectionResult[];
@@ -98,12 +98,12 @@ export function scoreCorrections(
 
   for (const c of corrections) {
     const wrongRe = new RegExp(c.wrong);
-    const wrongFound = wrongRe.test(settledText);
+    const wrongFound = wrongRe.test(currentText);
 
     let correctFound = false;
     if (c.correct) {
       const correctRe = new RegExp(c.correct);
-      correctFound = correctRe.test(settledText);
+      correctFound = correctRe.test(currentText);
     }
 
     let score: 0 | 0.5 | 1;
@@ -158,7 +158,7 @@ async function findMarkdownFile(dir: string, exclude?: Set<string>): Promise<str
   throw new Error(`No markdown file found in ${dir}`);
 }
 
-export async function extractSettledText(afterDir: string, surface: SurfaceId, exclude?: Set<string>): Promise<string> {
+export async function extractCurrentText(afterDir: string, surface: SurfaceId, exclude?: Set<string>): Promise<string> {
   const mdPath = await findMarkdownFile(afterDir, exclude);
   const raw = await fs.readFile(mdPath, "utf-8");
 
@@ -166,7 +166,7 @@ export async function extractSettledText(afterDir: string, surface: SurfaceId, e
   if (surface === "A" || surface === "H") {
     text = raw;
   } else {
-    text = computeSettledText(raw);
+    text = computeCurrentText(raw);
   }
 
   // Strip tracking header — golden files don't contain it
@@ -242,35 +242,35 @@ export function scoreDecisions(
 // --- Regression Detection ---
 
 export function detectRegressions(
-  settledText: string,
+  currentText: string,
   goldenText: string,
   corrections: Correction[]
 ): {
   details: RegressionResult[];
   count: number;
 } {
-  const settledLines = settledText.split("\n");
+  const currentLines = currentText.split("\n");
   const goldenLines = goldenText.split("\n");
   const details: RegressionResult[] = [];
 
-  const maxLines = Math.max(settledLines.length, goldenLines.length);
+  const maxLines = Math.max(currentLines.length, goldenLines.length);
 
   for (let i = 0; i < maxLines; i++) {
-    const settled = settledLines[i] ?? "";
+    const current = currentLines[i] ?? "";
     const golden = goldenLines[i] ?? "";
 
-    if (settled === golden) continue;
+    if (current === golden) continue;
 
     // Check if this line difference is fully explained by known corrections.
-    // A line is "explained" if both settled and golden contain the correct text
+    // A line is "explained" if both current and golden contain the correct text
     // for every correction that applies to this line, and no other differences exist.
-    const isExplained = isLineDiffExplainedByCorrections(settled, golden, corrections);
+    const isExplained = isLineDiffExplainedByCorrections(current, golden, corrections);
 
     if (!isExplained) {
       details.push({
         line: i + 1,
         expected: golden,
-        actual: settled,
+        actual: current,
       });
     }
   }
@@ -279,21 +279,21 @@ export function detectRegressions(
 }
 
 function isLineDiffExplainedByCorrections(
-  settled: string,
+  current: string,
   golden: string,
   corrections: Correction[]
 ): boolean {
   // If both lines match golden, no regression (already handled by caller).
-  // Strategy: check if settled === golden after we account for correction patterns.
-  // Both settled and golden should contain the "correct" text for all applicable corrections.
+  // Strategy: check if current === golden after we account for correction patterns.
+  // Both current and golden should contain the "correct" text for all applicable corrections.
   // If they're identical after that, the diff is explained.
-  if (settled === golden) return true;
+  if (current === golden) return true;
 
   // Both lines must contain the correct patterns for applicable corrections
   const applicableCorrections = corrections.filter((c) => {
     if (!c.correct) return false;
     const correctRe = new RegExp(c.correct);
-    return correctRe.test(golden) && correctRe.test(settled);
+    return correctRe.test(golden) && correctRe.test(current);
   });
 
   // If no corrections apply to explain the difference, it's a regression
@@ -301,7 +301,7 @@ function isLineDiffExplainedByCorrections(
 
   // Both lines contain correct text — but are there OTHER differences?
   // Compare lines after masking out correction-affected regions
-  // Simple heuristic: if settled === golden, it's explained (already checked).
+  // Simple heuristic: if current === golden, it's explained (already checked).
   // Otherwise, there are unexplained differences.
   return false;
 }
@@ -321,9 +321,9 @@ export async function verify(
     goldenExclude.add(assertions.scoring.golden_file);
   }
 
-  const settledText = await extractSettledText(afterDir, surface, goldenExclude);
+  const currentText = await extractCurrentText(afterDir, surface, goldenExclude);
 
-  const corrections = scoreCorrections(settledText, assertions.scoring.corrections);
+  const corrections = scoreCorrections(currentText, assertions.scoring.corrections);
 
   let decisionsResult;
   if (assertions.scoring.decisions.length > 0) {
@@ -338,7 +338,7 @@ export async function verify(
   if (assertions.scoring.golden_file) {
     const goldenPath = path.join(path.dirname(assertionsPath), assertions.scoring.golden_file);
     const goldenText = await fs.readFile(goldenPath, "utf-8");
-    regressionsResult = detectRegressions(settledText, goldenText, assertions.scoring.corrections);
+    regressionsResult = detectRegressions(currentText, goldenText, assertions.scoring.corrections);
   }
 
   const correctionWeight = corrections.maxScore;

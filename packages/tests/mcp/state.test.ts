@@ -134,7 +134,7 @@ describe('SessionState lifecycle', () => {
 
   it('recordAfterRead stores lastReadView', () => {
     state.recordAfterRead('test.md', 'review', [
-      { line: 1, raw: 'a1', settled: 'a1', committed: 'a1', rawLineNum: 1 },
+      { line: 1, raw: 'a1', current: 'a1', committed: 'a1', rawLineNum: 1 },
     ], 'raw content');
     expect(state.getLastReadView('test.md')).toBe('review');
   });
@@ -156,17 +156,17 @@ describe('SessionState lifecycle', () => {
   it('rerecordAfterWrite preserves lastReadView', () => {
     state.recordAfterRead('test.md', 'changes', [], 'original');
     state.rerecordAfterWrite('test.md', 'modified', [
-      { line: 1, raw: 'b2', settled: 'b2', committed: 'b2', rawLineNum: 1 },
+      { line: 1, raw: 'b2', current: 'b2', committed: 'b2', rawLineNum: 1 },
     ]);
     expect(state.getLastReadView('test.md')).toBe('changes');
   });
 
   it('rerecordAfterWrite updates hashes', () => {
     state.recordAfterRead('test.md', 'review', [
-      { line: 1, raw: 'a1', settled: 'a1', committed: 'a1', rawLineNum: 1 },
+      { line: 1, raw: 'a1', current: 'a1', committed: 'a1', rawLineNum: 1 },
     ], 'original');
     state.rerecordAfterWrite('test.md', 'modified', [
-      { line: 1, raw: 'b2', settled: 'b2', committed: 'b2', rawLineNum: 1 },
+      { line: 1, raw: 'b2', current: 'b2', committed: 'b2', rawLineNum: 1 },
     ]);
     const hashes = state.getRecordedHashes('test.md');
     expect(hashes?.[0]?.raw).toBe('b2');
@@ -174,15 +174,15 @@ describe('SessionState lifecycle', () => {
 
   it('resolveHash uses committed hash for review view (backward compat, no suppliedHash)', () => {
     state.recordAfterRead('test.md', 'review', [
-      { line: 1, raw: 'r1', settled: 's1', committed: 'c1', settledView: 'sv1', rawLineNum: 1 },
+      { line: 1, raw: 'r1', current: 's1', committed: 'c1', currentView: 'sv1', rawLineNum: 1 },
     ], 'content');
     const resolved = state.resolveHash('test.md', 1);
     expect(resolved).toEqual({ match: true, rawLineNum: 1, view: 'review' });
   });
 
-  it('resolveHash uses settledView hash for settled view (backward compat, no suppliedHash)', () => {
+  it('resolveHash uses currentView hash for settled view (backward compat, no suppliedHash)', () => {
     state.recordAfterRead('test.md', 'settled', [
-      { line: 1, raw: 'r1', settled: 's1', committed: 'c1', settledView: 'sv1', rawLineNum: 1 },
+      { line: 1, raw: 'r1', current: 's1', committed: 'c1', currentView: 'sv1', rawLineNum: 1 },
     ], 'content');
     const resolved = state.resolveHash('test.md', 1);
     expect(resolved).toEqual({ match: true, rawLineNum: 1, view: 'settled' });
@@ -190,7 +190,7 @@ describe('SessionState lifecycle', () => {
 
   it('resolveHash uses raw hash for raw view (backward compat, no suppliedHash)', () => {
     state.recordAfterRead('test.md', 'raw', [
-      { line: 1, raw: 'r1', settled: 's1', committed: 'c1', settledView: 'sv1', rawLineNum: 1 },
+      { line: 1, raw: 'r1', current: 's1', committed: 'c1', currentView: 'sv1', rawLineNum: 1 },
     ], 'content');
     const resolved = state.resolveHash('test.md', 1);
     expect(resolved).toEqual({ match: true, rawLineNum: 1, view: 'raw' });
@@ -198,7 +198,7 @@ describe('SessionState lifecycle', () => {
 
   it('resolveHash returns match:true when suppliedHash matches review view committed hash', () => {
     state.recordAfterRead('test.md', 'review', [
-      { line: 1, raw: 'r1', settled: 's1', committed: 'c1', settledView: 'sv1', rawLineNum: 1 },
+      { line: 1, raw: 'r1', current: 's1', committed: 'c1', currentView: 'sv1', rawLineNum: 1 },
     ], 'content');
     const resolved = state.resolveHash('test.md', 1, 'c1');
     expect(resolved).toEqual({ match: true, rawLineNum: 1, view: 'review' });
@@ -206,15 +206,15 @@ describe('SessionState lifecycle', () => {
 
   it('resolveHash returns match:false when suppliedHash does not match review view committed hash', () => {
     state.recordAfterRead('test.md', 'review', [
-      { line: 1, raw: 'r1', settled: 's1', committed: 'c1', settledView: 'sv1', rawLineNum: 1 },
+      { line: 1, raw: 'r1', current: 's1', committed: 'c1', currentView: 'sv1', rawLineNum: 1 },
     ], 'content');
     const resolved = state.resolveHash('test.md', 1, 'wrong-hash');
     expect(resolved).toEqual({ match: false, expectedHash: 'c1', view: 'review' });
   });
 
-  it('resolveHash returns match:true when suppliedHash matches settled view settledView hash', () => {
+  it('resolveHash returns match:true when suppliedHash matches settled view currentView hash', () => {
     state.recordAfterRead('test.md', 'settled', [
-      { line: 1, raw: 'r1', settled: 's1', committed: 'c1', settledView: 'sv1', rawLineNum: 1 },
+      { line: 1, raw: 'r1', current: 's1', committed: 'c1', currentView: 'sv1', rawLineNum: 1 },
     ], 'content');
     const resolved = state.resolveHash('test.md', 1, 'sv1');
     expect(resolved).toEqual({ match: true, rawLineNum: 1, view: 'settled' });
@@ -222,7 +222,7 @@ describe('SessionState lifecycle', () => {
 
   it('resolveHash returns match:false when suppliedHash does not match settled view hash', () => {
     state.recordAfterRead('test.md', 'settled', [
-      { line: 1, raw: 'r1', settled: 's1', committed: 'c1', settledView: 'sv1', rawLineNum: 1 },
+      { line: 1, raw: 'r1', current: 's1', committed: 'c1', currentView: 'sv1', rawLineNum: 1 },
     ], 'content');
     const resolved = state.resolveHash('test.md', 1, 'c1');
     expect(resolved).toEqual({ match: false, expectedHash: 'sv1', view: 'settled' });
@@ -230,7 +230,7 @@ describe('SessionState lifecycle', () => {
 
   it('resolveHash returns match:true when suppliedHash matches raw view hash', () => {
     state.recordAfterRead('test.md', 'raw', [
-      { line: 1, raw: 'r1', settled: 's1', committed: 'c1', settledView: 'sv1', rawLineNum: 1 },
+      { line: 1, raw: 'r1', current: 's1', committed: 'c1', currentView: 'sv1', rawLineNum: 1 },
     ], 'content');
     const resolved = state.resolveHash('test.md', 1, 'r1');
     expect(resolved).toEqual({ match: true, rawLineNum: 1, view: 'raw' });
@@ -243,7 +243,7 @@ describe('SessionState lifecycle', () => {
 
   it('resolveHash returns undefined when line not found', () => {
     state.recordAfterRead('test.md', 'review', [
-      { line: 1, raw: 'r1', settled: 's1', committed: 'c1', rawLineNum: 1 },
+      { line: 1, raw: 'r1', current: 's1', committed: 'c1', rawLineNum: 1 },
     ], 'content');
     const resolved = state.resolveHash('test.md', 99, 'c1');
     expect(resolved).toBeUndefined();
@@ -251,15 +251,15 @@ describe('SessionState lifecycle', () => {
 
   it('resolveHash falls back to raw hash when committed is absent in review view', () => {
     state.recordAfterRead('test.md', 'review', [
-      { line: 1, raw: 'r1', settled: 's1', rawLineNum: 1 },
+      { line: 1, raw: 'r1', current: 's1', rawLineNum: 1 },
     ], 'content');
     const resolved = state.resolveHash('test.md', 1, 'r1');
     expect(resolved).toEqual({ match: true, rawLineNum: 1, view: 'review' });
   });
 
-  it('resolveHash falls back to settled hash when settledView is absent in settled view', () => {
+  it('resolveHash falls back to current hash when currentView is absent in settled view', () => {
     state.recordAfterRead('test.md', 'settled', [
-      { line: 1, raw: 'r1', settled: 's1', rawLineNum: 1 },
+      { line: 1, raw: 'r1', current: 's1', rawLineNum: 1 },
     ], 'content');
     const resolved = state.resolveHash('test.md', 1, 's1');
     expect(resolved).toEqual({ match: true, rawLineNum: 1, view: 'settled' });
@@ -280,12 +280,12 @@ describe('per-view hash retention', () => {
   it('resolves coordinates from a previously-read view after reading a different view', () => {
     // Read in 'changes' view: line 5 has committed hash 'c5', rawLineNum 7
     state.recordAfterRead('test.md', 'changes', [
-      { line: 5, raw: 'r7', settled: 's7', committed: 'c5', rawLineNum: 7 },
+      { line: 5, raw: 'r7', current: 's7', committed: 'c5', rawLineNum: 7 },
     ], 'content');
 
     // Read in 'raw' view: line 7 has raw hash 'r7', rawLineNum 7
     state.recordAfterRead('test.md', 'raw', [
-      { line: 7, raw: 'r7', settled: 's7', rawLineNum: 7 },
+      { line: 7, raw: 'r7', current: 's7', rawLineNum: 7 },
     ], 'content');
 
     // Now resolve using changes-view coordinates (line 5, hash 'c5')
@@ -296,11 +296,11 @@ describe('per-view hash retention', () => {
 
   it('resolves coordinates from raw view even after reading settled view', () => {
     state.recordAfterRead('test.md', 'raw', [
-      { line: 3, raw: 'r3', settled: 's3', rawLineNum: 3 },
+      { line: 3, raw: 'r3', current: 's3', rawLineNum: 3 },
     ], 'content');
 
     state.recordAfterRead('test.md', 'settled', [
-      { line: 2, raw: 'r3', settled: 's3', settledView: 'sv2', rawLineNum: 3 },
+      { line: 2, raw: 'r3', current: 's3', currentView: 'sv2', rawLineNum: 3 },
     ], 'content');
 
     // Resolve using raw-view coordinates
@@ -310,12 +310,12 @@ describe('per-view hash retention', () => {
 
   it('invalidates all view tables when file content changes', () => {
     state.recordAfterRead('test.md', 'changes', [
-      { line: 5, raw: 'r7', settled: 's7', committed: 'c5', rawLineNum: 7 },
+      { line: 5, raw: 'r7', current: 's7', committed: 'c5', rawLineNum: 7 },
     ], 'content A');
 
     // Read with different content — old tables should be invalidated
     state.recordAfterRead('test.md', 'raw', [
-      { line: 7, raw: 'r7new', settled: 's7new', rawLineNum: 7 },
+      { line: 7, raw: 'r7new', current: 's7new', rawLineNum: 7 },
     ], 'content B');
 
     // Old changes-view hash should NOT match (content changed)
@@ -331,15 +331,15 @@ describe('per-view hash retention', () => {
 
   it('rerecordAfterWrite clears all view tables and stores current view', () => {
     state.recordAfterRead('test.md', 'changes', [
-      { line: 5, raw: 'r7', settled: 's7', committed: 'c5', rawLineNum: 7 },
+      { line: 5, raw: 'r7', current: 's7', committed: 'c5', rawLineNum: 7 },
     ], 'content');
     state.recordAfterRead('test.md', 'raw', [
-      { line: 7, raw: 'r7', settled: 's7', rawLineNum: 7 },
+      { line: 7, raw: 'r7', current: 's7', rawLineNum: 7 },
     ], 'content');
 
     // Write clears all and records new table under lastReadView
     state.rerecordAfterWrite('test.md', 'new content', [
-      { line: 7, raw: 'r7new', settled: 's7new', rawLineNum: 7 },
+      { line: 7, raw: 'r7new', current: 's7new', rawLineNum: 7 },
     ]);
 
     // Old changes-view coordinates should not resolve
@@ -353,7 +353,7 @@ describe('per-view hash retention', () => {
 
   it('returns match:false with error context from lastReadView when no view matches', () => {
     state.recordAfterRead('test.md', 'review', [
-      { line: 1, raw: 'r1', settled: 's1', committed: 'c1', rawLineNum: 1 },
+      { line: 1, raw: 'r1', current: 's1', committed: 'c1', rawLineNum: 1 },
     ], 'content');
 
     const resolved = state.resolveHash('test.md', 1, 'wrong-hash');
@@ -385,9 +385,9 @@ describe('rerecordState: review view computes committed hashes', () => {
 
     // Record an initial read in review view so lastReadView = 'review'
     state.recordAfterRead('test.md', 'review', [
-      { line: 1, raw: 'r1', settled: 's1', committed: 'c1', rawLineNum: 1 },
-      { line: 2, raw: 'r2', settled: 's2', committed: 'c2', rawLineNum: 2 },
-      { line: 3, raw: 'r3', settled: 's3', committed: 'c3', rawLineNum: 3 },
+      { line: 1, raw: 'r1', current: 's1', committed: 'c1', rawLineNum: 1 },
+      { line: 2, raw: 'r2', current: 's2', committed: 'c2', rawLineNum: 2 },
+      { line: 3, raw: 'r3', current: 's3', committed: 'c3', rawLineNum: 3 },
     ], 'original content');
 
     // Call rerecordState with CriticMarkup content

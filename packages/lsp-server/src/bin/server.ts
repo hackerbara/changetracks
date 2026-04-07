@@ -28,16 +28,6 @@ const server = new ChangedownServer(conn, {
       return undefined;
     }
   },
-  readFileByUri: async (uri) => {
-    try {
-      const url = new URL(uri);
-      if (url.protocol !== 'file:') return undefined;
-      const filePath = fileURLToPath(url);
-      return await fs.promises.readFile(filePath, 'utf-8');
-    } catch {
-      return undefined;
-    }
-  },
 });
 
 // Inject real git implementations (server defaults to no-ops)

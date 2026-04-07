@@ -1,9 +1,16 @@
 #!/usr/bin/env bash
 # Build all packages, package .vsix, then install into editors + configure agents.
-# Use --old to run the legacy bash build instead of build.mjs + install.mjs.
+#
+# Default (no --old):
+#   node scripts/build.mjs   — full monorepo build including native SPA → mac-wrapper Swift →
+#                             node scripts/package-app.mjs → packages/mac-wrapper/ChangeDown.app
+#   node scripts/install.mjs — VSIX, MCP, global CLI, cdviewer → ChangeDown.app/Contents/MacOS/…
+#
+# Legacy (--old): same compile steps in bash; on macOS also runs package-app.mjs after Swift
+# so ChangeDown.app exists (parity with build.mjs). Use --old only if you cannot use Node here.
 #
 # Usage:
-#   ./scripts/build-all.sh          # build.mjs → install.mjs (full pipeline)
+#   ./scripts/build-all.sh          # build.mjs → install.mjs (recommended)
 #   ./scripts/build-all.sh --old    # legacy bash build pipeline
 
 set -euo pipefail
@@ -27,6 +34,7 @@ BOLD='\033[1m'
 failed=0
 total=0
 TOTAL_PKGS=10
+[[ "$(uname -s)" == "Darwin" ]] && TOTAL_PKGS=11
 
 build_pkg() {
   local name="$1"
@@ -70,6 +78,19 @@ build_pkg "hooks-impl (plugin)"       "changedown-plugin/hooks-impl"   "node esb
 build_pkg "@changedown/website-v2"    "website-v2"                     "npm run build"
 build_pkg "native SPA bundle"         "website-v2"                     "npx vite build --config vite.config.native.ts"
 build_pkg "mac-wrapper (Swift)"       "packages/mac-wrapper"           "swift build -c release"
+
+# Same as scripts/build.mjs: assemble ChangeDown.app when Swift produced a binary (single bundle lifecycle).
+if [[ $failed -eq 0 ]] && [[ "$(uname -s)" == "Darwin" ]] && [[ -f "$ROOT/packages/mac-wrapper/.build/release/ChangeDown" ]]; then
+  total=$((total + 1))
+  printf "${BOLD}[${total}/${TOTAL_PKGS}]${RESET} %-24s" "Package ChangeDown.app"
+  if (cd "$ROOT" && node scripts/package-app.mjs) >/tmp/sc-package-app.log 2>&1; then
+    printf "${GREEN}ok${RESET}\n"
+  else
+    printf "${RED}FAIL${RESET}\n"
+    cat /tmp/sc-package-app.log | head -20
+    failed=$((failed + 1))
+  fi
+fi
 
 echo ""
 if [ $failed -eq 0 ]; then

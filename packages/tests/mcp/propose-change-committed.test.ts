@@ -82,16 +82,16 @@ describe('propose_change with committed hashes', () => {
     // Parse the committed line format: "N:HH |content"
     const match = cleanLineEntry!.match(/^\s*(\d+):([0-9a-f]{2})/);
     expect(match).toBeDefined();
-    const committedLineNum = parseInt(match![1], 10);
+    const decidedLineNum = parseInt(match![1], 10);
     const committedHash = match![2];
 
-    // 2. Propose a change using committed coordinates
+    // 2. Propose a change using decided coordinates
     const proposeResult = await handleProposeChange(
       {
         file: filePath,
         old_text: 'Clean line here.',
         new_text: 'Updated line here.',
-        start_line: committedLineNum,
+        start_line: decidedLineNum,
         start_hash: committedHash,
         reason: 'test update',
       },

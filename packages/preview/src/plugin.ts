@@ -1,4 +1,4 @@
-import { CriticMarkupParser, Workspace, ChangeNode, ChangeType, splitBodyAndFootnotes } from '@changedown/core';
+import { CriticMarkupParser, Workspace, ChangeNode, ChangeType, splitBodyAndFootnotes, type ViewMode } from '@changedown/core';
 import { buildReplacements, PreviewOptions, LineOffsetMap } from './replacements.js';
 import { escapeHtml, sanitizeContentHtml } from './escape-html.js';
 
@@ -107,6 +107,9 @@ export interface PluginConfig {
     isDarkTheme: boolean;
     emitSourceMap?: boolean;
     urlResolver?: (url: string) => string | null;
+    /** @deprecated Use viewName */
+    viewMode?: ViewMode;
+    viewName?: string;
 }
 
 // Fence languages to skip — these contain CriticMarkup as examples/docs
@@ -128,6 +131,7 @@ export function changedownPlugin(md: any, getConfig?: () => PluginConfig): void 
         metadataDetail: 'badge',
         authorColors: 'auto',
         isDarkTheme: false,
+        viewMode: undefined,
     };
     const resolveConfig = getConfig ?? (() => defaultConfig);
 
@@ -184,6 +188,26 @@ export function changedownPlugin(md: any, getConfig?: () => PluginConfig): void 
             }
         });
     }
+
+    // --- Core rule: wrap token stream in data-view-name container ---
+    // Runs AFTER all other core rules. Adds opening/closing html_block
+    // tokens to carry the view name attribute for CSS-based view switching.
+    // Only emitted when viewName is set.
+    md.core.ruler.push('changedown_viewname_wrapper', (state: any) => {
+        const config = resolveConfig();
+        if (!config.enabled || !config.viewName) return;
+
+        const openToken = new state.Token('html_block', '', 0);
+        openToken.content = `<div data-view-name="${config.viewName}">\n`;
+        openToken.block = true;
+
+        const closeToken = new state.Token('html_block', '', 0);
+        closeToken.content = `</div>\n`;
+        closeToken.block = true;
+
+        state.tokens.unshift(openToken);
+        state.tokens.push(closeToken);
+    });
 
     // --- Custom fence renderer: handle CriticMarkup in code blocks ---
     const originalFence = md.renderer.rules.fence ||

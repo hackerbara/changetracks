@@ -2,13 +2,13 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import {
   initHashline,
-  computeSettledText,
+  computeCurrentText,
   CriticMarkupParser,
   formatTrackedHeader,
   buildViewDocument,
   formatPlainText,
   computeContinuationLines,
-  type ThreeZoneViewName,
+  type ThreeZoneViewMode,
   type ThreeZoneDocument,
   type ThreeZoneLine,
 } from '@changedown/core';
@@ -18,7 +18,7 @@ import { ConfigResolver } from '../config-resolver.js';
 import { resolveProtocolMode } from '../config.js';
 import type { ChangeDownConfig } from '../../config/index.js';
 import { resolveTrackingStatus } from '../scope.js';
-import { SessionState, type ViewName } from '../state.js';
+import { SessionState, type ViewMode } from '../state.js';
 import { composeGuide } from '../guide-composer.js';
 
 /** Default number of lines returned when no limit is specified. */
@@ -129,7 +129,7 @@ function normalizeView(view: string): string {
  * Used when recording session state so that downstream consumers always see
  * the four canonical names: review, changes, settled, raw.
  */
-function toCanonicalView(internalView: string): ViewName {
+function toCanonicalView(internalView: string): ViewMode {
   switch (internalView) {
     case 'meta': return 'review';
     case 'committed': return 'changes';
@@ -296,7 +296,7 @@ export async function handleReadTrackedFile(
 
       // Meta mode: use the unified three-zone pipeline (computes hashes internally)
       if (effectiveView === 'meta') {
-        const canonicalView = toCanonicalView(effectiveView) as ThreeZoneViewName;
+        const canonicalView = toCanonicalView(effectiveView) as ThreeZoneViewMode;
         const protocolMode = resolveProtocolMode(config.protocol.mode);
         const doc = buildViewDocument(fileContent, canonicalView, {
           filePath: displayPath,
@@ -309,9 +309,9 @@ export async function handleReadTrackedFile(
         const sessionHashes = doc.lines.map(l => ({
           line: l.margin.lineNumber,
           raw: l.sessionHashes?.raw ?? l.margin.hash,
-          settled: l.sessionHashes?.settled ?? l.margin.hash,
+          current: l.sessionHashes?.current ?? l.margin.hash,
           committed: l.sessionHashes?.committed,
-          settledView: l.sessionHashes?.settledView,
+          currentView: l.sessionHashes?.currentView,
           rawLineNum: l.sessionHashes?.rawLineNum ?? l.rawLineNumber,
         }));
         state.recordAfterRead(filePath, toCanonicalView(effectiveView), sessionHashes, fileContent);
@@ -363,7 +363,7 @@ export async function handleReadTrackedFile(
         );
       }
       const contentToShow =
-        effectiveView === 'settled' ? computeSettledText(fileContent) : fileContent;
+        effectiveView === 'settled' ? computeCurrentText(fileContent) : fileContent;
       const allContentLines = contentToShow.split('\n');
       const totalContentLines = allContentLines.length;
 
@@ -386,7 +386,7 @@ export async function handleReadTrackedFile(
     }
 
     // 6. Build ThreeZoneDocument via the unified pipeline
-    const canonicalView = toCanonicalView(effectiveView) as ThreeZoneViewName;
+    const canonicalView = toCanonicalView(effectiveView) as ThreeZoneViewMode;
     const protocolMode = resolveProtocolMode(config.protocol.mode);
     const doc = buildViewDocument(fileContent, canonicalView, {
       filePath: displayPath,
@@ -400,9 +400,9 @@ export async function handleReadTrackedFile(
     const sessionHashes = doc.lines.map(l => ({
       line: l.margin.lineNumber,
       raw: l.sessionHashes?.raw ?? l.margin.hash,
-      settled: l.sessionHashes?.settled ?? l.margin.hash,
+      current: l.sessionHashes?.current ?? l.margin.hash,
       committed: l.sessionHashes?.committed,
-      settledView: l.sessionHashes?.settledView,
+      currentView: l.sessionHashes?.currentView,
       rawLineNum: l.sessionHashes?.rawLineNum ?? l.rawLineNumber,
     }));
     state.recordAfterRead(filePath, canonicalView, sessionHashes, fileContent);

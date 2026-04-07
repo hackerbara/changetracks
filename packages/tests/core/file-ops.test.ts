@@ -463,32 +463,32 @@ describe('appendFootnote', () => {
 describe('stripCriticMarkupWithMap', () => {
   it('keeps insertion content', () => {
     const result = stripCriticMarkupWithMap('Hello {++beautiful ++}world.');
-    expect(result.settled).toBe('Hello beautiful world.');
+    expect(result.current).toBe('Hello beautiful world.');
   });
 
   it('removes deletion content', () => {
     const result = stripCriticMarkupWithMap('Hello {--ugly --}world.');
-    expect(result.settled).toBe('Hello world.');
+    expect(result.current).toBe('Hello world.');
   });
 
   it('keeps substitution new text', () => {
     const result = stripCriticMarkupWithMap('Hello {~~old~>new~~} world.');
-    expect(result.settled).toBe('Hello new world.');
+    expect(result.current).toBe('Hello new world.');
   });
 
   it('keeps highlight content', () => {
     const result = stripCriticMarkupWithMap('Hello {==important==} world.');
-    expect(result.settled).toBe('Hello important world.');
+    expect(result.current).toBe('Hello important world.');
   });
 
   it('removes comment content', () => {
     const result = stripCriticMarkupWithMap('Hello{>>a note<<} world.');
-    expect(result.settled).toBe('Hello world.');
+    expect(result.current).toBe('Hello world.');
   });
 
   it('removes footnote references', () => {
     const result = stripCriticMarkupWithMap('Hello[^cn-1] world[^cn-2.3].');
-    expect(result.settled).toBe('Hello world.');
+    expect(result.current).toBe('Hello world.');
   });
 
   it('provides correct position mapping for insertion', () => {
@@ -502,7 +502,7 @@ describe('stripCriticMarkupWithMap', () => {
 
   it('returns plain text unchanged', () => {
     const result = stripCriticMarkupWithMap('No markup here.');
-    expect(result.settled).toBe('No markup here.');
+    expect(result.current).toBe('No markup here.');
     expect(result.markupRanges).toHaveLength(0);
   });
 });

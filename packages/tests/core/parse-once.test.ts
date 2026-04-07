@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll } from 'vitest';
-import { initHashline, buildChangesDocument, buildSettledDocument, buildReviewDocument, buildRawDocument } from '@changedown/core/internals';
+import { initHashline, buildChangesDocument, buildCurrentDocument, buildReviewDocument, buildRawDocument } from '@changedown/core/internals';
 
 const FIXTURE = [
   'Hello {++world++}[^cn-1] and {--old--}[^cn-2]',
@@ -26,7 +26,7 @@ describe('parse-once view builders', () => {
   });
 
   it('settled view produces correct header counts', () => {
-    const doc = buildSettledDocument(FIXTURE, OPTIONS);
+    const doc = buildCurrentDocument(FIXTURE, OPTIONS);
     expect(doc.header.counts).toEqual({ proposed: 1, accepted: 1, rejected: 0 });
   });
 

@@ -1,5 +1,27 @@
 import * as vscode from 'vscode';
 import { OffsetRange, TextEdit } from '@changedown/core';
+import type { RangeEdit } from '@changedown/core/host';
+
+// ── LSP edit converter ─────────────────────────────────────────────────
+
+interface LspEdit {
+    range: { start: { line: number; character: number }; end: { line: number; character: number } };
+    newText: string;
+}
+
+/**
+ * Convert a raw LSP text edit (line/character range) to a typed RangeEdit.
+ * Used by ReviewCommands when applying LSP-originated edits through host.applyEdits.
+ */
+export function lspEditToRangeEdit(edit: LspEdit): RangeEdit {
+    return {
+        range: {
+            start: { line: edit.range.start.line, character: edit.range.start.character },
+            end: { line: edit.range.end.line, character: edit.range.end.character },
+        },
+        newText: edit.newText,
+    };
+}
 
 export function offsetToPosition(text: string, offset: number): vscode.Position {
     let line = 0, char = 0;

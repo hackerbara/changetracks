@@ -2,8 +2,8 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import {
   initHashline,
   computeLineHash,
-  settledLine,
-  computeSettledLineHash,
+  currentLine,
+  computeCurrentLineHash,
   formatTrackedHashLines,
   formatTrackedHeader,
 } from '@changedown/core/internals';
@@ -13,135 +13,135 @@ describe('hashline-tracked', () => {
     await initHashline();
   });
 
-  // ─── settledLine ──────────────────────────────────────────────────────
+  // ─── currentLine ──────────────────────────────────────────────────────
 
-  describe('settledLine', () => {
+  describe('currentLine', () => {
     it('passes through plain text unchanged', () => {
-      expect(settledLine('Hello world')).toBe('Hello world');
+      expect(currentLine('Hello world')).toBe('Hello world');
     });
 
     it('passes through empty string', () => {
-      expect(settledLine('')).toBe('');
+      expect(currentLine('')).toBe('');
     });
 
     it('strips insertion markup, keeps content (accept-all)', () => {
-      expect(settledLine('Hello {++beautiful ++}world')).toBe('Hello beautiful world');
+      expect(currentLine('Hello {++beautiful ++}world')).toBe('Hello beautiful world');
     });
 
     it('strips deletion markup and content entirely', () => {
-      expect(settledLine('Hello {--ugly --}world')).toBe('Hello world');
+      expect(currentLine('Hello {--ugly --}world')).toBe('Hello world');
     });
 
     it('strips substitution markup, keeps new text (after ~>)', () => {
-      expect(settledLine('Hello {~~old~>new~~} world')).toBe('Hello new world');
+      expect(currentLine('Hello {~~old~>new~~} world')).toBe('Hello new world');
     });
 
     it('strips highlight markup, keeps content', () => {
-      expect(settledLine('Hello {==important==} world')).toBe('Hello important world');
+      expect(currentLine('Hello {==important==} world')).toBe('Hello important world');
     });
 
     it('strips comment markup entirely', () => {
-      expect(settledLine('Hello {>>note<<} world')).toBe('Hello  world');
+      expect(currentLine('Hello {>>note<<} world')).toBe('Hello  world');
     });
 
     it('strips footnote references [^cn-N]', () => {
-      expect(settledLine('Hello[^cn-1] world')).toBe('Hello world');
+      expect(currentLine('Hello[^cn-1] world')).toBe('Hello world');
     });
 
     it('strips dotted footnote references [^cn-N.M]', () => {
-      expect(settledLine('Hello[^cn-1.2] world')).toBe('Hello world');
+      expect(currentLine('Hello[^cn-1.2] world')).toBe('Hello world');
     });
 
     it('handles multiple markup instances on one line', () => {
       expect(
-        settledLine('Start {++added++} middle {--removed--} end'),
+        currentLine('Start {++added++} middle {--removed--} end'),
       ).toBe('Start added middle  end');
     });
 
     it('handles adjacent markup (highlight + comment)', () => {
       expect(
-        settledLine('Check {==this text==}{>>important<<} carefully'),
+        currentLine('Check {==this text==}{>>important<<} carefully'),
       ).toBe('Check this text carefully');
     });
 
     it('handles multiple footnote refs', () => {
       expect(
-        settledLine('A[^cn-1] B[^cn-2] C[^cn-3.1]'),
+        currentLine('A[^cn-1] B[^cn-2] C[^cn-3.1]'),
       ).toBe('A B C');
     });
 
     it('handles mixed content: markup + footnote refs + plain text', () => {
       expect(
-        settledLine('Hello {++new ++}[^cn-1]{--old --}[^cn-2]world'),
+        currentLine('Hello {++new ++}[^cn-1]{--old --}[^cn-2]world'),
       ).toBe('Hello new world');
     });
 
     it('handles substitution with multi-word content', () => {
       expect(
-        settledLine('{~~the quick brown fox~>a lazy dog~~}'),
+        currentLine('{~~the quick brown fox~>a lazy dog~~}'),
       ).toBe('a lazy dog');
     });
 
     it('handles insertion at start of line', () => {
-      expect(settledLine('{++Start ++}of line')).toBe('Start of line');
+      expect(currentLine('{++Start ++}of line')).toBe('Start of line');
     });
 
     it('handles deletion at end of line', () => {
-      expect(settledLine('End of line{-- removed--}')).toBe('End of line');
+      expect(currentLine('End of line{-- removed--}')).toBe('End of line');
     });
 
     it('handles line with only markup (all deleted)', () => {
-      expect(settledLine('{--everything goes--}')).toBe('');
+      expect(currentLine('{--everything goes--}')).toBe('');
     });
 
     it('handles line with only markup (all inserted)', () => {
-      expect(settledLine('{++everything stays++}')).toBe('everything stays');
+      expect(currentLine('{++everything stays++}')).toBe('everything stays');
     });
 
     it('preserves whitespace outside markup', () => {
-      expect(settledLine('  indented {++text++}  ')).toBe('  indented text  ');
+      expect(currentLine('  indented {++text++}  ')).toBe('  indented text  ');
     });
   });
 
-  // ─── computeSettledLineHash ───────────────────────────────────────────
+  // ─── computeCurrentLineHash ───────────────────────────────────────────
 
-  describe('computeSettledLineHash', () => {
+  describe('computeCurrentLineHash', () => {
     it('line with markup settles to same hash as manually-stripped line', () => {
       const markupLine = 'Hello {++beautiful ++}world';
       const strippedLine = 'Hello beautiful world';
-      const settledHash = computeSettledLineHash(0, markupLine);
+      const currentHash = computeCurrentLineHash(0, markupLine);
       const directHash = computeLineHash(0, strippedLine);
-      expect(settledHash).toBe(directHash);
+      expect(currentHash).toBe(directHash);
     });
 
-    it('line without markup: settled hash equals raw hash', () => {
+    it('line without markup: current hash equals raw hash', () => {
       const plain = 'Hello world';
-      const settledHash = computeSettledLineHash(0, plain);
+      const currentHash = computeCurrentLineHash(0, plain);
       const rawHash = computeLineHash(0, plain);
-      expect(settledHash).toBe(rawHash);
+      expect(currentHash).toBe(rawHash);
     });
 
-    it('deletion line settles to hash of empty content', () => {
+    it('deletion line: current hash equals hash of empty content', () => {
       const markupLine = '{--removed text--}';
-      const settledHash = computeSettledLineHash(0, markupLine);
+      const currentHash = computeCurrentLineHash(0, markupLine);
       const emptyHash = computeLineHash(0, '');
-      expect(settledHash).toBe(emptyHash);
+      expect(currentHash).toBe(emptyHash);
     });
 
-    it('substitution line settles to hash of new text', () => {
+    it('substitution line: current hash equals hash of new text', () => {
       const markupLine = '{~~old~>new~~}';
-      const settledHash = computeSettledLineHash(0, markupLine);
+      const currentHash = computeCurrentLineHash(0, markupLine);
       const newTextHash = computeLineHash(0, 'new');
-      expect(settledHash).toBe(newTextHash);
+      expect(currentHash).toBe(newTextHash);
     });
 
     it('returns 2-char hex hash', () => {
-      const hash = computeSettledLineHash(0, 'Hello {++world++}');
+      const hash = computeCurrentLineHash(0, 'Hello {++world++}');
       expect(hash).toMatch(/^[0-9a-f]{2}$/);
     });
 
-    it('backward compat: works without allSettledLines parameter', () => {
-      const hash = computeSettledLineHash(0, '# Heading');
+    it('backward compat: works without allCurrentLines parameter', () => {
+      const hash = computeCurrentLineHash(0, '# Heading');
       expect(hash).toMatch(/^[0-9a-f]{2}$/);
     });
   });
@@ -149,7 +149,7 @@ describe('hashline-tracked', () => {
   // ─── context-aware settled blank-line hashing ──────────────────────────
 
   describe('context-aware settled blank-line hashing', () => {
-    it('blank lines in settled view get different hashes with allSettledLines', () => {
+    it('blank lines in current view get different hashes with allCurrentLines', () => {
       const lines = [
         '# Heading',
         '',
@@ -157,9 +157,9 @@ describe('hashline-tracked', () => {
         '',
         '# Heading Two',
       ];
-      const allSettled = lines.map(l => settledLine(l));
-      const hash1 = computeSettledLineHash(1, lines[1], allSettled);
-      const hash3 = computeSettledLineHash(3, lines[3], allSettled);
+      const allCurrent = lines.map(l => currentLine(l));
+      const hash1 = computeCurrentLineHash(1, lines[1], allCurrent);
+      const hash3 = computeCurrentLineHash(3, lines[3], allCurrent);
       expect(hash1).not.toBe(hash3);
     });
 
@@ -171,19 +171,19 @@ describe('hashline-tracked', () => {
         '',                        // already blank
         '# Another Title',
       ];
-      const allSettled = lines.map(l => settledLine(l));
+      const allCurrent = lines.map(l => currentLine(l));
       // Line 1 (markup that settles to blank) and line 3 (plain blank) should differ
-      const hash1 = computeSettledLineHash(1, lines[1], allSettled);
-      const hash3 = computeSettledLineHash(3, lines[3], allSettled);
+      const hash1 = computeCurrentLineHash(1, lines[1], allCurrent);
+      const hash3 = computeCurrentLineHash(3, lines[3], allCurrent);
       expect(hash1).not.toBe(hash3);
     });
 
-    it('settled hashes with context match direct computeLineHash with same context', () => {
+    it('current hashes with context match direct computeLineHash with same context', () => {
       const lines = ['Hello {++beautiful ++}world', 'Second line'];
-      const allSettled = lines.map(l => settledLine(l));
-      const settledHash = computeSettledLineHash(0, lines[0], allSettled);
-      const directHash = computeLineHash(0, 'Hello beautiful world', allSettled);
-      expect(settledHash).toBe(directHash);
+      const allCurrent = lines.map(l => currentLine(l));
+      const currentHash = computeCurrentLineHash(0, lines[0], allCurrent);
+      const directHash = computeLineHash(0, 'Hello beautiful world', allCurrent);
+      expect(currentHash).toBe(directHash);
     });
   });
 

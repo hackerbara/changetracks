@@ -212,9 +212,9 @@ describe('AJ3: Multi-agent deliberation', () => {
     // With auto_on_approve and auto_on_reject, both settle
     const reviewData = ctx.parseResult(reviewResult);
     expect(reviewData.settled).toBeDefined();
-    const settledIds = reviewData.settled as string[];
-    expect(settledIds).toContain('cn-1');
-    expect(settledIds).toContain('cn-2');
+    const appliedIds = reviewData.settled as string[];
+    expect(appliedIds).toContain('cn-1');
+    expect(appliedIds).toContain('cn-2');
 
     // Statuses
     await ctx.assertFootnoteStatus(filePath, 'cn-1', 'rejected');

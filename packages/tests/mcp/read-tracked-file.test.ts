@@ -411,7 +411,7 @@ describe('handleReadTrackedFile', () => {
     expect(hashes).toHaveLength(2);
     expect(hashes![0].line).toBe(1);
     expect(hashes![0].raw).toMatch(/^[0-9a-f]{2}$/);
-    expect(hashes![0].settled).toMatch(/^[0-9a-f]{2}$/);
+    expect(hashes![0].current).toMatch(/^[0-9a-f]{2}$/);
     expect(hashes![1].line).toBe(2);
   });
 

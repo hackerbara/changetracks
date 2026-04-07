@@ -7,8 +7,8 @@ import {
   computeReject,
   computeFootnoteStatusEdits,
   computeApprovalLineEdit,
-  computeSettledText,
-  settleAcceptedChangesOnly,
+  computeCurrentText,
+  applyAcceptedChanges,
   parseFootnotes,
   initHashline,
   computeLineHash,
@@ -46,8 +46,8 @@ declare module './world.js' {
     resultText: string;
     statusEdits: TextEdit[];
     approvalEdit: TextEdit | null;
-    settledContent: string;
-    settledIds: string[];
+    currentContent: string;
+    appliedIds: string[];
     settledText: string;
   }
 }
@@ -1065,14 +1065,14 @@ When(
   'I compute settled text for {string}',
   function (this: ChangeDownWorld, input: string) {
     const unescaped = input.replace(/\\n/g, '\n');
-    this.settledText = computeSettledText(unescaped);
+    this.settledText = computeCurrentText(unescaped);
   },
 );
 
 When(
   'I compute settled text for:',
   function (this: ChangeDownWorld, input: string) {
-    this.settledText = computeSettledText(input);
+    this.settledText = computeCurrentText(input);
   },
 );
 
@@ -1087,9 +1087,9 @@ Then(
 When(
   'I settle accepted changes in:',
   function (this: ChangeDownWorld, input: string) {
-    const result = settleAcceptedChangesOnly(input);
-    this.settledContent = result.settledContent;
-    this.settledIds = result.settledIds;
+    const result = applyAcceptedChanges(input);
+    this.currentContent = result.currentContent;
+    this.appliedIds = result.appliedIds;
   },
 );
 
@@ -1097,8 +1097,8 @@ Then(
   'the settled content contains {string}',
   function (this: ChangeDownWorld, expected: string) {
     assert.ok(
-      this.settledContent.includes(expected),
-      `Expected settled content to contain "${expected}" but got:\n${this.settledContent}`,
+      this.currentContent.includes(expected),
+      `Expected settled content to contain "${expected}" but got:\n${this.currentContent}`,
     );
   },
 );
@@ -1107,7 +1107,7 @@ Then(
   'the settled content does not contain {string}',
   function (this: ChangeDownWorld, unexpected: string) {
     assert.ok(
-      !this.settledContent.includes(unexpected),
+      !this.currentContent.includes(unexpected),
       `Expected settled content NOT to contain "${unexpected}" but it does`,
     );
   },
@@ -1117,8 +1117,8 @@ Then(
   'the settled IDs include {string}',
   function (this: ChangeDownWorld, expected: string) {
     assert.ok(
-      this.settledIds.includes(expected),
-      `Expected settled IDs to include "${expected}" but got: ${JSON.stringify(this.settledIds)}`,
+      this.appliedIds.includes(expected),
+      `Expected settled IDs to include "${expected}" but got: ${JSON.stringify(this.appliedIds)}`,
     );
   },
 );
@@ -1126,7 +1126,7 @@ Then(
 Then(
   'the settled IDs are empty',
   function (this: ChangeDownWorld) {
-    assert.equal(this.settledIds.length, 0);
+    assert.equal(this.appliedIds.length, 0);
   },
 );
 

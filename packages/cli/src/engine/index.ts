@@ -24,7 +24,7 @@ export { ConfigResolver } from './config-resolver.js';
 
 // ── Session State ──
 export { SessionState } from './state.js';
-export type { ViewName, FileRecord, ActiveGroup } from './state.js';
+export type { ViewMode, ViewName, FileRecord, ActiveGroup } from './state.js';
 
 // ── State Utilities ──
 export { rerecordState } from './state-utils.js';
@@ -109,7 +109,7 @@ export { resolveThreadTool } from './handlers/resolve-thread.js';
 export { handleCompactChanges } from './handlers/compact-changes.js';
 
 // ── Handler Utilities ──
-export { settleAcceptedChanges, settleRejectedChanges } from './handlers/settle.js';
+export { applyAcceptedChanges, applyRejectedChanges } from './handlers/settle.js';
 export { computeAffectedLines } from './handlers/propose-utils.js';
 export type { AffectedLineEntry } from './handlers/propose-utils.js';
 export { validateOrRelocate, validateOrAutoRemap, tryRelocate, computeLineHash as computeHandlerLineHash } from './handlers/hashline-relocate.js';

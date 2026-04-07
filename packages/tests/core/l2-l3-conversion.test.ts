@@ -768,9 +768,9 @@ describe('Intro doc fixture integration', () => {
     const l2Parser = new CriticMarkupParser();
     const l2Doc = l2Parser.parse(l2);
     const l2Changes = l2Doc.getChanges();
-    const settledIds = new Set(l2Changes.filter(c => c.settled).map(c => c.id));
+    const decidedIds = new Set(l2Changes.filter(c => c.decided).map(c => c.id));
 
-    const unsettledChanges = changes.filter(c => !settledIds.has(c.id));
+    const unsettledChanges = changes.filter(c => !decidedIds.has(c.id));
     const unsettledNonComment = unsettledChanges.filter(c => c.type !== ChangeType.Comment);
     const unanchored = unsettledNonComment.filter(c => !c.anchored);
     if (unanchored.length > 0) {

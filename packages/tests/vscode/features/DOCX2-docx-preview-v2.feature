@@ -135,7 +135,7 @@ Feature: DOCX2 — DOCX preview editor v2 components
   Scenario: DOCX2-19 Preview HTML has data-view-mode simple
     Given a docx preview with body "<p>content</p>"
     When I build preview HTML with view mode "simple"
-    Then the webview HTML contains "data-view-mode=\"simple\""
+    Then the webview HTML contains "data-view-mode=\"changes\""
 
   Scenario: DOCX2-20 Sidebar cards have data-cn-id attribute
     Given a docx preview with body "<p>content</p>"
@@ -177,23 +177,24 @@ Feature: DOCX2 — DOCX preview editor v2 components
   Scenario: DOCX2-26 Simple mode CSS hides deletions and keeps insertions
     Given a docx preview with body "<p><ins class='cn-ins'>added</ins></p>"
     When I build preview HTML with view mode "simple"
-    Then the webview HTML contains "[data-view-mode=\"simple\"] .cn-del"
-    And the webview HTML contains "[data-view-mode=\"simple\"] .cn-ins"
+    Then the webview HTML contains "[data-view-mode=\"changes\"] .cn-del"
+    And the webview HTML contains "[data-view-mode=\"changes\"] .cn-ins"
     And the webview HTML contains "display: none"
     And the webview HTML contains "text-decoration: none"
 
   Scenario: DOCX2-27 Simple mode CSS has gutter indicators
     Given a docx preview with body "<p><ins class='cn-ins'>text</ins></p>"
     When I build preview HTML with view mode "simple"
-    Then the webview HTML contains "Gutter: insertion"
-    And the webview HTML contains "Gutter: deletion"
-    And the webview HTML contains "Gutter: substitution"
+    Then the webview HTML contains "Change gutter: insertion"
+    And the webview HTML contains "Change gutter: deletion"
+    And the webview HTML contains "Change gutter: substitution"
     And the webview HTML contains "border-left: 3px solid"
 
   Scenario: DOCX2-28 Simple mode hides footnote definitions via CSS
     Given a docx preview with body "<p>content</p>"
     When I build preview HTML with view mode "simple"
-    Then the webview HTML contains "[data-view-mode=\"simple\"] .cn-footnotes { display: none; }"
+    Then the webview HTML contains "[data-view-mode=\"changes\"] .cn-footnotes"
+    And the webview HTML contains "display: none"
 
   Scenario: DOCX2-29 allMarkup mode renders footnote ref badges (provider hides via showFootnotes config)
     Given docx preview markdown "Some {++text++}[^cn-1]\n\n[^cn-1]: @alice | 2026-03-01 | ins | proposed"

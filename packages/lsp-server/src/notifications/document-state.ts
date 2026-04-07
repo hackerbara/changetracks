@@ -6,6 +6,7 @@
  */
 
 import { Connection } from 'vscode-languageserver';
+import { LSP_METHOD } from '@changedown/core/host';
 
 export interface TrackingState {
   enabled: boolean;
@@ -55,5 +56,5 @@ export function sendDocumentState(
     tracking,
     viewMode,
   };
-  connection.sendNotification('changedown/documentState', params);
+  connection.sendNotification(LSP_METHOD.DOCUMENT_STATE, params);
 }

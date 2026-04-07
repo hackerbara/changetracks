@@ -4,7 +4,9 @@ export type {
   DecorationPlan, OverviewRulerPlan, DecorationTarget,
   AuthorDecorationRole, AuthorDecorationEntry,
 } from './types.js';
-export { DECORATION_STYLES, OVERVIEW_RULER_COLORS, AUTHOR_PALETTE } from './styles.js';
+export { DECORATION_STYLES, OVERVIEW_RULER_COLORS, AUTHOR_PALETTE,
+  VIEW_MODE_VISIBILITY, type VisibilityRule, type DecorationThemeOverride,
+  isTypeVisibleInMode } from './styles.js';
 export { AuthorColorMap } from './author-colors.js';
 export {
   computeLineStarts, offsetToLine, isOffsetInRange,

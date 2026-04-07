@@ -327,16 +327,16 @@ describe('BUG-2: Overlapping CriticMarkup — settled text matching', () => {
       state,
     );
 
-    // Should succeed by matching against settled text
+    // Should succeed by matching against current text
     expect(result.isError).toBeUndefined();
 
     const fileContent = await fs.readFile(filePath, 'utf-8');
     // Should NOT contain nested/malformed CriticMarkup
     expect(fileContent).not.toContain('{~~{~~');
     expect(fileContent).not.toContain('~~}~~}');
-    // Should contain valid CriticMarkup substitution covering the settled-text match
-    // The settled text "slow brown fox" (resolved from {~~quick~>slow~~}) is replaced with "slow red fox",
-    // so the output wraps the full settled span in the new sub.
+    // Should contain valid CriticMarkup substitution covering the current-text match
+    // The current text "slow brown fox" (resolved from {~~quick~>slow~~}) is replaced with "slow red fox",
+    // so the output wraps the full current span in the new sub.
     expect(fileContent).toContain('{~~slow brown fox~>slow red fox~~}');
   });
 

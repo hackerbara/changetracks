@@ -18,7 +18,7 @@ import {
   guardOverlap,
   defaultNormalizer,
   type ViewOptions,
-  type ThreeZoneViewName,
+  type ThreeZoneViewMode,
 } from '@changedown/core';
 
 // ─── ANSI helpers ───────────────────────────────────────────────────────────
@@ -175,9 +175,9 @@ When(
   'I render with ANSI in {string} view',
   async function (this: ChangeDownWorld, view: string) {
     await ensureHashline();
-    // Map old view names to new three-zone ViewName
-    const viewName: ThreeZoneViewName =
-      (view === 'markup' || view === 'smart') ? 'review' : view as ThreeZoneViewName;
+    // Map old view names to new three-zone ViewMode
+    const viewName: ThreeZoneViewMode =
+      (view === 'markup' || view === 'smart') ? 'review' : view as ThreeZoneViewMode;
     const doc = buildViewDocument(this.coreText, viewName, testViewOptions);
     const ansiOpts: { showMarkup?: boolean } = {};
     if (view === 'markup') ansiOpts.showMarkup = true;

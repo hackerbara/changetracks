@@ -1,20 +1,20 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import {
-  computeCommittedLine,
-  computeCommittedView,
-  formatCommittedOutput,
+  computeDecidedLine,
+  computeDecidedView,
+  formatDecidedOutput,
   initHashline,
   computeLineHash,
   type FootnoteStatus,
 } from '@changedown/core/internals';
 import { parseForFormat } from '@changedown/core/internals';
 
-describe('computeCommittedLine', () => {
+describe('computeDecidedLine', () => {
   // Helper to build footnote maps quickly
   function fn(entries: [string, 'proposed' | 'accepted' | 'rejected', string][]): Map<string, FootnoteStatus> {
     const map = new Map<string, FootnoteStatus>();
-    for (const [id, status, type] of entries) {
-      map.set(id, { status, type });
+    for (const [id, status] of entries) {
+      map.set(id, { status });
     }
     return map;
   }
@@ -22,54 +22,54 @@ describe('computeCommittedLine', () => {
   const empty = new Map<string, FootnoteStatus>();
 
   it('passes plain text unchanged', () => {
-    const result = computeCommittedLine('Hello world', empty);
+    const result = computeDecidedLine('Hello world', empty);
     expect(result).toStrictEqual({ text: 'Hello world', flag: '', changeIds: [] });
   });
 
   it('removes pending insertion, sets flag P', () => {
     const footnotes = fn([['cn-1', 'proposed', 'ins']]);
-    const result = computeCommittedLine('Before {++added text++}[^cn-1] after', footnotes);
+    const result = computeDecidedLine('Before {++added text++}[^cn-1] after', footnotes);
     expect(result).toStrictEqual({ text: 'Before  after', flag: 'P', changeIds: ['cn-1'] });
   });
 
   it('keeps accepted insertion text, removes delimiters, sets flag A', () => {
     const footnotes = fn([['cn-1', 'accepted', 'ins']]);
-    const result = computeCommittedLine('Before {++added text++}[^cn-1] after', footnotes);
+    const result = computeDecidedLine('Before {++added text++}[^cn-1] after', footnotes);
     expect(result).toStrictEqual({ text: 'Before added text after', flag: 'A', changeIds: ['cn-1'] });
   });
 
   it('keeps text for pending deletion (revert), sets flag P', () => {
     const footnotes = fn([['cn-2', 'proposed', 'del']]);
-    const result = computeCommittedLine('Before {--removed--}[^cn-2] after', footnotes);
+    const result = computeDecidedLine('Before {--removed--}[^cn-2] after', footnotes);
     expect(result).toStrictEqual({ text: 'Before removed after', flag: 'P', changeIds: ['cn-2'] });
   });
 
   it('removes text for accepted deletion, sets flag A', () => {
     const footnotes = fn([['cn-2', 'accepted', 'del']]);
-    const result = computeCommittedLine('Before {--removed--}[^cn-2] after', footnotes);
+    const result = computeDecidedLine('Before {--removed--}[^cn-2] after', footnotes);
     expect(result).toStrictEqual({ text: 'Before  after', flag: 'A', changeIds: ['cn-2'] });
   });
 
   it('shows old text for pending substitution, sets flag P', () => {
     const footnotes = fn([['cn-3', 'proposed', 'sub']]);
-    const result = computeCommittedLine('Before {~~old~>new~~}[^cn-3] after', footnotes);
+    const result = computeDecidedLine('Before {~~old~>new~~}[^cn-3] after', footnotes);
     expect(result).toStrictEqual({ text: 'Before old after', flag: 'P', changeIds: ['cn-3'] });
   });
 
   it('shows new text for accepted substitution, sets flag A', () => {
     const footnotes = fn([['cn-3', 'accepted', 'sub']]);
-    const result = computeCommittedLine('Before {~~old~>new~~}[^cn-3] after', footnotes);
+    const result = computeDecidedLine('Before {~~old~>new~~}[^cn-3] after', footnotes);
     expect(result).toStrictEqual({ text: 'Before new after', flag: 'A', changeIds: ['cn-3'] });
   });
 
   it('shows content for highlight, no flag set', () => {
     const footnotes = fn([['cn-4', 'proposed', 'highlight']]);
-    const result = computeCommittedLine('Before {==highlighted==}[^cn-4] after', footnotes);
+    const result = computeDecidedLine('Before {==highlighted==}[^cn-4] after', footnotes);
     expect(result).toStrictEqual({ text: 'Before highlighted after', flag: '', changeIds: [] });
   });
 
   it('removes comments', () => {
-    const result = computeCommittedLine('Text {>>this is a comment<<} more', empty);
+    const result = computeDecidedLine('Text {>>this is a comment<<} more', empty);
     expect(result).toStrictEqual({ text: 'Text  more', flag: '', changeIds: [] });
   });
 
@@ -78,7 +78,7 @@ describe('computeCommittedLine', () => {
       ['cn-1', 'accepted', 'ins'],
       ['cn-2', 'proposed', 'del'],
     ]);
-    const result = computeCommittedLine(
+    const result = computeDecidedLine(
       '{++added++}[^cn-1] middle {--deleted--}[^cn-2]',
       footnotes,
     );
@@ -91,63 +91,63 @@ describe('computeCommittedLine', () => {
 
   it('removes rejected insertion, no flag', () => {
     const footnotes = fn([['cn-5', 'rejected', 'ins']]);
-    const result = computeCommittedLine('Before {++nope++}[^cn-5] after', footnotes);
+    const result = computeDecidedLine('Before {++nope++}[^cn-5] after', footnotes);
     expect(result).toStrictEqual({ text: 'Before  after', flag: '', changeIds: ['cn-5'] });
   });
 
   it('treats unknown change ID as proposed (flag P)', () => {
     // cn-99 is NOT in the footnotes map
-    const result = computeCommittedLine('Before {++mystery++}[^cn-99] after', empty);
+    const result = computeDecidedLine('Before {++mystery++}[^cn-99] after', empty);
     expect(result).toStrictEqual({ text: 'Before  after', flag: 'P', changeIds: ['cn-99'] });
   });
 
   it('treats bare CriticMarkup without footnote ref as proposed (flag P)', () => {
-    const result = computeCommittedLine('Before {++bare insertion++} after', empty);
+    const result = computeDecidedLine('Before {++bare insertion++} after', empty);
     expect(result).toStrictEqual({ text: 'Before  after', flag: 'P', changeIds: [] });
   });
 
   it('shows old text for rejected substitution (revert)', () => {
     const footnotes = fn([['cn-6', 'rejected', 'sub']]);
-    const result = computeCommittedLine('{~~old~>new~~}[^cn-6]', footnotes);
+    const result = computeDecidedLine('{~~old~>new~~}[^cn-6]', footnotes);
     expect(result).toStrictEqual({ text: 'old', flag: '', changeIds: ['cn-6'] });
   });
 
   it('keeps text for rejected deletion', () => {
     const footnotes = fn([['cn-7', 'rejected', 'del']]);
-    const result = computeCommittedLine('{--kept--}[^cn-7]', footnotes);
+    const result = computeDecidedLine('{--kept--}[^cn-7]', footnotes);
     expect(result).toStrictEqual({ text: 'kept', flag: '', changeIds: ['cn-7'] });
   });
 
   it('removes standalone footnote refs', () => {
-    const result = computeCommittedLine('text [^cn-1] more', empty);
+    const result = computeDecidedLine('text [^cn-1] more', empty);
     expect(result.text).toBe('text  more');
   });
 
   it('handles dotted IDs (cn-N.M)', () => {
     const footnotes = fn([['cn-5.1', 'accepted', 'del']]);
-    const result = computeCommittedLine('Before {--cut--}[^cn-5.1] after', footnotes);
+    const result = computeDecidedLine('Before {--cut--}[^cn-5.1] after', footnotes);
     expect(result).toStrictEqual({ text: 'Before  after', flag: 'A', changeIds: ['cn-5.1'] });
   });
 
   it('handles highlight with attached comment', () => {
     const footnotes = fn([['cn-8', 'proposed', 'highlight']]);
-    const result = computeCommittedLine('{==important==}{>>note<<}[^cn-8]', footnotes);
+    const result = computeDecidedLine('{==important==}{>>note<<}[^cn-8]', footnotes);
     expect(result.text).toBe('important');
     expect(result.flag).toBe('');
   });
 
   it('handles bare substitution without footnote ref as proposed', () => {
-    const result = computeCommittedLine('Before {~~old~>new~~} after', empty);
+    const result = computeDecidedLine('Before {~~old~>new~~} after', empty);
     expect(result).toStrictEqual({ text: 'Before old after', flag: 'P', changeIds: [] });
   });
 
   it('handles bare deletion without footnote ref as proposed (keeps text)', () => {
-    const result = computeCommittedLine('Before {--removed--} after', empty);
+    const result = computeDecidedLine('Before {--removed--} after', empty);
     expect(result).toStrictEqual({ text: 'Before removed after', flag: 'P', changeIds: [] });
   });
 });
 
-describe('computeCommittedView', () => {
+describe('computeDecidedView', () => {
   beforeAll(async () => {
     await initHashline();
   });
@@ -161,12 +161,12 @@ describe('computeCommittedView', () => {
       '[^cn-1]: @alice | 2026-02-17 | ins | proposed',
     ].join('\n');
 
-    const result = computeCommittedView(rawText);
+    const result = computeDecidedView(rawText);
 
     // The pending insertion line should be skipped (entire line is pending markup, committed text is empty)
     // Footnote lines should be excluded
     // Remaining: line 1 ("# Title"), line 3 ("Clean line."), line 4 ("")
-    const lineNums = result.lines.map(l => l.committedLineNum);
+    const lineNums = result.lines.map(l => l.decidedLineNum);
     expect(lineNums).toStrictEqual([1, 2, 3]);
 
     // No gaps
@@ -184,23 +184,23 @@ describe('computeCommittedView', () => {
       '[^cn-1]: @alice | 2026-02-17 | ins | proposed', // footnote → excluded
     ].join('\n');
 
-    const result = computeCommittedView(rawText);
+    const result = computeDecidedView(rawText);
 
     // committed 1 = raw 1, committed 2 = raw 3, committed 3 = raw 4
-    expect(result.committedToRaw.get(1)).toBe(1);
-    expect(result.committedToRaw.get(2)).toBe(3);
-    expect(result.committedToRaw.get(3)).toBe(4);
+    expect(result.decidedToRaw.get(1)).toBe(1);
+    expect(result.decidedToRaw.get(2)).toBe(3);
+    expect(result.decidedToRaw.get(3)).toBe(4);
 
     // reverse mapping
-    expect(result.rawToCommitted.get(1)).toBe(1);
-    expect(result.rawToCommitted.get(3)).toBe(2);
-    expect(result.rawToCommitted.get(4)).toBe(3);
+    expect(result.rawToDecided.get(1)).toBe(1);
+    expect(result.rawToDecided.get(3)).toBe(2);
+    expect(result.rawToDecided.get(4)).toBe(3);
   });
 
   it('committed hashes are 2 lowercase hex chars', () => {
     const rawText = '# Title\nSome content\nAnother line';
 
-    const result = computeCommittedView(rawText);
+    const result = computeDecidedView(rawText);
 
     for (const line of result.lines) {
       expect(line.hash).toMatch(/^[0-9a-f]{2}$/);
@@ -218,7 +218,7 @@ describe('computeCommittedView', () => {
       '[^cn-2]: @alice | 2026-02-17 | del | accepted',
     ].join('\n');
 
-    const result = computeCommittedView(rawText);
+    const result = computeDecidedView(rawText);
 
     expect(result.summary.proposed).toBe(1);
     expect(result.summary.accepted).toBe(1);
@@ -234,7 +234,7 @@ describe('computeCommittedView', () => {
       '    reason: clarity improvement',
     ].join('\n');
 
-    const result = computeCommittedView(rawText);
+    const result = computeDecidedView(rawText);
 
     // No line should contain footnote definition content
     for (const line of result.lines) {
@@ -247,7 +247,7 @@ describe('computeCommittedView', () => {
     const rawText = '# Title\nFirst line.\nSecond line.\n';
     const rawLines = rawText.split('\n');
 
-    const result = computeCommittedView(rawText);
+    const result = computeDecidedView(rawText);
 
     // Same number of lines (including the trailing empty line from split)
     expect(result.lines).toHaveLength(rawLines.length);
@@ -269,12 +269,12 @@ describe('computeCommittedView', () => {
   it('hashes match computeLineHash for committed text', () => {
     const rawText = '# Title\nSome content here\nThird line';
 
-    const result = computeCommittedView(rawText);
+    const result = computeDecidedView(rawText);
 
     // Mirror the two-pass approach: collect all committed texts, then hash with allLines
-    const allCommittedTexts = result.lines.map(l => l.text);
+    const allDecidedTexts = result.lines.map(l => l.text);
     for (const line of result.lines) {
-      const expectedHash = computeLineHash(line.committedLineNum - 1, line.text, allCommittedTexts);
+      const expectedHash = computeLineHash(line.decidedLineNum - 1, line.text, allDecidedTexts);
       expect(line.hash).toBe(expectedHash);
     }
   });
@@ -286,7 +286,7 @@ describe('computeCommittedView', () => {
       '[^cn-1]: @alice | 2026-02-17 | ins | proposed',
     ].join('\n');
 
-    const result = computeCommittedView(rawText);
+    const result = computeDecidedView(rawText);
 
     const firstLine = result.lines[0];
     expect(firstLine.flag).toBe('P');
@@ -300,7 +300,7 @@ describe('computeCommittedView', () => {
       '[^cn-1]: @alice | 2026-02-17 | ins | accepted',
     ].join('\n');
 
-    const result = computeCommittedView(rawText);
+    const result = computeDecidedView(rawText);
 
     const firstLine = result.lines[0];
     expect(firstLine.flag).toBe('A');
@@ -314,7 +314,7 @@ describe('computeCommittedView', () => {
       'Clean line two.',
     ].join('\n');
 
-    const result = computeCommittedView(rawText);
+    const result = computeDecidedView(rawText);
 
     expect(result.summary.clean).toBe(3);
     expect(result.summary.proposed).toBe(0);
@@ -322,7 +322,7 @@ describe('computeCommittedView', () => {
 
   it('returns parsed changes in result', () => {
     const input = 'Hello {++world++}[^cn-1]\n\n[^cn-1]: @alice | 2026-03-23 | ins | proposed';
-    const result = computeCommittedView(input);
+    const result = computeDecidedView(input);
     expect(result.changes).toBeDefined();
     expect(result.changes.length).toBe(1);
     expect(result.changes[0].id).toBe('cn-1');
@@ -331,15 +331,15 @@ describe('computeCommittedView', () => {
   it('uses preParsed changes when provided', () => {
     const input = 'Hello {++world++}[^cn-1]\n\n[^cn-1]: @alice | 2026-03-23 | ins | proposed';
     const changes = parseForFormat(input).getChanges();
-    const withPreParsed = computeCommittedView(input, changes);
-    const withoutPreParsed = computeCommittedView(input);
+    const withPreParsed = computeDecidedView(input, changes);
+    const withoutPreParsed = computeDecidedView(input);
     expect(withPreParsed.lines).toEqual(withoutPreParsed.lines);
     expect(withPreParsed.summary).toEqual(withoutPreParsed.summary);
     expect(withPreParsed.changes).toEqual(changes);
   });
 });
 
-describe('formatCommittedOutput', () => {
+describe('formatDecidedOutput', () => {
   beforeAll(async () => {
     await initHashline();
   });
@@ -350,8 +350,8 @@ describe('formatCommittedOutput', () => {
       'Clean line.',
     ].join('\n');
 
-    const view = computeCommittedView(rawText);
-    const output = formatCommittedOutput(view, { filePath: 'test.md', trackingStatus: 'tracked' });
+    const view = computeDecidedView(rawText);
+    const output = formatDecidedOutput(view, { filePath: 'test.md', trackingStatus: 'tracked' });
 
     // Header lines
     const lines = output.split('\n');
@@ -376,8 +376,8 @@ describe('formatCommittedOutput', () => {
       '[^cn-1]: @alice | 2026-02-17 | ins | proposed',
     ].join('\n');
 
-    const view = computeCommittedView(rawText);
-    const output = formatCommittedOutput(view, { filePath: 'test.md', trackingStatus: 'tracked' });
+    const view = computeDecidedView(rawText);
+    const output = formatDecidedOutput(view, { filePath: 'test.md', trackingStatus: 'tracked' });
 
     // Header should mention change counts
     expect(output.includes('1P')).toBeTruthy();
@@ -390,8 +390,8 @@ describe('formatCommittedOutput', () => {
       '[^cn-1]: @alice | 2026-02-17 | sub | proposed',
     ].join('\n');
 
-    const view = computeCommittedView(rawText);
-    const output = formatCommittedOutput(view, { filePath: 'test.md', trackingStatus: 'tracked' });
+    const view = computeDecidedView(rawText);
+    const output = formatDecidedOutput(view, { filePath: 'test.md', trackingStatus: 'tracked' });
 
     const lines = output.split('\n');
     const firstContentLine = lines.find(l => l.includes('Before old after'));
@@ -406,8 +406,8 @@ describe('formatCommittedOutput', () => {
       '[^cn-1]: @alice | 2026-02-17 | ins | accepted',
     ].join('\n');
 
-    const view = computeCommittedView(rawText);
-    const output = formatCommittedOutput(view, { filePath: 'test.md', trackingStatus: 'tracked' });
+    const view = computeDecidedView(rawText);
+    const output = formatDecidedOutput(view, { filePath: 'test.md', trackingStatus: 'tracked' });
 
     const lines = output.split('\n');
     const firstContentLine = lines.find(l => l.includes('Before added after'));

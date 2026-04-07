@@ -2,10 +2,10 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
-import type { ExtensionController } from '../controller';
 import type { LanguageClient } from 'vscode-languageclient/node';
 import type { ChangeComments } from '../change-comments';
-import { ChangeType } from '@changedown/core';
+import { ChangeType, nodeStatus } from '@changedown/core';
+import type { BaseController } from '@changedown/core/host';
 
 import { typeLabel } from '../visual-semantics';
 
@@ -17,7 +17,7 @@ function testDocPath(): string {
 
 export function registerTestCommands(
     context: vscode.ExtensionContext,
-    controller: ExtensionController,
+    controller: BaseController,
     getClient: () => LanguageClient | undefined,
     changeComments?: ChangeComments
 ): void {
@@ -83,9 +83,10 @@ export function registerTestCommands(
             const editor = vscode.window.activeTextEditor
                 ?? vscode.window.visibleTextEditors.find(e => e.document.languageId === 'markdown');
             const doc = editor?.document.languageId === 'markdown' ? editor.document : undefined;
-            const changes = doc ? controller.getChangesForDocument(doc) : [];
+            const changes = doc ? controller.getAuthoredChanges(doc.uri.toString()) : [];
+            const activeUri = vscode.window.activeTextEditor?.document.uri.toString();
             const state = {
-                trackingEnabled: controller.trackingMode,
+                trackingEnabled: activeUri ? controller.trackingService.isTrackingEnabled(activeUri) : false,
                 viewMode: controller.viewMode,
                 changeCount: changes.length,
                 changeTypes: changes.map(c => c.type),
@@ -120,47 +121,27 @@ export function registerTestCommands(
                     fs.writeFileSync(statePath, JSON.stringify({ ok: false, error: 'no active editor', timestamp: Date.now() }));
                     return;
                 }
-                // Full state reset BEFORE editor.edit() — critical ordering.
-                // editor.edit() fires onDidChangeTextEditorSelection synchronously
-                // during execution, which triggers cursor-move flush in the controller.
-                // If there's a stale pending edit from a previous scenario, that flush
-                // would crystallize it into the freshly-reset document. So we must:
-                // 1. Disable tracking (prevents cursor-move flush guard)
-                // 2. Abandon pending edits (nothing left to flush)
-                // 3. Clear unconfirmed edits (prevents selection-confirmation gate)
-                // 4. Set isApplyingTrackedEdit (prevents text change handler)
-                // THEN call editor.edit().
+                // Reset base controller state for this URI BEFORE editor.edit().
+                // editor.edit() fires onDidChangeTextEditorSelection synchronously,
+                // and the content change flows through BaseController — invalidating
+                // the cache here ensures any stale change data from a previous
+                // scenario does not bleed into the fresh document.
                 const uri = editor.document.uri.toString();
+                controller.stateManager.invalidateCache(uri);
 
-                // Steps 1–4: Reset all transient controller state atomically
-                controller.resetForTest();
-
-                // Step 5: Suppress tracking handler during edit
                 let editSuccess = false;
-                controller.isApplyingTrackedEdit = true;
-                try {
-                    const fullRange = new vscode.Range(
-                        editor.document.positionAt(0),
-                        editor.document.positionAt(editor.document.getText().length)
-                    );
-                    editSuccess = await editor.edit(eb => eb.replace(fullRange, input.content));
+                const fullRange = new vscode.Range(
+                    editor.document.positionAt(0),
+                    editor.document.positionAt(editor.document.getText().length)
+                );
+                editSuccess = await editor.edit(eb => eb.replace(fullRange, input.content));
 
-                    // Set tracking state and reset shadow/ID counter
-                    const isTracked = input.content.includes('changedown.com/v1: tracked');
-                    controller.setStateForTest(uri, {
-                        tracking: isTracked,
-                        shadow: input.content,
-                        nextScId: 1,
-                    });
+                // Set tracking state from header
+                const isTracked = input.content.includes('changedown.com/v1: tracked');
+                controller.trackingService.setTrackingEnabled(uri, isTracked);
 
-                    // Move cursor (safe — pending edits already cleared)
-                    editor.selection = new vscode.Selection(0, 0, 0, 0);
-
-                    // Invalidate decoration cache
-                    controller.invalidateDecorationCache(uri);
-                } finally {
-                    controller.isApplyingTrackedEdit = false;
-                }
+                // Move cursor (safe — pending edits already cleared)
+                editor.selection = new vscode.Selection(0, 0, 0, 0);
                 fs.writeFileSync(statePath, JSON.stringify({
                     ok: true,
                     editSuccess,
@@ -204,9 +185,9 @@ export function registerTestCommands(
             const pollInterval = 100;
             const start = Date.now();
             while (Date.now() - start < timeout) {
-                const count = controller.getCachedDecorationCount(uri);
-                if (count !== undefined) {
-                    fs.writeFileSync(statePath, JSON.stringify({ ready: true, changeCount: count, uri, timestamp: Date.now() }));
+                const state = controller.getState(uri);
+                if (state && state.cacheVersion >= 0) {
+                    fs.writeFileSync(statePath, JSON.stringify({ ready: true, changeCount: state.cachedChanges.length, uri, timestamp: Date.now() }));
                     return;
                 }
                 await new Promise(r => setTimeout(r, pollInterval));
@@ -400,7 +381,7 @@ export function registerTestCommands(
                     fs.writeFileSync(statePath, JSON.stringify({ cards: [], count: 0, error: 'no active markdown editor', timestamp: Date.now() }));
                     return;
                 }
-                const changes = controller.getChangesForDocument(doc);
+                const changes = controller.getAuthoredChanges(doc.uri.toString());
                 const text = doc.getText();
                 const MAX_PREVIEW = 60;
                 const cards = changes.map(c => {
@@ -432,7 +413,7 @@ export function registerTestCommands(
                     return {
                         changeId: c.id,
                         type: typeLabel(c.type),
-                        status: (c.metadata?.status ?? c.inlineMetadata?.status ?? c.status ?? 'proposed').toLowerCase(),
+                        status: nodeStatus(c),
                         author: c.metadata?.author ?? c.inlineMetadata?.author ?? '',
                         textPreview: preview,
                         replyCount: c.metadata?.discussion?.length ?? 0,

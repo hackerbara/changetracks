@@ -9,7 +9,7 @@
  */
 
 import * as vscode from 'vscode';
-import { ChangeNode, ChangeType, isGhostNode } from '@changedown/core';
+import { ChangeNode, ChangeType, isGhostNode, nodeStatus } from '@changedown/core';
 import { ViewMode } from './view-mode';
 import { typeLabel } from './visual-semantics';
 import { resolveAuthorIdentity } from './author-identity';
@@ -165,7 +165,7 @@ export function buildCardData(changes: ChangeNode[], text: string, currentAuthor
         text: getChangePreview(c, text),
         fullText: getFullChangeText(c, text),
         author: stripLeadingAt(c.metadata?.author ?? ''),
-        status: (c.metadata?.status ?? c.inlineMetadata?.status ?? c.status ?? 'proposed').toLowerCase(),
+        status: nodeStatus(c),
         colorClass: colorClassForType(c.type),
         replyCount: c.metadata?.discussion?.length ?? 0,
         hasDiscussion: (c.metadata?.discussion?.length ?? 0) > 0,

@@ -12,8 +12,8 @@ export class NavigationService implements Disposable {
 
   constructor(private stateManager: DocumentStateManager) {}
 
-  nextChange(uri: string, currentOffset: number): ChangeNode | null {
-    const changes = this.getChanges(uri);
+  nextChange(uri: string, currentOffset: number, filter?: (c: ChangeNode) => boolean): ChangeNode | null {
+    const changes = filter ? this.getChanges(uri).filter(filter) : this.getChanges(uri);
     for (const change of changes) {
       if (change.range.start > currentOffset) return change;
       if (change.range.start <= currentOffset && change.range.end > currentOffset) continue;
@@ -21,8 +21,8 @@ export class NavigationService implements Disposable {
     return null;
   }
 
-  previousChange(uri: string, currentOffset: number): ChangeNode | null {
-    const changes = this.getChanges(uri);
+  previousChange(uri: string, currentOffset: number, filter?: (c: ChangeNode) => boolean): ChangeNode | null {
+    const changes = filter ? this.getChanges(uri).filter(filter) : this.getChanges(uri);
     // Find the last change whose start <= currentOffset.
     let idx = -1;
     for (let i = changes.length - 1; i >= 0; i--) {

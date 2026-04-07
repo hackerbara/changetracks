@@ -1,4 +1,4 @@
-<!-- changedown.com/v1: tracked -->
+
 <!-- changedown.com/v1: untracked -->
 # Recently landed
 
@@ -26,8 +26,4 @@
 # Links
 
 - [CriticMarkup](http://criticmarkup.com) — The syntax foundation, created by Gabe Weatherhead and Erik Hess
-- [GitHub](https://github.com/hackerbara/changedown) — Source, issues, discussions
-
-
-[^cn-1]: ai:claude-opus-4.6 | 2026-04-02 | creation | proposed
-    ai:claude-opus-4.6 2026-04-02T00:45:29Z: File created
+- [GitHub](https://github.com/hackerbara/changedown) — Source, issues, discussions{--

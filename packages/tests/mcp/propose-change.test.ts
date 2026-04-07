@@ -877,7 +877,7 @@ describe('handleProposeChange', () => {
     });
 
     it('settle-on-demand preserves the accepted footnote ref inline after settling', async () => {
-      // After settle-on-demand: settleAcceptedChangesOnly produces `new[^cn-1]` inline.
+      // After settle-on-demand: applyAcceptedChanges produces `new[^cn-1]` inline.
       // The subsequent proposal wraps `new` and should retain `[^cn-1]` next to the markup.
       const filePath = path.join(tmpDir, 'settle-ref-preservation.md');
       const content = [
@@ -942,8 +942,8 @@ describe('handleProposeChange', () => {
       // Record settled-view hashes so compact path can resolve coordinates.
       // Hashes must be 2-char lowercase hex (the format parseAt requires).
       state.recordAfterRead(filePath, 'settled', [
-        { line: 1, raw: 'a1', settled: 'a1', settledView: 'a1', rawLineNum: 1 },
-        { line: 2, raw: 'b2', settled: 'c3', settledView: 'd4', rawLineNum: 2 },
+        { line: 1, raw: 'a1', current: 'a1', currentView: 'a1', rawLineNum: 1 },
+        { line: 2, raw: 'b2', current: 'c3', currentView: 'd4', rawLineNum: 2 },
       ], content);
 
       const result = await handleProposeChange(
@@ -980,8 +980,8 @@ describe('handleProposeChange', () => {
       await fs.writeFile(filePath, content);
 
       state.recordAfterRead(filePath, 'settled', [
-        { line: 1, raw: 'a1', settled: 'a1', settledView: 'a1', rawLineNum: 1 },
-        { line: 2, raw: 'b2', settled: 'c3', settledView: 'd4', rawLineNum: 2 },
+        { line: 1, raw: 'a1', current: 'a1', currentView: 'a1', rawLineNum: 1 },
+        { line: 2, raw: 'b2', current: 'c3', currentView: 'd4', rawLineNum: 2 },
       ], content);
 
       const result = await handleProposeChange(
@@ -1013,8 +1013,8 @@ describe('handleProposeChange', () => {
       await fs.writeFile(filePath, content);
 
       state.recordAfterRead(filePath, 'raw', [
-        { line: 1, raw: 'a1', settled: 'a1', rawLineNum: 1 },
-        { line: 2, raw: 'b2', settled: 'b2', rawLineNum: 2 },
+        { line: 1, raw: 'a1', current: 'a1', rawLineNum: 1 },
+        { line: 2, raw: 'b2', current: 'b2', rawLineNum: 2 },
       ], content);
 
       const result = await handleProposeChange(
@@ -1046,8 +1046,8 @@ describe('handleProposeChange', () => {
       await fs.writeFile(filePath, content);
 
       state.recordAfterRead(filePath, 'settled', [
-        { line: 1, raw: 'a1', settled: 'a1', settledView: 'a1', rawLineNum: 1 },
-        { line: 2, raw: 'b2', settled: 'c3', settledView: 'd4', rawLineNum: 2 },
+        { line: 1, raw: 'a1', current: 'a1', currentView: 'a1', rawLineNum: 1 },
+        { line: 2, raw: 'b2', current: 'c3', currentView: 'd4', rawLineNum: 2 },
       ], content);
 
       const result = await handleProposeChange(

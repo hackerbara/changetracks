@@ -724,7 +724,7 @@ export class CriticMarkupParser {
           range: { start: offset, end: offset + refLength },
           contentRange: { start: offset, end: offset + refLength }, // covers [^cn-N] ref
           level: 2,
-          settled: true,
+          decided: true,
           anchored: true,
           metadata: {
             author: def.author,

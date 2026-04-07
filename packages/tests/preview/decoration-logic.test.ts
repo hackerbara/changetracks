@@ -1,12 +1,16 @@
 import { describe, it, expect } from 'vitest';
 import { buildDecorationPlan } from '@changedown/preview';
 import { CriticMarkupParser } from '@changedown/core';
+import { makeView } from '../helpers/view-test-utils.js';
 
 const parser = new CriticMarkupParser();
 
-function planFor(text: string, mode: 'review' | 'changes' | 'settled' | 'raw' = 'review', cursorOffset = 0, showDelimiters = false) {
+type LegacyMode = 'review' | 'changes' | 'settled' | 'raw';
+
+function planFor(text: string, mode: LegacyMode = 'review', cursorOffset = 0, showDelimiters = false) {
     const doc = parser.parse(text);
-    return buildDecorationPlan(doc.getChanges(), text, mode, cursorOffset, showDelimiters, 'never');
+    const view = makeView(mode, { display: { delimiters: showDelimiters ? 'show' : 'hide' } });
+    return buildDecorationPlan(doc.getChanges(), text, view, 'L2', cursorOffset);
 }
 
 describe('buildDecorationPlan', () => {
@@ -156,7 +160,7 @@ describe('buildDecorationPlan', () => {
             if (changes[0]) {
                 changes[0].metadata = { author: 'Alice' };
             }
-            const plan = buildDecorationPlan(changes, text, 'review', 0, false, 'always');
+            const plan = buildDecorationPlan(changes, text, makeView('review', { display: { authorColors: 'always', delimiters: 'hide' } }), 'L2', 0);
             // Should be in author decorations, not default insertions
             expect(plan.insertions.length).toBe(0);
             expect(plan.authorDecorations.size).toBe(1);

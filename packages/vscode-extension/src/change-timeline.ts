@@ -1,7 +1,11 @@
 import * as vscode from 'vscode';
 import { ChangeNode, ChangeType, ChangeStatus } from '@changedown/core';
-import type { ExtensionController } from './controller';
 import { typeLabelCapitalized, iconForType } from './visual-semantics';
+
+export interface ChangeTimelineContext {
+    onDidChangeChanges(listener: () => void): vscode.Disposable;
+    getChangesForDocument(doc: vscode.TextDocument): ChangeNode[];
+}
 
 /**
  * Provides timeline entries for ChangeDown changes in the Explorer.
@@ -21,7 +25,7 @@ export class ChangeTimelineProvider implements vscode.TimelineProvider {
 
   private disposables: vscode.Disposable[] = [];
 
-  constructor(private controller: ExtensionController) {
+  constructor(private controller: ChangeTimelineContext) {
     this.disposables.push(
       controller.onDidChangeChanges(() => {
         this._onDidChange.fire(undefined);

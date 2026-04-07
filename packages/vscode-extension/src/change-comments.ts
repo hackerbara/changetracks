@@ -1,8 +1,13 @@
 import * as vscode from 'vscode';
 import { ChangeNode, ChangeStatus } from '@changedown/core';
-import type { ExtensionController } from './controller';
+import { EventEmitter, type Event } from '@changedown/core/host';
 import { coreRangeToVscode, positionToOffset } from './converters';
 import { typeLabel, typeLabelCapitalized } from './visual-semantics';
+
+export interface ChangeCommentsContext {
+    onDidChangeChanges(listener: () => void): vscode.Disposable;
+    getChangesForDocument(doc: vscode.TextDocument): ChangeNode[];
+}
 
 const REFRESH_THREADS_DEBOUNCE_MS = 100;
 
@@ -19,8 +24,17 @@ export class ChangeComments implements vscode.Disposable {
   private disposables: vscode.Disposable[] = [];
   private refreshThreadsTimeout: ReturnType<typeof setTimeout> | null = null;
 
+  // ── Thread expansion tracking ────────────────────────────────
+  // Counts programmatically-expanded threads. Fires onDidChangeAnyThreadExpansion
+  // on 0<->1 transitions so the comment-thread guard can activate/deactivate.
+  // Known limitation: VS Code does not emit events for manual UI expand/collapse.
+  private expandedThreadCount = 0;
+  private readonly _onDidChangeAnyThreadExpansion = new EventEmitter<boolean>();
+  /** Fires true when first thread expands (0→1), false when last collapses (1→0). */
+  readonly onDidChangeAnyThreadExpansion: Event<boolean> = this._onDidChangeAnyThreadExpansion.event;
+
   constructor(
-    private controller: ExtensionController,
+    private controller: ChangeCommentsContext,
     private getDocument: () => vscode.TextDocument | undefined,
     private getViewMode?: () => string | undefined
   ) {
@@ -64,6 +78,24 @@ export class ChangeComments implements vscode.Disposable {
     );
   }
 
+  // ── Thread expansion counter helpers ────────────────────────
+  /** Expand a thread and update the counter. No-op if already expanded. */
+  private expandThread(thread: vscode.CommentThread): void {
+    if (thread.collapsibleState === vscode.CommentThreadCollapsibleState.Expanded) return;
+    thread.collapsibleState = vscode.CommentThreadCollapsibleState.Expanded;
+    const prev = this.expandedThreadCount;
+    this.expandedThreadCount++;
+    if (prev === 0) this._onDidChangeAnyThreadExpansion.fire(true);
+  }
+
+  /** Collapse a thread and update the counter. No-op if already collapsed. */
+  private collapseThread(thread: vscode.CommentThread): void {
+    if (thread.collapsibleState !== vscode.CommentThreadCollapsibleState.Expanded) return;
+    thread.collapsibleState = vscode.CommentThreadCollapsibleState.Collapsed;
+    this.expandedThreadCount = Math.max(0, this.expandedThreadCount - 1);
+    if (this.expandedThreadCount === 0) this._onDidChangeAnyThreadExpansion.fire(false);
+  }
+
   /**
    * If the cursor is inside a footnoted change (cn-*), expand its comment thread so the peek opens.
    */
@@ -83,9 +115,7 @@ export class ChangeComments implements vscode.Disposable {
     if (!change || change.level < 1) {
       // Cursor outside any change — collapse all open threads
       for (const thread of this.threads.values()) {
-        if (thread.collapsibleState === vscode.CommentThreadCollapsibleState.Expanded) {
-          thread.collapsibleState = vscode.CommentThreadCollapsibleState.Collapsed;
-        }
+        this.collapseThread(thread);
       }
       return;
     }
@@ -93,11 +123,9 @@ export class ChangeComments implements vscode.Disposable {
     // Collapse all other threads, expand the target
     for (const [id, thread] of this.threads) {
       if (id === change.id) {
-        if (thread.collapsibleState !== vscode.CommentThreadCollapsibleState.Expanded) {
-          thread.collapsibleState = vscode.CommentThreadCollapsibleState.Expanded;
-        }
-      } else if (thread.collapsibleState === vscode.CommentThreadCollapsibleState.Expanded) {
-        thread.collapsibleState = vscode.CommentThreadCollapsibleState.Collapsed;
+        this.expandThread(thread);
+      } else {
+        this.collapseThread(thread);
       }
     }
   }
@@ -140,7 +168,7 @@ export class ChangeComments implements vscode.Disposable {
   public expandThreadForChangeId(changeId: string): void {
     const thread = this.threads.get(changeId);
     if (thread) {
-      thread.collapsibleState = vscode.CommentThreadCollapsibleState.Expanded;
+      this.expandThread(thread);
     }
   }
 
@@ -214,6 +242,7 @@ export class ChangeComments implements vscode.Disposable {
   disposeThreadsForUri(uri: vscode.Uri): void {
     for (const [id, thread] of this.threads) {
       if (thread.uri.toString() === uri.toString()) {
+        this.collapseThread(thread);
         thread.dispose();
         this.threads.delete(id);
       }
@@ -230,8 +259,12 @@ export class ChangeComments implements vscode.Disposable {
     // Hide all threads in Final/Original clean preview modes
     const viewMode = this.getViewMode?.();
     if (viewMode === 'settled' || viewMode === 'raw') {
-      // Dispose all threads for clean preview
+      // Dispose all threads for clean preview.
+      // collapseThread() first so expandedThreadCount is decremented and the
+      // CommentThreadGuard is not left active after the view-mode switch.
+      // collapseThread() is a no-op for already-collapsed threads, so this is safe.
       for (const [id, thread] of this.threads) {
+        this.collapseThread(thread);
         thread.dispose();
         this.threads.delete(id);
       }
@@ -300,6 +333,8 @@ export class ChangeComments implements vscode.Disposable {
     // Dispose threads for changes that no longer exist in the document
     for (const [id, thread] of this.threads) {
       if (!activeIds.has(id)) {
+        // Update counter before disposing — thread disappears but may have been expanded
+        this.collapseThread(thread);
         thread.dispose();
         this.threads.delete(id);
       }
@@ -416,6 +451,8 @@ export class ChangeComments implements vscode.Disposable {
       thread.dispose();
     }
     this.threads.clear();
+    this.expandedThreadCount = 0;
+    this._onDidChangeAnyThreadExpansion.dispose();
     this.disposables.forEach(d => d.dispose());
   }
 }

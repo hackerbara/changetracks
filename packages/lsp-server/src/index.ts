@@ -11,5 +11,5 @@ export * from './capabilities/hover';
 export * from './notifications/decoration-data';
 export * from './notifications/pending-edit';
 export * from './notifications/view-mode';
-export * from './pending-edit-manager';
+export { PendingEditManager, type CrystallizedEdit, type OnCrystallizeCallback, type OnOverlayChangeCallback } from '@changedown/core/host';
 export * from './capabilities/code-lens';

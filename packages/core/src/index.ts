@@ -43,14 +43,14 @@ export { computeSidecarAccept, computeSidecarReject, computeSidecarResolveAll } 
 export { ChangeProvider } from './providers/change-provider.js';
 export { parseTrackingHeader, generateTrackingHeader, insertTrackingHeader, TrackingHeader } from './tracking-header.js';
 export { defaultNormalizer, normalizedIndexOf, collapseWhitespace, buildWhitespaceCollapseMap, whitespaceCollapsedFind, whitespaceCollapsedIsAmbiguous, diagnosticConfusableNormalize, unicodeName, tryDiagnosticConfusableMatch, TextNormalizer, WhitespaceCollapsedMatch, ConfusableDifference, DiagnosticConfusableResult } from './text-normalizer.js';
-export { computeSettledReplace, computeSettledText, computeOriginalText, settleAcceptedChangesOnly, settleRejectedChangesOnly, computeSettledView, type SettledTextOptions, type SettledLine, type SettledViewResult } from './operations/settled-text.js';
+export { computeCurrentReplace, computeCurrentText, computeOriginalText, applyAcceptedChanges, applyRejectedChanges, computeCurrentView, type CurrentTextOptions, type CurrentLine, type CurrentViewResult } from './operations/current-text.js';
 export { initHashline, ensureHashlineReady, computeLineHash, formatHashLines, parseLineRef, validateLineRef, HashlineMismatchError } from './hashline.js';
-export { settledLine, computeSettledLineHash, formatTrackedHashLines, formatTrackedHeader } from './hashline-tracked.js';
+export { currentLine, computeCurrentLineHash, formatTrackedHashLines, formatTrackedHeader } from './hashline-tracked.js';
 export { stripHashlinePrefixes, detectNoOp, relocateHashRef, stripBoundaryEcho } from './hashline-cleanup.js';
 export { findFootnoteBlockStart } from './footnote-utils.js';
 /** @deprecated Use parseForFormat() from format-aware-parse.js instead */
 export { parseFootnotes, type FootnoteInfo } from './footnote-parser.js';
-export { computeCommittedLine, computeCommittedView, formatCommittedOutput, type CommittedLineResult, type CommittedLine, type CommittedViewResult, type FormatOptions, type FootnoteStatus } from './committed-text.js';
+export { computeDecidedLine, computeDecidedView, formatDecidedOutput, type DecidedLineResult, type DecidedLine, type DecidedViewResult, type FormatOptions, type FootnoteStatus } from './decided-text.js';
 export { SIDECAR_BLOCK_MARKER, findSidecarBlockStart } from './constants.js';
 export {
   singleLineSubstitution, singleLineDeletion, singleLineInsertion, singleLineHighlight, singleLineComment,
@@ -100,17 +100,17 @@ export {
 export {
   type ThreeZoneDocument, type ThreeZoneLine, type ContentSpan,
   type LineMetadata, type DeliberationHeader, type LineFlag,
-  type ViewName as ThreeZoneViewName,
-  type ViewName,
-  VIEW_NAME_ALIASES, VIEW_NAME_DISPLAY_NAMES, VIEW_NAMES,
-  resolveViewName, nextViewName,
+  type ViewMode as ThreeZoneViewMode,
+  type ViewMode,
+  VIEW_MODE_ALIASES, VIEW_MODE_LABELS, VIEW_MODES,
+  resolveViewMode, nextViewMode,
 } from './renderers/three-zone-types.js';
 export { formatDocument, formatPlainText, formatAnsi, formatHtml, type ThreeZoneFormatOptions, type AnsiFormatOptions, type HtmlFormatOptions } from './renderers/formatters/index.js';
 export {
   buildViewDocument, buildReviewDocument, buildChangesDocument,
-  buildSettledDocument, buildRawDocument,
+  buildCurrentDocument, buildRawDocument,
   type ViewOptions, type ReviewBuildOptions, type ChangesViewOptions,
-  type SettledViewOptions, type RawViewOptions,
+  type CurrentViewOptions, type RawViewOptions,
 } from './renderers/view-builders/index.js';
 export { buildDeliberationHeader, buildLineRefMap, findFootnoteSectionRange, computeContinuationLines } from './renderers/view-builder-utils.js';
 export {

@@ -1,14 +1,14 @@
 import { computeLineHash } from '../../hashline.js';
-import { computeSettledLineHash, settledLine } from '../../hashline-tracked.js';
+import { computeCurrentLineHash, currentLine } from '../../hashline-tracked.js';
 import { parseForFormat } from '../../format-aware-parse.js';
 import { buildDeliberationHeader, findFootnoteSectionRange, computeContinuationLines } from '../view-builder-utils.js';
-import type { ThreeZoneDocument, ThreeZoneLine, ViewName } from '../three-zone-types.js';
+import type { ThreeZoneDocument, ThreeZoneLine, ViewMode } from '../three-zone-types.js';
 
 export interface RawViewOptions {
   filePath: string;
   trackingStatus: 'tracked' | 'untracked';
   protocolMode: string;
-  defaultView: ViewName;
+  defaultView: ViewMode;
   viewPolicy: string;
 }
 
@@ -18,7 +18,7 @@ export function buildRawDocument(
 ): ThreeZoneDocument {
   const changes = parseForFormat(rawContent).getChanges();
   const rawLines = rawContent.split('\n');
-  const allSettled = rawLines.map(l => settledLine(l));
+  const allCurrent = rawLines.map(l => currentLine(l));
 
   const continuations = computeContinuationLines(rawContent, changes);
 
@@ -36,7 +36,7 @@ export function buildRawDocument(
       continuesChange: continuations.has(i) || undefined,
       sessionHashes: {
         raw: rawHash,
-        settled: computeSettledLineHash(i + 1, text, allSettled),
+        current: computeCurrentLineHash(i + 1, text, allCurrent),
       },
     };
   });

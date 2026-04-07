@@ -5,7 +5,7 @@ import { findFootnoteBlock, findReviewInsertionIndex } from '../footnote-utils.j
 
 /**
  * Separated text + footnote ref parts from an accept/reject operation.
- * Used by the segment builder in settleAcceptedChangesOnly to avoid
+ * Used by the segment builder in applyAcceptedChanges to avoid
  * text duplication when processing adjacent changes on the same line.
  */
 export interface AcceptRejectParts {

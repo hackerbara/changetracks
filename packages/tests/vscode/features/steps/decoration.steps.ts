@@ -7,8 +7,8 @@ import {
     getDecorationCounts,
     getDocumentText,
 } from '../../journeys/playwrightHarness';
-import { resolveViewName, VIEW_NAMES } from '@changedown/core';
-import type { ViewName } from '@changedown/core';
+import { resolveViewMode, VIEW_MODES } from '@changedown/core';
+import type { ViewMode } from '@changedown/core';
 
 // Note: getEditorText uses textContent (includes CSS-hidden text).
 // For assertions that need to respect display:none, use hasHiddenSpans
@@ -18,8 +18,8 @@ import type { Page } from 'playwright';
 
 // ── View mode steps ──────────────────────────────────────────────────
 
-/** Canonical view names for cycling. Delegates to core's VIEW_NAMES. */
-export const VIEW_MODE_ORDER: readonly ViewName[] = VIEW_NAMES;
+/** Canonical view modes for cycling. Delegates to core's VIEW_MODES. */
+export const VIEW_MODE_ORDER: readonly ViewMode[] = VIEW_MODES;
 
 /**
  * Track the current view mode per shared VS Code instance.
@@ -42,7 +42,7 @@ export function getInstanceKey(world: ChangeDownWorld): string {
 
 When('I switch to {string} view mode', { timeout: 20000 }, async function (this: ChangeDownWorld, viewMode: string) {
     assert.ok(this.page, 'Page not available');
-    const canonical = resolveViewName(viewMode);
+    const canonical = resolveViewMode(viewMode);
     assert.ok(
         canonical !== undefined,
         `Unknown view mode: "${viewMode}". Pass a canonical name (${VIEW_MODE_ORDER.join(', ')}) or alias (all-markup, simple, final, original).`
@@ -58,7 +58,7 @@ When('I switch to {string} view mode', { timeout: 20000 }, async function (this:
     }
 
     // Calculate how many toggles to get from current → target
-    const currentIdx = VIEW_MODE_ORDER.indexOf(currentMode as ViewName);
+    const currentIdx = VIEW_MODE_ORDER.indexOf(currentMode as ViewMode);
     const targetIdx = VIEW_MODE_ORDER.indexOf(canonical);
     const toggles = (targetIdx - currentIdx + VIEW_MODE_ORDER.length) % VIEW_MODE_ORDER.length;
 

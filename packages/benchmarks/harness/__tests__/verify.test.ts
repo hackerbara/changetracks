@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { scoreCorrections, extractSettledText, scoreDecisions, detectRegressions, verify, type Correction, type Decision } from "../verify.js";
+import { scoreCorrections, extractCurrentText, scoreDecisions, detectRegressions, verify, type Correction, type Decision } from "../verify.js";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -72,20 +72,20 @@ describe("scoreCorrections", () => {
   });
 });
 
-describe("extractSettledText", () => {
+describe("extractCurrentText", () => {
   it("returns raw text for surface A", async () => {
     const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "verify-test-"));
     await fs.writeFile(path.join(tmpDir, "doc.md"), "Hello world");
-    const result = await extractSettledText(tmpDir, "A");
+    const result = await extractCurrentText(tmpDir, "A");
     expect(result).toBe("Hello world");
     await fs.rm(tmpDir, { recursive: true });
   });
 
-  it("strips CriticMarkup for surface F via computeSettledText", async () => {
+  it("strips CriticMarkup for surface F via computeCurrentText", async () => {
     const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "verify-test-"));
     const content = "The {~~depolyed~>deployed~~}[^cn-1] app.\n\n[^cn-1]: @ai:test | 2026-01-01 | sub | accepted\n";
     await fs.writeFile(path.join(tmpDir, "doc.md"), content);
-    const result = await extractSettledText(tmpDir, "F");
+    const result = await extractCurrentText(tmpDir, "F");
     expect(result).toContain("deployed");
     expect(result).not.toContain("{~~");
     expect(result).not.toContain("[^cn-1]");
@@ -96,7 +96,7 @@ describe("extractSettledText", () => {
     const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "verify-test-"));
     const content = "Text {++added++}[^cn-1] here.\n\n[^cn-1]: @ai:test | 2026-01-01 | ins | proposed\n";
     await fs.writeFile(path.join(tmpDir, "doc.md"), content);
-    const result = await extractSettledText(tmpDir, "G");
+    const result = await extractCurrentText(tmpDir, "G");
     expect(result).toContain("added");
     expect(result).not.toContain("{++");
     await fs.rm(tmpDir, { recursive: true });

@@ -12,7 +12,8 @@
         "strict": true,
         "skipLibCheck": true,
         "paths": {
-            "changedown/init": ["../cli/dist/init/index.d.ts"]
+            "changedown/init": ["../cli/dist/init/index.d.ts"],
+            "@changedown/core/host": ["../core/dist/host/index.d.ts"]
         },
         // TODO: enable after fixing violations
         // "noUncheckedIndexedAccess": true,

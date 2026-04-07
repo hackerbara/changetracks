@@ -5,13 +5,16 @@
  */
 
 import * as vscode from 'vscode';
-import { ChangeNode, ChangeType } from '@changedown/core';
+import { ChangeNode, ChangeType, nodeStatus } from '@changedown/core';
 import { positionToOffset } from './converters';
-import type { ExtensionController } from './controller';
+
+export interface HoverProviderContext {
+    getChangesForDocument(doc: vscode.TextDocument): ChangeNode[];
+}
 
 export function registerHoverProvider(
     context: vscode.ExtensionContext,
-    controller: ExtensionController
+    controller: HoverProviderContext
 ): void {
     const selector: vscode.DocumentSelector = [
         { language: 'markdown' },
@@ -54,7 +57,7 @@ export function registerHoverProvider(
                         const md = new vscode.MarkdownString();
                         const author = change.metadata?.author ?? change.inlineMetadata?.author;
                         const date = change.metadata?.date ?? change.inlineMetadata?.date;
-                        const status = change.metadata?.status ?? change.inlineMetadata?.status ?? change.status;
+                        const status = nodeStatus(change);
                         if (author) { md.appendMarkdown('**Author:** '); md.appendText(author); md.appendMarkdown('\n\n'); }
                         if (date) { md.appendMarkdown('**Date:** '); md.appendText(date); md.appendMarkdown('\n\n'); }
                         if (status) { md.appendMarkdown('**Status:** '); md.appendText(status); md.appendMarkdown('\n\n'); }

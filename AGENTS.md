@@ -14,6 +14,9 @@ navigation, commenting, and smart view mode. Activates on markdown files.
     npm test                   # Full test suite (~25s, launches VS Code)
     npm run test:fast          # Parser tests only (<1s, no VS Code)
 
+Build order: core → docx → cli → lsp-server → vscode-extension. Always build from
+root (`npm run build`) — it handles the dependency chain automatically.
+
 ## Package Layout
 
 Packages consume each other in a strict dependency chain:
@@ -48,17 +51,86 @@ authoritative source for parsed changes, decoration data, and edit operations.
 Each main package (core, vscode-extension, lsp-server, tests, cli) has its own
 AGENTS.md with package-specific build, test, and architecture guidance.
 
+Core exports platform-agnostic interfaces from `packages/core/src/host/`. The
+website-v2 package is both a product and the reference implementation of the port
+architecture. The VS Code extension uses the same pattern via BaseController.
+
 ## Architecture (Summary)
 
-MVC with four layers. Full details in ARCHITECTURE.md.
+Hexagonal ports-and-adapters pattern. Full details in ARCHITECTURE.md.
 
-    extension.ts                          → Entry point, registers commands
-      └─ controller/ExtensionController   → State machine: tracking, view mode, events
-           ├─ adapter/CriticMarkupAdapter → Single-pass O(n) tokenizer → ChangeNode[]
-           ├─ model/VirtualDocument       → Data structures: ChangeNode, ChangeType, Range
-           └─ view/EditorDecorator        → Decorations, delimiter hiding, cursor unfolding
+**Core (shared):** parser, decoration plan builder, edit boundary state machine,
+platform-agnostic services (`TrackingService`, `ReviewService`, `NavigationService`).
+
+**Host integration:** `EditorHost` (inbound: platform → controller),
+`DecorationPort` / `PreviewPort` (outbound: controller → platform).
+
+    VS Code:   extension.ts → controller.ts → decorator.ts (applies decoration plans)
+    Website:   App.tsx → WebsiteController → WebDecorationAdapter + WebPreviewAdapter
 
 Data flow: Parse (text → ChangeNode[]) → Coordinate (events, re-parse) → Render
+
+## BaseController SDK
+
+`BaseController` (`packages/core/src/host/base-controller.ts`) is the composition-based
+host integration layer. Hosts instantiate it with `ControllerConfig` rather than
+extending a base class.
+
+Key design properties:
+- **Composition, not inheritance** — hosts pass a `ControllerConfig` object
+- **LSP is optional** — `lsp` field is optional; omitting it uses `NULL_LSP_CONNECTION` for standalone use
+- **FormatAdapter is required** — must provide `convertL2ToL3` / `convertL3ToL2` implementations
+- **Hooks for extensibility** — `ControllerHooks` provides lifecycle callbacks without subclassing
+
+`ControllerConfig` fields:
+- `host: EditorHost` — required; wires document lifecycle and cursor events
+- `decorationPort: DecorationPort` — required; receives decoration snapshots
+- `previewPort?: PreviewPort` — optional; receives preview snapshots
+- `lsp?: TypedLspConnection` — optional; omit for standalone (no server) mode
+- `formatAdapter: FormatAdapter` — required; pluggable L2↔L3 conversion
+- `parseAdapter?: ParseAdapter` — optional; pluggable parse delegation
+- `defaultFormat?: 'L2' | 'L3'` — default format for new documents
+- `defaultDisplay?: DisplayOptions` — default rendering options
+- `hooks?: ControllerHooks` — lifecycle callbacks
+
+`setViewMode()` is a deprecated facade. Prefer `setProjection()` + `setDisplay()`.
+
+## Projection Model
+
+Projection is the organizing model for what text content a port receives.
+
+Three projections (`packages/core/src/model/types.ts`):
+- **`current`** — text as authored with tracked changes visible (accepted text in place)
+- **`decided`** — accepted changes resolved, rejected changes removed
+- **`original`** — strip all tracked changes, show original text
+
+`DisplayOptions` (`packages/core/src/host/types.ts`) controls how changes are rendered
+within a projection: delimiter visibility, insertion/deletion style, author colors, filters.
+
+`ViewMode` (`review` / `changes` / `settled` / `raw`) is the display-layer vocabulary
+that maps to Projection + DisplayOptions via `VIEW_MODE_PRESETS`. It remains the
+vocabulary for the LSP protocol and VS Code command surface.
+
+`ProjectionService` (`packages/core/src/host/projection-service.ts`) computes and
+caches projection results per URI+version+selector+display key.
+
+## FormatService
+
+`FormatService` (`packages/core/src/host/format-service.ts`) tracks per-URI format
+state (L2 or L3) and centralizes format detection.
+
+- `getDetectedFormat(uri, text)` — calls `isL3Format(text)` which is O(n) regex scan;
+  Centralizes format detection — use this instead of calling `isL3Format()` directly.
+- `getPreferredFormat(uri)` / `setPreferredFormat(uri, format)` — user preference override
+- `promoteToL3(uri, text)` / `demoteToL2(uri, text)` — delegated via `FormatAdapter`
+- Events: `onDidChangePreferredFormat`, `onDidCompleteTransition`
+
+## PendingEditManager
+
+`PendingEditManager` is now in `packages/core/src/host/pending-edit-manager.ts`
+(moved from lsp-server). Exported from `@changedown/core/host`. The lsp-server
+imports it from there; its own `src/pending-edit-manager.ts` is the old local copy
+that will be removed in a future cleanup.
 
 ## Documentation Map
 

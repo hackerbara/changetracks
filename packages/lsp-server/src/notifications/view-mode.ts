@@ -7,14 +7,15 @@
  */
 
 import { Connection } from 'vscode-languageserver';
-import type { ViewName } from '@changedown/core';
+import type { ViewMode } from '@changedown/core';
+import { LSP_METHOD } from '@changedown/core/host';
 
 /**
  * Parameters for setViewMode notification (client -> server)
  */
 export interface SetViewModeParams {
   textDocument: { uri: string };
-  viewMode: ViewName;
+  viewMode: ViewMode;
 }
 
 /**
@@ -22,7 +23,7 @@ export interface SetViewModeParams {
  */
 export interface ViewModeChangedParams {
   textDocument: { uri: string };
-  viewMode: ViewName;
+  viewMode: ViewMode;
 }
 
 /**
@@ -38,11 +39,11 @@ export interface ViewModeChangedParams {
 export function sendViewModeChanged(
   connection: Connection,
   uri: string,
-  viewMode: ViewName
+  viewMode: ViewMode
 ): void {
   const params: ViewModeChangedParams = {
     textDocument: { uri },
     viewMode
   };
-  connection.sendNotification('changedown/viewModeChanged', params);
+  connection.sendNotification(LSP_METHOD.VIEW_MODE_CHANGED, params);
 }

@@ -11,8 +11,8 @@ import {
   defaultNormalizer,
   CriticMarkupParser,
   ChangeStatus,
-  settleAcceptedChangesOnly,
-  settleRejectedChangesOnly,
+  applyAcceptedChanges,
+  applyRejectedChanges,
   reviewerType,
 } from '@changedown/core';
 import { validateOrAutoRemap, type RelocationEntry, type AutoRemapResult } from './hashline-relocate.js';
@@ -25,7 +25,7 @@ import { strArg, optionalStrArg } from '../args.js';
 import { applyProposeChange, contentZoneText, extractLineRange, findUniqueMatch, resolveOverlapWithAuthor, stripRefsFromContent } from '../file-ops.js';
 import { toRelativePath } from '../path-utils.js';
 import { resolveTrackingStatus } from '../scope.js';
-import { SessionState, type ViewName } from '../state.js';
+import { SessionState, type ViewMode } from '../state.js';
 import { parseOp, nowTimestamp } from '@changedown/core';
 import { resolveProtocolMode } from '../config.js';
 import { rerecordState } from '../state-utils.js';
@@ -94,7 +94,7 @@ function hasCommittedHashes(
 }
 
 /**
- * Detect whether the recorded hashes came from a settled view (have `settledView` field).
+ * Detect whether the recorded hashes came from a settled view (have `currentView` field).
  */
 function hasSettledHashes(
   filePath: string,
@@ -102,7 +102,7 @@ function hasSettledHashes(
 ): boolean {
   const recorded = state.getRecordedHashes(filePath);
   if (!recorded || recorded.length === 0) return false;
-  return recorded.some(entry => entry.settledView !== undefined);
+  return recorded.some(entry => entry.currentView !== undefined);
 }
 
 /**
@@ -232,7 +232,7 @@ function extractQuickFixFromError(
 
 /**
  * Settle-on-demand: if `oldText` matches inside an accepted/rejected CriticMarkup
- * construct (either via exact match inside the markup, or via the settled-text
+ * construct (either via exact match inside the markup, or via the current-text
  * fallback), settle those constructs first so the subsequent proposal operates on
  * clean prose.
  *
@@ -291,10 +291,10 @@ function settleOnDemandIfNeeded(
   }
 
   // Settle accepted changes first, then rejected changes.
-  // settleAcceptedChangesOnly and settleRejectedChangesOnly preserve footnote refs
+  // applyAcceptedChanges and applyRejectedChanges preserve footnote refs
   // inline adjacent to the settled text (the audit trail remains).
-  const { settledContent: afterAccepted } = settleAcceptedChangesOnly(fileContent);
-  const { settledContent: afterRejected } = settleRejectedChangesOnly(afterAccepted);
+  const { currentContent: afterAccepted } = applyAcceptedChanges(fileContent);
+  const { currentContent: afterRejected } = applyRejectedChanges(afterAccepted);
 
   return { content: afterRejected, settled: true };
 }
@@ -613,7 +613,7 @@ export async function handleProposeChange(
     // resolveHash() detects the view the agent used (committed/settled/raw)
     // and translates view-space coordinates to raw-space coordinates in one
     // call, eliminating separate hasCommittedHashes / hasSettledHashes branches.
-    let viewResolved: ViewName | undefined;
+    let viewResolved: ViewMode | undefined;
 
     if (hasHashlineParams(args)) {
       if (startLine !== undefined && startHash !== undefined) {
@@ -830,7 +830,7 @@ export async function handleProposeChange(
           const absMatchPos0 = rangeStartOffset + match.index;
           const supersedeResult = resolveOverlapWithAuthor(fileContent, absMatchPos0, match.length, author);
           if (supersedeResult) {
-            fileContent = supersedeResult.settledContent;
+            fileContent = supersedeResult.currentContent;
             supersededIds.push(...supersedeResult.supersededIds);
             // Re-extract and re-match after settlement (offsets shift)
             const updatedFileLines = fileContent.split('\n');
@@ -975,7 +975,7 @@ export async function handleProposeChange(
       // ─── Legacy string match mode ────────────────────────────────
 
       // Settle-on-demand: if old_text targets text inside accepted/rejected CriticMarkup
-      // (i.e., the match only succeeds via the settled-text fallback), settle those
+      // (i.e., the match only succeeds via the current-text fallback), settle those
       // constructs first so the proposal operates on clean prose. This preserves the
       // audit trail [^cn-N] refs inline adjacent to the settled text, rather than
       // having them consumed into the new proposal's raw range.
@@ -1263,16 +1263,16 @@ async function handleCompactProposeChange(
 
   // Build viewProjection from returned view result (no double computation)
   let viewProjection: ViewProjection | undefined;
-  if (viewResult?.settledView) {
+  if (viewResult?.currentView) {
     const rawToViewMap = new Map<number, { viewLine: number; viewHash: string; viewContent: string }>();
-    for (const sl of viewResult.settledView.lines) {
-      rawToViewMap.set(sl.rawLineNum, { viewLine: sl.settledLineNum, viewHash: sl.hash, viewContent: sl.text });
+    for (const sl of viewResult.currentView.lines) {
+      rawToViewMap.set(sl.rawLineNum, { viewLine: sl.currentLineNum, viewHash: sl.hash, viewContent: sl.text });
     }
     viewProjection = { view: 'settled', rawToView: rawToViewMap };
-  } else if (viewResult?.committedView) {
+  } else if (viewResult?.decidedView) {
     const rawToViewMap = new Map<number, { viewLine: number; viewHash: string; viewContent: string }>();
-    for (const cl of viewResult.committedView.lines) {
-      rawToViewMap.set(cl.rawLineNum, { viewLine: cl.committedLineNum, viewHash: cl.hash, viewContent: cl.text });
+    for (const cl of viewResult.decidedView.lines) {
+      rawToViewMap.set(cl.rawLineNum, { viewLine: cl.decidedLineNum, viewHash: cl.hash, viewContent: cl.text });
     }
     viewProjection = { view: 'changes', rawToView: rawToViewMap };
   }

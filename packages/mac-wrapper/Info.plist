@@ -12,9 +12,9 @@
     <key>CFBundleExecutable</key>
     <string>ChangeDown</string>
     <key>CFBundleName</key>
-    <string>ChangeDown</string>
+    <string>CD Viewer</string>
     <key>CFBundleDisplayName</key>
-    <string>ChangeDown</string>
+    <string>CD Viewer</string>
     <key>CFBundleVersion</key>
     <string>1</string>
     <key>CFBundleShortVersionString</key>

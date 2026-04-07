@@ -11,7 +11,7 @@
 import type { ChangeNode } from '../../model/types.js';
 import { ChangeStatus, ChangeType, isGhostNode } from '../../model/types.js';
 import { findFootnoteBlockStart } from '../../footnote-utils.js';
-import type { ViewMode } from '../types.js';
+import type { View } from '../types.js';
 import type { DecorationPlan, OffsetDecoration, AuthorDecorationRole } from './types.js';
 import {
   computeLineStarts, offsetToLine, isOffsetInRange,
@@ -29,22 +29,39 @@ import {
 export function buildDecorationPlan(
   changes: ChangeNode[],
   text: string,
-  viewMode: ViewMode,
+  view: View,
+  format: 'L2' | 'L3',
   cursorOffset: number,
-  showDelimiters: boolean,
-  authorColorMode: 'auto' | 'always' | 'never',
-  isL3: boolean = false,
 ): DecorationPlan {
+  const isL3 = format === 'L3';
   const plan = createEmptyPlan();
   const lineStarts = computeLineStarts(text);
 
-  const isFinalMode = viewMode === 'settled';
-  const isOriginalMode = viewMode === 'raw';
-  const isReviewMode = viewMode === 'review';
-  const showDelimitersInMarkup = showDelimiters && isReviewMode && !isL3;
-  const cursorRevealMode = showDelimiters && !isReviewMode && !isFinalMode && !isOriginalMode;
-  const showGhostDelimiters = isL3 && showDelimiters && !isFinalMode && !isOriginalMode;
-  const showGhostRefs = isL3 && !isFinalMode && !isOriginalMode;
+  const d = view.display;
+  const isDecidedProjection = view.projection === 'decided';
+  const isOriginalProjection = view.projection === 'original';
+  const isCurrentProjection = view.projection === 'current' || view.projection === 'none';
+
+  // Display option reads with defaults
+  const showDelimiters = (d.delimiters ?? 'show') === 'show';
+  const hideDeletions = (d.deletions ?? 'inline') === 'hide';
+  const hideComments = (d.comments ?? 'inline-marker') === 'hide';
+  const hideHighlights = (d.highlights ?? 'inline') === 'hide';
+  const hideFootnoteRefs = (d.footnoteRefs ?? 'show') === 'hide';
+  const hideFootnotes = (d.footnotes ?? 'show') === 'hide';
+  const cursorReveal = d.cursorReveal === true;
+  const authorColorMode = d.authorColors ?? 'auto';
+
+  // Derived flags
+  // isFullInlineMode: true when all change types are shown inline (no hidden deletions, highlights,
+  // or comments). In this mode delimiters are always visible in markup — no cursor-gated reveal.
+  const isFullInlineMode = !hideDeletions && !hideHighlights && !hideComments;
+  const showDelimitersInMarkup = showDelimiters && !isL3 && isFullInlineMode;
+  // cursorRevealMode: active when either cursorReveal is explicitly set, or when showDelimiters is
+  // requested in a non-full-inline mode (old "changes + showDelimiters=true" behavior).
+  const cursorRevealMode = (cursorReveal || showDelimiters) && isCurrentProjection && !isFullInlineMode;
+  const showGhostDelimiters = isL3 && showDelimiters && isCurrentProjection;
+  const showGhostRefs = isL3 && !hideFootnoteRefs && isCurrentProjection;
 
   // Determine if per-author coloring is active
   let useAuthorColors = authorColorMode === 'always';
@@ -106,7 +123,7 @@ export function buildDecorationPlan(
     const author = change.metadata?.author ?? change.inlineMetadata?.author;
 
     // Active highlight: cursor inside a change in review/changes mode
-    if (isCursorInChange && !isFinalMode && !isOriginalMode) {
+    if (isCursorInChange && isCurrentProjection) {
       if (change.type === ChangeType.Substitution && change.originalRange && change.modifiedRange) {
         plan.activeHighlights.push({ range: change.originalRange });
         plan.activeHighlights.push({ range: change.modifiedRange });
@@ -144,13 +161,13 @@ export function buildDecorationPlan(
     };
 
     // ─── Final / Original mode ───────────────────────────────────────
-    if (isFinalMode || isOriginalMode) {
+    if (isDecidedProjection || isOriginalProjection) {
       const effectiveType = change.moveRole === 'from' ? ChangeType.Deletion
         : change.moveRole === 'to' ? ChangeType.Insertion
         : change.type;
 
       if (effectiveType === ChangeType.Insertion) {
-        if (isFinalMode) {
+        if (isDecidedProjection) {
           hideDelimiters(fullRange, contentRange, plan.hiddens);
         } else {
           plan.hiddens.push({ range: fullRange });
@@ -158,7 +175,7 @@ export function buildDecorationPlan(
       } else if (effectiveType === ChangeType.Deletion) {
         if (change.range.start === change.range.end) {
           // L3 zero-width deletion
-          if (isOriginalMode) {
+          if (isOriginalProjection) {
             const deletedText = change.originalText ?? '';
             if (deletedText) {
               plan.ghostDeletions.push({
@@ -167,7 +184,7 @@ export function buildDecorationPlan(
               });
             }
           }
-        } else if (isFinalMode) {
+        } else if (isDecidedProjection) {
           plan.hiddens.push({ range: fullRange });
         } else {
           hideDelimiters(fullRange, contentRange, plan.hiddens);
@@ -179,7 +196,7 @@ export function buildDecorationPlan(
           const separatorEnd = change.modifiedRange.start;
           const closeDelimiterStart = change.modifiedRange.end;
 
-          if (isFinalMode) {
+          if (isDecidedProjection) {
             plan.hiddens.push({ range: { start: fullRange.start, end: openDelimiterEnd } });
             plan.hiddens.push({ range: { start: change.originalRange.start, end: separatorEnd } });
             plan.hiddens.push({ range: { start: closeDelimiterStart, end: fullRange.end } });
@@ -206,14 +223,14 @@ export function buildDecorationPlan(
     }
 
     // ─── Settled refs ────────────────────────────────────────────────
-    if (change.settled) {
+    if (change.decided) {
       if (!showDelimiters) {
         plan.hiddens.push({ range: fullRange });
         return;
       }
-      plan.settledRefs.push({ range: contentRange });
+      plan.decidedRefs.push({ range: contentRange });
       if (change.status === ChangeStatus.Accepted || change.status === ChangeStatus.Rejected) {
-        plan.settledDims.push({ range: contentRange });
+        plan.decidedDims.push({ range: contentRange });
       }
       return;
     }
@@ -224,7 +241,8 @@ export function buildDecorationPlan(
     if (change.moveRole === 'from') {
       if (showDelimitersInMarkup) {
         pushMoveFrom({ range: fullRange });
-      } else if (isReviewMode) {
+      } else if (isFullInlineMode) {
+        // Full inline mode, delimiters hidden: still decorate content
         hideOrGhostDelimiters(fullRange, contentRange, plan, isL3, showGhostDelimiters, '{--', '--}');
         pushMoveFrom({ range: contentRange });
       } else if (isCursorOnChangeLine) {
@@ -235,12 +253,14 @@ export function buildDecorationPlan(
         }
         pushMoveFrom({ range: contentRange });
       } else {
+        // Settled-base: entire move-from is hidden (moved text invisible when cursor away)
         plan.hiddens.push({ range: fullRange });
       }
     } else if (change.moveRole === 'to') {
       if (showDelimitersInMarkup) {
         pushMoveTo({ range: fullRange });
-      } else if (isReviewMode) {
+      } else if (isFullInlineMode) {
+        // Full inline mode, delimiters hidden: still decorate content
         hideOrGhostDelimiters(fullRange, contentRange, plan, isL3, showGhostDelimiters, '{++', '++}');
         pushMoveTo({ range: contentRange });
       } else if (isCursorOnChangeLine) {
@@ -251,6 +271,7 @@ export function buildDecorationPlan(
         }
         pushMoveTo({ range: contentRange });
       } else {
+        // Settled-base: delimiters hidden, move-to content plain (no decoration)
         hideOrGhostDelimiters(fullRange, contentRange, plan, isL3, showGhostDelimiters, '{++', '++}');
       }
     } else if (change.type === ChangeType.Insertion) {
@@ -259,7 +280,8 @@ export function buildDecorationPlan(
         : undefined;
       if (showDelimitersInMarkup) {
         pushInsertion({ range: fullRange, hoverText: reasonHover });
-      } else if (isReviewMode) {
+      } else if (isFullInlineMode) {
+        // Full inline mode, delimiters hidden: still decorate content
         hideOrGhostDelimiters(fullRange, contentRange, plan, isL3, showGhostDelimiters, '{++', '++}');
         pushInsertion({ range: contentRange, hoverText: reasonHover });
       } else if (isCursorOnChangeLine) {
@@ -270,6 +292,7 @@ export function buildDecorationPlan(
         }
         pushInsertion({ range: contentRange, hoverText: reasonHover });
       } else {
+        // Settled-base: delimiters hidden, insertion content plain (no decoration)
         hideOrGhostDelimiters(fullRange, contentRange, plan, isL3, showGhostDelimiters, '{++', '++}');
       }
     } else if (change.type === ChangeType.Deletion) {
@@ -280,8 +303,8 @@ export function buildDecorationPlan(
       if (change.range.start === change.range.end) {
         // L3 zero-width deletion: ghost text
         const deletedText = change.originalText ?? '';
-        if (deletedText && !isFinalMode) {
-          if (isReviewMode || isOriginalMode || isCursorOnChangeLine) {
+        if (deletedText && !isDecidedProjection) {
+          if (!hideDeletions || isCursorOnChangeLine) {
             plan.ghostDeletions.push({
               range: fullRange,
               renderBefore: { contentText: deletedText },
@@ -293,9 +316,8 @@ export function buildDecorationPlan(
         // L2 deletion with content
         if (showDelimitersInMarkup) {
           pushDeletion({ range: fullRange, hoverText: reasonHover });
-        } else if (isReviewMode) {
-          hideOrGhostDelimiters(fullRange, contentRange, plan, isL3, showGhostDelimiters, '{--', '--}');
-          pushDeletion({ range: contentRange, hoverText: reasonHover });
+        } else if (hideDeletions && !isCursorOnChangeLine) {
+          plan.hiddens.push({ range: fullRange });
         } else if (isCursorOnChangeLine) {
           if (cursorRevealMode && isCursorInChange) {
             revealDelimiters(fullRange, contentRange, plan.unfoldedDelimiters);
@@ -304,7 +326,8 @@ export function buildDecorationPlan(
           }
           pushDeletion({ range: contentRange, hoverText: reasonHover });
         } else {
-          plan.hiddens.push({ range: fullRange });
+          hideOrGhostDelimiters(fullRange, contentRange, plan, isL3, showGhostDelimiters, '{--', '--}');
+          pushDeletion({ range: contentRange, hoverText: reasonHover });
         }
       }
     } else if (change.type === ChangeType.Substitution) {
@@ -322,8 +345,8 @@ export function buildDecorationPlan(
         if (showDelimitersInMarkup) {
           pushSubOriginal({ range: { start: fullRange.start, end: change.modifiedRange.start }, hoverText: reasonHover });
           pushSubModified({ range: { start: change.modifiedRange.start, end: fullRange.end }, hoverText: reasonHover });
-        } else if (isReviewMode) {
-          // Substitution needs 3 hidden ranges (open, separator, close) — can't use hideOrGhostDelimiters
+        } else if (isFullInlineMode) {
+          // Full inline mode, delimiters hidden: still decorate both original and modified content
           if (isL3 && showGhostDelimiters) {
             injectGhostDelimiters(fullRange, contentRange, plan.ghostDelimiters, '{~~', '~~}');
           } else if (!isL3) {
@@ -333,23 +356,25 @@ export function buildDecorationPlan(
           }
           pushSubOriginal({ range: change.originalRange, hoverText: reasonHover });
           pushSubModified({ range: change.modifiedRange, hoverText: reasonHover });
+        } else if (isCursorOnChangeLine) {
+          if (cursorRevealMode && isCursorInChange) {
+            plan.unfoldedDelimiters.push({ range: { start: fullRange.start, end: openDelimiterEnd } });
+            plan.unfoldedDelimiters.push({ range: { start: separatorStart, end: separatorEnd } });
+            plan.unfoldedDelimiters.push({ range: { start: closeDelimiterStart, end: fullRange.end } });
+          } else if (isL3 && showGhostDelimiters) {
+            injectGhostDelimiters(fullRange, contentRange, plan.ghostDelimiters, '{~~', '~~}');
+          } else if (!isL3) {
+            plan.hiddens.push({ range: { start: fullRange.start, end: openDelimiterEnd } });
+            plan.hiddens.push({ range: { start: separatorStart, end: separatorEnd } });
+            plan.hiddens.push({ range: { start: closeDelimiterStart, end: fullRange.end } });
+          }
+          pushSubOriginal({ range: change.originalRange, hoverText: reasonHover });
+          pushSubModified({ range: change.modifiedRange, hoverText: reasonHover });
         } else {
-          if (isCursorOnChangeLine) {
-            if (cursorRevealMode && isCursorInChange) {
-              plan.unfoldedDelimiters.push({ range: { start: fullRange.start, end: openDelimiterEnd } });
-              plan.unfoldedDelimiters.push({ range: { start: separatorStart, end: separatorEnd } });
-              plan.unfoldedDelimiters.push({ range: { start: closeDelimiterStart, end: fullRange.end } });
-            } else if (isL3 && showGhostDelimiters) {
-              injectGhostDelimiters(fullRange, contentRange, plan.ghostDelimiters, '{~~', '~~}');
-            } else if (!isL3) {
-              plan.hiddens.push({ range: { start: fullRange.start, end: openDelimiterEnd } });
-              plan.hiddens.push({ range: { start: separatorStart, end: separatorEnd } });
-              plan.hiddens.push({ range: { start: closeDelimiterStart, end: fullRange.end } });
-            }
-            pushSubOriginal({ range: change.originalRange, hoverText: reasonHover });
-            pushSubModified({ range: change.modifiedRange, hoverText: reasonHover });
-          } else {
-            // Settled-base: show only new text
+          // Settled-base: show only new text, hide original + all delimiters, no decoration
+          if (isL3 && showGhostDelimiters) {
+            injectGhostDelimiters(fullRange, contentRange, plan.ghostDelimiters, '{~~', '~~}');
+          } else if (!isL3) {
             plan.hiddens.push({ range: { start: fullRange.start, end: separatorEnd } });
             plan.hiddens.push({ range: { start: closeDelimiterStart, end: fullRange.end } });
           }
@@ -358,7 +383,7 @@ export function buildDecorationPlan(
         // Sidecar substitution (L3)
         const charRanges = getCharLevelRanges(change);
 
-        if (isReviewMode || isCursorOnChangeLine) {
+        if (!hideDeletions || isCursorOnChangeLine) {
           if (charRanges.length > 0) {
             for (const r of charRanges) {
               pushSubModified({ range: r, hoverText: reasonHover });
@@ -377,9 +402,8 @@ export function buildDecorationPlan(
 
       if (showDelimitersInMarkup) {
         pushHighlight({ range: fullRange, hoverText });
-      } else if (isReviewMode) {
-        hideOrGhostDelimiters(fullRange, contentRange, plan, isL3, showGhostDelimiters, '{==', '==}');
-        pushHighlight({ range: contentRange, hoverText });
+      } else if (hideHighlights && !isCursorOnChangeLine) {
+        plan.hiddens.push({ range: fullRange });
       } else if (isCursorOnChangeLine) {
         if (cursorRevealMode && isCursorInChange) {
           revealDelimiters(fullRange, contentRange, plan.unfoldedDelimiters);
@@ -388,7 +412,7 @@ export function buildDecorationPlan(
         }
         pushHighlight({ range: contentRange, hoverText });
       } else {
-        // Settled-base: highlight stays visible
+        // Default: highlight stays visible, hide delimiters
         if (change.metadata?.comment) {
           if (fullRange.start < contentRange.start) {
             plan.hiddens.push({ range: { start: fullRange.start, end: contentRange.start } });
@@ -413,7 +437,7 @@ export function buildDecorationPlan(
 
       if (showDelimitersInMarkup) {
         pushComment({ range: fullRange, hoverText });
-      } else if (isReviewMode) {
+      } else if (hideComments && !isCursorOnChangeLine) {
         plan.hiddens.push({ range: fullRange });
         plan.commentIcons.push({
           range: { start: fullRange.start, end: fullRange.start },
@@ -463,19 +487,19 @@ export function buildDecorationPlan(
 
   // ─── L3 footnote edit-op dimming ─────────────────────────────────
   const hasL3Changes = changes.some(c => c.level >= 2);
-  if (!isFinalMode && !isOriginalMode && hasL3Changes) {
+  if (isCurrentProjection && hasL3Changes && !hideFootnotes) {
     const lines = text.split('\n');
     const blockStart = findFootnoteBlockStart(lines);
     if (blockStart < lines.length) {
       const lastLine = lines.length - 1;
       const dimStart = lineStarts[blockStart];
       const dimEnd = lineStarts[lastLine] + lines[lastLine].length;
-      plan.settledDims.push({ range: { start: dimStart, end: dimEnd } });
+      plan.decidedDims.push({ range: { start: dimStart, end: dimEnd } });
     }
   }
 
   // ─── Footnote ref splitting (post-processing) ────────────────────
-  if (isReviewMode && text) {
+  if (!hideFootnoteRefs && text) {
     const searchArrays: OffsetDecoration[][] = [
       plan.insertions, plan.deletions, plan.substitutionOriginals,
       plan.substitutionModifieds, plan.highlights, plan.comments,
@@ -486,7 +510,7 @@ export function buildDecorationPlan(
     }
 
     for (const change of changes) {
-      if (!change.footnoteRefStart || change.settled) continue;
+      if (!change.footnoteRefStart || change.decided) continue;
       const refStart = change.footnoteRefStart;
       const refEnd = change.range.end;
 
@@ -495,7 +519,7 @@ export function buildDecorationPlan(
           const entry = arr[i];
           if (entry.range.end === refEnd && entry.range.start < refStart) {
             arr[i] = { ...entry, range: { start: entry.range.start, end: refStart } };
-            plan.settledRefs.push({ range: { start: refStart, end: refEnd } });
+            plan.decidedRefs.push({ range: { start: refStart, end: refEnd } });
             break;
           }
         }

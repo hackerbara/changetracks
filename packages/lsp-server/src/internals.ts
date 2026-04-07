@@ -11,7 +11,7 @@ export * from './converters';
 export * from './capabilities/hover';
 export * from './notifications/decoration-data';
 export * from './notifications/pending-edit';
-export * from './pending-edit-manager';
+export { PendingEditManager, type CrystallizedEdit, type OnCrystallizeCallback, type OnOverlayChangeCallback } from '@changedown/core/host';
 
 // Internal modules needed by tests
 export * from './notifications/document-state';

@@ -1,5 +1,5 @@
-<!-- changedown.com/v1: untracked -->
-<!-- Changedown.com/v1: untracked -->
+<!-- changedown.com/v1: tracked -->
+
 # The Thermodynamics of Collaboration
 
 **Date:** February 10, 2026  
@@ -27,8 +27,11 @@ This is the fate of most long-lived software:
 Changedown preserves information (reasoning, intent, deliberation) that would otherwise dissipate. The footnotes are **local reductions in entropy**—pockets of order that persist over time.
 
 When you write:
-```python
-results = {}  # {}
+```markdown
+Retry on failure. {++with exponential backoff++}[^cn-1]
+
+[^cn-1]: @author 2026-02-10 | proposed | ins
+    Avoid hammering the API after transient errors.
 ```
 
 You're not just recording a change. You're creating a **negentropy pocket**—a region of lower entropy (higher order) that resists the natural tendency toward chaos.
@@ -53,7 +56,9 @@ The genius of the VCS compaction model is that it doesn't fight entropy—it **c
 
 You're not destroying information. You're moving it to a lower-energy state (git history) where it can exist without interfering with current operations.
 
-```
+Schematic (not a code excerpt):
+
+```text
 Before compaction (high entropy, active system):
 File with 1000 lines of code + 500 lines of stale footnotes
 Reading requires parsing irrelevant historical deliberation

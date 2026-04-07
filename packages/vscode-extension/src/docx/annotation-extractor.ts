@@ -6,7 +6,7 @@
  * Produces AnnotationCard objects for the sidebar panel.
  */
 
-import { ChangeNode, ChangeType } from '@changedown/core';
+import { ChangeNode, ChangeType, nodeStatus } from '@changedown/core';
 
 export interface AnnotationCard {
     /** Unique ID for linking to inline anchor: "cn-pair-{range.start}" */
@@ -63,7 +63,7 @@ export function buildAnnotationCards(changes: ChangeNode[], src: string): Annota
     for (const c of changes) {
         const author = c.metadata?.author ?? c.inlineMetadata?.author ?? undefined;
         const date = c.metadata?.date ?? c.inlineMetadata?.date ?? undefined;
-        const status = c.metadata?.status ?? c.inlineMetadata?.status ?? c.status ?? 'proposed';
+        const status = nodeStatus(c);
 
         // Build text preview based on change type
         let textPreview = '';

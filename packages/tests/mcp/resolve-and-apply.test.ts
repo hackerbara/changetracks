@@ -102,25 +102,25 @@ describe('resolveCoordinates — view-aware translation', () => {
 
     // Compute real hashes for the raw file
     const rawHash = computeLineHash(2, 'Target line', rawFileLines);
-    // Simulate a settled-view hash that differs from raw hash (e.g., stripped content hash)
+    // Simulate a current-view hash that differs from raw hash (e.g., stripped content hash)
     // Use the same hash as raw for simplicity — the key is the rawLineNum mapping
-    const settledViewHash = rawHash;
+    const currentViewHash = rawHash;
 
     // Build session state as if agent read in 'settled' view:
-    // settled-view line 1 → rawLineNum 3
+    // current-view line 1 → rawLineNum 3
     const state = new SessionState();
     state.recordAfterRead(FILE_PATH, 'settled', [
       {
         line: 1,
         raw: rawHash,
-        settled: rawHash,
-        settledView: settledViewHash,
+        current: rawHash,
+        currentView: currentViewHash,
         rawLineNum: 3,
       },
     ], rawFileContent);
 
-    // Agent submits coordinates using settled-view line 1 with the settledView hash
-    const at = `1:${settledViewHash}`;
+    // Agent submits coordinates using current-view line 1 with the currentView hash
+    const at = `1:${currentViewHash}`;
     const op = makeOp(at);
     const result = resolveCoordinates(op, rawFileContent, rawFileLines, state, FILE_PATH, config);
 
@@ -139,7 +139,7 @@ describe('resolveCoordinates — view-aware translation', () => {
 
     const state = new SessionState();
     state.recordAfterRead(FILE_PATH, 'raw', [
-      { line: 1, raw: rawHash, settled: rawHash, rawLineNum: 1 },
+      { line: 1, raw: rawHash, current: rawHash, rawLineNum: 1 },
     ], fileContent);
 
     const at = `1:${rawHash}`;
@@ -597,21 +597,21 @@ describe('settled-view batch (friction report scenario)', () => {
     expect(matchB).toBeDefined();
     expect(matchC).toBeDefined();
 
-    const settledLineB = parseInt(matchB![1], 10);
-    const settledHashB = matchB![2];
-    const settledLineC = parseInt(matchC![1], 10);
-    const settledHashC = matchC![2];
+    const currentLineB = parseInt(matchB![1], 10);
+    const currentHashB = matchB![2];
+    const currentLineC = parseInt(matchC![1], 10);
+    const currentHashC = matchC![2];
 
-    // Step 6: Submit batch using settled-view coordinates (the friction report scenario)
-    // These are NOT raw coordinates — they come from the settled view where
+    // Step 6: Submit batch using current-view coordinates (the friction report scenario)
+    // These are NOT raw coordinates — they come from the current view where
     // CriticMarkup is collapsed, so line numbers differ from raw.
     const batchResult = await handleProposeChange(
       {
         file: filePath,
         author: 'ai:test',
         changes: [
-          { at: `${settledLineB}:${settledHashB}`, op: '{~~Line B~>Modified B~~}{>>batch edit 1' },
-          { at: `${settledLineC}:${settledHashC}`, op: '{~~Line C~>Modified C~~}{>>batch edit 2' },
+          { at: `${currentLineB}:${currentHashB}`, op: '{~~Line B~>Modified B~~}{>>batch edit 1' },
+          { at: `${currentLineC}:${currentHashC}`, op: '{~~Line C~>Modified C~~}{>>batch edit 2' },
         ],
       },
       resolver, state,
@@ -1247,7 +1247,7 @@ describe('Stage 3.5b — committed/settled view hash resolution', () => {
     expect(result.rawStartLine).toBe(4);
   });
 
-  it('resolves coordinates from settled view agent via computeSettledView', () => {
+  it('resolves coordinates from settled view agent via computeCurrentView', () => {
     const fileLines = [
       'Line one',
       '{++Inserted line++}[^cn-1]',
@@ -1258,12 +1258,12 @@ describe('Stage 3.5b — committed/settled view hash resolution', () => {
     const state = new SessionState();
     state.recordAfterRead(FILE_PATH, 'settled', [], 'original-content');
 
-    // In settled view, the insertion is accepted: "Inserted line" is at settled line 2.
-    // Hash of "Inserted line" in the settled view context.
-    const settledLines = ['Line one', 'Inserted line', 'Line two'];
-    const settledHash = computeLineHash(1, 'Inserted line', settledLines);
+    // In settled view, the insertion is accepted: "Inserted line" is at current line 2.
+    // Hash of "Inserted line" in the current view context.
+    const currentLines = ['Line one', 'Inserted line', 'Line two'];
+    const currentHash = computeLineHash(1, 'Inserted line', currentLines);
 
-    const op = makeOp(`2:${settledHash}`, { type: 'ins', oldText: '', newText: 'more' });
+    const op = makeOp(`2:${currentHash}`, { type: 'ins', oldText: '', newText: 'more' });
 
     const result = resolveCoordinates(op, fileContent, fileLines, state, FILE_PATH, config);
     // Should resolve to raw line 2 (where {++Inserted line++} is)

@@ -20,7 +20,7 @@ import {
     type OffsetDecoration,
     type OffsetRange,
     type AuthorDecorationRole,
-} from '@changedown/core/dist/host/index';
+} from '@changedown/core/host';
 import type { EditorPort } from './view/EditorPort';
 import { offsetToPosition } from './converters';
 
@@ -40,8 +40,8 @@ const FIXED_TYPE_IDS = [
     'activeHighlight',
     'moveFrom',
     'moveTo',
-    'settledRef',
-    'settledDim',
+    'decidedRef',
+    'decidedDim',
     'ghostDeletion',
     'consumed',
     'consumingAnnotation',

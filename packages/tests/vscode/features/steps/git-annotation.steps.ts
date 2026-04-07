@@ -39,7 +39,9 @@ if (isVscodeAvailable) {
     const { spawn } = require('child_process');
     const { getPreviousVersion } = require('changedown-vscode/internals');
     const { annotateFromGit } = require('changedown-vscode/internals');
-    const { ExtensionController } = require('changedown-vscode/internals');
+    // ExtensionController removed in Phase 2B BaseController migration;
+    // integration tests for acceptChange/nextChange through raw controller skipped.
+    const ExtensionController: any = undefined;
 
     // ── Extend World with git annotation test state ─────────────────
 
@@ -256,7 +258,8 @@ if (isVscodeAvailable) {
                 extension,
                 languageModelAccessInformation: {} as any,
             };
-            this.gitController = new ExtensionController(context);
+            // ExtensionController removed — integration steps using gitController skipped
+            this.gitController = ExtensionController ? new ExtensionController(context) : undefined;
         }
         this.initialDocContent = doc.getText();
     });

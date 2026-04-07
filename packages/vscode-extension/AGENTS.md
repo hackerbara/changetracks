@@ -21,6 +21,7 @@ Debug: press F5 in VS Code (launches Extension Development Host).
 
     src/
     ├── commands/         Command registrations (change, comment, scm, setup, test)
+    │   └── anchor-commands.ts   AnchorCommands — inspectAnchors, repairAnchors
     ├── docx/             DOCX editor provider and preview
     ├── preview/          Markdown preview plugin
     ├── view/             View components
@@ -104,11 +105,39 @@ Typical keystroke flow:
 |------|-----------|--------|------------|
 | `review` | No | Original markup | No |
 | `changes` | No | Original markup (delimiters hidden via CSS) | No |
-| `settled` | Yes | `computeSettledText()` — accepted text only | Yes |
+| `settled` | Yes | `computeCurrentText()` — accepted text only | Yes |
 | `raw` | Yes | `computeOriginalText()` — original text only | Yes |
 
 Transitions between projected ↔ non-projected require buffer swap via `ProjectedView`.
 Crash recovery: `.changedown-swap` backup on enter, cleaned up on exit.
+
+### Format State Ownership
+
+Format state (L2 vs L3 per document) is SDK-owned via `FormatService` in `BaseController`.
+The extension reads format from `controller.formatService.getDetectedFormat()` or
+`DocumentState.format` rather than maintaining its own format tracking.
+
+### AnchorCommands
+
+`commands/anchor-commands.ts` — L3 anchor inspection and repair commands:
+
+- `changedown.inspectAnchors` / `changedown.inspectUnresolved` — shows a QuickPick
+  of all unresolved anchors (ghost nodes) in the active document. Selecting one
+  navigates the cursor to that anchor's position.
+- `changedown.repairAnchors` — triggers an L3→L2→L3 round-trip on the active document
+  via `controller.formatService.demoteToL2()` + `promoteToL3()`. Forces re-anchoring
+  of all changes. Only works when document is in L3 format.
+
+Both commands require an active document with `controller.getActiveUri()`.
+
+### Deprecated API
+
+`setViewMode(mode)` on the controller is a deprecated facade. The new API is:
+- `controller.setProjection(projection)` — set `current` | `decided` | `original`
+- `controller.setDisplay(options)` — set `DisplayOptions` (delimiters, filters, etc.)
+
+`VIEW_MODE_PRESETS` in `@changedown/core/host` maps ViewMode names to their
+Projection + DisplayOptions equivalents.
 
 ### Debounce Timers
 
@@ -129,8 +158,8 @@ substitutionOriginalObj (red strikethrough), substitutionModifiedObj (green),
 highlightObj (yellow bg), commentObj (blue border + bubble emoji)
 
 **Structural:** hiddenObj (CSS `display:none`), unfoldedObj (gray italic for cursor reveal),
-activeHighlightObj (blue bg for cursor's change), settledDimObj (50% opacity),
-settledRefObj (gray for `[^cn-N]` refs), ghostDeletionObj (red italic `before` pseudo-element)
+activeHighlightObj (blue bg for cursor's change), decidedDimObj (50% opacity),
+decidedRefObj (gray for `[^cn-N]` refs), ghostDeletionObj (red italic `before` pseudo-element)
 
 **Moves:** moveFromObj (purple strikethrough + up-arrow), moveToObj (purple underline + down-arrow)
 
@@ -168,7 +197,8 @@ appends, comment handlers. Prevents tracking from wrapping system-generated edit
 ## VS Code Extension Points
 
 Commands: `changedown.toggleTracking`, `.acceptChange`, `.rejectChange`,
-`.acceptAll`, `.rejectAll`, `.nextChange`, `.previousChange`, `.addComment`, `.toggleView`
+`.acceptAll`, `.rejectAll`, `.nextChange`, `.previousChange`, `.addComment`, `.toggleView`,
+`.inspectAnchors`, `.inspectUnresolved`, `.repairAnchors`
 
 Configuration: `changedown.trackingMode` (boolean), `changedown.showDelimiters` (boolean),
 `changedown.clickToShowComments` (boolean), `changedown.decorationStyle` ('foreground'|'background'),

@@ -1,6 +1,6 @@
 {
   "name": "@changedown/core",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "CriticMarkup parser and operations engine",
   "license": "MIT",
   "repository": {
@@ -43,11 +43,6 @@
       "require": "./dist/edit-boundary/index.js"
     },
     "./host": {
-      "types": "./dist/host/index.d.ts",
-      "import": "./dist-esm/host/index.js",
-      "require": "./dist/host/index.js"
-    },
-    "./dist/host/index": {
       "types": "./dist/host/index.d.ts",
       "import": "./dist-esm/host/index.js",
       "require": "./dist/host/index.js"

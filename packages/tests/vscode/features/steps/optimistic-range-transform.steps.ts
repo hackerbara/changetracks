@@ -16,7 +16,7 @@ import type { ChangeDownWorld } from './world';
 // The cache-level helpers (setCachedDecorations, getCachedDecorations, etc.)
 // now live on the core DocumentStateManager class.
 import { transformRange } from 'changedown-vscode/internals';
-import { DocumentStateManager as CoreDocumentStateManager } from '@changedown/core/dist/host/index';
+import { DocumentStateManager as CoreDocumentStateManager } from '@changedown/core/host';
 
 /** Shared core DSM instance for cache integration tests. */
 const coreDsm = new CoreDocumentStateManager();

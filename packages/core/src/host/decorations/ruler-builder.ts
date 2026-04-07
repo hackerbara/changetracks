@@ -1,21 +1,21 @@
 // packages/core/src/host/decorations/ruler-builder.ts
 import { ChangeType } from '../../model/types.js';
 import type { ChangeNode } from '../../model/types.js';
-import type { ViewMode } from '../types.js';
+import type { View } from '../types.js';
 import type { OverviewRulerPlan, OffsetRange } from './types.js';
 
 export function buildOverviewRulerPlan(
   changes: ChangeNode[],
-  viewMode: ViewMode,
+  view: View,
 ): OverviewRulerPlan {
   const plan: OverviewRulerPlan = {
     insertions: [], deletions: [], substitutions: [], highlights: [], comments: [],
   };
 
-  if (viewMode === 'settled' || viewMode === 'raw') return plan;
+  if (view.projection !== 'current') return plan;
 
   for (const change of changes) {
-    if (change.settled) continue;
+    if (change.decided) continue;
     const effectiveType = change.moveRole === 'from' ? ChangeType.Deletion
       : change.moveRole === 'to' ? ChangeType.Insertion
       : change.type;

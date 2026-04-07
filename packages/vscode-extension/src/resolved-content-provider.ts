@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { computeSettledText } from '@changedown/core';
+import { computeCurrentText } from '@changedown/core';
 import { getPreviousVersion } from './git-integration';
 
 export const RESOLVED_SCHEME = 'changedown-resolved';
@@ -26,7 +26,7 @@ export class ResolvedContentProvider implements vscode.TextDocumentContentProvid
     // Decode the real file URI from query parameter
     const realUri = vscode.Uri.parse(JSON.parse(uri.query).uri);
     const doc = await vscode.workspace.openTextDocument(realUri);
-    return computeSettledText(doc.getText());
+    return computeCurrentText(doc.getText());
   }
 
   dispose(): void {

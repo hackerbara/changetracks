@@ -7,8 +7,10 @@ export type DecorationTypeId =
   | 'highlight' | 'comment'
   | 'hidden' | 'unfoldedDelimiter'
   | 'commentIcon' | 'activeHighlight'
-  | 'moveFrom' | 'moveTo'
-  | 'settledRef' | 'settledDim'
+  | 'moveFrom' | 'moveTo' | 'moveLabel'
+  | 'anchorMeta'
+  | 'decidedRef' | 'decidedDim'
+  | 'footnoteBlock'
   | 'ghostDeletion'
   | 'consumed' | 'consumingAnnotation'
   | 'ghostDelimiter' | 'ghostRef';
@@ -52,8 +54,8 @@ export interface DecorationPlan {
   activeHighlights: OffsetDecoration[];
   moveFroms: OffsetDecoration[];
   moveTos: OffsetDecoration[];
-  settledRefs: OffsetDecoration[];
-  settledDims: OffsetDecoration[];
+  decidedRefs: OffsetDecoration[];
+  decidedDims: OffsetDecoration[];
   ghostDeletions: OffsetDecoration[];
   consumedRanges: OffsetDecoration[];
   consumingOpAnnotations: OffsetDecoration[];

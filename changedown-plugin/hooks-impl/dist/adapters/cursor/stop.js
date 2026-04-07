@@ -1077,7 +1077,7 @@ var CriticMarkupParser = class _CriticMarkupParser {
           contentRange: { start: offset, end: offset + refLength },
           // covers [^cn-N] ref
           level: 2,
-          settled: true,
+          decided: true,
           anchored: true,
           metadata: {
             author: def.author,
@@ -2354,7 +2354,7 @@ function containsCriticMarkup(text) {
   return /\{\+\+|\{--|\{~~|\{==|\{>>/.test(text);
 }
 function stripCriticMarkupWithMap(text) {
-  const settled = [];
+  const current = [];
   const toRaw = [];
   const markupRanges = [];
   let i = 0;
@@ -2378,7 +2378,7 @@ function stripCriticMarkupWithMap(text) {
           const constructEnd = end + 3;
           markupRanges.push({ rawStart: constructStart, rawEnd: constructEnd });
           for (let j = contentStart; j < contentEnd; j++) {
-            settled.push(text[j]);
+            current.push(text[j]);
             toRaw.push(j);
           }
           i = constructEnd;
@@ -2405,7 +2405,7 @@ function stripCriticMarkupWithMap(text) {
             const constructEnd = end + 3;
             markupRanges.push({ rawStart: constructStart, rawEnd: constructEnd });
             for (let j = newStart; j < newEnd; j++) {
-              settled.push(text[j]);
+              current.push(text[j]);
               toRaw.push(j);
             }
             i = constructEnd;
@@ -2422,7 +2422,7 @@ function stripCriticMarkupWithMap(text) {
           const constructEnd = end + 3;
           markupRanges.push({ rawStart: constructStart, rawEnd: constructEnd });
           for (let j = contentStart; j < contentEnd; j++) {
-            settled.push(text[j]);
+            current.push(text[j]);
             toRaw.push(j);
           }
           i = constructEnd;
@@ -2439,11 +2439,11 @@ function stripCriticMarkupWithMap(text) {
         }
       }
     }
-    settled.push(text[i]);
+    current.push(text[i]);
     toRaw.push(i);
     i++;
   }
-  return { settled: settled.join(""), toRaw, markupRanges };
+  return { current: current.join(""), toRaw, markupRanges };
 }
 function stripCriticMarkupToCommittedWithMap(text) {
   const footnotes = extractFootnoteStatuses(text);
@@ -2691,16 +2691,16 @@ function findUniqueMatch(text, target, normalizer) {
     }
   }
   if (containsCriticMarkup(text)) {
-    const { settled, toRaw, markupRanges } = stripCriticMarkupWithMap(text);
-    const settledIdx = settled.indexOf(target);
-    if (settledIdx !== -1) {
-      const settledSecondIdx = settled.indexOf(target, settledIdx + 1);
-      if (settledSecondIdx !== -1) {
-        throw new Error(`Text "${target}" found multiple times in settled text (ambiguous). Provide more context to uniquely identify the location. Use LINE:HASH coordinates from read_tracked_file for precise targeting (e.g., at: '15:a3').`);
+    const { current, toRaw, markupRanges } = stripCriticMarkupWithMap(text);
+    const currentIdx = current.indexOf(target);
+    if (currentIdx !== -1) {
+      const currentSecondIdx = current.indexOf(target, currentIdx + 1);
+      if (currentSecondIdx !== -1) {
+        throw new Error(`Text "${target}" found multiple times in current text (ambiguous). Provide more context to uniquely identify the location. Use LINE:HASH coordinates from read_tracked_file for precise targeting (e.g., at: '15:a3').`);
       }
-      const settledEnd = settledIdx + target.length - 1;
-      let rawStart = toRaw[settledIdx];
-      let rawEnd = toRaw[settledEnd] + 1;
+      const currentEnd = currentIdx + target.length - 1;
+      let rawStart = toRaw[currentIdx];
+      let rawEnd = toRaw[currentEnd] + 1;
       let expanded = true;
       while (expanded) {
         expanded = false;
@@ -2732,7 +2732,7 @@ function findUniqueMatch(text, target, normalizer) {
       };
     }
   }
-  const hint = normalizer ? "Tried: exact match, normalized match (NFKC), whitespace-collapsed match, view-surface match, committed-text match, settled-text match." : "Tried: exact match only (no normalizer), whitespace-collapsed match, view-surface match, committed-text match, settled-text match.";
+  const hint = normalizer ? "Tried: exact match, normalized match (NFKC), whitespace-collapsed match, view-surface match, decided-text match, current-text match." : "Tried: exact match only (no normalizer), whitespace-collapsed match, view-surface match, decided-text match, current-text match.";
   const preview = target.length > 80 ? target.slice(0, 80) + "..." : target;
   const haystackPreview = text.length > 200 ? text.slice(0, 200) + "..." : text;
   const haystackLineCount = text.split("\n").length;

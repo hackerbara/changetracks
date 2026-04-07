@@ -1,8 +1,8 @@
-import { settleAcceptedChangesOnly, settleRejectedChangesOnly } from '@changedown/core';
+import { applyAcceptedChanges, applyRejectedChanges } from '@changedown/core';
 
 export interface SettlementResult {
-  settledContent: string;
-  settledCount: number;
+  currentContent: string;
+  appliedCount: number;
 }
 
 /**
@@ -10,21 +10,21 @@ export interface SettlementResult {
  * Proposed changes are left untouched.
  *
  * Pipeline:
- * 1. settleAcceptedChangesOnly — removes inline CriticMarkup for accepted changes
- * 2. settleRejectedChangesOnly — removes inline CriticMarkup for rejected changes
+ * 1. applyAcceptedChanges — removes inline CriticMarkup for accepted changes
+ * 2. applyRejectedChanges — removes inline CriticMarkup for rejected changes
  *
  * Both functions preserve footnote definitions and inline refs (Layer 1 settlement).
  *
  * Pure function: no I/O, no side effects.
  */
 export function computeSettlement(content: string): SettlementResult {
-  const acceptResult = settleAcceptedChangesOnly(content);
-  const rejectResult = settleRejectedChangesOnly(acceptResult.settledContent);
+  const acceptResult = applyAcceptedChanges(content);
+  const rejectResult = applyRejectedChanges(acceptResult.currentContent);
 
-  const settledCount = acceptResult.settledIds.length + rejectResult.settledIds.length;
+  const appliedCount = acceptResult.appliedIds.length + rejectResult.appliedIds.length;
 
   return {
-    settledContent: rejectResult.settledContent,
-    settledCount,
+    currentContent: rejectResult.currentContent,
+    appliedCount,
   };
 }

@@ -13,6 +13,7 @@
  */
 
 import { Connection, Range } from 'vscode-languageserver';
+import { LSP_METHOD } from '@changedown/core/host';
 
 /**
  * Payload for pendingEditFlushed notification.
@@ -54,5 +55,5 @@ export function sendPendingEditFlushed(
       { range: footnoteRange, newText: footnoteNewText },
     ],
   };
-  connection.sendNotification('changedown/pendingEditFlushed', params);
+  connection.sendNotification(LSP_METHOD.PENDING_EDIT_FLUSHED, params);
 }

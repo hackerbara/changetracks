@@ -1,7 +1,7 @@
 import {
-  initHashline, computeLineHash, computeSettledLineHash, settledLine,
-  computeSettledView, computeCommittedView,
-  type SettledViewResult, type CommittedViewResult,
+  initHashline, computeLineHash, computeCurrentLineHash, currentLine,
+  computeCurrentView, computeDecidedView,
+  type CurrentViewResult, type DecidedViewResult,
 } from '@changedown/core';
 import type { SessionState } from './state.js';
 import type { ChangeDownConfig } from './config.js';
@@ -11,12 +11,12 @@ import type { ChangeDownConfig } from './config.js';
  * Clears the ID counter cache, updates hashes, preserves lastReadView.
  *
  * When the agent's lastReadView is 'settled' or 'changes', computes the
- * corresponding projected view and stores view-specific hashes (settledView
- * or committed) alongside the raw/settled base hashes. Returns the computed
+ * corresponding projected view and stores view-specific hashes (currentView
+ * or committed) alongside the raw/current base hashes. Returns the computed
  * view result so callers can reuse it without double-computing.
  *
- * For the review view, also computes committed hashes so the view-aware
- * resolution pipeline can match stale committed hashes from the agent's
+ * For the review view, also computes decided hashes so the view-aware
+ * resolution pipeline can match stale decided hashes from the agent's
  * original read across batch boundaries.
  *
  * Call this after EVERY fs.writeFile() in any tool handler.
@@ -26,7 +26,7 @@ export async function rerecordState(
   filePath: string,
   content: string,
   config: ChangeDownConfig
-): Promise<{ settledView?: SettledViewResult; committedView?: CommittedViewResult } | undefined> {
+): Promise<{ currentView?: CurrentViewResult; decidedView?: DecidedViewResult } | undefined> {
   if (!state) return undefined;
 
   if (!config.hashline.enabled) {
@@ -36,60 +36,60 @@ export async function rerecordState(
 
   await initHashline();
   const lines = content.split('\n');
-  const allSettled = lines.map(l => settledLine(l));
+  const allCurrent = lines.map(l => currentLine(l));
   const lastView = state.getLastReadView(filePath);
 
   let hashes: Array<{
-    line: number; raw: string; settled: string;
-    committed?: string; settledView?: string; rawLineNum?: number;
+    line: number; raw: string; current: string;
+    committed?: string; currentView?: string; rawLineNum?: number;
   }>;
 
-  let sv: SettledViewResult | undefined;
-  let cv: CommittedViewResult | undefined;
+  let sv: CurrentViewResult | undefined;
+  let cv: DecidedViewResult | undefined;
 
   if (lastView === 'settled') {
-    sv = computeSettledView(content);
+    sv = computeCurrentView(content);
     hashes = sv.lines.map(sl => ({
-      line: sl.settledLineNum,
+      line: sl.currentLineNum,
       raw: computeLineHash(sl.rawLineNum - 1, lines[sl.rawLineNum - 1], lines),
-      settled: computeSettledLineHash(sl.rawLineNum - 1, lines[sl.rawLineNum - 1], allSettled),
-      settledView: sl.hash,
+      current: computeCurrentLineHash(sl.rawLineNum - 1, lines[sl.rawLineNum - 1], allCurrent),
+      currentView: sl.hash,
       rawLineNum: sl.rawLineNum,
     }));
   } else if (lastView === 'changes') {
-    cv = computeCommittedView(content);
+    cv = computeDecidedView(content);
     hashes = cv.lines.map(cl => ({
-      line: cl.committedLineNum,
+      line: cl.decidedLineNum,
       raw: computeLineHash(cl.rawLineNum - 1, lines[cl.rawLineNum - 1], lines),
-      settled: computeSettledLineHash(cl.rawLineNum - 1, lines[cl.rawLineNum - 1], allSettled),
+      current: computeCurrentLineHash(cl.rawLineNum - 1, lines[cl.rawLineNum - 1], allCurrent),
       committed: cl.hash,
       rawLineNum: cl.rawLineNum,
     }));
   } else if (lastView === 'review') {
     // Review view: raw line numbers + committed hashes for cross-batch stability.
-    cv = computeCommittedView(content);
-    const rawToCommittedHash = new Map<number, string>();
+    cv = computeDecidedView(content);
+    const rawToDecidedHash = new Map<number, string>();
     for (const cl of cv.lines) {
-      rawToCommittedHash.set(cl.rawLineNum, cl.hash);
+      rawToDecidedHash.set(cl.rawLineNum, cl.hash);
     }
     hashes = lines.map((line, i) => ({
       line: i + 1,
       raw: computeLineHash(i, line, lines),
-      settled: computeSettledLineHash(i, line, allSettled),
-      committed: rawToCommittedHash.get(i + 1),
+      current: computeCurrentLineHash(i, line, allCurrent),
+      committed: rawToDecidedHash.get(i + 1),
     }));
   } else {
     // raw: line numbers are raw (identity mapping)
     hashes = lines.map((line, i) => ({
       line: i + 1,
       raw: computeLineHash(i, line, lines),
-      settled: computeSettledLineHash(i, line, allSettled),
+      current: computeCurrentLineHash(i, line, allCurrent),
     }));
   }
 
   state.rerecordAfterWrite(filePath, content, hashes);
 
-  if (sv) return { settledView: sv };
-  if (cv) return { committedView: cv };
+  if (sv) return { currentView: sv };
+  if (cv) return { decidedView: cv };
   return undefined;
 }

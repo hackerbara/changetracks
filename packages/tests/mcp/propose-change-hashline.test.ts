@@ -769,9 +769,9 @@ describe('propose_change hashline addressing', () => {
 
       // Record hashes from a "previous read" matching original content
       state.recordFileHashes(filePath, [
-        { line: 1, raw: hashForLine(content, 1), settled: hashForLine(content, 1) },
-        { line: 2, raw: hashForLine(content, 2), settled: hashForLine(content, 2) },
-        { line: 3, raw: hashForLine(content, 3), settled: hashForLine(content, 3) },
+        { line: 1, raw: hashForLine(content, 1), current: hashForLine(content, 1) },
+        { line: 2, raw: hashForLine(content, 2), current: hashForLine(content, 2) },
+        { line: 3, raw: hashForLine(content, 3), current: hashForLine(content, 3) },
       ]);
 
       // Now modify the file externally (simulating another agent/editor)
@@ -876,7 +876,7 @@ describe('propose_change hashline addressing', () => {
       const hashes = lines.map((line, i) => ({
         line: i + 1,
         raw: hashForLine(content, i + 1),
-        settled: hashForLine(content, i + 1),
+        current: hashForLine(content, i + 1),
       }));
       state.recordFileHashes(filePath, hashes);
 

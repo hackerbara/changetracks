@@ -8,7 +8,7 @@ import { applyReview, VALID_DECISIONS, type Decision, type ApplyReviewSuccess, t
 import { applyBlockingAnnotation } from '../shared/blocking-annotation.js';
 import { SessionState } from '../state.js';
 import { rerecordState } from '../state-utils.js';
-import { settleAcceptedChanges, settleRejectedChanges } from './settle.js';
+import { applyAcceptedChanges, applyRejectedChanges } from './settle.js';
 
 /**
  * Tool definition for the review_change MCP tool.
@@ -161,22 +161,22 @@ export async function handleReviewChange(
       await fs.writeFile(filePath, fileContent, 'utf-8');
     }
 
-    let settlementInfo: { settledIds: string[] } | undefined;
+    let settlementInfo: { appliedIds: string[] } | undefined;
     if (config.settlement.auto_on_approve && typedDecision === 'approve') {
-      const { settledContent, settledIds } = settleAcceptedChanges(fileContent);
-      if (settledIds.length > 0) {
-        await fs.writeFile(filePath, settledContent, 'utf-8');
-        fileContent = settledContent;
-        settlementInfo = { settledIds };
+      const { currentContent, appliedIds } = applyAcceptedChanges(fileContent);
+      if (appliedIds.length > 0) {
+        await fs.writeFile(filePath, currentContent, 'utf-8');
+        fileContent = currentContent;
+        settlementInfo = { appliedIds };
       }
     }
 
     if (config.settlement.auto_on_reject && typedDecision === 'reject') {
-      const { settledContent, settledIds } = settleRejectedChanges(fileContent);
-      if (settledIds.length > 0) {
-        await fs.writeFile(filePath, settledContent, 'utf-8');
-        fileContent = settledContent;
-        settlementInfo = { settledIds };
+      const { currentContent, appliedIds } = applyRejectedChanges(fileContent);
+      if (appliedIds.length > 0) {
+        await fs.writeFile(filePath, currentContent, 'utf-8');
+        fileContent = currentContent;
+        settlementInfo = { appliedIds };
       }
     }
 
@@ -184,10 +184,10 @@ export async function handleReviewChange(
 
     const response: Record<string, unknown> = { ...applied.result };
     if (settlementInfo) {
-      response.settled = settlementInfo.settledIds;
+      response.settled = settlementInfo.appliedIds;
       const settlementVerb = typedDecision === 'reject' ? 'rejected' : 'accepted';
       response.settlement_note =
-        `${settlementInfo.settledIds.length} ${settlementVerb} change(s) settled to clean text. ` +
+        `${settlementInfo.appliedIds.length} ${settlementVerb} change(s) settled to clean text. ` +
         `The file now contains clean prose where those changes were. ` +
         `Proposed changes remain as markup.`;
     }

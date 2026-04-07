@@ -9,7 +9,7 @@ import { findFootnoteBlock, findDiscussionInsertionIndex, countFootnoteHeadersWi
 import { applyBlockingAnnotation } from '../shared/blocking-annotation.js';
 import { SessionState } from '../state.js';
 import { rerecordState } from '../state-utils.js';
-import { settleAcceptedChanges, settleRejectedChanges } from './settle.js';
+import { applyAcceptedChanges, applyRejectedChanges } from './settle.js';
 import { computeAffectedLines, type AffectedLineEntry } from './propose-utils.js';
 
 /**
@@ -365,14 +365,14 @@ export async function handleReviewChanges(
 
     // ── Phase 3: Auto-settlement on approve/reject (config-driven) ──────
 
-    let settlementInfo: { settledIds: string[] } | undefined;
+    let settlementInfo: { appliedIds: string[] } | undefined;
     if (config.settlement.auto_on_approve && hasReviews) {
       const hasApprovals = results.some((r) => 'decision' in r && r.decision === 'approve');
       if (hasApprovals) {
-        const { settledContent, settledIds } = settleAcceptedChanges(fileContent);
-        if (settledIds.length > 0) {
-          fileContent = settledContent;
-          settlementInfo = { settledIds };
+        const { currentContent, appliedIds } = applyAcceptedChanges(fileContent);
+        if (appliedIds.length > 0) {
+          fileContent = currentContent;
+          settlementInfo = { appliedIds };
         }
       }
     }
@@ -380,19 +380,19 @@ export async function handleReviewChanges(
     if (config.settlement.auto_on_reject && hasReviews) {
       const hasRejections = results.some((r) => 'decision' in r && r.decision === 'reject');
       if (hasRejections) {
-        const { settledContent, settledIds } = settleRejectedChanges(fileContent);
-        if (settledIds.length > 0) {
-          fileContent = settledContent;
+        const { currentContent, appliedIds } = applyRejectedChanges(fileContent);
+        if (appliedIds.length > 0) {
+          fileContent = currentContent;
           // Merge with any auto-settlement IDs from approve phase
           if (settlementInfo) {
-            const existingSet = new Set(settlementInfo.settledIds);
-            for (const id of settledIds) {
+            const existingSet = new Set(settlementInfo.appliedIds);
+            for (const id of appliedIds) {
               if (!existingSet.has(id)) {
-                settlementInfo.settledIds.push(id);
+                settlementInfo.appliedIds.push(id);
               }
             }
           } else {
-            settlementInfo = { settledIds };
+            settlementInfo = { appliedIds };
           }
         }
       }
@@ -401,19 +401,19 @@ export async function handleReviewChanges(
     // ── Phase 4: Explicit settle flag ────────────────────────────────────
 
     if (settleFlag) {
-      const { settledContent, settledIds } = settleAcceptedChanges(fileContent);
-      if (settledIds.length > 0) {
-        fileContent = settledContent;
+      const { currentContent, appliedIds } = applyAcceptedChanges(fileContent);
+      if (appliedIds.length > 0) {
+        fileContent = currentContent;
         // Merge with any auto-settlement IDs
         if (settlementInfo) {
-          const existingSet = new Set(settlementInfo.settledIds);
-          for (const id of settledIds) {
+          const existingSet = new Set(settlementInfo.appliedIds);
+          for (const id of appliedIds) {
             if (!existingSet.has(id)) {
-              settlementInfo.settledIds.push(id);
+              settlementInfo.appliedIds.push(id);
             }
           }
         } else {
-          settlementInfo = { settledIds };
+          settlementInfo = { appliedIds };
         }
       }
       successes.push('Settled all accepted changes (Layer 1 compaction)');
@@ -426,9 +426,9 @@ export async function handleReviewChanges(
     // This lets the agent continue editing without a forced re-read.
 
     let affectedLines: AffectedLineEntry[] | undefined;
-    if (settlementInfo && settlementInfo.settledIds.length > 0) {
+    if (settlementInfo && settlementInfo.appliedIds.length > 0) {
       const postLines = fileContent.split('\n');
-      const settledIdSet = new Set(settlementInfo.settledIds);
+      const settledIdSet = new Set(settlementInfo.appliedIds);
 
       // Find footnote section start so we only scan content lines, not footnote definitions
       const footnoteStart = postLines.findIndex(l => /^\[\^cn-/.test(l));
@@ -486,9 +486,9 @@ export async function handleReviewChanges(
       response.errors = errors;
     }
     if (settlementInfo) {
-      response.settled = settlementInfo.settledIds;
+      response.settled = settlementInfo.appliedIds;
       response.settlement_note =
-        `${settlementInfo.settledIds.length} change(s) settled to clean text. ` +
+        `${settlementInfo.appliedIds.length} change(s) settled to clean text. ` +
         `The file now contains clean prose where those changes were. ` +
         `Proposed changes remain as markup.`;
     }

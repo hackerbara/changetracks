@@ -13,11 +13,11 @@
  *   Zone 3 (Metadata): LineMetadata[] from footnotes referenced on this line
  */
 
-import { computeCommittedView } from '../../committed-text.js';
+import { computeDecidedView } from '../../decided-text.js';
 import { findFootnoteBlockStart } from '../../footnote-utils.js';
 import { nodeStatus, type ChangeNode } from '../../model/types.js';
 import { computeLineHash } from '../../hashline.js';
-import { computeSettledLineHash, settledLine } from '../../hashline-tracked.js';
+import { computeCurrentLineHash, currentLine } from '../../hashline-tracked.js';
 import {
   buildDeliberationHeader,
   buildLineRefMap,
@@ -31,7 +31,7 @@ import type {
   ContentSpan,
   LineMetadata,
   LineFlag,
-  ViewName,
+  ViewMode,
 } from '../three-zone-types.js';
 
 // ─── CriticMarkup regex for per-line span decomposition ─────────────────────
@@ -66,7 +66,7 @@ export interface ReviewBuildOptions {
   filePath: string;
   trackingStatus: 'tracked' | 'untracked';
   protocolMode: string;
-  defaultView: ViewName;
+  defaultView: ViewMode;
   viewPolicy: string;
 }
 
@@ -88,17 +88,17 @@ export function buildReviewDocument(
 ): ThreeZoneDocument {
   // Compute committed view for stable cross-batch hashes.
   // Committed hashes survive proposal insertions (pending CriticMarkup is stripped).
-  const committedResult = computeCommittedView(content);
-  const changes = committedResult.changes;
+  const decidedResult = computeDecidedView(content);
+  const changes = decidedResult.changes;
   const footnoteMap = new Map<string, ChangeNode>();
   for (const node of changes) {
     footnoteMap.set(node.id, node);
   }
   const rawLines = content.split('\n');
-  const allSettled = rawLines.map(l => settledLine(l));
+  const allCurrent = rawLines.map(l => currentLine(l));
 
   const rawToCommittedHash = new Map<number, string>();
-  for (const cl of committedResult.lines) {
+  for (const cl of decidedResult.lines) {
     rawToCommittedHash.set(cl.rawLineNum, cl.hash);
   }
 
@@ -155,7 +155,7 @@ export function buildReviewDocument(
       continuesChange: continuations.has(i) || undefined,
       sessionHashes: {
         raw: rawHash,
-        settled: computeSettledLineHash(lineNum, rawLine, allSettled),
+        current: computeCurrentLineHash(lineNum, rawLine, allCurrent),
         committed: rawToCommittedHash.get(lineNum),
       },
     });

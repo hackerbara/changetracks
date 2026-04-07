@@ -4,7 +4,7 @@ import {
   formatAnsi,
   initHashline,
   findFootnoteBlock,
-  type ThreeZoneViewName,
+  type ThreeZoneViewMode,
   type ThreeZoneDocument,
 } from '@changedown/core';
 
@@ -213,7 +213,7 @@ export async function handleGitDiffDriver(args: string[]): Promise<string> {
 }
 
 export interface DiffOptions {
-  view?: ThreeZoneViewName;
+  view?: ThreeZoneViewMode;
   showMarkup?: boolean;
   unicodeStrike?: boolean;
   threads?: boolean;
@@ -226,7 +226,7 @@ export interface DiffOptions {
 export async function handleDiff(file: string, options?: DiffOptions): Promise<string> {
   await initHashline();
   const content = fs.readFileSync(file, 'utf-8');
-  const view: ThreeZoneViewName = options?.view ?? 'review';
+  const view: ThreeZoneViewMode = options?.view ?? 'review';
   const doc = buildViewDocument(content, view, {
     filePath: file,
     trackingStatus: 'tracked',

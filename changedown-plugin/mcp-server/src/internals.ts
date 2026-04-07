@@ -36,7 +36,7 @@ export { handleResolveThread, resolveThreadTool } from './tools/resolve-thread.j
 export { handleBeginChangeGroup } from './tools/begin-change-group.js';
 export { handleEndChangeGroup } from './tools/end-change-group.js';
 export { handleSupersedeChange } from './tools/supersede-change.js';
-export { settleAcceptedChanges, settleRejectedChanges } from './tools/settle.js';
+export { applyAcceptedChanges, applyRejectedChanges } from './tools/settle.js';
 export {
   computeLineHash,
   validateOrRelocate,

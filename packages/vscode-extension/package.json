@@ -2,7 +2,7 @@
     "name": "changedown-vscode",
     "displayName": "Changedown",
     "description": "Track changes in Markdown, for humans and AI",
-    "version": "0.3.1",
+    "version": "0.4.0",
     "publisher": "changedown",
     "license": "MIT",
     "repository": {
@@ -1043,6 +1043,7 @@
     },
     "scripts": {
         "vscode:prepublish": "npm run esbuild -- --production",
+        "precompile": "bash ../../scripts/copy-preview-css.sh",
         "compile": "tsc -p ./",
         "esbuild": "node esbuild.mjs",
         "watch": "tsc -watch -p ./",

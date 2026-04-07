@@ -934,7 +934,7 @@ describe('CriticMarkupParser', () => {
       expect(changes[0].id).toBe('cn-1');
       expect(changes[0].type).toBe(ChangeType.Substitution);
       expect(changes[0].status).toBe(ChangeStatus.Accepted);
-      expect(changes[0].settled).toBe(true);
+      expect(changes[0].decided).toBe(true);
       expect(changes[0].level).toBe(2);
       expect(changes[0].metadata?.author).toBe('@ai:claude');
 
@@ -942,7 +942,7 @@ describe('CriticMarkupParser', () => {
       expect(changes[1].id).toBe('cn-2');
       expect(changes[1].type).toBe(ChangeType.Insertion);
       expect(changes[1].status).toBe(ChangeStatus.Accepted);
-      expect(changes[1].settled).toBe(true);
+      expect(changes[1].decided).toBe(true);
     });
 
     it('does not double-count changes that have both inline markup and footnote refs', () => {
@@ -955,7 +955,7 @@ describe('CriticMarkupParser', () => {
       const doc = parser.parse(text);
       const changes = doc.getChanges();
       expect(changes).toHaveLength(1);
-      expect(changes[0].settled).toBeUndefined(); // NOT settled — has inline markup
+      expect(changes[0].decided).toBeUndefined(); // NOT settled — has inline markup
     });
 
     it('handles mixed settled and active changes in the same file', () => {
@@ -972,13 +972,13 @@ describe('CriticMarkupParser', () => {
       // cn-1 is settled (no inline markup)
       const settled = changes.find(c => c.id === 'cn-1');
       expect(settled).toBeTruthy();
-      expect(settled!.settled).toBe(true);
+      expect(settled!.decided).toBe(true);
       expect(settled!.type).toBe(ChangeType.Deletion);
 
       // cn-2 is active (has inline markup)
       const active = changes.find(c => c.id === 'cn-2');
       expect(active).toBeTruthy();
-      expect(active!.settled).toBeUndefined();
+      expect(active!.decided).toBeUndefined();
       expect(active!.type).toBe(ChangeType.Insertion);
     });
 
@@ -1996,7 +1996,7 @@ describe('CriticMarkupParser', () => {
       expect(c.id).toBe('cn-1');
       expect(c.type).toBe(ChangeType.Substitution);
       expect(c.status).toBe(ChangeStatus.Accepted);
-      expect(c.settled).toBe(true);
+      expect(c.decided).toBe(true);
       expect(c.level).toBe(2);
       expect(c.metadata?.author).toBe('@ai:claude-opus-4.6');
       expect(c.metadata?.status).toBe('accepted');
@@ -2020,7 +2020,7 @@ describe('CriticMarkupParser', () => {
       const c = changes[0];
       expect(c.id).toBe('cn-1');
       expect(c.type).toBe(ChangeType.Insertion);
-      expect(c.settled).toBeUndefined(); // NOT a settled ref
+      expect(c.decided).toBeUndefined(); // NOT a settled ref
     });
 
     it('ignores standalone [^cn-N] refs with no matching footnote definition', () => {

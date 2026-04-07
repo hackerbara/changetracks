@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { computeSettledText, computeOriginalText } from '@changedown/core';
+import { computeCurrentText, computeOriginalText } from '@changedown/core';
 import * as fs from 'fs';
 import type { ViewMode } from './view-mode';
 
@@ -36,7 +36,7 @@ export class ProjectedView {
 
         // Compute projected text
         const projected = mode === 'settled'
-            ? computeSettledText(this.originalMarkup)
+            ? computeCurrentText(this.originalMarkup)
             : computeOriginalText(this.originalMarkup);
 
         // Replace buffer content

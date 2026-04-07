@@ -1,15 +1,17 @@
 /**
- * Shared visual-semantic constants for ChangeDown rendering.
+ * Shared visual-semantic mapping for ChangeDown rendering.
  *
- * Extracted from packages/vscode-extension/src/visual-semantics.ts so that
- * the preview package (browser, LSP, CLI) can use the same palette and style
- * mapping without depending on the `vscode` module.
+ * Colors come from DECORATION_STYLES in @changedown/core/host —
+ * the single source of truth. This module maps ChangeType → CSS
+ * class names and HTML tags for preview rendering.
  */
 
 import { ChangeType, ChangeStatus } from '@changedown/core';
+import { DECORATION_STYLES } from '@changedown/core/host';
+import type { DecorationStyleDef } from '@changedown/core/host';
 
 // ---------------------------------------------------------------------------
-// Color palette
+// Color helpers — extract ThemeColor from DECORATION_STYLES
 // ---------------------------------------------------------------------------
 
 export interface ThemeColor {
@@ -17,35 +19,21 @@ export interface ThemeColor {
     dark: string;
 }
 
-export const CHANGE_COLORS = {
-    insertion: { light: '#1E824C', dark: '#66BB6A' } as ThemeColor,
-    deletion:  { light: '#C0392B', dark: '#EF5350' } as ThemeColor,
-    highlight: { background: 'rgba(255,255,0,0.3)' },
-    comment:   { background: 'rgba(173,216,230,0.2)', border: 'rgba(100,149,237,0.5)' },
-    move:      { light: '#8E44AD', dark: '#CE93D8' } as ThemeColor,
-} as const;
+function colorOf(style: DecorationStyleDef): ThemeColor {
+    return { light: style.light.color ?? '', dark: style.dark.color ?? '' };
+}
 
 // ---------------------------------------------------------------------------
 // Style mapping
 // ---------------------------------------------------------------------------
 
 export interface ChangeStyleInfo {
-    /** Space-separated CSS class names (e.g. "cn-ins cn-proposed") */
     cssClass: string;
-    /** Semantic HTML tag for preview rendering */
     htmlTag: string;
-    /** Foreground theme color (when applicable) */
     foreground?: ThemeColor;
-    /** Whether the text should be rendered with strikethrough */
     strikethrough: boolean;
 }
 
-/**
- * Resolve the visual style for a given change type, status, and optional
- * move role. The returned object is rendering-backend agnostic: it carries
- * enough information for both the VS Code decorator and the markdown
- * preview plugin to produce correct output.
- */
 export function getChangeStyle(
     type: ChangeType,
     status: ChangeStatus,
@@ -53,12 +41,11 @@ export function getChangeStyle(
 ): ChangeStyleInfo {
     const statusClass = status.toLowerCase();
 
-    // Move role overrides normal type-based styling
     if (moveRole === 'from') {
         return {
             cssClass: `cn-move-from cn-${statusClass}`,
             htmlTag: 'del',
-            foreground: CHANGE_COLORS.move as ThemeColor,
+            foreground: colorOf(DECORATION_STYLES.moveFrom),
             strikethrough: true,
         };
     }
@@ -66,7 +53,7 @@ export function getChangeStyle(
         return {
             cssClass: `cn-move-to cn-${statusClass}`,
             htmlTag: 'ins',
-            foreground: CHANGE_COLORS.move as ThemeColor,
+            foreground: colorOf(DECORATION_STYLES.moveTo),
             strikethrough: false,
         };
     }
@@ -76,33 +63,29 @@ export function getChangeStyle(
             return {
                 cssClass: `cn-ins cn-${statusClass}`,
                 htmlTag: 'ins',
-                foreground: CHANGE_COLORS.insertion,
+                foreground: colorOf(DECORATION_STYLES.insertion),
                 strikethrough: false,
             };
-
         case ChangeType.Deletion:
             return {
                 cssClass: `cn-del cn-${statusClass}`,
                 htmlTag: 'del',
-                foreground: CHANGE_COLORS.deletion,
+                foreground: colorOf(DECORATION_STYLES.deletion),
                 strikethrough: true,
             };
-
         case ChangeType.Substitution:
             return {
                 cssClass: `cn-sub cn-${statusClass}`,
                 htmlTag: 'span',
-                foreground: CHANGE_COLORS.insertion, // modified text uses insertion color
+                foreground: colorOf(DECORATION_STYLES.insertion),
                 strikethrough: false,
             };
-
         case ChangeType.Highlight:
             return {
                 cssClass: 'cn-hl',
                 htmlTag: 'mark',
                 strikethrough: false,
             };
-
         case ChangeType.Comment:
             return {
                 cssClass: 'cn-comment',

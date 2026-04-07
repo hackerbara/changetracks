@@ -227,9 +227,9 @@ describe('quick_fix field in hashline errors', () => {
 
       // Simulate recorded hashes with committed field
       state.recordFileHashes(filePath, [
-        { line: 1, raw: hashForLine(content, 1), settled: hashForLine(content, 1), committed: 'aa', rawLineNum: 1 },
-        { line: 2, raw: hashForLine(content, 2), settled: hashForLine(content, 2), committed: 'bb', rawLineNum: 2 },
-        { line: 3, raw: hashForLine(content, 3), settled: hashForLine(content, 3), committed: 'cc', rawLineNum: 3 },
+        { line: 1, raw: hashForLine(content, 1), current: hashForLine(content, 1), committed: 'aa', rawLineNum: 1 },
+        { line: 2, raw: hashForLine(content, 2), current: hashForLine(content, 2), committed: 'bb', rawLineNum: 2 },
+        { line: 3, raw: hashForLine(content, 3), current: hashForLine(content, 3), committed: 'cc', rawLineNum: 3 },
       ]);
 
       const result = await handleProposeChange(

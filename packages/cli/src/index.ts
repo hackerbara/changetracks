@@ -12,7 +12,7 @@ import { computeSettlement } from './commands/settle.js';
 import { publishSettled } from './commands/publish.js';
 import { handleImport } from './commands/import.js';
 import { handleExport } from './commands/export.js';
-import type { ThreeZoneViewName } from '@changedown/core';
+import type { ThreeZoneViewMode } from '@changedown/core';
 import { parseGlobalArgs } from './cli-parse.js';
 import { runCommand } from './cli-runner.js';
 import { formatResult } from './cli-output.js';
@@ -98,7 +98,7 @@ function runUserCommands(): void {
     .option('--no-unicode-strike', 'Use ANSI strikethrough instead of Unicode fallback')
     .option('--threads', 'Expand discussion threads inline below changes')
     .action(async (file: string, opts: { view: string; showMarkup?: boolean; unicodeStrike: boolean; threads?: boolean }) => {
-      const output = await handleDiff(file, { view: opts.view as ThreeZoneViewName, showMarkup: opts.showMarkup, unicodeStrike: opts.unicodeStrike, threads: opts.threads });
+      const output = await handleDiff(file, { view: opts.view as ThreeZoneViewMode, showMarkup: opts.showMarkup, unicodeStrike: opts.unicodeStrike, threads: opts.threads });
       process.stdout.write(output);
     });
 
@@ -109,16 +109,16 @@ function runUserCommands(): void {
     .action((file: string, opts: { dryRun?: boolean }) => {
       const content = fs.readFileSync(file, 'utf-8');
       const result = computeSettlement(content);
-      if (result.settledCount === 0) {
+      if (result.appliedCount === 0) {
         console.log('No changes to settle.');
         return;
       }
       if (opts.dryRun) {
-        console.log(`Would settle ${result.settledCount} change(s).`);
+        console.log(`Would settle ${result.appliedCount} change(s).`);
         return;
       }
-      fs.writeFileSync(file, result.settledContent);
-      console.log(`Settled ${result.settledCount} change(s).`);
+      fs.writeFileSync(file, result.currentContent);
+      console.log(`Settled ${result.appliedCount} change(s).`);
     });
 
   program

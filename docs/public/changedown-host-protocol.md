@@ -792,7 +792,7 @@ L3 supports rendering projected views — alternative body materializations:
 - **Settled view**: the body with all accepted changes applied and all rejected changes removed
 - **Raw view**: the body without any CriticMarkup (plain author's text)
 
-These require the `computeSettledView` and `computeRawView` core functions. The LSP server's semantic tokens endpoint already respects `viewMode` for highlighting suppression, but if the host wants to present a visually distinct buffer (e.g., a separate editor tab), it must materialize the projection from the core library directly.
+These require the `computeCurrentView` and `computeRawView` core functions. The LSP server's semantic tokens endpoint already respects `viewMode` for highlighting suppression, but if the host wants to present a visually distinct buffer (e.g., a separate editor tab), it must materialize the projection from the core library directly.
 
 ---
 

@@ -35,21 +35,24 @@ import type {
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import {
   Workspace, VirtualDocument, ChangeNode, ChangeType, ChangeStatus, isGhostNode,
-  annotateMarkdown, annotateSidecar, SIDECAR_BLOCK_MARKER, VIEW_NAMES,
+  annotateMarkdown, annotateSidecar, SIDECAR_BLOCK_MARKER, VIEW_MODES,
   applyReview, computeSupersedeResult, computeReplyEdit,
   computeResolutionEdit, computeUnresolveEdit, compactToLevel1, compactToLevel0,
-  settleAcceptedChangesOnly, settleRejectedChangesOnly,
+  applyAcceptedChanges, applyRejectedChanges,
   findFootnoteBlock, parseFootnoteHeader, parseForFormat,
   initHashline,
   convertL2ToL3,
-  compact, isL3Format, compactL2,
+  convertL3ToL2,
+  compact, compactL2,
   splitBodyAndFootnotes,
   scanMaxCnId,
 } from '@changedown/core';
-import type { ViewName, Decision, VerificationResult } from '@changedown/core';
+import type { ViewMode, Decision, VerificationResult } from '@changedown/core';
 import type { PreviousVersionResult } from './git';
 import { DEFAULT_CONFIG } from '@changedown/core';
 import type { ChangeDownConfig } from '@changedown/core';
+import { LSP_METHOD, buildDecorationPlan, FormatService } from '@changedown/core/host';
+import type { FormatAdapter, View } from '@changedown/core/host';
 import { createHover } from './capabilities/hover';
 import { createCodeLenses, CodeLensMode, CursorState } from './capabilities/code-lens';
 import { sendDecorationData, sendChangeCount, sendCoherenceStatus } from './notifications/decoration-data';
@@ -62,7 +65,7 @@ import { createCodeActions } from './capabilities/code-actions';
 import { createDocumentLinks } from './capabilities/document-links';
 import { createFoldingRanges, computeAutoFoldLines } from './capabilities/folding-ranges';
 import { getDefinitionForOffset } from './capabilities/definition';
-import { PendingEditManager, type CrystallizedEdit } from './pending-edit-manager';
+import { PendingEditManager, type CrystallizedEdit } from '@changedown/core/host';
 import { offsetRangeToLspRange, offsetToPosition, positionToOffset } from './converters';
 import { createLspDocumentState } from './document-state';
 import type { PendingOverlay, LspDocumentState } from './document-state';
@@ -72,6 +75,7 @@ import type { PendingOverlay, LspDocumentState } from './document-state';
  */
 export interface AnnotateParams {
   textDocument: { uri: string };
+  format?: 'L2' | 'L3';
 }
 
 /**
@@ -81,7 +85,6 @@ interface ChangedownInitOptions {
   reviewerIdentity?: string;
   author?: string;
   settlement?: { auto_on_approve?: boolean; auto_on_reject?: boolean };
-  promotion?: 'auto' | 'never';
 }
 
 /**
@@ -93,7 +96,6 @@ function isChangedownInitOptions(value: unknown): value is ChangedownInitOptions
   if ('reviewerIdentity' in obj && typeof obj.reviewerIdentity !== 'string') return false;
   if ('author' in obj && typeof obj.author !== 'string') return false;
   if ('settlement' in obj && typeof obj.settlement !== 'object') return false;
-  if ('promotion' in obj && obj.promotion !== 'auto' && obj.promotion !== 'never') return false;
   return true;
 }
 
@@ -105,8 +107,6 @@ function isChangedownInitOptions(value: unknown): value is ChangedownInitOptions
 export interface ServerOptions {
   /** Load project config from workspace. Return undefined if not found. */
   loadConfig?: (workspaceRoot: string) => ChangeDownConfig | undefined;
-  /** Read a file by URI. Used for disk-equality checks during repromotion suppression. */
-  readFileByUri?: (uri: string) => Promise<string | undefined>;
 }
 
 /**
@@ -148,13 +148,11 @@ export class ChangedownServer {
   private lastCoherenceStatus: Map<string, { rate: number; count: number }> = new Map();
   /** Re-entrance guard: URIs with a pending write-back in flight. */
   private pendingWriteBack = new Set<string>();
-  /** URIs expecting a crystallize echo — skip re-promotion on that didChange */
-  private pendingCrystallizeEcho = new Set<string>();
   /** Workspace root path for config file resolution. */
   private workspaceRoot: string | undefined;
   private codeLensMode: CodeLensMode = 'cursor';
-  private promotionPolicy: 'auto' | 'never' = 'auto';
   private readonly options: ServerOptions;
+  public readonly formatService: FormatService;
 
   /**
    * Git integration functions. These are public properties so tests can
@@ -179,6 +177,14 @@ export class ChangedownServer {
       },
     );
 
+    // The server uses a local FormatAdapter that calls core functions directly
+    // (since the server IS the LSP — it doesn't proxy to itself)
+    const serverLocalAdapter: FormatAdapter = {
+      convertL2ToL3: async (_uri, text) => convertL2ToL3(text),
+      convertL3ToL2: async (_uri, text) => convertL3ToL2(text),
+    };
+    this.formatService = new FormatService(serverLocalAdapter);
+
     this.setupHandlers();
   }
 
@@ -195,8 +201,6 @@ export class ChangedownServer {
     // Document event handlers
     this.documents.onDidOpen(async (event) => {
       const uri = event.document.uri;
-      const state = this.docStates.get(uri);
-      if (state) state.suppressRepromotion = false;
       const text = event.document.getText();
       const languageId = event.document.languageId;
       await this.handleDocumentOpen(uri, text, languageId);
@@ -243,40 +247,54 @@ export class ChangedownServer {
     this.connection.onDefinition(this.handleDefinition.bind(this));
 
     // Custom request: annotate file from git changes
-    this.connection.onRequest('changedown/annotate', this.handleAnnotate.bind(this));
+    this.connection.onRequest(LSP_METHOD.ANNOTATE, this.handleAnnotate.bind(this));
 
     // Section 11: getChanges request — on-demand bootstrap when extension cache is empty
-    this.connection.onRequest('changedown/getChanges', this.handleGetChanges.bind(this));
+    this.connection.onRequest(LSP_METHOD.GET_CHANGES, this.handleGetChanges.bind(this));
 
     // Phase 2: Lifecycle operation custom requests (2A-2G)
-    this.connection.onRequest('changedown/getProjectConfig', this.handleGetProjectConfig.bind(this));
-    this.connection.onRequest('changedown/reviewChange', this.handleReviewChange.bind(this));
-    this.connection.onRequest('changedown/replyToThread', this.handleReplyToThread.bind(this));
-    this.connection.onRequest('changedown/amendChange', this.handleAmendChange.bind(this));
-    this.connection.onRequest('changedown/supersedeChange', this.handleSupersedeChange.bind(this));
-    this.connection.onRequest('changedown/resolveThread', this.handleResolveThread.bind(this));
-    this.connection.onRequest('changedown/unresolveThread', this.handleUnresolveThread.bind(this));
-    this.connection.onRequest('changedown/compactChange', this.handleCompactChange.bind(this));
-    this.connection.onRequest('changedown/compactChanges', this.handleCompactChanges.bind(this));
-    this.connection.onRequest('changedown/reviewAll', this.handleReviewAll.bind(this));
+    this.connection.onRequest(LSP_METHOD.GET_PROJECT_CONFIG, this.handleGetProjectConfig.bind(this));
+    this.connection.onRequest(LSP_METHOD.REVIEW_CHANGE, this.handleReviewChange.bind(this));
+    this.connection.onRequest(LSP_METHOD.REPLY_TO_THREAD, this.handleReplyToThread.bind(this));
+    this.connection.onRequest(LSP_METHOD.AMEND_CHANGE, this.handleAmendChange.bind(this));
+    this.connection.onRequest(LSP_METHOD.SUPERSEDE_CHANGE, this.handleSupersedeChange.bind(this));
+    this.connection.onRequest(LSP_METHOD.RESOLVE_THREAD, this.handleResolveThread.bind(this));
+    this.connection.onRequest(LSP_METHOD.UNRESOLVE_THREAD, this.handleUnresolveThread.bind(this));
+    this.connection.onRequest(LSP_METHOD.COMPACT_CHANGE, this.handleCompactChange.bind(this));
+    this.connection.onRequest(LSP_METHOD.COMPACT_CHANGES, this.handleCompactChanges.bind(this));
+    this.connection.onRequest(LSP_METHOD.REVIEW_ALL, this.handleReviewAll.bind(this));
+
+    // Format conversion request
+    this.connection.onRequest(LSP_METHOD.CONVERT_FORMAT, this.handleConvertFormat.bind(this));
 
     // Batch edit coordination: extension tells LSP to skip re-promotion during programmatic edits
-    this.connection.onNotification('changedown/batchEditStart', (params: { uri: string }) => {
+    this.connection.onNotification(LSP_METHOD.BATCH_EDIT_START, (params: { uri: string }) => {
       this.handleBatchEditStart(params.uri);
     });
 
-    this.connection.onNotification('changedown/batchEditEnd', (params: { uri: string }) => {
+    this.connection.onNotification(LSP_METHOD.BATCH_EDIT_END, (params: { uri: string }) => {
       this.handleBatchEditEnd(params.uri);
     });
 
     // Flush pending handler - hard break signal from client
-    this.connection.onNotification('changedown/flushPending', (params: {
+    this.connection.onNotification(LSP_METHOD.FLUSH_PENDING, (params: {
       textDocument: { uri: string };
     }) => {
       try {
         this.pendingEditManager.flush(params.textDocument.uri);
       } catch (err) {
-        this.connection.console.error(`changedown/flushPending handler error: ${err}`);
+        this.connection.console.error(`${LSP_METHOD.FLUSH_PENDING} handler error: ${err}`);
+      }
+    });
+
+    // Undo/redo notification - client performed undo/redo, abandon server-side pending buffer
+    this.connection.onNotification(LSP_METHOD.UNDO_REDO, (params: {
+      textDocument: { uri: string };
+    }) => {
+      try {
+        this.pendingEditManager.abandon(params.textDocument.uri);
+      } catch (err) {
+        this.connection.console.error(`${LSP_METHOD.UNDO_REDO} handler error: ${err}`);
       }
     });
 
@@ -284,7 +302,7 @@ export class ChangedownServer {
     // enable or disable edit tracking per document. When set, this overrides the
     // server-resolved tracking state (file header → project config → default).
     // The website uses this to disable tracking (non-native mode).
-    this.connection.onNotification('changedown/setDocumentState', (params: {
+    this.connection.onNotification(LSP_METHOD.SET_DOCUMENT_STATE, (params: {
       textDocument: { uri: string };
       tracking?: { enabled: boolean };
     }) => {
@@ -299,25 +317,25 @@ export class ChangedownServer {
           }
         }
       } catch (err) {
-        this.connection.console.error(`changedown/setDocumentState handler error: ${err}`);
+        this.connection.console.error(`${LSP_METHOD.SET_DOCUMENT_STATE} handler error: ${err}`);
       }
     });
 
     // Settings update handler - VS Code extension pushes config changes here
     // (Sublime/Neovim send these via initializationOptions instead)
-    this.connection.onNotification('changedown/updateSettings', (params: {
+    this.connection.onNotification(LSP_METHOD.UPDATE_SETTINGS, (params: {
       reviewerIdentity?: string;
     }) => {
       try {
         const identity = (params.reviewerIdentity ?? '').trim();
         this.reviewerIdentity = identity || undefined;
       } catch (err) {
-        this.connection.console.error(`changedown/updateSettings handler error: ${err}`);
+        this.connection.console.error(`${LSP_METHOD.UPDATE_SETTINGS} handler error: ${err}`);
       }
     });
 
     // Phase 1: Pending overlay from VS Code extension (in-flight insertion before flush)
-    this.connection.onNotification('changedown/pendingOverlay', (params: {
+    this.connection.onNotification(LSP_METHOD.PENDING_OVERLAY, (params: {
       uri: string;
       overlay: PendingOverlay | null;
     }) => {
@@ -327,20 +345,20 @@ export class ChangedownServer {
         if (state) state.overlay = overlay;
         this.scheduleDecorationResend(uri);
       } catch (err) {
-        this.connection.console.error(`changedown/pendingOverlay handler error: ${err}`);
+        this.connection.console.error(`${LSP_METHOD.PENDING_OVERLAY} handler error: ${err}`);
       }
     });
 
     // View mode notification: client tells server which view mode is active for a document.
     // Server stores the mode, broadcasts confirmation, and uses it for semantic tokens filtering.
-    this.connection.onNotification('changedown/setViewMode', (params: SetViewModeParams) => {
+    this.connection.onNotification(LSP_METHOD.SET_VIEW_MODE, (params: SetViewModeParams) => {
       try {
         const uri = params.textDocument.uri;
         const viewMode = params.viewMode;
         // Validate incoming viewMode against the canonical set of view names
-        if (!VIEW_NAMES.includes(viewMode as ViewName)) {
+        if (!VIEW_MODES.includes(viewMode as ViewMode)) {
           this.connection.console.warn(
-            `changedown/setViewMode: ignoring unknown viewMode "${viewMode}" for ${uri}`
+            `${LSP_METHOD.SET_VIEW_MODE}: ignoring unknown viewMode "${viewMode}" for ${uri}`
           );
           return;
         }
@@ -371,39 +389,12 @@ export class ChangedownServer {
           this.connection.sendRequest(FoldingRangeRefreshRequest.type).catch(() => {});
         }, 50);
       } catch (err) {
-        this.connection.console.error(`changedown/setViewMode handler error: ${err}`);
-      }
-    });
-
-    // Cursor position notification: client tells server where cursor is
-    this.connection.onNotification('changedown/cursorPosition', (params: {
-        textDocument: { uri: string };
-        line: number;
-        changeId?: string;
-    }) => {
-      try {
-        const uri = params.textDocument.uri;
-        const state = this.docStates.get(uri);
-        if (state) {
-          state.cursorState = {
-            line: params.line,
-            changeId: params.changeId
-          };
-        }
-        // Trigger CodeLens refresh
-        this.connection.sendRequest(CodeLensRefreshRequest.type).catch(() => {
-          // Client does not support workspace/codeLens/refresh — safe to ignore
-        });
-        this.connection.sendRequest(FoldingRangeRefreshRequest.type).catch(() => {
-          // Client does not support workspace/foldingRange/refresh — safe to ignore
-        });
-      } catch (err) {
-        this.connection.console.error(`changedown/cursorPosition handler error: ${err}`);
+        this.connection.console.error(`${LSP_METHOD.SET_VIEW_MODE} handler error: ${err}`);
       }
     });
 
     // CodeLens mode notification: client tells server which mode is active
-    this.connection.onNotification('changedown/setCodeLensMode', (params: {
+    this.connection.onNotification(LSP_METHOD.SET_CODELENS_MODE, (params: {
         mode: string;
     }) => {
       try {
@@ -412,15 +403,15 @@ export class ChangedownServer {
           this.codeLensMode = mode;
           this.connection.sendRequest(CodeLensRefreshRequest.type).catch(() => {});
         } else {
-          this.connection.console.warn(`changedown/setCodeLensMode: ignoring unknown mode "${mode}"`);
+          this.connection.console.warn(`${LSP_METHOD.SET_CODELENS_MODE}: ignoring unknown mode "${mode}"`);
         }
       } catch (err) {
-        this.connection.console.error(`changedown/setCodeLensMode handler error: ${err}`);
+        this.connection.console.error(`${LSP_METHOD.SET_CODELENS_MODE} handler error: ${err}`);
       }
     });
 
     // Cursor move handler — PEM uses cursor position for flush-on-move logic.
-    this.connection.onNotification('changedown/cursorMove', (params: {
+    this.connection.onNotification(LSP_METHOD.CURSOR_MOVE, (params: {
       textDocument: { uri: string };
       offset: number;
     }) => {
@@ -442,11 +433,38 @@ export class ChangedownServer {
           const newChangeId = hit?.id;
           if (newLine !== state.cursorState?.line || newChangeId !== state.cursorState?.changeId) {
             state.cursorState = { line: newLine, changeId: newChangeId };
+            // Refresh CodeLens when line or changeId boundary crossed.
+            // Folding ranges are view-mode/structure-driven (not cursor-driven),
+            // so no FoldingRangeRefreshRequest here.
             this.connection.sendRequest(CodeLensRefreshRequest.type).catch(() => {});
           }
         }
       } catch (err) {
-        this.connection.console.error(`changedown/cursorMove handler error: ${err}`);
+        this.connection.console.error(`${LSP_METHOD.CURSOR_MOVE} handler error: ${err}`);
+      }
+    });
+
+    // Move metadata notification - client sends cut context for move correlation
+    this.connection.onNotification(LSP_METHOD.MOVE_METADATA, (params: {
+      textDocument?: { uri: string };
+      uri?: string;
+      cutText: string;
+      cutOffset?: number;
+      timestamp?: number;
+    }) => {
+      try {
+        const uri = params.textDocument?.uri ?? params.uri;
+        if (!uri) return;
+        const state = this.docStates.get(uri);
+        if (state) {
+          state.pendingMove = {
+            cutText: params.cutText,
+            cutOffset: params.cutOffset ?? 0,
+            timestamp: params.timestamp ?? Date.now(),
+          };
+        }
+      } catch (err) {
+        this.connection.console.error(`${LSP_METHOD.MOVE_METADATA} handler error: ${err}`);
       }
     });
 
@@ -460,7 +478,7 @@ export class ChangedownServer {
     //
     // This lets us derive edit tracking from raw LSP incremental changes
     // instead of relying on the client to classify and send trackingEvent.
-    this.connection.onNotification('textDocument/didChange', (params: {
+    this.connection.onNotification(LSP_METHOD.DID_CHANGE, (params: {
       textDocument: { uri: string; version: number };
       contentChanges: Array<{
         range?: { start: { line: number; character: number }; end: { line: number; character: number } };
@@ -570,11 +588,6 @@ export class ChangedownServer {
       const identity = (raw.reviewerIdentity || raw.author || '').trim();
       this.reviewerIdentity = identity || undefined;
 
-      // Apply promotion policy from initializationOptions
-      if (raw.promotion === 'never') {
-        this.promotionPolicy = 'never';
-      }
-
       // Apply settlement config from initializationOptions (used by browser clients
       // that can't load .changedown/config.toml from the filesystem)
       if (raw.settlement) {
@@ -661,6 +674,7 @@ export class ChangedownServer {
       this.semanticTokenRefreshTimeout = null;
     }
     this.pendingEditManager.dispose();
+    this.formatService.dispose();
   }
 
   /**
@@ -895,86 +909,10 @@ export class ChangedownServer {
     const maxId = scanMaxCnId(text);
     this.pendingEditManager.initScIdCounter(uri, maxId);
 
-    const isL3 = this.workspace.isFootnoteNative(text);
-
-    if (!isL3 && this.promotionPolicy !== 'never') {
-      // Check if this is an L2 document with changes that should be promoted
-      const l2Doc = this.workspace.parse(text, languageId);
-      const l2Changes = l2Doc.getChanges();
-
-      if (l2Changes.length > 0) {
-        // L2 with changes → promote to L3
-        try {
-          const l3Text = await convertL2ToL3(text);
-
-          // Parse L3 for decoration data
-          this.parseAndCacheDocument(uri, l3Text, languageId);
-          const l3Changes = this.getMergedChanges(uri);
-
-          // Send L3 decoration data FIRST (pre-populates extension cache)
-          const autoFoldLines = !state.autoFoldSent ? computeAutoFoldLines(l3Text) : undefined;
-          sendDecorationData(this.connection, uri, l3Changes, state.version, autoFoldLines ?? undefined);
-          if (autoFoldLines) state.autoFoldSent = true;
-          sendChangeCount(this.connection, uri, l3Changes);
-
-          // Notify extension to set convertingUris guard
-          this.connection.sendNotification('changedown/promotionStarting', { uri });
-
-          // CRITICAL: set isPromoting BEFORE sending applyEdit
-          // because didChange can arrive before the applyEdit response returns
-          state.isPromoting = true;
-
-          // Request extension to replace buffer with L3 text
-          const applied = await this.connection.workspace.applyEdit({
-            label: 'Promote to L3',
-            edit: {
-              changes: {
-                [uri]: [{
-                  range: {
-                    start: { line: 0, character: 0 },
-                    end: (() => {
-                      const lines = text.split('\n');
-                      return { line: lines.length - 1, character: lines[lines.length - 1].length };
-                    })()
-                  },
-                  newText: l3Text
-                }]
-              }
-            }
-          });
-
-          if (!applied.applied) {
-            // Promotion failed — fall back to L2 decoration data
-            state.isPromoting = false;
-            this.parseAndCacheDocument(uri, text, languageId);
-            const fallbackChanges = this.getMergedChanges(uri);
-            sendDecorationData(this.connection, uri, fallbackChanges, state.version);
-            sendChangeCount(this.connection, uri, fallbackChanges);
-            this.connection.console?.error(
-              `[promoteToL3] workspace/applyEdit rejected for ${uri}`
-            );
-          }
-
-          // Notify extension that promotion is complete (success or failure)
-          this.connection.sendNotification('changedown/promotionComplete', { uri });
-          this.broadcastDocumentState(uri);
-          return;
-        } catch (err) {
-          // Conversion or applyEdit failed — reset isPromoting so subsequent
-          // didChange events aren't silently skipped, then fall through to
-          // normal L2 handling.
-          state.isPromoting = false;
-          this.connection.console?.error(
-            `[promoteToL3] conversion error for ${uri}: ${err}`
-          );
-        }
-      }
-    }
-
-    // Normal path: L3 document, L2 without changes, or promotion failed
+    // Parse and send decoration data
     this.parseAndCacheDocument(uri, text, languageId);
     const changes = this.getMergedChanges(uri);
-    const isL3ForFold = this.workspace.isFootnoteNative(text);
+    const isL3ForFold = this.formatService.getDetectedFormat(uri, text) === 'L3';
     const viewModeForFold = state.viewMode;
     const autoFoldLines = (isL3ForFold && !state.autoFoldSent && (viewModeForFold === 'review' || viewModeForFold === 'changes'))
       ? computeAutoFoldLines(text) : undefined;
@@ -984,21 +922,10 @@ export class ChangedownServer {
     this.broadcastDocumentState(uri);
   }
 
-  private async isDiskTextEqualForUri(uri: string, text: string): Promise<boolean> {
-    if (!this.options.readFileByUri) return false;
-    try {
-      const diskText = await this.options.readFileByUri(uri);
-      return diskText === text;
-    } catch {
-      return false;
-    }
-  }
-
   /**
    * Handle document change event.
    * Re-parse the document; debounce decoration/changeCount notifications.
-   * Suppresses re-parse for promotion echoes and batch edits.
-   * Auto-detects L2 documents with changes and re-promotes.
+   * Suppresses re-parse for batch edits.
    */
   public async handleDocumentChange(uri: string, text: string, languageId?: string): Promise<void> {
     // Skip comment input documents
@@ -1007,20 +934,10 @@ export class ChangedownServer {
     // Ensure state bag exists (normally created in handleDocumentOpen, but didChange can arrive first)
     const state = this.ensureDocState(uri, text, languageId);
 
-    // Skip re-parse for promotion echo — we already sent correct decorationData
-    if (state.isPromoting) {
-      state.isPromoting = false;
-      // Still update text in state bag with the L3 text
-      state.text = text;
-      // parseResult already has L3 parse from handleDocumentOpen
-      return;
-    }
-
-    // Clear write-back re-entrance guard unconditionally on echo parse
-    // (mirrors isPromoting pattern — clear at entry, not conditionally inside parse)
+    // Clear write-back re-entrance guard
     this.pendingWriteBack.delete(uri);
 
-    // Skip re-promotion during batch edits (save conversion, projected view transitions)
+    // Skip decoration updates during batch edits (save conversion, projected view transitions)
     if (state.isBatchEditing) {
       // Parse and cache the intermediate content
       const previousText = state.text;
@@ -1036,30 +953,6 @@ export class ChangedownServer {
 
       // Skip decorationData during batch — fresh data will be sent on batchEditEnd
       return;
-    }
-
-    // Check if this is an L2 document that needs re-promotion (e.g., after save)
-    // Skip if this didChange is the echo from a crystallize edit we just sent
-    const isCrystallizeEcho = this.pendingCrystallizeEcho.delete(uri);
-    const isL3 = this.workspace.isFootnoteNative(text);
-    if (!isL3 && !isCrystallizeEcho && this.promotionPolicy !== 'never') {
-      const doc = this.workspace.parse(text, languageId);
-      const changes = doc.getChanges();
-      if (changes.length > 0) {
-        // L2 with changes on didChange — re-promote via handleDocumentOpen.
-        // VS Code sends a revert-to-disk didChange during "Don't Save" close.
-        // When didChange text equals disk content, suppress repromotion until
-        // the next didOpen/didClose.
-        if (!state.suppressRepromotion) {
-          const diskMatches = await this.isDiskTextEqualForUri(uri, text);
-          if (diskMatches) {
-            state.suppressRepromotion = true;
-          } else {
-            await this.handleDocumentOpen(uri, text, languageId);
-            return;
-          }
-        }
-      }
     }
 
     // Normal change handling: parse, cache, debounced notifications
@@ -1108,9 +1001,6 @@ export class ChangedownServer {
 
     // Mark this URI as expecting an echo from the applied edit
     this.pendingEditManager.expectEcho(edit.uri);
-    // Suppress re-promotion on the echo didChange — the crystallized markup
-    // is intentionally L2 and should not trigger L2→L3 conversion
-    this.pendingCrystallizeEcho.add(edit.uri);
 
     if (markupEdit) {
       // L2: both markup and footnote edits
@@ -1418,9 +1308,9 @@ export class ChangedownServer {
    * Defaults to 'review' if no mode has been explicitly set.
    *
    * @param uri Document URI
-   * @returns The active ViewName for this document
+   * @returns The active ViewMode for this document
    */
-  public getViewMode(uri: string): ViewName {
+  public getViewMode(uri: string): ViewMode {
     return this.docStates.get(uri)?.viewMode ?? 'review';
   }
 
@@ -1476,6 +1366,40 @@ export class ChangedownServer {
     return text.slice(0, edit.offset) + edit.newText + text.slice(edit.offset + edit.length);
   }
 
+  // ─── Format conversion ─────────────────────────────────────────────────────
+
+  /**
+   * changedown/convertFormat
+   * Convert document text between L2 and L3 formats.
+   */
+  public async handleConvertFormat(params: {
+    uri: string;
+    text: string;
+    targetFormat: 'L2' | 'L3';
+  }) {
+    const { uri, text, targetFormat } = params;
+    const result = targetFormat === 'L3'
+      ? await this.formatService.promoteToL3(uri, text)
+      : await this.formatService.demoteToL2(uri, text);
+
+    const parseResult = parseForFormat(result.convertedText);
+    const view: View = {
+      name: 'convert',
+      projection: 'current',
+      display: { delimiters: 'hide', authorColors: 'auto' },
+    };
+    const decorationPlan = buildDecorationPlan(
+      parseResult.getChanges(), result.convertedText, view, targetFormat, 0,
+    );
+
+    return {
+      convertedText: result.convertedText,
+      newFormat: targetFormat,
+      edits: [], // TODO: compute structural diff for incremental apply
+      decorationPlan,
+    };
+  }
+
   // ─── Phase 2: Lifecycle operation handlers (2A–2G) ─────────────────────────
 
   /**
@@ -1505,6 +1429,7 @@ export class ChangedownServer {
     decision: Decision;
     reason?: string;
     author?: string;
+    format?: 'L2' | 'L3';
   }): { edit: TextEdit } | { error: string } {
     try {
       const text = this.getDocumentText(params.uri);
@@ -1520,16 +1445,16 @@ export class ChangedownServer {
         const settlement = this.projectConfig?.settlement ?? DEFAULT_CONFIG.settlement;
 
         if (settlement.auto_on_approve && params.decision === 'approve') {
-          const { settledContent, settledIds } = settleAcceptedChangesOnly(finalContent);
-          if (settledIds.length > 0) {
-            finalContent = settledContent;
+          const { currentContent, appliedIds } = applyAcceptedChanges(finalContent);
+          if (appliedIds.length > 0) {
+            finalContent = currentContent;
           }
         }
 
         if (settlement.auto_on_reject && params.decision === 'reject') {
-          const { settledContent, settledIds } = settleRejectedChangesOnly(finalContent);
-          if (settledIds.length > 0) {
-            finalContent = settledContent;
+          const { currentContent, appliedIds } = applyRejectedChanges(finalContent);
+          if (appliedIds.length > 0) {
+            finalContent = currentContent;
           }
         }
       }
@@ -1551,6 +1476,7 @@ export class ChangedownServer {
     text: string;
     author?: string;
     label?: string;
+    format?: 'L2' | 'L3';
   }): { edit: TextEdit } | { error: string } {
     try {
       const docText = this.getDocumentText(params.uri);
@@ -1579,6 +1505,7 @@ export class ChangedownServer {
     newText: string;
     reason?: string;
     author?: string;
+    format?: 'L2' | 'L3';
   }): Promise<{ edit: TextEdit } | { error: string }> {
     try {
       const docText = this.getDocumentText(params.uri);
@@ -1636,6 +1563,7 @@ export class ChangedownServer {
     author?: string;
     oldText?: string;
     insertAfter?: string;
+    format?: 'L2' | 'L3';
   }): Promise<{ edit: TextEdit; newChangeId: string } | { error: string }> {
     try {
       const docText = this.getDocumentText(params.uri);
@@ -1667,6 +1595,7 @@ export class ChangedownServer {
     uri: string;
     changeId: string;
     author?: string;
+    format?: 'L2' | 'L3';
   }): { edit: TextEdit } | { error: string } {
     try {
       const docText = this.getDocumentText(params.uri);
@@ -1712,6 +1641,7 @@ export class ChangedownServer {
     uri: string;
     changeId: string;
     fully?: boolean;
+    format?: 'L2' | 'L3';
   }): { edit: TextEdit } | { error: string } {
     try {
       const docText = this.getDocumentText(params.uri);
@@ -1793,12 +1723,13 @@ export class ChangedownServer {
     targets: string[] | 'all-decided';
     undecidedPolicy: 'accept' | 'reject';
     boundaryMeta?: Record<string, string>;
+    format?: 'L2' | 'L3';
   }): Promise<{ edit: TextEdit; compactedIds: string[]; verification: VerificationResult } | { error: string }> {
     try {
       const docText = this.getDocumentText(params.uri);
       if (!docText) return { error: 'Document not found' };
 
-      const l3 = isL3Format(docText);
+      const l3 = params.format === 'L3' || (params.format === undefined && this.formatService.getDetectedFormat(params.uri, docText) === 'L3');
       const compactFn = l3 ? compact : compactL2;
 
       const result = await compactFn(docText, {
@@ -1889,16 +1820,16 @@ export class ChangedownServer {
         const settlement = this.projectConfig?.settlement ?? DEFAULT_CONFIG.settlement;
 
         if (settlement.auto_on_approve && params.decision === 'approve') {
-          const { settledContent, settledIds } = settleAcceptedChangesOnly(fileContent);
-          if (settledIds.length > 0) {
-            fileContent = settledContent;
+          const { currentContent, appliedIds } = applyAcceptedChanges(fileContent);
+          if (appliedIds.length > 0) {
+            fileContent = currentContent;
           }
         }
 
         if (settlement.auto_on_reject && params.decision === 'reject') {
-          const { settledContent, settledIds } = settleRejectedChangesOnly(fileContent);
-          if (settledIds.length > 0) {
-            fileContent = settledContent;
+          const { currentContent, appliedIds } = applyRejectedChanges(fileContent);
+          if (appliedIds.length > 0) {
+            fileContent = currentContent;
           }
         }
       }

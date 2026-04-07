@@ -14,13 +14,12 @@ import {
     State,
     TransportKind
 } from 'vscode-languageclient/node';
-import { ChangeNode } from '@changedown/core';
-import type { ViewName, CoherenceStatusParams, ChangeCountParams, AllChangesResolvedParams, DecorationDataParams } from '@changedown/core';
-import { DocumentStateManager as CoreDocumentStateManager } from '@changedown/core/dist/host/index';
+import type { CoherenceStatusParams, ChangeCountParams, AllChangesResolvedParams } from '@changedown/core';
+import { LSP_METHOD } from '@changedown/core/host';
 
 /**
  * Resolve reviewer identity from VS Code config.
- * Mirrors ExtensionController.getReviewerIdentity():
+ * Mirrors the reviewer identity resolution:
  * changedown.reviewerIdentity → changedown.author → undefined.
  */
 function resolveReviewerIdentity(): string | undefined {
@@ -33,22 +32,11 @@ function resolveReviewerIdentity(): string | undefined {
  * Send current reviewer identity to the LSP server.
  */
 function sendReviewerIdentity(client: LanguageClient): void {
-    client.sendNotification('changedown/updateSettings', {
+    client.sendNotification(LSP_METHOD.UPDATE_SETTINGS, {
         reviewerIdentity: resolveReviewerIdentity() ?? '',
     });
 }
 
-/**
- * Document state notification parameters
- */
-interface DocumentStateParams {
-    textDocument: { uri: string };
-    tracking: {
-        enabled: boolean;
-        source: 'file' | 'project' | 'default';
-    };
-    viewMode: string;
-}
 
 /**
  * Status bar manager for displaying change counts
@@ -164,93 +152,6 @@ class StatusBarManager {
  */
 let statusBarManager: StatusBarManager | undefined;
 
-let coreDsm: CoreDocumentStateManager | null = null;
-
-export function setCoreDsm(dsm: CoreDocumentStateManager): void {
-    coreDsm = dsm;
-}
-
-/**
- * Callback invoked when LSP sends decoration data.
- * Extension wires this to trigger controller refresh (decorations + notify).
- */
-export type DecorationDataHandler = (uri: string, changes: ChangeNode[]) => void;
-let decorationDataHandler: DecorationDataHandler | null = null;
-
-let autoFoldHandler: ((lines: number[]) => void) | undefined;
-
-export function setAutoFoldHandler(handler: (lines: number[]) => void): void {
-    autoFoldHandler = handler;
-}
-
-/**
- * Set the handler invoked when changedown/decorationData arrives.
- * Pass null to clear. Call from extension.ts after controller is created.
- */
-export function setDecorationDataHandler(handler: DecorationDataHandler | null): void {
-    decorationDataHandler = handler;
-}
-
-/**
- * Callback invoked when LSP confirms a view mode change.
- */
-export type ViewModeChangedHandler = (uri: string, viewMode: ViewName) => void;
-let viewModeChangedHandler: ViewModeChangedHandler | null = null;
-
-/**
- * Set the handler invoked when changedown/viewModeChanged arrives.
- * Pass null to clear.
- */
-export function setViewModeChangedHandler(handler: ViewModeChangedHandler | null): void {
-    viewModeChangedHandler = handler;
-}
-
-export type DocumentStateHandler = (uri: string, params: DocumentStateParams) => void;
-let documentStateHandler: DocumentStateHandler | null = null;
-
-export function setDocumentStateHandler(handler: DocumentStateHandler | null): void {
-    documentStateHandler = handler;
-}
-
-export type PromotionStartHandler = (uri: string) => void;
-let promotionStartHandler: PromotionStartHandler | null = null;
-
-export type PromotionCompleteHandler = (uri: string) => void;
-let promotionCompleteHandler: PromotionCompleteHandler | null = null;
-
-export type CoherenceHandler = (uri: string, rate: number, unresolvedCount: number, threshold: number) => void;
-let coherenceHandler: CoherenceHandler | null = null;
-
-/**
- * Set the handler invoked when changedown/coherenceStatus arrives.
- * Pass null to clear.
- */
-export function setCoherenceHandler(handler: CoherenceHandler | null): void {
-    coherenceHandler = handler;
-}
-
-/**
- * Set the handler invoked when changedown/promotionStarting arrives.
- * Pass null to clear.
- */
-export function setPromotionStartHandler(handler: PromotionStartHandler | null): void {
-    promotionStartHandler = handler;
-}
-
-/**
- * Set the handler invoked when changedown/promotionComplete arrives.
- * Pass null to clear.
- */
-export function setPromotionCompleteHandler(handler: PromotionCompleteHandler | null): void {
-    promotionCompleteHandler = handler;
-}
-
-/**
- * Batch edit sender type. Controller field only — no module-level state needed.
- * Called with ('start', uri) or ('end', uri) to bracket programmatic edits.
- */
-export type BatchEditSender = (action: 'start' | 'end', uri: string) => void;
-
 /**
  * Create and configure the Language Server Protocol client
  *
@@ -317,23 +218,10 @@ export function createLanguageClient(context: vscode.ExtensionContext): Language
         })
     );
 
-    // Register custom notification handlers
-    // In v9, we register handlers before starting the client
-    // Handle decoration data notifications
+    // Status bar wiring — these notifications only update the status bar
+    // (BaseController owns decoration / document state / coherence routing)
     client.onNotification(
-        'changedown/decorationData',
-        (params: DecorationDataParams) => {
-            coreDsm?.setCachedDecorations(params.uri, params.changes, params.documentVersion ?? 0);
-            decorationDataHandler?.(params.uri, params.changes);
-            if (params.autoFoldLines?.length) {
-                autoFoldHandler?.(params.autoFoldLines);
-            }
-        }
-    );
-
-    // Handle change count notifications
-    client.onNotification(
-        'changedown/changeCount',
+        LSP_METHOD.CHANGE_COUNT,
         (params: ChangeCountParams) => {
             if (statusBarManager) {
                 statusBarManager.updateChangeCount(params.uri, params.counts);
@@ -341,9 +229,8 @@ export function createLanguageClient(context: vscode.ExtensionContext): Language
         }
     );
 
-    // Handle all changes resolved notifications
     client.onNotification(
-        'changedown/allChangesResolved',
+        LSP_METHOD.ALL_CHANGES_RESOLVED,
         (params: AllChangesResolvedParams) => {
             if (statusBarManager) {
                 statusBarManager.clearChangeCount(params.uri);
@@ -351,37 +238,12 @@ export function createLanguageClient(context: vscode.ExtensionContext): Language
         }
     );
 
-    // Handle view mode changed confirmation from server
+    // Status bar also mirrors coherence (BaseController has its own handler via lspAdapter)
     client.onNotification(
-        'changedown/viewModeChanged',
-        (params: { textDocument: { uri: string }; viewMode: ViewName }) => {
-            viewModeChangedHandler?.(params.textDocument.uri, params.viewMode);
-        }
-    );
-
-    // Handle document state notifications (tracking + view mode)
-    client.onNotification('changedown/documentState', (params: DocumentStateParams) => {
-        documentStateHandler?.(params.textDocument.uri, params);
-    });
-
-    // Handle promotion lifecycle notifications from LSP
-    client.onNotification('changedown/promotionStarting', (params: { uri: string }) => {
-        promotionStartHandler?.(params.uri);
-    });
-
-    client.onNotification('changedown/promotionComplete', (params: { uri: string }) => {
-        promotionCompleteHandler?.(params.uri);
-    });
-
-    // Handle coherence status notifications
-    client.onNotification(
-        'changedown/coherenceStatus',
+        LSP_METHOD.COHERENCE_STATUS,
         (params: CoherenceStatusParams) => {
             if (statusBarManager) {
                 statusBarManager.updateCoherence(params.uri, params.coherenceRate, params.unresolvedCount, params.threshold);
-            }
-            if (coherenceHandler) {
-                coherenceHandler(params.uri, params.coherenceRate, params.unresolvedCount, params.threshold);
             }
         }
     );

@@ -67,25 +67,28 @@ class WebViewCoordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler
 
         let wsRoot = workspaceRoot.map { "'\($0.replacingOccurrences(of: "'", with: "\\'"))'" } ?? "null"
 
-        // Inject the save-bridge script + JS error capture
+        // Patch the existing __changedown_native object with real save/log functions.
+        // The marker object was created at atDocumentStart (before modules evaluated),
+        // and createNativeFS() captured a reference to it. We MUST update the same
+        // object — replacing it would orphan the reference the FS already holds.
         let bridgeScript = """
         (function() {
-            window.__changedown_native = {
-                workspaceRoot: \(wsRoot),
-                save: function(content, path) {
-                    window.webkit.messageHandlers.changedown.postMessage({
-                        action: 'saveFile',
-                        content: content,
-                        path: path || ''
-                    });
-                },
-                log: function(text) {
-                    window.webkit.messageHandlers.changedown.postMessage({
-                        action: 'log',
-                        text: text
-                    });
-                }
+            var n = window.__changedown_native || {};
+            n.workspaceRoot = \(wsRoot);
+            n.save = function(content, path) {
+                window.webkit.messageHandlers.changedown.postMessage({
+                    action: 'saveFile',
+                    content: content,
+                    path: path || ''
+                });
             };
+            n.log = function(text) {
+                window.webkit.messageHandlers.changedown.postMessage({
+                    action: 'log',
+                    text: text
+                });
+            };
+            window.__changedown_native = n;
             // Capture all JS errors and unhandled rejections
             window.addEventListener('error', function(e) {
                 window.webkit.messageHandlers.changedown.postMessage({

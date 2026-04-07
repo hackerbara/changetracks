@@ -1,5 +1,7 @@
 // packages/core/src/host/decorations/styles.ts
 import type { DecorationTypeId, DecorationStyleDef } from './types.js';
+import type { ViewMode } from '../types.js';
+import { ChangeType } from '../../model/types.js';
 
 export const DECORATION_STYLES: Record<DecorationTypeId, DecorationStyleDef> = {
   insertion: {
@@ -60,13 +62,25 @@ export const DECORATION_STYLES: Record<DecorationTypeId, DecorationStyleDef> = {
     after: { contentText: ' \u2935', color: { light: 'rgba(108, 52, 131, 0.6)', dark: 'rgba(108, 52, 131, 0.6)' } },
     overviewRuler: { color: '#CE93D880', lane: 'left' },
   },
-  settledRef: {
+  moveLabel: {
+    light: { color: '#6C3483' },
+    dark: { color: '#CE93D8' },
+  },
+  anchorMeta: {
+    light: { color: '#888888' },
+    dark: { color: '#888888' },
+  },
+  decidedRef: {
     light: { textDecoration: 'none', color: 'rgba(128, 128, 128, 0.6)', fontStyle: 'italic' },
     dark: { textDecoration: 'none', color: 'rgba(160, 160, 160, 0.5)', fontStyle: 'italic' },
   },
-  settledDim: {
+  decidedDim: {
     light: { opacity: '0.5', fontStyle: 'italic' },
     dark: { opacity: '0.5', fontStyle: 'italic' },
+  },
+  footnoteBlock: {
+    light: { color: '#888888' },
+    dark: { color: '#888888' },
   },
   ghostDeletion: {
     light: {},
@@ -110,3 +124,57 @@ export const AUTHOR_PALETTE = [
   { light: '#16A085', dark: '#4DB6AC' },
   { light: '#2980B9', dark: '#64B5F6' },
 ] as const;
+
+export type VisibilityRule = 'visible' | 'hidden' | 'dimmed' | 'plain';
+
+// Omission means 'visible' (the default). Only overrides are listed.
+export const VIEW_MODE_VISIBILITY: Record<ViewMode, Partial<Record<DecorationTypeId, VisibilityRule>>> = {
+  review: {},
+  changes: {
+    deletion: 'hidden',
+    substitutionOriginal: 'hidden',
+    moveFrom: 'hidden',
+    moveLabel: 'hidden',
+    comment: 'hidden',
+    highlight: 'plain',
+    hidden: 'hidden',
+    unfoldedDelimiter: 'hidden',
+    anchorMeta: 'hidden',
+    decidedRef: 'hidden',
+    footnoteBlock: 'hidden',
+    consumingAnnotation: 'hidden',
+    ghostDelimiter: 'hidden',
+    ghostRef: 'hidden',
+  },
+  settled: {},
+  raw: {},
+};
+
+/**
+ * Whether a change of the given type has visible content in the given view mode.
+ *
+ * This is content visibility (is the change's text present in the rendered view?),
+ * not decoration visibility (which CSS styles are applied?). The logic mirrors
+ * the plan builder's settled/raw mode routing.
+ *
+ * - Settled: deletions removed, comments removed, everything else visible
+ * - Raw: insertions removed, comments removed, everything else visible
+ * - Review/changes: all types visible
+ */
+export function isTypeVisibleInMode(type: ChangeType, mode: ViewMode): boolean {
+  switch (mode) {
+    case 'settled':
+      return type !== ChangeType.Deletion && type !== ChangeType.Comment;
+    case 'raw':
+      return type !== ChangeType.Insertion && type !== ChangeType.Comment;
+    case 'review':
+    case 'changes':
+      return true;
+  }
+}
+
+export interface DecorationThemeOverride {
+  styles?: Partial<Record<DecorationTypeId, Partial<DecorationStyleDef>>>;
+  visibility?: Partial<Record<ViewMode, Partial<Record<DecorationTypeId, VisibilityRule>>>>;
+  authorPalette?: Array<{ light: string; dark: string }>;
+}

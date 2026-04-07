@@ -6,7 +6,7 @@ import { countFootnoteHeadersWithStatus } from '@changedown/core';
 import { resolveTrackingStatus } from '../scope.js';
 import { SessionState } from '../state.js';
 import { rerecordState } from '../state-utils.js';
-import { settleAcceptedChanges } from './settle.js';
+import { applyAcceptedChanges } from './settle.js';
 import picomatch from 'picomatch';
 
 /**
@@ -87,12 +87,12 @@ export async function handleGetTrackingStatus(
         out.accepted_unsettled_count = beforeSettle;
 
         if (settleAccepted && beforeSettle > 0) {
-          const { settledContent, settledIds } = settleAcceptedChanges(content);
-          if (settledIds.length > 0) {
-            await fs.writeFile(filePath, settledContent, 'utf-8');
+          const { currentContent, appliedIds } = applyAcceptedChanges(content);
+          if (appliedIds.length > 0) {
+            await fs.writeFile(filePath, currentContent, 'utf-8');
             out.settled = true;
-            out.settled_ids = settledIds;
-            await rerecordState(state, filePath, settledContent, config);
+            out.settled_ids = appliedIds;
+            await rerecordState(state, filePath, currentContent, config);
           }
         }
       }

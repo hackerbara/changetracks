@@ -8,7 +8,7 @@
 import { generateFootnoteDefinition, buildContextualL3EditOp } from './operations/footnote-generator.js';
 import { nowTimestamp } from './timestamp.js';
 import { applyReview } from './operations/apply-review.js';
-import { settleRejectedChangesOnly } from './operations/settled-text.js';
+import { applyRejectedChanges } from './operations/current-text.js';
 import {
   defaultNormalizer,
   normalizedIndexOf,
@@ -112,10 +112,10 @@ export interface MarkupRange {
   rawEnd: number;      // exclusive
 }
 
-interface SettledMapResult {
+interface CurrentMapResult {
   /** Text with CriticMarkup resolved (insertions kept, deletions removed, subs keep new text). */
-  settled: string;
-  /** Maps each settled-text character position to its raw-text position. */
+  current: string;
+  /** Maps each current-text character position to its raw-text position. */
   toRaw: number[];
   /** Ranges in raw text occupied by CriticMarkup constructs (delimiters, old text in subs, deletions). */
   markupRanges: MarkupRange[];
@@ -171,9 +171,9 @@ export function checkCriticMarkupOverlap(
 
   for (const node of changes) {
     // Semantic filter: only protect active proposals.
-    // Settled refs (node.settled) are metadata anchors — never block.
+    // Decided refs (node.decided) are metadata anchors — never block.
     // Accepted/rejected changes are already decided — no corruption risk.
-    if (node.settled || node.status !== ChangeStatus.Proposed) continue;
+    if (node.decided || node.status !== ChangeStatus.Proposed) continue;
 
     const spanStart = node.range.start;
     const spanEnd = node.range.end;
@@ -228,7 +228,7 @@ export function findAllProposedOverlaps(
 
   for (const node of changes) {
     // Same semantic filter as checkCriticMarkupOverlap: only active proposals
-    if (node.settled || node.status !== ChangeStatus.Proposed) continue;
+    if (node.decided || node.status !== ChangeStatus.Proposed) continue;
 
     const spanStart = node.range.start;
     const spanEnd = node.range.end;
@@ -275,7 +275,7 @@ export function guardOverlap(text: string, matchStart: number, matchLength: numb
 // ─── Auto-supersede ──────────────────────────────────────────────────────────
 
 export interface OverlapResolution {
-  settledContent: string;
+  currentContent: string;
   supersededIds: string[];
 }
 
@@ -340,10 +340,10 @@ export function resolveOverlapWithAuthor(
     }
   }
 
-  // Settle rejected changes (remove the now-rejected markup from the text)
-  const settled = settleRejectedChangesOnly(content);
+  // Apply rejected changes (remove the now-rejected markup from the text)
+  const rejected = applyRejectedChanges(content);
 
-  return { settledContent: settled.settledContent, supersededIds };
+  return { currentContent: rejected.currentContent, supersededIds };
 }
 
 // ─── Ref preservation ────────────────────────────────────────────────────────
@@ -374,8 +374,8 @@ export function stripRefsFromContent(text: string): { cleaned: string; refs: str
  * substitutions keep the new text, highlights keep the text, comments removed.
  * Footnote references `[^cn-N]` or `[^cn-N.M]` are removed.
  */
-export function stripCriticMarkupWithMap(text: string): SettledMapResult {
-  const settled: string[] = [];
+export function stripCriticMarkupWithMap(text: string): CurrentMapResult {
+  const current: string[] = [];
   const toRaw: number[] = [];
   const markupRanges: MarkupRange[] = [];
   let i = 0;
@@ -408,7 +408,7 @@ export function stripCriticMarkupWithMap(text: string): SettledMapResult {
           markupRanges.push({ rawStart: constructStart, rawEnd: constructEnd });
           // Keep the insertion content, map positions to raw
           for (let j = contentStart; j < contentEnd; j++) {
-            settled.push(text[j]!);
+            current.push(text[j]!);
             toRaw.push(j);
           }
           i = constructEnd;
@@ -440,7 +440,7 @@ export function stripCriticMarkupWithMap(text: string): SettledMapResult {
             markupRanges.push({ rawStart: constructStart, rawEnd: constructEnd });
             // Keep the new text, map positions to raw
             for (let j = newStart; j < newEnd; j++) {
-              settled.push(text[j]!);
+              current.push(text[j]!);
               toRaw.push(j);
             }
             i = constructEnd;
@@ -459,7 +459,7 @@ export function stripCriticMarkupWithMap(text: string): SettledMapResult {
           const constructEnd = end + 3;
           markupRanges.push({ rawStart: constructStart, rawEnd: constructEnd });
           for (let j = contentStart; j < contentEnd; j++) {
-            settled.push(text[j]!);
+            current.push(text[j]!);
             toRaw.push(j);
           }
           i = constructEnd;
@@ -480,12 +480,12 @@ export function stripCriticMarkupWithMap(text: string): SettledMapResult {
     }
 
     // Plain character: keep as-is
-    settled.push(text[i]!);
+    current.push(text[i]!);
     toRaw.push(i);
     i++;
   }
 
-  return { settled: settled.join(''), toRaw, markupRanges };
+  return { current: current.join(''), toRaw, markupRanges };
 }
 
 /**
@@ -494,7 +494,7 @@ export function stripCriticMarkupWithMap(text: string): SettledMapResult {
  * substitutions keep the new text (accepted), highlights keep the text.
  */
 export function stripCriticMarkup(text: string): string {
-  return stripCriticMarkupWithMap(text).settled;
+  return stripCriticMarkupWithMap(text).current;
 }
 
 export interface CommittedMapResult {
@@ -880,20 +880,20 @@ export function findUniqueMatch(
   // then maps the match back to raw positions (expanding to cover complete
   // CriticMarkup constructs).
   if (containsCriticMarkup(text)) {
-    const { settled, toRaw, markupRanges } = stripCriticMarkupWithMap(text);
-    const settledIdx = settled.indexOf(target);
-    if (settledIdx !== -1) {
-      const settledSecondIdx = settled.indexOf(target, settledIdx + 1);
-      if (settledSecondIdx !== -1) {
+    const { current, toRaw, markupRanges } = stripCriticMarkupWithMap(text);
+    const currentIdx = current.indexOf(target);
+    if (currentIdx !== -1) {
+      const currentSecondIdx = current.indexOf(target, currentIdx + 1);
+      if (currentSecondIdx !== -1) {
         throw new Error(
-          `Text "${target}" found multiple times in settled text (ambiguous). Provide more context to uniquely identify the location. Use LINE:HASH coordinates from read_tracked_file for precise targeting (e.g., at: '15:a3').`
+          `Text "${target}" found multiple times in current text (ambiguous). Provide more context to uniquely identify the location. Use LINE:HASH coordinates from read_tracked_file for precise targeting (e.g., at: '15:a3').`
         );
       }
 
-      // Map settled match boundaries to raw positions
-      const settledEnd = settledIdx + target.length - 1; // inclusive
-      let rawStart = toRaw[settledIdx]!;
-      let rawEnd = toRaw[settledEnd]! + 1; // exclusive
+      // Map current match boundaries to raw positions
+      const currentEnd = currentIdx + target.length - 1; // inclusive
+      let rawStart = toRaw[currentIdx]!;
+      let rawEnd = toRaw[currentEnd]! + 1; // exclusive
 
       // Expand to cover any CriticMarkup constructs that overlap the raw range
       let expanded = true;
@@ -934,8 +934,8 @@ export function findUniqueMatch(
 
   // Not found at any level
   const hint = normalizer
-    ? 'Tried: exact match, normalized match (NFKC), whitespace-collapsed match, view-surface match, committed-text match, settled-text match.'
-    : 'Tried: exact match only (no normalizer), whitespace-collapsed match, view-surface match, committed-text match, settled-text match.';
+    ? 'Tried: exact match, normalized match (NFKC), whitespace-collapsed match, view-surface match, decided-text match, current-text match.'
+    : 'Tried: exact match only (no normalizer), whitespace-collapsed match, view-surface match, decided-text match, current-text match.';
   const preview = target.length > 80 ? target.slice(0, 80) + '...' : target;
 
   // Haystack context for diagnostics: first 200 chars + line count

@@ -82,14 +82,14 @@ export function hideOrGhostDelimiters(
   fullRange: OffsetRange,
   contentRange: OffsetRange,
   plan: DecorationPlan,
-  isL3: boolean,
+  isL3Format: boolean,
   showGhostDelimiters: boolean,
   openDelim: string,
   closeDelim: string,
 ): void {
-  if (isL3 && showGhostDelimiters) {
+  if (isL3Format && showGhostDelimiters) {
     injectGhostDelimiters(fullRange, contentRange, plan.ghostDelimiters, openDelim, closeDelim);
-  } else if (!isL3) {
+  } else if (!isL3Format) {
     hideDelimiters(fullRange, contentRange, plan.hiddens);
   }
 }
@@ -123,7 +123,7 @@ export function createEmptyPlan(): DecorationPlan {
     hiddens: [], unfoldedDelimiters: [],
     commentIcons: [], activeHighlights: [],
     moveFroms: [], moveTos: [],
-    settledRefs: [], settledDims: [],
+    decidedRefs: [], decidedDims: [],
     ghostDeletions: [], consumedRanges: [],
     consumingOpAnnotations: [],
     ghostDelimiters: [], ghostRefs: [],

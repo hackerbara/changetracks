@@ -24,8 +24,8 @@ export function applyPlan(
   target.setDecorations('activeHighlight', plan.activeHighlights, text);
   target.setDecorations('moveFrom', plan.moveFroms, text);
   target.setDecorations('moveTo', plan.moveTos, text);
-  target.setDecorations('settledRef', plan.settledRefs, text);
-  target.setDecorations('settledDim', plan.settledDims, text);
+  target.setDecorations('decidedRef', plan.decidedRefs, text);
+  target.setDecorations('decidedDim', plan.decidedDims, text);
   target.setDecorations('ghostDeletion', plan.ghostDeletions, text);
   target.setDecorations('consumed', plan.consumedRanges, text);
   target.setDecorations('consumingAnnotation', plan.consumingOpAnnotations, text);

@@ -1,12 +1,16 @@
 import { describe, it, expect } from 'vitest';
 import { CriticMarkupParser } from '@changedown/core';
 import { buildDecorationPlan } from '@changedown/core/host';
+import { makeView } from '../helpers/view-test-utils.js';
 
 const parser = new CriticMarkupParser();
 
-function planFor(text: string, mode: 'review' | 'changes' | 'settled' | 'raw' = 'review', cursorOffset = 0, showDelimiters = false, isL3 = false) {
+type LegacyMode = 'review' | 'changes' | 'settled' | 'raw';
+
+function planFor(text: string, mode: LegacyMode = 'review', cursorOffset = 0, showDelimiters = false, format: 'L2' | 'L3' = 'L2') {
     const doc = parser.parse(text);
-    return buildDecorationPlan(doc.getChanges(), text, mode, cursorOffset, showDelimiters, 'never', isL3);
+    const view = makeView(mode, { display: { delimiters: showDelimiters ? 'show' : 'hide' } });
+    return buildDecorationPlan(doc.getChanges(), text, view, format, cursorOffset);
 }
 
 describe('buildDecorationPlan', () => {
@@ -156,7 +160,7 @@ describe('buildDecorationPlan', () => {
             if (changes[0]) {
                 changes[0].metadata = { author: 'Alice' };
             }
-            const plan = buildDecorationPlan(changes, text, 'review', 0, false, 'always');
+            const plan = buildDecorationPlan(changes, text, makeView('review', { display: { authorColors: 'always', delimiters: 'hide' } }), 'L2', 0);
             // Should be in author decorations, not default insertions
             expect(plan.insertions.length).toBe(0);
             expect(plan.authorDecorations.size).toBe(1);
@@ -177,31 +181,31 @@ describe('L3 ghost text delimiters', () => {
 
     it('populates ghostDelimiters instead of hiddens when isL3 and showDelimiters', () => {
         const text = 'Hello {++world++}!';
-        const plan = planFor(text, 'review', 0, true, true);
+        const plan = planFor(text, 'review', 0, true, 'L3');
         expect(plan.ghostDelimiters.length).toBeGreaterThan(0);
     });
 
     it('does not populate ghostDelimiters when isL3 and showDelimiters is false', () => {
         const text = 'Hello {++world++}!';
-        const plan = planFor(text, 'review', 0, false, true);
+        const plan = planFor(text, 'review', 0, false, 'L3');
         expect(plan.ghostDelimiters.length).toBe(0);
     });
 
     it('populates ghostRefs in review mode when isL3', () => {
         const text = 'Hello {++world++}!';
-        const plan = planFor(text, 'review', 0, false, true);
+        const plan = planFor(text, 'review', 0, false, 'L3');
         expect(plan.ghostRefs.length).toBe(1);
     });
 
     it('does not populate ghostRefs in settled mode', () => {
         const text = 'Hello {++world++}!';
-        const plan = planFor(text, 'settled', 0, false, true);
+        const plan = planFor(text, 'settled', 0, false, 'L3');
         expect(plan.ghostRefs.length).toBe(0);
     });
 
     it('does not populate ghostRefs in raw mode', () => {
         const text = 'Hello {++world++}!';
-        const plan = planFor(text, 'raw', 0, false, true);
+        const plan = planFor(text, 'raw', 0, false, 'L3');
         expect(plan.ghostRefs.length).toBe(0);
     });
 });

@@ -1,10 +1,26 @@
 import AppKit
+import Dispatch
+import Darwin
 import WebKit
 import UniformTypeIdentifiers
 
+/// Real on-disk path of this process (argv[0] can be `cdviewer` or a relative path when run from PATH).
+private func resolvedExecutableURL() -> URL {
+    var buf = [CChar](repeating: 0, count: 4096)
+    var size = UInt32(buf.count)
+    if _NSGetExecutablePath(&buf, &size) == 0 {
+        let path = String(cString: buf)
+        return URL(fileURLWithPath: path).resolvingSymlinksInPath()
+    }
+    return URL(fileURLWithPath: CommandLine.arguments[0]).resolvingSymlinksInPath()
+}
+
+/// Set in the child process started by Launch Services after a terminal hand-off.
+private let kForegroundEnv = "CHANGEDOWN_VIEWER_FOREGROUND"
+
 // Simple logging helper that always appears in log stream
 private func log(_ message: String) {
-    NSLog("[ChangeDown] %@", message)
+    NSLog("[CD Viewer] %@", message)
 }
 
 // MARK: - App Entry Point
@@ -12,11 +28,87 @@ private func log(_ message: String) {
 @main
 enum ChangeDownMain {
     static func main() {
+        if shouldDetachFromTerminal(), let appURL = resolveApplicationBundleURL() {
+            detachFromTerminal(applicationURL: appURL)
+            return
+        }
+        if shouldDetachFromTerminal() && resolveApplicationBundleURL() == nil {
+            log("No ChangeDown.app bundle found — run: node scripts/build.mjs (from repo root). Running attached to terminal.")
+        }
+
         let app = NSApplication.shared
         let delegate = AppDelegate()
         app.delegate = delegate
         app.setActivationPolicy(.regular)
         app.run()
+    }
+
+    /// When stdin is a TTY and we are not already the GUI child, hand off to Launch Services so the shell returns.
+    private static func shouldDetachFromTerminal() -> Bool {
+        if ProcessInfo.processInfo.environment[kForegroundEnv] != nil { return false }
+        return isatty(FileHandle.standardInput.fileDescriptor) != 0
+    }
+
+    /// Resolve ChangeDown.app. SwiftPM binaries copied into Contents/MacOS often do **not** get a useful
+    /// `Bundle.main` pointing at the .app, and `argv[0]` can be a bare `cdviewer` when launched from PATH.
+    /// Always walk up from `_NSGetExecutablePath` first.
+    private static func resolveApplicationBundleURL() -> URL? {
+        let bundlePath = Bundle.main.bundlePath
+        if bundlePath.hasSuffix(".app") {
+            return URL(fileURLWithPath: bundlePath)
+        }
+        let exec = resolvedExecutableURL()
+        let dir = exec.deletingLastPathComponent()
+        if dir.lastPathComponent == "MacOS" {
+            let contents = dir.deletingLastPathComponent()
+            if contents.lastPathComponent == "Contents" {
+                let appDir = contents.deletingLastPathComponent()
+                if appDir.path.hasSuffix(".app") {
+                    return appDir
+                }
+            }
+        }
+        let execPath = exec.path
+        if let range = execPath.range(of: "/packages/mac-wrapper/") {
+            let prefix = String(execPath[..<range.lowerBound])
+            let candidate = (prefix as NSString).appendingPathComponent("packages/mac-wrapper/ChangeDown.app")
+            if FileManager.default.fileExists(atPath: candidate) {
+                return URL(fileURLWithPath: candidate)
+            }
+        }
+        return nil
+    }
+
+    private static func detachFromTerminal(applicationURL: URL) {
+        let config = NSWorkspace.OpenConfiguration()
+        config.createsNewApplicationInstance = true
+
+        // Resolve relative paths to absolute before handing off to Launch Services,
+        // which runs the child with CWD "/" — losing the terminal's working directory.
+        let cwd = FileManager.default.currentDirectoryPath
+        let fm = FileManager.default
+        config.arguments = CommandLine.arguments.dropFirst().map { arg in
+            if arg.hasPrefix("-") || arg.hasPrefix("/") { return arg }
+            let resolved = (cwd as NSString).appendingPathComponent(arg)
+            if fm.fileExists(atPath: resolved) { return resolved }
+            return arg
+        }
+
+        var env = ProcessInfo.processInfo.environment
+        env[kForegroundEnv] = "1"
+        config.environment = env
+
+        let sem = DispatchSemaphore(value: 0)
+        var exitCode: Int32 = 0
+        NSWorkspace.shared.openApplication(at: applicationURL, configuration: config) { _, error in
+            if let error {
+                log("openApplication failed: \(error.localizedDescription)")
+                exitCode = 1
+            }
+            sem.signal()
+        }
+        _ = sem.wait(timeout: .now() + 30)
+        exit(exitCode)
     }
 }
 
@@ -42,6 +134,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Set up message handler for JS -> Swift communication
         let controller = WKUserContentController()
         controller.add(coordinator, name: "changedown")
+
+        // Set __changedown_native marker BEFORE modules evaluate (atDocumentStart).
+        // The SPA checks `!!(globalThis).__changedown_native` at import time to set
+        // isNative. Without this, isNative is always false and the native FS + preload
+        // code paths are never taken.  Real save/log are patched in didFinish.
+        let nativeMarkerScript = WKUserScript(source: """
+        window.__changedown_native = { save: function(){}, log: function(){} };
+        """, injectionTime: .atDocumentStart, forMainFrameOnly: true)
+        controller.addUserScript(nativeMarkerScript)
 
         // Pre-load CLI file content so the SPA can render it before workspace:// fetch
         if let preloadScript = coordinator.makePreloadScript() {
@@ -141,7 +242,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             backing: .buffered,
             defer: false
         )
-        window.title = "ChangeDown"
+        window.title = "CD Viewer"
         window.minSize = NSSize(width: 600, height: 400)
         window.contentView = webView
         window.isReleasedWhenClosed = false
@@ -169,9 +270,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // App menu
         let appMenuItem = NSMenuItem()
         let appMenu = NSMenu()
-        appMenu.addItem(NSMenuItem(title: "About ChangeDown", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: ""))
+        appMenu.addItem(NSMenuItem(title: "About CD Viewer", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: ""))
         appMenu.addItem(NSMenuItem.separator())
-        appMenu.addItem(NSMenuItem(title: "Quit ChangeDown", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
+        appMenu.addItem(NSMenuItem(title: "Quit CD Viewer", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
         appMenuItem.submenu = appMenu
         mainMenu.addItem(appMenuItem)
 

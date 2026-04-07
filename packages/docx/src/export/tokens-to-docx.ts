@@ -36,10 +36,10 @@ import {
   parseForFormat,
   ChangeType,
   ChangeStatus,
-  computeSettledText,
+  computeCurrentText,
   initHashline,
-  settleAcceptedChangesOnly,
-  settleRejectedChangesOnly,
+  applyAcceptedChanges,
+  applyRejectedChanges,
   type ChangeNode,
 } from '@changedown/core';
 
@@ -867,14 +867,14 @@ export async function changesToDocxParagraphs(
   // Step 1: Handle mode-based text transformation
   let text = markdown;
   if (options.mode === 'clean') {
-    text = computeSettledText(markdown);
+    text = computeCurrentText(markdown);
   } else if (options.mode === 'settled') {
     // Settle accepted changes (apply them) and rejected changes (revert them),
     // leaving only proposed changes as tracked changes in the output.
     // L2 settlement generates LINE:HASH edit-op lines; requires xxhash-wasm.
     await initHashline();
-    text = settleAcceptedChangesOnly(markdown).settledContent;
-    text = settleRejectedChangesOnly(text).settledContent;
+    text = applyAcceptedChanges(markdown).currentContent;
+    text = applyRejectedChanges(text).currentContent;
   }
 
   // Step 2: Parse with core parser

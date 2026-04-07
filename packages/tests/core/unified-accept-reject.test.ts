@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   computeAccept,
   computeReject,
-  computeSettledText,
+  computeCurrentText,
   ChangeNode,
   ChangeType,
   ChangeStatus,
@@ -231,9 +231,9 @@ describe('computeAccept/computeReject with L2 ChangeNode shape (range !== conten
 });
 
 // ---------------------------------------------------------------------------
-// computeSettledText with L3 input
+// computeCurrentText with L3 input
 // ---------------------------------------------------------------------------
-describe('computeSettledText with L3 format input', () => {
+describe('computeCurrentText with L3 format input', () => {
   const l3Doc = [
     '<!-- changedown.com/v1: tracked -->',
     '# Doc',
@@ -245,26 +245,26 @@ describe('computeSettledText with L3 format input', () => {
   ].join('\n');
 
   it('strips footnote block and returns body only', () => {
-    const settled = computeSettledText(l3Doc);
+    const settled = computeCurrentText(l3Doc);
     expect(settled).not.toMatch(/\[\^cn-/);
     expect(settled).toContain('Some text with additions.');
   });
 
   it('settled text ends with single newline', () => {
-    const settled = computeSettledText(l3Doc);
+    const settled = computeCurrentText(l3Doc);
     expect(settled.endsWith('\n')).toBe(true);
     expect(settled.endsWith('\n\n')).toBe(false);
   });
 
   it('preserves body content including frontmatter marker', () => {
-    const settled = computeSettledText(l3Doc);
+    const settled = computeCurrentText(l3Doc);
     expect(settled).toContain('# Doc');
     expect(settled).toContain('<!-- changedown.com/v1: tracked -->');
   });
 
   it('L2 documents still use CriticMarkup parser path', () => {
     const l2Doc = 'Hello {++world++} there\n\n[^cn-1]: @alice | 2026-03-16 | ins | proposed';
-    const settled = computeSettledText(l2Doc);
+    const settled = computeCurrentText(l2Doc);
     // L2: CriticMarkup is expanded and footnote defs stripped
     expect(settled).toContain('world');
     expect(settled).not.toMatch(/\{\+\+/);

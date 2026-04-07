@@ -366,18 +366,18 @@ describe('handleReviewChanges', () => {
     expect(Array.isArray(data.affected_lines)).toBe(true);
     expect(data.affected_lines.length).toBeGreaterThan(0);
 
-    // Find the line with the settled content (substitution: 'quick brown' → 'slow red')
-    const settledLine = data.affected_lines.find(
+    // Find the line with the current content (substitution: 'quick brown' → 'slow red')
+    const currentLine = data.affected_lines.find(
       (entry: { content: string }) => entry.content.includes('slow red')
     );
-    expect(settledLine).toBeDefined();
-    expect(settledLine.line).toBeGreaterThanOrEqual(1);
-    expect(settledLine.content).toContain('slow red');
-    // Should NOT contain CriticMarkup for the settled change
-    expect(settledLine.content).not.toContain('{~~');
+    expect(currentLine).toBeDefined();
+    expect(currentLine.line).toBeGreaterThanOrEqual(1);
+    expect(currentLine.content).toContain('slow red');
+    // Should NOT contain CriticMarkup for the resolved change
+    expect(currentLine.content).not.toContain('{~~');
 
     // No hashes when hashline is disabled
-    expect(settledLine.hash).toBeUndefined();
+    expect(currentLine.hash).toBeUndefined();
   });
 
   it('returns affected_lines with hashes when hashline enabled', async () => {
@@ -421,14 +421,14 @@ describe('handleReviewChanges', () => {
     expect(Array.isArray(data.affected_lines)).toBe(true);
     expect(data.affected_lines.length).toBeGreaterThan(0);
 
-    // Find the line with the settled content
-    const settledLine = data.affected_lines.find(
+    // Find the line with the current content
+    const currentLine = data.affected_lines.find(
       (entry: { content: string }) => entry.content.includes('slow red')
     );
-    expect(settledLine).toBeDefined();
-    expect(settledLine.hash).toBeDefined();
-    expect(typeof settledLine.hash).toBe('string');
-    expect(settledLine.hash).toMatch(/^[0-9a-f]{2}$/);
+    expect(currentLine).toBeDefined();
+    expect(currentLine.hash).toBeDefined();
+    expect(typeof currentLine.hash).toBe('string');
+    expect(currentLine.hash).toMatch(/^[0-9a-f]{2}$/);
   });
 
   it('does not return affected_lines when no settlement occurs', async () => {

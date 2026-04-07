@@ -1,4 +1,4 @@
-import { DECORATION_STYLES } from '@changedown/core/host';
+import { DECORATION_STYLES, VIEW_PRESETS } from '@changedown/core/host';
 import type { DecorationStyleDef } from '@changedown/core/host';
 
 /**
@@ -15,8 +15,11 @@ const TYPE_TO_CLASS: Record<string, string> = {
   comment: 'cn-comment',
   moveFrom: 'cn-move-from',
   moveTo: 'cn-move-to',
-  settledRef: 'cn-settled-ref',
-  settledDim: 'cn-settled-dim',
+  moveLabel: 'cn-move-label',
+  anchorMeta: 'cn-anchor-meta',
+  decidedRef: 'cn-decided-ref',
+  decidedDim: 'cn-decided-dim',
+  footnoteBlock: 'cn-footnotes',
   ghostDeletion: 'cn-ghost-text',
   consumed: 'cn-consumed',
   consumingAnnotation: 'cn-consumed-label',
@@ -55,63 +58,80 @@ export function generatePreviewCSS(theme: 'dark' | 'light' = 'dark'): string {
   return rules.join('\n');
 }
 
-/**
- * Returns CSS rules for view-mode differentiation as a string.
- * These rules are the same as in preview.css — this function exists
- * so webview consumers (docx preview) can embed them inline.
- *
- * When updating these rules, also update packages/preview/media/preview.css
- * (search for "Changes view mode" section).
- */
-export function generateViewModeCSS(): string {
-  return `/* === Changes view mode: simplified preview === */
-/* Hide deletions, move sources, move labels */
-[data-view-mode="changes"] .cn-del,
-[data-view-mode="changes"] .cn-sub-del,
-[data-view-mode="changes"] del.cn-move-from,
-[data-view-mode="changes"] .cn-move-label { display: none; }
-
-/* Insertions as plain text (keep green color, remove underline) */
-[data-view-mode="changes"] .cn-ins,
-[data-view-mode="changes"] .cn-sub-ins,
-[data-view-mode="changes"] ins.cn-move-to { text-decoration: none; }
-
-/* Hide comments, highlights, metadata, footnotes, ref badges */
-[data-view-mode="changes"] .cn-comment { display: none; }
-[data-view-mode="changes"] .cn-hl { background: none; padding: 0; }
-[data-view-mode="changes"] .cn-anchor-meta { display: none; }
-[data-view-mode="changes"] .cn-footnotes { display: none; }
-[data-view-mode="changes"] .cn-ref { display: none; }
-
-/* Reset status dimming */
-[data-view-mode="changes"] .cn-accepted { opacity: 1; }
-[data-view-mode="changes"] .cn-rejected { opacity: 1; font-style: normal; }
-
+/** Gutter indicator rules — layout-dependent, not derivable from visibility data. */
+const GUTTER_RULES = `
 /* Change gutter: insertion (green) */
-[data-view-mode="changes"] :is(p,li,h1,h2,h3,h4,h5,h6,blockquote,pre):has(ins.cn-ins) {
+[data-view-name="simple"] :is(p,li,h1,h2,h3,h4,h5,h6,blockquote,pre):has(ins.cn-ins) {
   border-left: 3px solid #66BB6A; padding-left: 8px; margin-left: -12px;
 }
-.vscode-light [data-view-mode="changes"] :is(p,li,h1,h2,h3,h4,h5,h6,blockquote,pre):has(ins.cn-ins),
-.cn-light [data-view-mode="changes"] :is(p,li,h1,h2,h3,h4,h5,h6,blockquote,pre):has(ins.cn-ins) {
+.vscode-light [data-view-name="simple"] :is(p,li,h1,h2,h3,h4,h5,h6,blockquote,pre):has(ins.cn-ins),
+.cn-light [data-view-name="simple"] :is(p,li,h1,h2,h3,h4,h5,h6,blockquote,pre):has(ins.cn-ins) {
   border-left-color: #1E824C;
 }
 
 /* Change gutter: deletion only (red) */
-[data-view-mode="changes"] :is(p,li,h1,h2,h3,h4,h5,h6,blockquote,pre):has(del.cn-del):not(:has(ins.cn-ins)) {
+[data-view-name="simple"] :is(p,li,h1,h2,h3,h4,h5,h6,blockquote,pre):has(del.cn-del):not(:has(ins.cn-ins)) {
   border-left: 3px solid #EF5350; padding-left: 8px; margin-left: -12px; min-height: 1.2em;
 }
-.vscode-light [data-view-mode="changes"] :is(p,li,h1,h2,h3,h4,h5,h6,blockquote,pre):has(del.cn-del):not(:has(ins.cn-ins)),
-.cn-light [data-view-mode="changes"] :is(p,li,h1,h2,h3,h4,h5,h6,blockquote,pre):has(del.cn-del):not(:has(ins.cn-ins)) {
+.vscode-light [data-view-name="simple"] :is(p,li,h1,h2,h3,h4,h5,h6,blockquote,pre):has(del.cn-del):not(:has(ins.cn-ins)),
+.cn-light [data-view-name="simple"] :is(p,li,h1,h2,h3,h4,h5,h6,blockquote,pre):has(del.cn-del):not(:has(ins.cn-ins)) {
   border-left-color: #C0392B;
 }
 
 /* Change gutter: substitution (blue) */
-[data-view-mode="changes"] :is(p,li,h1,h2,h3,h4,h5,h6,blockquote,pre):has(.cn-sub-del) {
+[data-view-name="simple"] :is(p,li,h1,h2,h3,h4,h5,h6,blockquote,pre):has(.cn-sub-del) {
   border-left: 3px solid #64B5F6; padding-left: 8px; margin-left: -12px;
 }
-.vscode-light [data-view-mode="changes"] :is(p,li,h1,h2,h3,h4,h5,h6,blockquote,pre):has(.cn-sub-del),
-.cn-light [data-view-mode="changes"] :is(p,li,h1,h2,h3,h4,h5,h6,blockquote,pre):has(.cn-sub-del) {
+.vscode-light [data-view-name="simple"] :is(p,li,h1,h2,h3,h4,h5,h6,blockquote,pre):has(.cn-sub-del),
+.cn-light [data-view-name="simple"] :is(p,li,h1,h2,h3,h4,h5,h6,blockquote,pre):has(.cn-sub-del) {
   border-left-color: #2980B9;
 }`;
+
+let cachedViewModeCSS: string | undefined;
+
+/**
+ * Returns CSS rules for view differentiation.
+ * Derives visibility rules from VIEW_PRESETS (core) and maps
+ * them to CSS via data-view-name scoping. Gutter indicators are
+ * hand-authored (layout rules using :has() selectors, not derivable from data).
+ * Result is cached after the first call since VIEW_PRESETS is static.
+ */
+export function generateViewModeCSS(): string {
+  if (cachedViewModeCSS !== undefined) return cachedViewModeCSS;
+  const rules: string[] = [];
+
+  for (const [name, view] of Object.entries(VIEW_PRESETS)) {
+    const d = view.display;
+    const scope = `[data-view-name="${name}"]`;
+    const hidden: string[] = [];
+    const plain: string[] = [];
+
+    if ((d.deletions ?? 'inline') === 'hide') {
+      hidden.push(`${scope} .cn-del`, `${scope} .cn-sub-del`, `${scope} .cn-move-from`, `${scope} .cn-move-label`);
+    }
+    if ((d.comments ?? 'inline-marker') === 'hide') hidden.push(`${scope} .cn-comment`);
+    if ((d.highlights ?? 'inline') === 'hide') hidden.push(`${scope} .cn-hl`);
+    else if ((d.highlights ?? 'inline') !== 'inline') plain.push(`${scope} .cn-hl`);
+    if ((d.footnoteRefs ?? 'show') === 'hide') hidden.push(`${scope} .cn-ref`);
+    if ((d.footnotes ?? 'show') === 'hide') hidden.push(`${scope} .cn-footnotes`);
+
+    if (hidden.length > 0) rules.push(hidden.join(',\n') + ' { display: none; }');
+    if (plain.length > 0) rules.push(plain.join(',\n') + ' { background: none; padding: 0; }');
+  }
+
+  // Additional non-visibility overrides for simple mode
+  rules.push(`
+/* Insertions as plain text (keep color, remove underline) */
+[data-view-name="simple"] .cn-ins,
+[data-view-name="simple"] .cn-sub-ins,
+[data-view-name="simple"] ins.cn-move-to { text-decoration: none; }
+
+/* Reset status dimming */
+[data-view-name="simple"] .cn-accepted { opacity: 1; }
+[data-view-name="simple"] .cn-rejected { opacity: 1; font-style: normal; }`);
+
+  rules.push(GUTTER_RULES);
+  cachedViewModeCSS = rules.join('\n\n');
+  return cachedViewModeCSS;
 }
 

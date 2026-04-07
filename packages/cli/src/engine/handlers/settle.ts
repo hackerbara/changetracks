@@ -1,23 +1,23 @@
-import { settleAcceptedChangesOnly, settleRejectedChangesOnly } from '@changedown/core';
+import { applyAcceptedChanges as coreApplyAccepted, applyRejectedChanges as coreApplyRejected } from '@changedown/core';
 
 /**
- * Thin wrapper around core's settleAcceptedChangesOnly. Used by review handlers
+ * Thin wrapper around core's applyAcceptedChanges. Used by review handlers
  * for auto-settlement after approval; not exposed as a standalone MCP tool.
  */
-export function settleAcceptedChanges(fileContent: string): {
-  settledContent: string;
-  settledIds: string[];
+export function applyAcceptedChanges(fileContent: string): {
+  currentContent: string;
+  appliedIds: string[];
 } {
-  return settleAcceptedChangesOnly(fileContent);
+  return coreApplyAccepted(fileContent);
 }
 
 /**
- * Thin wrapper around core's settleRejectedChangesOnly. Used by review handlers
+ * Thin wrapper around core's applyRejectedChanges. Used by review handlers
  * for auto-settlement after rejection; not exposed as a standalone MCP tool.
  */
-export function settleRejectedChanges(fileContent: string): {
-  settledContent: string;
-  settledIds: string[];
+export function applyRejectedChanges(fileContent: string): {
+  currentContent: string;
+  appliedIds: string[];
 } {
-  return settleRejectedChangesOnly(fileContent);
+  return coreApplyRejected(fileContent);
 }

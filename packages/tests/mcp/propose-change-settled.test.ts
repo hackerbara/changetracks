@@ -257,10 +257,10 @@ describe('propose_change with settled hashes', () => {
     );
     expect(proposeResult.isError).toBeUndefined();
 
-    // 3. Verify settled hashes were re-recorded (should have settledView field)
+    // 3. Verify settled hashes were re-recorded (should have currentView field)
     const hashes = state.getRecordedHashes(filePath);
     expect(hashes).toBeDefined();
-    expect(hashes!.some(h => h.settledView !== undefined)).toBe(true);
+    expect(hashes!.some(h => h.currentView !== undefined)).toBe(true);
 
     // 4. Read settled view again to get fresh hashes for second edit
     const readResult2 = await handleReadTrackedFile(

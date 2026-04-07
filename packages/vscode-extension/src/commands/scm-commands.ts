@@ -1,11 +1,11 @@
 import * as vscode from 'vscode';
 import { openDiffForResource } from '../changedown-scm';
-import type { ExtensionController } from '../controller';
 import type { ChangedownSCM } from '../changedown-scm';
+import type { ReviewCommands } from './review-commands';
 
 export function registerScmCommands(
     context: vscode.ExtensionContext,
-    controller: ExtensionController,
+    reviewCommands: ReviewCommands,
     getScm: () => ChangedownSCM | null
 ): void {
     context.subscriptions.push(
@@ -21,13 +21,13 @@ export function registerScmCommands(
             const uris = Array.isArray(resourceUriOrStates)
                 ? resourceUriOrStates.map(s => s.resourceUri).filter((u): u is vscode.Uri => !!u)
                 : [resourceUriOrStates];
-            for (const uri of uris) await controller.acceptAllInDocument(uri);
+            for (const uri of uris) await reviewCommands.acceptAllInDocument(uri);
         }),
         vscode.commands.registerCommand('changedown.rejectAllInFile', async (resourceUriOrStates: vscode.Uri | vscode.SourceControlResourceState[]) => {
             const uris = Array.isArray(resourceUriOrStates)
                 ? resourceUriOrStates.map(s => s.resourceUri).filter((u): u is vscode.Uri => !!u)
                 : [resourceUriOrStates];
-            for (const uri of uris) await controller.rejectAllInDocument(uri);
+            for (const uri of uris) await reviewCommands.rejectAllInDocument(uri);
         }),
         vscode.commands.registerCommand('changedown.showScmIndexStatus', () => {
             const scm = getScm();

@@ -1,11 +1,14 @@
 import * as path from 'node:path';
 import { realpathSync } from 'node:fs';
 import { scanMaxCnId } from '@changedown/core';
+import type { ViewMode } from '@changedown/core';
 
-export type ViewName = 'review' | 'changes' | 'settled' | 'raw';
+export type { ViewMode };
+/** @deprecated Use ViewMode instead */
+export type ViewName = ViewMode;
 
 export interface FileRecord {
-  lastReadView: ViewName;
+  lastReadView: ViewMode;
   contentFingerprint: string;
   recordedAt: number;
 }
@@ -41,8 +44,8 @@ export interface ActiveGroup {
  *     `rerecordAfterWrite`, `getLastReadView`, `isStale`, `resolveHash`
  *     (opencode does not participate in the MCP read/write session protocol)
  *
- *   - Extended hash fields: `committed`, `settledView`, `rawLineNum`
- *     (opencode only needs `raw` + `settled` for its stop-hook batch)
+ *   - Extended hash fields: `committed`, `currentView`, `rawLineNum`
+ *     (opencode only needs `raw` + `current` for its stop-hook batch)
  *
  *   - Different `beginGroup` semantics: the opencode version incorporates
  *     `globalMaxId` and iterates per-file counters to avoid cross-file
@@ -58,7 +61,7 @@ export class SessionState {
   private counters: Map<string, number> = new Map();
   private globalMaxId: number = 0;
   private activeGroup: ActiveGroup | null = null;
-  private fileHashesByView: Map<string, Map<ViewName, Array<{ line: number; raw: string; settled: string; committed?: string; settledView?: string; rawLineNum?: number }>>> = new Map();
+  private fileHashesByView: Map<string, Map<ViewMode, Array<{ line: number; raw: string; current: string; committed?: string; currentView?: string; rawLineNum?: number }>>> = new Map();
   private fileRecords: Map<string, FileRecord> = new Map();
   private guideShownForMode: 'classic' | 'compact' | null = null;
   private guideSuppressed = true;
@@ -190,7 +193,7 @@ export class SessionState {
    * Called by `read_tracked_file` after computing hashline output.
    * Overwrites the recorded hashes for the last-read view of the file.
    */
-  recordFileHashes(filePath: string, hashes: Array<{ line: number; raw: string; settled: string; committed?: string; settledView?: string; rawLineNum?: number }>): void {
+  recordFileHashes(filePath: string, hashes: Array<{ line: number; raw: string; current: string; committed?: string; currentView?: string; rawLineNum?: number }>): void {
     filePath = this.normalizePath(filePath);
     const view = this.getLastReadView(filePath) ?? 'raw';
     if (!this.fileHashesByView.has(filePath)) {
@@ -207,7 +210,7 @@ export class SessionState {
    * (i.e. whatever view was most recently passed to `recordAfterRead`). Falls
    * back to `'raw'` if no view has been recorded for the file yet.
    */
-  getRecordedHashes(filePath: string, view?: ViewName): Array<{ line: number; raw: string; settled: string; committed?: string; settledView?: string; rawLineNum?: number }> | undefined {
+  getRecordedHashes(filePath: string, view?: ViewMode): Array<{ line: number; raw: string; current: string; committed?: string; currentView?: string; rawLineNum?: number }> | undefined {
     filePath = this.normalizePath(filePath);
     const viewTables = this.fileHashesByView.get(filePath);
     if (!viewTables) return undefined;
@@ -221,8 +224,8 @@ export class SessionState {
    */
   recordAfterRead(
     filePath: string,
-    view: ViewName,
-    hashes: Array<{ line: number; raw: string; settled: string; committed?: string; settledView?: string; rawLineNum?: number }>,
+    view: ViewMode,
+    hashes: Array<{ line: number; raw: string; current: string; committed?: string; currentView?: string; rawLineNum?: number }>,
     rawContent: string,
   ): void {
     filePath = this.normalizePath(filePath);
@@ -255,7 +258,7 @@ export class SessionState {
   rerecordAfterWrite(
     filePath: string,
     newContent: string,
-    hashes: Array<{ line: number; raw: string; settled: string; committed?: string; settledView?: string; rawLineNum?: number }>,
+    hashes: Array<{ line: number; raw: string; current: string; committed?: string; currentView?: string; rawLineNum?: number }>,
   ): void {
     filePath = this.normalizePath(filePath);
     const existingRecord = this.fileRecords.get(filePath);
@@ -264,7 +267,7 @@ export class SessionState {
     this.fileHashesByView.delete(filePath);
     // Store new hashes under lastReadView
     const view = existingRecord?.lastReadView ?? 'review';
-    const viewTables = new Map<ViewName, typeof hashes>();
+    const viewTables = new Map<ViewMode, typeof hashes>();
     viewTables.set(view, hashes);
     this.fileHashesByView.set(filePath, viewTables);
     this.fileRecords.set(filePath, {
@@ -278,7 +281,7 @@ export class SessionState {
    * Returns the view name from the last read_tracked_file call for this file,
    * or undefined if the file has not been read in this session.
    */
-  getLastReadView(filePath: string): ViewName | undefined {
+  getLastReadView(filePath: string): ViewMode | undefined {
     filePath = this.normalizePath(filePath);
     return this.fileRecords.get(filePath)?.lastReadView;
   }
@@ -297,7 +300,7 @@ export class SessionState {
   /**
    * Resolves the correct hash for a given line based on the lastReadView.
    * - review/changes: returns committed hash (the coordinate space agents write against)
-   * - settled: returns settledView hash
+   * - settled: returns currentView hash
    * - raw: returns raw hash
    *
    * When `suppliedHash` is provided, returns a discriminated union:
@@ -314,8 +317,8 @@ export class SessionState {
     line: number,
     suppliedHash?: string,
   ):
-    | { match: true; rawLineNum: number; view: ViewName }
-    | { match: false; expectedHash: string; view: ViewName }
+    | { match: true; rawLineNum: number; view: ViewMode }
+    | { match: false; expectedHash: string; view: ViewMode }
     | undefined {
     filePath = this.normalizePath(filePath);
     const viewTables = this.fileHashesByView.get(filePath);
@@ -323,13 +326,13 @@ export class SessionState {
     if (!viewTables || viewTables.size === 0 || !lastView) return undefined;
 
     // Helper to get expected hash for a view
-    const expectedHashForView = (view: ViewName, entry: { raw: string; settled: string; committed?: string; settledView?: string }): string => {
+    const expectedHashForView = (view: ViewMode, entry: { raw: string; current: string; committed?: string; currentView?: string }): string => {
       switch (view) {
         case 'review':
         case 'changes':
           return entry.committed ?? entry.raw;
         case 'settled':
-          return entry.settledView ?? entry.settled;
+          return entry.currentView ?? entry.current;
         case 'raw':
           return entry.raw;
       }

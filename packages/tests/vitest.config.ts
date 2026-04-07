@@ -1,6 +1,20 @@
 import { defineConfig } from 'vitest/config';
+import { resolve } from 'path';
+import { fileURLToPath } from 'url';
+
+const __dirname = fileURLToPath(new URL('.', import.meta.url));
 
 export default defineConfig({
+  resolve: {
+    alias: {
+      // @tryvienna/sdk is a peer dependency provided by the plugin host at
+      // runtime. Map it to the local stub for test environments.
+      '@tryvienna/sdk': resolve(
+        __dirname,
+        '../../packages/vienna-plugin/src/vendor/tryvienna-sdk.ts',
+      ),
+    },
+  },
   test: {
     setupFiles: ['./vitest-setup.ts'],
     include: [
@@ -11,6 +25,7 @@ export default defineConfig({
       'opencode/**/*.test.ts',
       'lsp/**/*.test.ts',
       'preview/**/*.test.ts',
+      'vienna/**/*.test.ts',
     ],
     server: {
       deps: {
@@ -23,6 +38,7 @@ export default defineConfig({
           '@changedown/opencode-plugin',
           'changedown',
           'changedown-hooks',
+          '@changedown/vienna-plugin',
           'diff',
           'xxhash-wasm',
         ],

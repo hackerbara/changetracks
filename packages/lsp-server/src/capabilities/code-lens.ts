@@ -7,13 +7,13 @@
 
 import { CodeLens, Command, Range } from 'vscode-languageserver';
 import { ChangeNode, ChangeStatus, isGhostNode } from '@changedown/core';
-import type { ViewName } from '@changedown/core';
+import type { ViewMode } from '@changedown/core';
 import { offsetToPosition } from '../converters';
 
 /** CodeLens display mode */
 export type CodeLensMode = 'cursor' | 'always' | 'off';
 
-/** Cursor state sent from extension via changedown/cursorPosition notification */
+/** Cursor state sent from extension via changedown/cursorMove notification */
 export interface CursorState {
   line: number;       // zero-indexed line number
   changeId?: string;  // id of change cursor is inside, or undefined
@@ -33,7 +33,7 @@ export interface CursorState {
 export function createCodeLenses(
   changes: ChangeNode[],
   text: string,
-  viewMode?: ViewName,
+  viewMode?: ViewMode,
   codeLensMode?: CodeLensMode,
   cursorState?: CursorState,
   coherenceRate?: number
@@ -62,7 +62,7 @@ export function createCodeLenses(
 
   const resolved = changes.filter(c => !isGhostNode(c));
   // Filter to actionable (proposed, unsettled) changes — ghost nodes already excluded above
-  const actionable = resolved.filter(c => !c.settled && c.status === ChangeStatus.Proposed && !c.consumedBy);
+  const actionable = resolved.filter(c => !c.decided && c.status === ChangeStatus.Proposed && !c.consumedBy);
   if (actionable.length === 0) return lenses;
 
   if (mode === 'always') {

@@ -10,7 +10,7 @@
 //   5. Claude Code: marketplace add (local) + plugin install via CLI
 //   6. Cursor: MCP config, hooks, skill
 //   7. Plugin cache sync (overwrite dist/ so rebuilds take effect)
-//   8. Mac wrapper binary
+//   8. CD Viewer (ChangeDown.app → cdviewer)
 //   9. OpenCode guidance
 
 import { existsSync, mkdirSync, writeFileSync, readFileSync, copyFileSync, cpSync, lstatSync, rmSync, symlinkSync } from 'fs';
@@ -397,26 +397,50 @@ if (claudePath) {
   }
 }
 
-// --- 8. Mac wrapper binary ---
-const macBinary = join(SC_ROOT, 'packages', 'mac-wrapper', '.build', 'release', 'ChangeDown');
-if (platform() === 'darwin' && existsSync(macBinary)) {
-  console.log('\n  Installing mac-wrapper binary...');
+// --- 8. CD Viewer (symlink to packaged .app binary only; no bare .build/release link) ---
+const appBundleBinary = join(
+  SC_ROOT,
+  'packages',
+  'mac-wrapper',
+  'ChangeDown.app',
+  'Contents',
+  'MacOS',
+  'ChangeDown',
+);
+if (platform() === 'darwin') {
+  console.log('\n  Installing CD Viewer (cdviewer)...');
   const binDir = join(home, '.local', 'bin');
-  const linkPath = join(binDir, 'changedown-app');
+  const linkPath = join(binDir, 'cdviewer');
+  const legacyLink = join(binDir, 'changedown-app');
 
-  if (!dryRun) mkdirSync(binDir, { recursive: true });
+  if (!existsSync(appBundleBinary)) {
+    console.log(`\n  ${red('CD Viewer bundle not found.')}`);
+    console.log(`    Expected: ${appBundleBinary}`);
+    console.log(`    ${dim('Run from repo root: node scripts/build.mjs')}`);
+  } else {
+    if (!dryRun) mkdirSync(binDir, { recursive: true });
 
-  process.stdout.write(`    ${linkPath} → ${macBinary}... `);
-  if (!dryRun) {
-    try {
-      if (existsSync(linkPath) || lstatSync(linkPath).isSymbolicLink()) {
-        rmSync(linkPath);
+    process.stdout.write(`    ${linkPath} → ChangeDown.app/Contents/MacOS/ChangeDown... `);
+    if (!dryRun) {
+      try {
+        if (existsSync(linkPath) || lstatSync(linkPath).isSymbolicLink()) {
+          rmSync(linkPath);
+        }
+      } catch {
+        /* doesn't exist yet */
       }
-    } catch { /* doesn't exist yet */ }
-    symlinkSync(macBinary, linkPath);
+      try {
+        if (existsSync(legacyLink) || lstatSync(legacyLink).isSymbolicLink()) {
+          rmSync(legacyLink);
+        }
+      } catch {
+        /* ignore */
+      }
+      symlinkSync(appBundleBinary, linkPath);
+    }
+    console.log(`${green('ok')}`);
+    console.log(`    ${dim('Run: cdviewer [file.md]')}`);
   }
-  console.log(`${green('ok')}`);
-  console.log(`    ${dim('Run: changedown-app [file.md]')}`);
 }
 
 // --- 9. OpenCode ---

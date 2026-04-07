@@ -1274,7 +1274,7 @@ var init_parser = __esm({
               contentRange: { start: offset, end: offset + refLength },
               // covers [^cn-N] ref
               level: 2,
-              settled: true,
+              decided: true,
               anchored: true,
               metadata: {
                 author: def.author,
@@ -3412,8 +3412,8 @@ var init_format_aware_parse = __esm({
   }
 });
 
-// ../../packages/core/dist-esm/operations/settled-text.js
-function computeSettledReplace(change) {
+// ../../packages/core/dist-esm/operations/current-text.js
+function computeCurrentReplace(change) {
   const rangeLength = change.range.end - change.range.start;
   if (change.type === ChangeType.Comment) {
     return { offset: change.range.start, length: rangeLength, newText: "" };
@@ -3473,7 +3473,7 @@ function stripInlineFootnoteRefs(text, zones) {
     return "";
   });
 }
-function computeSettledTextL3(text) {
+function computeCurrentTextL3(text) {
   const { bodyLines } = splitBodyAndFootnotes(text.split("\n"));
   return bodyLines.join("\n") + "\n";
 }
@@ -3500,9 +3500,9 @@ function revertChangesInBody(body, changes) {
   }
   return body;
 }
-function computeSettledText(text, options) {
+function computeCurrentText(text, options) {
   if (isL3Format(text)) {
-    return computeSettledTextL3(text);
+    return computeCurrentTextL3(text);
   }
   const doc = parseForFormat(text, { skipCodeBlocks: options?.skipCodeBlocks ?? false });
   const changes = doc.getChanges();
@@ -3510,7 +3510,7 @@ function computeSettledText(text, options) {
     const zones2 = findCodeZones(text);
     return stripInlineFootnoteRefs(stripFootnoteDefinitions(text, zones2), zones2);
   }
-  const edits = [...changes].sort((a, b) => b.range.start - a.range.start).map(computeSettledReplace);
+  const edits = [...changes].sort((a, b) => b.range.start - a.range.start).map(computeCurrentReplace);
   let result = text;
   for (const edit of edits) {
     result = result.slice(0, edit.offset) + edit.newText + result.slice(edit.offset + edit.length);
@@ -3616,20 +3616,20 @@ function recoverL2EditOpPayload(change, sourceText) {
   }
   return { originalText: orig, currentText: cur };
 }
-function settleAcceptedChangesOnly(text) {
+function applyAcceptedChanges(text) {
   if (isL3Format(text)) {
-    return { settledContent: text, settledIds: [] };
+    return { currentContent: text, appliedIds: [] };
   }
   const doc = parseForFormat(text, { skipCodeBlocks: false });
   const accepted = doc.getChanges().filter((c) => c.status === ChangeStatus.Accepted);
-  const settledIds = accepted.map((c) => c.id);
+  const appliedIds = accepted.map((c) => c.id);
   if (accepted.length === 0) {
-    return { settledContent: text, settledIds: [] };
+    return { currentContent: text, appliedIds: [] };
   }
   const parts = [...accepted].sort((a, b) => a.range.start - b.range.start).map(computeAcceptParts);
   const zones = findCodeZones(text);
-  const rawSettledContent = buildSegmentsWithZoneAwareness(text, parts, zones);
-  const { bodyLines, footnoteLines } = splitBodyAndFootnotes(rawSettledContent.split("\n"));
+  const rawCurrentContent = buildSegmentsWithZoneAwareness(text, parts, zones);
+  const { bodyLines, footnoteLines } = splitBodyAndFootnotes(rawCurrentContent.split("\n"));
   const refRe = footnoteRefGlobal();
   const cleanBodyLines = bodyLines.map((line) => line.replace(refRe, ""));
   const refIndex = /* @__PURE__ */ new Map();
@@ -3700,57 +3700,57 @@ function settleAcceptedChangesOnly(text) {
   for (const { headerLine, editOpLine } of editOpInsertions) {
     footnoteLines.splice(headerLine + 1, 0, editOpLine);
   }
-  const settledContent = [...bodyLines, "", ...footnoteLines].join("\n");
-  return { settledContent, settledIds };
+  const currentContent = [...bodyLines, "", ...footnoteLines].join("\n");
+  return { currentContent, appliedIds };
 }
-function settleRejectedChangesOnly(text) {
+function applyRejectedChanges(text) {
   if (isL3Format(text)) {
     const doc2 = parseForFormat(text);
     const rejected2 = doc2.getChanges().filter((c) => c.status === ChangeStatus.Rejected);
-    const settledIds2 = rejected2.map((c) => c.id);
+    const appliedIds2 = rejected2.map((c) => c.id);
     if (rejected2.length === 0)
-      return { settledContent: text, settledIds: [] };
+      return { currentContent: text, appliedIds: [] };
     const { bodyLines, footnoteLines } = splitBodyAndFootnotes(text.split("\n"));
     const body = revertChangesInBody(bodyLines.join("\n"), rejected2);
-    const settledContent2 = footnoteLines.length > 0 ? body + "\n\n" + footnoteLines.join("\n") : body;
-    return { settledContent: settledContent2, settledIds: settledIds2 };
+    const currentContent2 = footnoteLines.length > 0 ? body + "\n\n" + footnoteLines.join("\n") : body;
+    return { currentContent: currentContent2, appliedIds: appliedIds2 };
   }
   const doc = parseForFormat(text, { skipCodeBlocks: false });
   const rejected = doc.getChanges().filter((c) => c.status === ChangeStatus.Rejected);
-  const settledIds = rejected.map((c) => c.id);
+  const appliedIds = rejected.map((c) => c.id);
   if (rejected.length === 0) {
-    return { settledContent: text, settledIds: [] };
+    return { currentContent: text, appliedIds: [] };
   }
   const parts = [...rejected].sort((a, b) => a.range.start - b.range.start).map(computeRejectParts);
   const zones = findCodeZones(text);
-  const settledContent = buildSegmentsWithZoneAwareness(text, parts, zones);
-  return { settledContent, settledIds };
+  const currentContent = buildSegmentsWithZoneAwareness(text, parts, zones);
+  return { currentContent, appliedIds };
 }
-function computeSettledViewL3(rawText) {
+function computeCurrentViewL3(rawText) {
   const { bodyLines } = splitBodyAndFootnotes(rawText.split("\n"));
   const lines = [];
-  const settledToRaw = /* @__PURE__ */ new Map();
-  const rawToSettled = /* @__PURE__ */ new Map();
+  const currentToRaw = /* @__PURE__ */ new Map();
+  const rawToCurrent = /* @__PURE__ */ new Map();
   for (let i = 0; i < bodyLines.length; i++) {
-    const settledNum = i + 1;
+    const currentNum = i + 1;
     const rawNum = i + 1;
     lines.push({
-      settledLineNum: settledNum,
+      currentLineNum: currentNum,
       rawLineNum: rawNum,
       text: bodyLines[i],
       hash: computeLineHash(i, bodyLines[i], bodyLines)
     });
-    settledToRaw.set(settledNum, rawNum);
-    rawToSettled.set(rawNum, settledNum);
+    currentToRaw.set(currentNum, rawNum);
+    rawToCurrent.set(rawNum, currentNum);
   }
-  return { lines, settledToRaw, rawToSettled };
+  return { lines, currentToRaw, rawToCurrent };
 }
-function computeSettledView(rawText, preParsed) {
+function computeCurrentView(rawText, preParsed) {
   if (isL3Format(rawText)) {
-    return computeSettledViewL3(rawText);
+    return computeCurrentViewL3(rawText);
   }
   const changes = preParsed ?? parseForFormat(rawText, { skipCodeBlocks: false }).getChanges();
-  const edits = [...changes].sort((a, b) => a.range.start - b.range.start).map(computeSettledReplace);
+  const edits = [...changes].sort((a, b) => a.range.start - b.range.start).map(computeCurrentReplace);
   const deltaTable = [];
   let cumulativeDelta = 0;
   for (const edit of edits) {
@@ -3760,32 +3760,32 @@ function computeSettledView(rawText, preParsed) {
     cumulativeDelta += newLen - oldLen;
   }
   const editsByOffset = new Map(edits.map((e2) => [e2.offset, e2]));
-  function settledOffsetToRawOffset(settledOffset) {
+  function currentOffsetToRawOffset(currentOffset) {
     let delta = 0;
     let rawConsumed = 0;
-    let settledConsumed = 0;
+    let currentConsumed = 0;
     for (const entry of deltaTable) {
       const rawGap = entry.rawOffset - rawConsumed;
-      if (settledOffset <= settledConsumed + rawGap) {
-        return rawConsumed + (settledOffset - settledConsumed);
+      if (currentOffset <= currentConsumed + rawGap) {
+        return rawConsumed + (currentOffset - currentConsumed);
       }
-      settledConsumed += rawGap;
+      currentConsumed += rawGap;
       rawConsumed = entry.rawOffset;
       delta = entry.delta;
       const edit = editsByOffset.get(entry.rawOffset);
       if (edit) {
         const oldLen = edit.length;
         const newLen = edit.newText.length;
-        if (settledOffset < settledConsumed + newLen) {
+        if (currentOffset < currentConsumed + newLen) {
           return rawConsumed;
         }
-        settledConsumed += newLen;
+        currentConsumed += newLen;
         rawConsumed += oldLen;
       }
     }
-    return rawConsumed + (settledOffset - settledConsumed);
+    return rawConsumed + (currentOffset - currentConsumed);
   }
-  const settledText = computeSettledText(rawText);
+  const currentText = computeCurrentText(rawText);
   const rawLines = rawText.split("\n");
   const rawLineStarts = [0];
   for (let i = 0; i < rawLines.length - 1; i++) {
@@ -3803,33 +3803,33 @@ function computeSettledView(rawText, preParsed) {
     }
     return lo + 1;
   }
-  const settledTextLines = settledText.split("\n");
-  const settledLines = [];
-  const settledToRaw = /* @__PURE__ */ new Map();
-  const rawToSettled = /* @__PURE__ */ new Map();
-  let settledCharOffset = 0;
-  for (let i = 0; i < settledTextLines.length; i++) {
-    const settledLineText = settledTextLines[i];
-    const settledLineNum = i + 1;
-    const rawOffset = settledOffsetToRawOffset(settledCharOffset);
+  const currentTextLines = currentText.split("\n");
+  const currentLines = [];
+  const currentToRaw = /* @__PURE__ */ new Map();
+  const rawToCurrent = /* @__PURE__ */ new Map();
+  let currentCharOffset = 0;
+  for (let i = 0; i < currentTextLines.length; i++) {
+    const currentLineText = currentTextLines[i];
+    const currentLineNum = i + 1;
+    const rawOffset = currentOffsetToRawOffset(currentCharOffset);
     const rawLineNum = rawOffsetToLineNum(rawOffset);
-    const hash = computeLineHash(settledLineNum - 1, settledLineText, settledTextLines);
-    settledLines.push({
-      settledLineNum,
+    const hash = computeLineHash(currentLineNum - 1, currentLineText, currentTextLines);
+    currentLines.push({
+      currentLineNum,
       rawLineNum,
-      text: settledLineText,
+      text: currentLineText,
       hash
     });
-    settledToRaw.set(settledLineNum, rawLineNum);
-    if (!rawToSettled.has(rawLineNum)) {
-      rawToSettled.set(rawLineNum, settledLineNum);
+    currentToRaw.set(currentLineNum, rawLineNum);
+    if (!rawToCurrent.has(rawLineNum)) {
+      rawToCurrent.set(rawLineNum, currentLineNum);
     }
-    settledCharOffset += settledLineText.length + 1;
+    currentCharOffset += currentLineText.length + 1;
   }
-  return { lines: settledLines, settledToRaw, rawToSettled, changes };
+  return { lines: currentLines, currentToRaw, rawToCurrent, changes };
 }
-var init_settled_text = __esm({
-  "../../packages/core/dist-esm/operations/settled-text.js"() {
+var init_current_text = __esm({
+  "../../packages/core/dist-esm/operations/current-text.js"() {
     "use strict";
     init_types();
     init_accept_reject();
@@ -3903,7 +3903,7 @@ function checkCriticMarkupOverlap(text, matchStart, matchLength) {
   const { changes } = resolveProposedChanges(text);
   const matchEnd = matchStart + matchLength;
   for (const node of changes) {
-    if (node.settled || node.status !== ChangeStatus.Proposed)
+    if (node.decided || node.status !== ChangeStatus.Proposed)
       continue;
     const spanStart = node.range.start;
     const spanEnd = node.range.end;
@@ -3940,7 +3940,7 @@ function findAllProposedOverlaps(text, matchStart, matchLength) {
   const matchEnd = matchStart + matchLength;
   const results = [];
   for (const node of changes) {
-    if (node.settled || node.status !== ChangeStatus.Proposed)
+    if (node.decided || node.status !== ChangeStatus.Proposed)
       continue;
     const spanStart = node.range.start;
     const spanEnd = node.range.end;
@@ -4004,8 +4004,8 @@ function resolveOverlapWithAuthor(text, matchStart, matchLength, author) {
       throw new Error(`Auto-supersede failed: could not reject change ${id}. ${"error" in result ? result.error : "Unknown error"}`);
     }
   }
-  const settled = settleRejectedChangesOnly(content);
-  return { settledContent: settled.settledContent, supersededIds };
+  const rejected = applyRejectedChanges(content);
+  return { currentContent: rejected.currentContent, supersededIds };
 }
 function stripRefsFromContent(text) {
   const refs = [];
@@ -4016,7 +4016,7 @@ function stripRefsFromContent(text) {
   return { cleaned, refs };
 }
 function stripCriticMarkupWithMap(text) {
-  const settled = [];
+  const current = [];
   const toRaw = [];
   const markupRanges = [];
   let i = 0;
@@ -4040,7 +4040,7 @@ function stripCriticMarkupWithMap(text) {
           const constructEnd = end + 3;
           markupRanges.push({ rawStart: constructStart, rawEnd: constructEnd });
           for (let j = contentStart; j < contentEnd; j++) {
-            settled.push(text[j]);
+            current.push(text[j]);
             toRaw.push(j);
           }
           i = constructEnd;
@@ -4067,7 +4067,7 @@ function stripCriticMarkupWithMap(text) {
             const constructEnd = end + 3;
             markupRanges.push({ rawStart: constructStart, rawEnd: constructEnd });
             for (let j = newStart; j < newEnd; j++) {
-              settled.push(text[j]);
+              current.push(text[j]);
               toRaw.push(j);
             }
             i = constructEnd;
@@ -4084,7 +4084,7 @@ function stripCriticMarkupWithMap(text) {
           const constructEnd = end + 3;
           markupRanges.push({ rawStart: constructStart, rawEnd: constructEnd });
           for (let j = contentStart; j < contentEnd; j++) {
-            settled.push(text[j]);
+            current.push(text[j]);
             toRaw.push(j);
           }
           i = constructEnd;
@@ -4101,14 +4101,14 @@ function stripCriticMarkupWithMap(text) {
         }
       }
     }
-    settled.push(text[i]);
+    current.push(text[i]);
     toRaw.push(i);
     i++;
   }
-  return { settled: settled.join(""), toRaw, markupRanges };
+  return { current: current.join(""), toRaw, markupRanges };
 }
 function stripCriticMarkup(text) {
-  return stripCriticMarkupWithMap(text).settled;
+  return stripCriticMarkupWithMap(text).current;
 }
 function stripCriticMarkupToCommittedWithMap(text) {
   const footnotes = extractFootnoteStatuses(text);
@@ -4356,16 +4356,16 @@ function findUniqueMatch(text, target, normalizer) {
     }
   }
   if (containsCriticMarkup(text)) {
-    const { settled, toRaw, markupRanges } = stripCriticMarkupWithMap(text);
-    const settledIdx = settled.indexOf(target);
-    if (settledIdx !== -1) {
-      const settledSecondIdx = settled.indexOf(target, settledIdx + 1);
-      if (settledSecondIdx !== -1) {
-        throw new Error(`Text "${target}" found multiple times in settled text (ambiguous). Provide more context to uniquely identify the location. Use LINE:HASH coordinates from read_tracked_file for precise targeting (e.g., at: '15:a3').`);
+    const { current, toRaw, markupRanges } = stripCriticMarkupWithMap(text);
+    const currentIdx = current.indexOf(target);
+    if (currentIdx !== -1) {
+      const currentSecondIdx = current.indexOf(target, currentIdx + 1);
+      if (currentSecondIdx !== -1) {
+        throw new Error(`Text "${target}" found multiple times in current text (ambiguous). Provide more context to uniquely identify the location. Use LINE:HASH coordinates from read_tracked_file for precise targeting (e.g., at: '15:a3').`);
       }
-      const settledEnd = settledIdx + target.length - 1;
-      let rawStart = toRaw[settledIdx];
-      let rawEnd = toRaw[settledEnd] + 1;
+      const currentEnd = currentIdx + target.length - 1;
+      let rawStart = toRaw[currentIdx];
+      let rawEnd = toRaw[currentEnd] + 1;
       let expanded = true;
       while (expanded) {
         expanded = false;
@@ -4397,7 +4397,7 @@ function findUniqueMatch(text, target, normalizer) {
       };
     }
   }
-  const hint = normalizer ? "Tried: exact match, normalized match (NFKC), whitespace-collapsed match, view-surface match, committed-text match, settled-text match." : "Tried: exact match only (no normalizer), whitespace-collapsed match, view-surface match, committed-text match, settled-text match.";
+  const hint = normalizer ? "Tried: exact match, normalized match (NFKC), whitespace-collapsed match, view-surface match, decided-text match, current-text match." : "Tried: exact match only (no normalizer), whitespace-collapsed match, view-surface match, decided-text match, current-text match.";
   const preview = target.length > 80 ? target.slice(0, 80) + "..." : target;
   const haystackPreview = text.length > 200 ? text.slice(0, 200) + "..." : text;
   const haystackLineCount = text.split("\n").length;
@@ -4721,7 +4721,7 @@ var init_file_ops = __esm({
     init_footnote_generator();
     init_timestamp();
     init_apply_review();
-    init_settled_text();
+    init_current_text();
     init_text_normalizer();
     init_hashline_cleanup();
     init_format_aware_parse();
@@ -5322,7 +5322,7 @@ var init_workspace = __esm({
     init_constants();
     init_footnote_patterns();
     init_format_aware_parse();
-    init_settled_text();
+    init_current_text();
   }
 });
 
@@ -5446,7 +5446,7 @@ var init_critic_regex = __esm({
 });
 
 // ../../packages/core/dist-esm/hashline-tracked.js
-function settledLine(line) {
+function currentLine(line) {
   let result = line;
   result = result.replace(singleLineSubstitution(), "$1");
   result = result.replace(singleLineDeletion(), "");
@@ -5456,8 +5456,8 @@ function settledLine(line) {
   result = result.replace(footnoteRefGlobal(), "");
   return result;
 }
-function computeSettledLineHash(idx, line, allSettledLines) {
-  return computeLineHash(idx, settledLine(line), allSettledLines);
+function computeCurrentLineHash(idx, line, allCurrentLines) {
+  return computeLineHash(idx, currentLine(line), allCurrentLines);
 }
 function countChanges(content) {
   const counts = { proposed: 0, accepted: 0, rejected: 0 };
@@ -5516,7 +5516,7 @@ var init_footnote_parser = __esm({
   }
 });
 
-// ../../packages/core/dist-esm/committed-text.js
+// ../../packages/core/dist-esm/decided-text.js
 function resolveStatus(changeId, footnotes) {
   if (!changeId)
     return "proposed";
@@ -5525,7 +5525,7 @@ function resolveStatus(changeId, footnotes) {
     return "proposed";
   return info.status;
 }
-function computeCommittedLine(line, footnotes) {
+function computeDecidedLine(line, footnotes) {
   let result = line;
   const changeIds = [];
   let hasProposed = false;
@@ -5596,7 +5596,7 @@ function findFootnoteLineIndices(lines) {
   }
   return indices;
 }
-function computeCommittedView(rawText, preParsed) {
+function computeDecidedView(rawText, preParsed) {
   const rawLines = rawText.split("\n");
   const changes = preParsed ?? parseForFormat(rawText).getChanges();
   const statusMap = /* @__PURE__ */ new Map();
@@ -5608,25 +5608,25 @@ function computeCommittedView(rawText, preParsed) {
   }
   const footnoteLineIndices = findFootnoteLineIndices(rawLines);
   const preLines = [];
-  let committedLineNum = 0;
+  let decidedLineNum = 0;
   let cleanCount = 0;
   for (let rawIdx = 0; rawIdx < rawLines.length; rawIdx++) {
     if (footnoteLineIndices.has(rawIdx))
       continue;
     const rawLine = rawLines[rawIdx];
-    const lineResult = computeCommittedLine(rawLine, statusMap);
+    const lineResult = computeDecidedLine(rawLine, statusMap);
     const rawIsBlank = rawLine.trim() === "";
     const committedIsBlank = lineResult.text.trim() === "";
     if (!rawIsBlank && committedIsBlank && hasCriticMarkup(rawLine)) {
       continue;
     }
-    committedLineNum++;
+    decidedLineNum++;
     const rawLineNum = rawIdx + 1;
     if (lineResult.flag === "") {
       cleanCount++;
     }
     preLines.push({
-      committedLineNum,
+      decidedLineNum,
       rawLineNum,
       text: lineResult.text,
       flag: lineResult.flag,
@@ -5634,21 +5634,21 @@ function computeCommittedView(rawText, preParsed) {
     });
   }
   const allCommittedTexts = preLines.map((l) => l.text);
-  const committedLines = [];
-  const committedToRaw = /* @__PURE__ */ new Map();
-  const rawToCommitted = /* @__PURE__ */ new Map();
+  const decidedLines = [];
+  const decidedToRaw = /* @__PURE__ */ new Map();
+  const rawToDecided = /* @__PURE__ */ new Map();
   for (const pre of preLines) {
-    const hash = computeLineHash(pre.committedLineNum - 1, pre.text, allCommittedTexts);
-    committedLines.push({
-      committedLineNum: pre.committedLineNum,
+    const hash = computeLineHash(pre.decidedLineNum - 1, pre.text, allCommittedTexts);
+    decidedLines.push({
+      decidedLineNum: pre.decidedLineNum,
       rawLineNum: pre.rawLineNum,
       text: pre.text,
       hash,
       flag: pre.flag,
       changeIds: pre.changeIds
     });
-    committedToRaw.set(pre.committedLineNum, pre.rawLineNum);
-    rawToCommitted.set(pre.rawLineNum, pre.committedLineNum);
+    decidedToRaw.set(pre.decidedLineNum, pre.rawLineNum);
+    rawToDecided.set(pre.rawLineNum, pre.decidedLineNum);
   }
   const summary = { proposed: 0, accepted: 0, rejected: 0, clean: cleanCount };
   for (const node of changes) {
@@ -5660,10 +5660,10 @@ function computeCommittedView(rawText, preParsed) {
     else if (s === "rejected")
       summary.rejected++;
   }
-  return { lines: committedLines, summary, committedToRaw, rawToCommitted, changes };
+  return { lines: decidedLines, summary, decidedToRaw, rawToDecided, changes };
 }
-var init_committed_text = __esm({
-  "../../packages/core/dist-esm/committed-text.js"() {
+var init_decided_text = __esm({
+  "../../packages/core/dist-esm/decided-text.js"() {
     "use strict";
     init_footnote_utils();
     init_format_aware_parse();
@@ -5956,16 +5956,16 @@ var init_view_builder_utils = __esm({
 
 // ../../packages/core/dist-esm/renderers/view-builders/review.js
 function buildReviewDocument(content, options) {
-  const committedResult = computeCommittedView(content);
-  const changes = committedResult.changes;
+  const decidedResult = computeDecidedView(content);
+  const changes = decidedResult.changes;
   const footnoteMap = /* @__PURE__ */ new Map();
   for (const node of changes) {
     footnoteMap.set(node.id, node);
   }
   const rawLines = content.split("\n");
-  const allSettled = rawLines.map((l) => settledLine(l));
+  const allCurrent = rawLines.map((l) => currentLine(l));
   const rawToCommittedHash = /* @__PURE__ */ new Map();
-  for (const cl of committedResult.lines) {
+  for (const cl of decidedResult.lines) {
     rawToCommittedHash.set(cl.rawLineNum, cl.hash);
   }
   let fnRange = findFootnoteSectionRange(changes);
@@ -6001,7 +6001,7 @@ function buildReviewDocument(content, options) {
       continuesChange: continuations.has(i) || void 0,
       sessionHashes: {
         raw: rawHash,
-        settled: computeSettledLineHash(lineNum, rawLine, allSettled),
+        current: computeCurrentLineHash(lineNum, rawLine, allCurrent),
         committed: rawToCommittedHash.get(lineNum)
       }
     });
@@ -6130,7 +6130,7 @@ var CRITIC_MARKUP_RE, FOOTNOTE_REF_RE;
 var init_review = __esm({
   "../../packages/core/dist-esm/renderers/view-builders/review.js"() {
     "use strict";
-    init_committed_text();
+    init_decided_text();
     init_footnote_utils();
     init_types();
     init_hashline();
@@ -6143,19 +6143,19 @@ var init_review = __esm({
 
 // ../../packages/core/dist-esm/renderers/view-builders/changes.js
 function buildChangesDocument(rawContent, options) {
-  const committedResult = computeCommittedView(rawContent);
-  const changes = committedResult.changes;
+  const decidedResult = computeDecidedView(rawContent);
+  const changes = decidedResult.changes;
   const rawLines = rawContent.split("\n");
-  const allSettled = rawLines.map((l) => settledLine(l));
-  while (committedResult.lines.length > 0 && committedResult.lines[committedResult.lines.length - 1].text.trim() === "") {
-    committedResult.lines.pop();
+  const allCurrent = rawLines.map((l) => currentLine(l));
+  while (decidedResult.lines.length > 0 && decidedResult.lines[decidedResult.lines.length - 1].text.trim() === "") {
+    decidedResult.lines.pop();
   }
-  const lines = committedResult.lines.map((cl) => {
+  const lines = decidedResult.lines.map((cl) => {
     const flags = cl.flag === "P" ? ["P"] : cl.flag === "A" ? ["A"] : [];
     const metadata = cl.changeIds.map((id) => ({ changeId: id }));
     return {
       margin: {
-        lineNumber: cl.committedLineNum,
+        lineNumber: cl.decidedLineNum,
         hash: cl.hash,
         flags
       },
@@ -6164,7 +6164,7 @@ function buildChangesDocument(rawContent, options) {
       rawLineNumber: cl.rawLineNum,
       sessionHashes: {
         raw: computeLineHash(cl.rawLineNum - 1, rawLines[cl.rawLineNum - 1] ?? "", rawLines),
-        settled: computeSettledLineHash(cl.rawLineNum, rawLines[cl.rawLineNum - 1] ?? "", allSettled),
+        current: computeCurrentLineHash(cl.rawLineNum, rawLines[cl.rawLineNum - 1] ?? "", allCurrent),
         committed: cl.hash,
         rawLineNum: cl.rawLineNum
       }
@@ -6180,25 +6180,25 @@ function buildChangesDocument(rawContent, options) {
 var init_changes = __esm({
   "../../packages/core/dist-esm/renderers/view-builders/changes.js"() {
     "use strict";
-    init_committed_text();
+    init_decided_text();
     init_hashline();
     init_hashline_tracked();
     init_view_builder_utils();
   }
 });
 
-// ../../packages/core/dist-esm/renderers/view-builders/settled.js
-function buildSettledDocument(rawContent, options) {
+// ../../packages/core/dist-esm/renderers/view-builders/current.js
+function buildCurrentDocument(rawContent, options) {
   const changes = parseForFormat(rawContent, { skipCodeBlocks: false }).getChanges();
-  const settledResult = computeSettledView(rawContent, changes);
+  const currentResult = computeCurrentView(rawContent, changes);
   const rawLines = rawContent.split("\n");
-  const allSettled = rawLines.map((l) => settledLine(l));
-  while (settledResult.lines.length > 0 && settledResult.lines[settledResult.lines.length - 1].text.trim() === "") {
-    settledResult.lines.pop();
+  const allCurrent = rawLines.map((l) => currentLine(l));
+  while (currentResult.lines.length > 0 && currentResult.lines[currentResult.lines.length - 1].text.trim() === "") {
+    currentResult.lines.pop();
   }
-  const lines = settledResult.lines.map((sl) => ({
+  const lines = currentResult.lines.map((sl) => ({
     margin: {
-      lineNumber: sl.settledLineNum,
+      lineNumber: sl.currentLineNum,
       hash: sl.hash,
       flags: []
     },
@@ -6207,8 +6207,8 @@ function buildSettledDocument(rawContent, options) {
     rawLineNumber: sl.rawLineNum,
     sessionHashes: {
       raw: computeLineHash(sl.rawLineNum - 1, rawLines[sl.rawLineNum - 1] ?? "", rawLines),
-      settled: computeSettledLineHash(sl.rawLineNum, rawLines[sl.rawLineNum - 1] ?? "", allSettled),
-      settledView: sl.hash,
+      current: computeCurrentLineHash(sl.rawLineNum, rawLines[sl.rawLineNum - 1] ?? "", allCurrent),
+      currentView: sl.hash,
       rawLineNum: sl.rawLineNum
     }
   }));
@@ -6219,10 +6219,10 @@ function buildSettledDocument(rawContent, options) {
   });
   return { view: "settled", header, lines };
 }
-var init_settled = __esm({
-  "../../packages/core/dist-esm/renderers/view-builders/settled.js"() {
+var init_current = __esm({
+  "../../packages/core/dist-esm/renderers/view-builders/current.js"() {
     "use strict";
-    init_settled_text();
+    init_current_text();
     init_hashline();
     init_hashline_tracked();
     init_format_aware_parse();
@@ -6234,7 +6234,7 @@ var init_settled = __esm({
 function buildRawDocument(rawContent, options) {
   const changes = parseForFormat(rawContent).getChanges();
   const rawLines = rawContent.split("\n");
-  const allSettled = rawLines.map((l) => settledLine(l));
+  const allCurrent = rawLines.map((l) => currentLine(l));
   const continuations = computeContinuationLines(rawContent, changes);
   const lines = rawLines.map((text, i) => {
     const rawHash = computeLineHash(i, text, rawLines);
@@ -6250,7 +6250,7 @@ function buildRawDocument(rawContent, options) {
       continuesChange: continuations.has(i) || void 0,
       sessionHashes: {
         raw: rawHash,
-        settled: computeSettledLineHash(i + 1, text, allSettled)
+        current: computeCurrentLineHash(i + 1, text, allCurrent)
       }
     };
   });
@@ -6281,7 +6281,7 @@ function buildViewDocument(rawContent, view, options) {
     case "changes":
       return buildChangesDocument(rawContent, options);
     case "settled":
-      return buildSettledDocument(rawContent, options);
+      return buildCurrentDocument(rawContent, options);
     case "raw":
       return buildRawDocument(rawContent, options);
     default:
@@ -6293,7 +6293,7 @@ var init_view_builders = __esm({
     "use strict";
     init_review();
     init_changes();
-    init_settled();
+    init_current();
     init_raw();
   }
 });
@@ -6386,13 +6386,13 @@ var init_dist_esm = __esm({
     init_sidecar_accept_reject();
     init_tracking_header();
     init_text_normalizer();
-    init_settled_text();
+    init_current_text();
     init_hashline();
     init_hashline_tracked();
     init_hashline_cleanup();
     init_footnote_utils();
     init_footnote_parser();
-    init_committed_text();
+    init_decided_text();
     init_constants();
     init_critic_regex();
     init_footnote_patterns();
@@ -6418,6 +6418,7 @@ var require_constants = __commonJS({
     "use strict";
     var WIN_SLASH = "\\\\/";
     var WIN_NO_SLASH = `[^${WIN_SLASH}]`;
+    var DEFAULT_MAX_EXTGLOB_RECURSION = 0;
     var DOT_LITERAL = "\\.";
     var PLUS_LITERAL = "\\+";
     var QMARK_LITERAL = "\\?";
@@ -6468,6 +6469,7 @@ var require_constants = __commonJS({
       SEP: "\\"
     };
     var POSIX_REGEX_SOURCE = {
+      __proto__: null,
       alnum: "a-zA-Z0-9",
       alpha: "a-zA-Z",
       ascii: "\\x00-\\x7F",
@@ -6484,6 +6486,7 @@ var require_constants = __commonJS({
       xdigit: "A-Fa-f0-9"
     };
     module.exports = {
+      DEFAULT_MAX_EXTGLOB_RECURSION,
       MAX_LENGTH: 1024 * 64,
       POSIX_REGEX_SOURCE,
       // regular expressions
@@ -7034,6 +7037,213 @@ var require_parse = __commonJS({
     var syntaxError = (type, char) => {
       return `Missing ${type}: "${char}" - use "\\\\${char}" to match literal characters`;
     };
+    var splitTopLevel = (input) => {
+      const parts = [];
+      let bracket = 0;
+      let paren = 0;
+      let quote = 0;
+      let value = "";
+      let escaped = false;
+      for (const ch of input) {
+        if (escaped === true) {
+          value += ch;
+          escaped = false;
+          continue;
+        }
+        if (ch === "\\") {
+          value += ch;
+          escaped = true;
+          continue;
+        }
+        if (ch === '"') {
+          quote = quote === 1 ? 0 : 1;
+          value += ch;
+          continue;
+        }
+        if (quote === 0) {
+          if (ch === "[") {
+            bracket++;
+          } else if (ch === "]" && bracket > 0) {
+            bracket--;
+          } else if (bracket === 0) {
+            if (ch === "(") {
+              paren++;
+            } else if (ch === ")" && paren > 0) {
+              paren--;
+            } else if (ch === "|" && paren === 0) {
+              parts.push(value);
+              value = "";
+              continue;
+            }
+          }
+        }
+        value += ch;
+      }
+      parts.push(value);
+      return parts;
+    };
+    var isPlainBranch = (branch) => {
+      let escaped = false;
+      for (const ch of branch) {
+        if (escaped === true) {
+          escaped = false;
+          continue;
+        }
+        if (ch === "\\") {
+          escaped = true;
+          continue;
+        }
+        if (/[?*+@!()[\]{}]/.test(ch)) {
+          return false;
+        }
+      }
+      return true;
+    };
+    var normalizeSimpleBranch = (branch) => {
+      let value = branch.trim();
+      let changed = true;
+      while (changed === true) {
+        changed = false;
+        if (/^@\([^\\()[\]{}|]+\)$/.test(value)) {
+          value = value.slice(2, -1);
+          changed = true;
+        }
+      }
+      if (!isPlainBranch(value)) {
+        return;
+      }
+      return value.replace(/\\(.)/g, "$1");
+    };
+    var hasRepeatedCharPrefixOverlap = (branches) => {
+      const values = branches.map(normalizeSimpleBranch).filter(Boolean);
+      for (let i = 0; i < values.length; i++) {
+        for (let j = i + 1; j < values.length; j++) {
+          const a = values[i];
+          const b = values[j];
+          const char = a[0];
+          if (!char || a !== char.repeat(a.length) || b !== char.repeat(b.length)) {
+            continue;
+          }
+          if (a === b || a.startsWith(b) || b.startsWith(a)) {
+            return true;
+          }
+        }
+      }
+      return false;
+    };
+    var parseRepeatedExtglob = (pattern, requireEnd = true) => {
+      if (pattern[0] !== "+" && pattern[0] !== "*" || pattern[1] !== "(") {
+        return;
+      }
+      let bracket = 0;
+      let paren = 0;
+      let quote = 0;
+      let escaped = false;
+      for (let i = 1; i < pattern.length; i++) {
+        const ch = pattern[i];
+        if (escaped === true) {
+          escaped = false;
+          continue;
+        }
+        if (ch === "\\") {
+          escaped = true;
+          continue;
+        }
+        if (ch === '"') {
+          quote = quote === 1 ? 0 : 1;
+          continue;
+        }
+        if (quote === 1) {
+          continue;
+        }
+        if (ch === "[") {
+          bracket++;
+          continue;
+        }
+        if (ch === "]" && bracket > 0) {
+          bracket--;
+          continue;
+        }
+        if (bracket > 0) {
+          continue;
+        }
+        if (ch === "(") {
+          paren++;
+          continue;
+        }
+        if (ch === ")") {
+          paren--;
+          if (paren === 0) {
+            if (requireEnd === true && i !== pattern.length - 1) {
+              return;
+            }
+            return {
+              type: pattern[0],
+              body: pattern.slice(2, i),
+              end: i
+            };
+          }
+        }
+      }
+    };
+    var getStarExtglobSequenceOutput = (pattern) => {
+      let index = 0;
+      const chars = [];
+      while (index < pattern.length) {
+        const match = parseRepeatedExtglob(pattern.slice(index), false);
+        if (!match || match.type !== "*") {
+          return;
+        }
+        const branches = splitTopLevel(match.body).map((branch2) => branch2.trim());
+        if (branches.length !== 1) {
+          return;
+        }
+        const branch = normalizeSimpleBranch(branches[0]);
+        if (!branch || branch.length !== 1) {
+          return;
+        }
+        chars.push(branch);
+        index += match.end + 1;
+      }
+      if (chars.length < 1) {
+        return;
+      }
+      const source = chars.length === 1 ? utils.escapeRegex(chars[0]) : `[${chars.map((ch) => utils.escapeRegex(ch)).join("")}]`;
+      return `${source}*`;
+    };
+    var repeatedExtglobRecursion = (pattern) => {
+      let depth = 0;
+      let value = pattern.trim();
+      let match = parseRepeatedExtglob(value);
+      while (match) {
+        depth++;
+        value = match.body.trim();
+        match = parseRepeatedExtglob(value);
+      }
+      return depth;
+    };
+    var analyzeRepeatedExtglob = (body, options) => {
+      if (options.maxExtglobRecursion === false) {
+        return { risky: false };
+      }
+      const max = typeof options.maxExtglobRecursion === "number" ? options.maxExtglobRecursion : constants.DEFAULT_MAX_EXTGLOB_RECURSION;
+      const branches = splitTopLevel(body).map((branch) => branch.trim());
+      if (branches.length > 1) {
+        if (branches.some((branch) => branch === "") || branches.some((branch) => /^[*?]+$/.test(branch)) || hasRepeatedCharPrefixOverlap(branches)) {
+          return { risky: true };
+        }
+      }
+      for (const branch of branches) {
+        const safeOutput = getStarExtglobSequenceOutput(branch);
+        if (safeOutput) {
+          return { risky: true, safeOutput };
+        }
+        if (repeatedExtglobRecursion(branch) > max) {
+          return { risky: true };
+        }
+      }
+      return { risky: false };
+    };
     var parse4 = (input, options) => {
       if (typeof input !== "string") {
         throw new TypeError("Expected a string");
@@ -7164,6 +7374,8 @@ var require_parse = __commonJS({
         token.prev = prev;
         token.parens = state.parens;
         token.output = state.output;
+        token.startIndex = state.index;
+        token.tokensIndex = tokens.length;
         const output = (opts.capture ? "(" : "") + token.open;
         increment("parens");
         push({ type, value: value2, output: state.output ? "" : ONE_CHAR });
@@ -7171,6 +7383,26 @@ var require_parse = __commonJS({
         extglobs.push(token);
       };
       const extglobClose = (token) => {
+        const literal = input.slice(token.startIndex, state.index + 1);
+        const body = input.slice(token.startIndex + 2, state.index);
+        const analysis = analyzeRepeatedExtglob(body, opts);
+        if ((token.type === "plus" || token.type === "star") && analysis.risky) {
+          const safeOutput = analysis.safeOutput ? (token.output ? "" : ONE_CHAR) + (opts.capture ? `(${analysis.safeOutput})` : analysis.safeOutput) : void 0;
+          const open2 = tokens[token.tokensIndex];
+          open2.type = "text";
+          open2.value = literal;
+          open2.output = safeOutput || utils.escapeRegex(literal);
+          for (let i = token.tokensIndex + 1; i < tokens.length; i++) {
+            tokens[i].value = "";
+            tokens[i].output = "";
+            delete tokens[i].suffix;
+          }
+          state.output = token.output + open2.output;
+          state.backtrack = true;
+          push({ type: "paren", extglob: true, value, output: "" });
+          decrement("parens");
+          return;
+        }
         let output = token.close + (opts.capture ? ")" : "");
         let rest;
         if (token.type === "negate") {
@@ -12618,7 +12850,7 @@ var SessionState = class {
   /**
    * Resolves the correct hash for a given line based on the lastReadView.
    * - review/changes: returns committed hash (the coordinate space agents write against)
-   * - settled: returns settledView hash
+   * - settled: returns currentView hash
    * - raw: returns raw hash
    *
    * When `suppliedHash` is provided, returns a discriminated union:
@@ -12642,7 +12874,7 @@ var SessionState = class {
         case "changes":
           return entry.committed ?? entry.raw;
         case "settled":
-          return entry.settledView ?? entry.settled;
+          return entry.currentView ?? entry.current;
         case "raw":
           return entry.raw;
       }
@@ -12777,53 +13009,53 @@ async function rerecordState(state, filePath, content, config) {
   }
   await initHashline();
   const lines = content.split("\n");
-  const allSettled = lines.map((l) => settledLine(l));
+  const allCurrent = lines.map((l) => currentLine(l));
   const lastView = state.getLastReadView(filePath);
   let hashes;
   let sv;
   let cv;
   if (lastView === "settled") {
-    sv = computeSettledView(content);
+    sv = computeCurrentView(content);
     hashes = sv.lines.map((sl) => ({
-      line: sl.settledLineNum,
+      line: sl.currentLineNum,
       raw: computeLineHash(sl.rawLineNum - 1, lines[sl.rawLineNum - 1], lines),
-      settled: computeSettledLineHash(sl.rawLineNum - 1, lines[sl.rawLineNum - 1], allSettled),
-      settledView: sl.hash,
+      current: computeCurrentLineHash(sl.rawLineNum - 1, lines[sl.rawLineNum - 1], allCurrent),
+      currentView: sl.hash,
       rawLineNum: sl.rawLineNum
     }));
   } else if (lastView === "changes") {
-    cv = computeCommittedView(content);
+    cv = computeDecidedView(content);
     hashes = cv.lines.map((cl) => ({
-      line: cl.committedLineNum,
+      line: cl.decidedLineNum,
       raw: computeLineHash(cl.rawLineNum - 1, lines[cl.rawLineNum - 1], lines),
-      settled: computeSettledLineHash(cl.rawLineNum - 1, lines[cl.rawLineNum - 1], allSettled),
+      current: computeCurrentLineHash(cl.rawLineNum - 1, lines[cl.rawLineNum - 1], allCurrent),
       committed: cl.hash,
       rawLineNum: cl.rawLineNum
     }));
   } else if (lastView === "review") {
-    cv = computeCommittedView(content);
-    const rawToCommittedHash = /* @__PURE__ */ new Map();
+    cv = computeDecidedView(content);
+    const rawToDecidedHash = /* @__PURE__ */ new Map();
     for (const cl of cv.lines) {
-      rawToCommittedHash.set(cl.rawLineNum, cl.hash);
+      rawToDecidedHash.set(cl.rawLineNum, cl.hash);
     }
     hashes = lines.map((line, i) => ({
       line: i + 1,
       raw: computeLineHash(i, line, lines),
-      settled: computeSettledLineHash(i, line, allSettled),
-      committed: rawToCommittedHash.get(i + 1)
+      current: computeCurrentLineHash(i, line, allCurrent),
+      committed: rawToDecidedHash.get(i + 1)
     }));
   } else {
     hashes = lines.map((line, i) => ({
       line: i + 1,
       raw: computeLineHash(i, line, lines),
-      settled: computeSettledLineHash(i, line, allSettled)
+      current: computeCurrentLineHash(i, line, allCurrent)
     }));
   }
   state.rerecordAfterWrite(filePath, content, hashes);
   if (sv)
-    return { settledView: sv };
+    return { currentView: sv };
   if (cv)
-    return { committedView: cv };
+    return { decidedView: cv };
   return void 0;
 }
 
@@ -13032,11 +13264,11 @@ function applyBlockingAnnotation(content, changeId, author, label, shouldBlock) 
 
 // ../../packages/cli/dist/engine/handlers/settle.js
 init_dist_esm();
-function settleAcceptedChanges(fileContent) {
-  return settleAcceptedChangesOnly(fileContent);
+function applyAcceptedChanges2(fileContent) {
+  return applyAcceptedChanges(fileContent);
 }
-function settleRejectedChanges(fileContent) {
-  return settleRejectedChangesOnly(fileContent);
+function applyRejectedChanges2(fileContent) {
+  return applyRejectedChanges(fileContent);
 }
 
 // ../../packages/cli/dist/engine/handlers/propose-utils.js
@@ -13266,53 +13498,53 @@ async function handleReviewChanges(args, resolver, state) {
     if (config.settlement.auto_on_approve && hasReviews) {
       const hasApprovals = results.some((r) => "decision" in r && r.decision === "approve");
       if (hasApprovals) {
-        const { settledContent, settledIds } = settleAcceptedChanges(fileContent);
-        if (settledIds.length > 0) {
-          fileContent = settledContent;
-          settlementInfo = { settledIds };
+        const { currentContent, appliedIds } = applyAcceptedChanges2(fileContent);
+        if (appliedIds.length > 0) {
+          fileContent = currentContent;
+          settlementInfo = { appliedIds };
         }
       }
     }
     if (config.settlement.auto_on_reject && hasReviews) {
       const hasRejections = results.some((r) => "decision" in r && r.decision === "reject");
       if (hasRejections) {
-        const { settledContent, settledIds } = settleRejectedChanges(fileContent);
-        if (settledIds.length > 0) {
-          fileContent = settledContent;
+        const { currentContent, appliedIds } = applyRejectedChanges2(fileContent);
+        if (appliedIds.length > 0) {
+          fileContent = currentContent;
           if (settlementInfo) {
-            const existingSet = new Set(settlementInfo.settledIds);
-            for (const id of settledIds) {
+            const existingSet = new Set(settlementInfo.appliedIds);
+            for (const id of appliedIds) {
               if (!existingSet.has(id)) {
-                settlementInfo.settledIds.push(id);
+                settlementInfo.appliedIds.push(id);
               }
             }
           } else {
-            settlementInfo = { settledIds };
+            settlementInfo = { appliedIds };
           }
         }
       }
     }
     if (settleFlag) {
-      const { settledContent, settledIds } = settleAcceptedChanges(fileContent);
-      if (settledIds.length > 0) {
-        fileContent = settledContent;
+      const { currentContent, appliedIds } = applyAcceptedChanges2(fileContent);
+      if (appliedIds.length > 0) {
+        fileContent = currentContent;
         if (settlementInfo) {
-          const existingSet = new Set(settlementInfo.settledIds);
-          for (const id of settledIds) {
+          const existingSet = new Set(settlementInfo.appliedIds);
+          for (const id of appliedIds) {
             if (!existingSet.has(id)) {
-              settlementInfo.settledIds.push(id);
+              settlementInfo.appliedIds.push(id);
             }
           }
         } else {
-          settlementInfo = { settledIds };
+          settlementInfo = { appliedIds };
         }
       }
       successes.push("Settled all accepted changes (Layer 1 compaction)");
     }
     let affectedLines;
-    if (settlementInfo && settlementInfo.settledIds.length > 0) {
+    if (settlementInfo && settlementInfo.appliedIds.length > 0) {
       const postLines = fileContent.split("\n");
-      const settledIdSet = new Set(settlementInfo.settledIds);
+      const settledIdSet = new Set(settlementInfo.appliedIds);
       const footnoteStart = postLines.findIndex((l) => /^\[\^cn-/.test(l));
       const contentEnd = footnoteStart > 0 ? footnoteStart : postLines.length;
       let minLine = Infinity;
@@ -13356,8 +13588,8 @@ async function handleReviewChanges(args, resolver, state) {
       response.errors = errors;
     }
     if (settlementInfo) {
-      response.settled = settlementInfo.settledIds;
-      response.settlement_note = `${settlementInfo.settledIds.length} change(s) settled to clean text. The file now contains clean prose where those changes were. Proposed changes remain as markup.`;
+      response.settled = settlementInfo.appliedIds;
+      response.settlement_note = `${settlementInfo.appliedIds.length} change(s) settled to clean text. The file now contains clean prose where those changes were. Proposed changes remain as markup.`;
     }
     if (affectedLines && config.response?.affected_lines) {
       response.affected_lines = affectedLines;
@@ -13542,9 +13774,9 @@ async function handleReadTrackedFile(args, resolver, state) {
         const sessionHashes2 = doc2.lines.map((l) => ({
           line: l.margin.lineNumber,
           raw: l.sessionHashes?.raw ?? l.margin.hash,
-          settled: l.sessionHashes?.settled ?? l.margin.hash,
+          current: l.sessionHashes?.current ?? l.margin.hash,
           committed: l.sessionHashes?.committed,
-          settledView: l.sessionHashes?.settledView,
+          currentView: l.sessionHashes?.currentView,
           rawLineNum: l.sessionHashes?.rawLineNum ?? l.rawLineNumber
         }));
         state.recordAfterRead(filePath, toCanonicalView(effectiveView), sessionHashes2, fileContent);
@@ -13582,7 +13814,7 @@ async function handleReadTrackedFile(args, resolver, state) {
       if (nonHashProtocolMode === "compact") {
         headerWithoutHashlineTip = headerWithoutHashlineTip.replace(/## tip:.*/, "## tip: Hashline addressing is disabled but compact mode requires it. Enable in .changedown/config.toml: [hashline] enabled = true");
       }
-      const contentToShow = effectiveView === "settled" ? computeSettledText(fileContent) : fileContent;
+      const contentToShow = effectiveView === "settled" ? computeCurrentText(fileContent) : fileContent;
       const allContentLines = contentToShow.split("\n");
       const totalContentLines = allContentLines.length;
       const { effectiveStart: effStart, effectiveEnd: effEnd } = computeEffectiveRange(offset, requestedLimit, totalContentLines);
@@ -13615,9 +13847,9 @@ ${lineNumbered}`;
     const sessionHashes = doc.lines.map((l) => ({
       line: l.margin.lineNumber,
       raw: l.sessionHashes?.raw ?? l.margin.hash,
-      settled: l.sessionHashes?.settled ?? l.margin.hash,
+      current: l.sessionHashes?.current ?? l.margin.hash,
       committed: l.sessionHashes?.committed,
-      settledView: l.sessionHashes?.settledView,
+      currentView: l.sessionHashes?.currentView,
       rawLineNum: l.sessionHashes?.rawLineNum ?? l.rawLineNumber
     }));
     state.recordAfterRead(filePath, canonicalView, sessionHashes, fileContent);
@@ -13911,10 +14143,10 @@ function resolveCoordinates(op, fileContent, fileLines, state, filePath, config)
   if (stage3StartFailed || stage3EndFailed) {
     const lastView = state.getLastReadView(filePath) ?? "raw";
     const useSettled = lastView === "settled";
-    const viewResult = useSettled ? computeSettledView(fileContent) : computeCommittedView(fileContent);
+    const viewResult = useSettled ? computeCurrentView(fileContent) : computeDecidedView(fileContent);
     const viewLines = viewResult.lines;
-    const viewToRaw = useSettled ? viewResult.settledToRaw : viewResult.committedToRaw;
-    const getViewLineNum = (entry) => useSettled ? entry.settledLineNum : entry.committedLineNum;
+    const viewToRaw = useSettled ? viewResult.currentToRaw : viewResult.decidedToRaw;
+    const getViewLineNum = (entry) => useSettled ? entry.currentLineNum : entry.decidedLineNum;
     const findInView = (targetLine, targetHash) => {
       const exact = viewLines.find((l) => getViewLineNum(l) === targetLine && l.hash === targetHash);
       if (exact) {
@@ -14012,8 +14244,8 @@ function settleOnDemandForCompact(fileContent, rawStartLine, rawEndLine) {
   if (!overlapsSettleable) {
     return { content: fileContent, settled: false };
   }
-  const { settledContent: afterAccepted } = settleAcceptedChangesOnly(fileContent);
-  const { settledContent: afterRejected } = settleRejectedChangesOnly(afterAccepted);
+  const { currentContent: afterAccepted } = applyAcceptedChanges(fileContent);
+  const { currentContent: afterRejected } = applyRejectedChanges(afterAccepted);
   return { content: afterRejected, settled: true };
 }
 function applyCompactOp(resolved, op, fileContent, fileLines, changeId, author, config) {
@@ -14056,7 +14288,7 @@ function applyCompactOp(resolved, op, fileContent, fileLines, changeId, author, 
     }
     const supersedeResult = resolveOverlapWithAuthor(fileContent, overlapStart, overlapLength, author);
     if (supersedeResult) {
-      fileContent = supersedeResult.settledContent;
+      fileContent = supersedeResult.currentContent;
       fileLines = fileContent.split("\n");
       supersededIds.push(...supersedeResult.supersededIds);
       const rawCoords = parseAt(resolvedAt);
@@ -14659,7 +14891,7 @@ function hasSettledHashes(filePath, state) {
   const recorded = state.getRecordedHashes(filePath);
   if (!recorded || recorded.length === 0)
     return false;
-  return recorded.some((entry) => entry.settledView !== void 0);
+  return recorded.some((entry) => entry.currentView !== void 0);
 }
 function checkStaleness(fileContent, filePath, state) {
   const recorded = state.getRecordedHashes(filePath);
@@ -14766,8 +14998,8 @@ function settleOnDemandIfNeeded(fileContent, oldText) {
   if (!overlapsSettleable) {
     return { content: fileContent, settled: false };
   }
-  const { settledContent: afterAccepted } = settleAcceptedChangesOnly(fileContent);
-  const { settledContent: afterRejected } = settleRejectedChangesOnly(afterAccepted);
+  const { currentContent: afterAccepted } = applyAcceptedChanges(fileContent);
+  const { currentContent: afterRejected } = applyRejectedChanges(afterAccepted);
   return { content: afterRejected, settled: true };
 }
 async function handleProposeChange(args, resolver, state) {
@@ -15105,7 +15337,7 @@ async function handleProposeChange(args, resolver, state) {
           const absMatchPos0 = rangeStartOffset + match.index;
           const supersedeResult = resolveOverlapWithAuthor(fileContent, absMatchPos0, match.length, author);
           if (supersedeResult) {
-            fileContent = supersedeResult.settledContent;
+            fileContent = supersedeResult.currentContent;
             supersededIds.push(...supersedeResult.supersededIds);
             const updatedFileLines = fileContent.split("\n");
             const reExtracted = extractLineRange(updatedFileLines, startLine, effectiveEndLine);
@@ -15366,16 +15598,16 @@ async function handleCompactProposeChange(args, filePath, relativePath, config, 
   await fs8.writeFile(filePath, modifiedText, "utf-8");
   const viewResult = await rerecordState(state, filePath, modifiedText, config);
   let viewProjection;
-  if (viewResult?.settledView) {
+  if (viewResult?.currentView) {
     const rawToViewMap = /* @__PURE__ */ new Map();
-    for (const sl of viewResult.settledView.lines) {
-      rawToViewMap.set(sl.rawLineNum, { viewLine: sl.settledLineNum, viewHash: sl.hash, viewContent: sl.text });
+    for (const sl of viewResult.currentView.lines) {
+      rawToViewMap.set(sl.rawLineNum, { viewLine: sl.currentLineNum, viewHash: sl.hash, viewContent: sl.text });
     }
     viewProjection = { view: "settled", rawToView: rawToViewMap };
-  } else if (viewResult?.committedView) {
+  } else if (viewResult?.decidedView) {
     const rawToViewMap = /* @__PURE__ */ new Map();
-    for (const cl of viewResult.committedView.lines) {
-      rawToViewMap.set(cl.rawLineNum, { viewLine: cl.committedLineNum, viewHash: cl.hash, viewContent: cl.text });
+    for (const cl of viewResult.decidedView.lines) {
+      rawToViewMap.set(cl.rawLineNum, { viewLine: cl.decidedLineNum, viewHash: cl.hash, viewContent: cl.text });
     }
     viewProjection = { view: "changes", rawToView: rawToViewMap };
   }
@@ -15872,12 +16104,12 @@ async function handleGetTrackingStatus(args, resolver, state) {
         const beforeSettle = countFootnoteHeadersWithStatus(content, "accepted");
         out.accepted_unsettled_count = beforeSettle;
         if (settleAccepted && beforeSettle > 0) {
-          const { settledContent, settledIds } = settleAcceptedChanges(content);
-          if (settledIds.length > 0) {
-            await fs14.writeFile(filePath, settledContent, "utf-8");
+          const { currentContent, appliedIds } = applyAcceptedChanges2(content);
+          if (appliedIds.length > 0) {
+            await fs14.writeFile(filePath, currentContent, "utf-8");
             out.settled = true;
-            out.settled_ids = settledIds;
-            await rerecordState(state, filePath, settledContent, config2);
+            out.settled_ids = appliedIds;
+            await rerecordState(state, filePath, currentContent, config2);
           }
         }
       }

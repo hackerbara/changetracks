@@ -94,11 +94,11 @@ describe('AJ1: Agent editorial cycle', () => {
     const reviewData = ctx.parseResult(reviewResult);
     // Auto-settlement should fire (config: auto_on_approve = true)
     expect(reviewData.settled).toBeDefined();
-    const settledIds = reviewData.settled as string[];
-    expect(settledIds).toHaveLength(3);
-    expect(settledIds).toContain('cn-1.1');
-    expect(settledIds).toContain('cn-1.2');
-    expect(settledIds).toContain('cn-1.3');
+    const appliedIds = reviewData.settled as string[];
+    expect(appliedIds).toHaveLength(3);
+    expect(appliedIds).toContain('cn-1.1');
+    expect(appliedIds).toContain('cn-1.2');
+    expect(appliedIds).toContain('cn-1.3');
 
     // ── Phase 5: Verify clean state ────────────────────────────────────
     // No CriticMarkup delimiters in body
@@ -253,9 +253,9 @@ describe('AJ1: Agent editorial cycle', () => {
     const reviewData = ctx.parseResult(reviewResult);
     // Auto-settlement should fire
     expect(reviewData.settled).toBeDefined();
-    const settledIds = reviewData.settled as string[];
-    expect(settledIds).toContain('cn-1');
-    expect(settledIds).toContain('cn-2');
+    const appliedIds = reviewData.settled as string[];
+    expect(appliedIds).toContain('cn-1');
+    expect(appliedIds).toContain('cn-2');
 
     // ── Step 6: Verify final state ─────────────────────────────────────
     await ctx.assertNoMarkupInBody(filePath);

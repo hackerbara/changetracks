@@ -8,8 +8,8 @@ import {
   wrapLineComment,
   stripLineComment,
   parseOp,
-  computeSettledText,
-  settledLine,
+  computeCurrentText,
+  currentLine,
   type CommentSyntax,
   type ChangeNode,
   type ParsedOp,
@@ -362,7 +362,7 @@ When(
   function (this: ChangeDownWorld) {
     // Store on this.settledText so the existing "the settled text is {string}"
     // step from core-operations.steps.ts can read it.
-    (this as any).settledText = computeSettledText(this.lastText);
+    (this as any).settledText = computeCurrentText(this.lastText);
   },
 );
 
@@ -378,7 +378,7 @@ Then(
   },
 );
 
-// settledLine steps (unique to C20, no conflicts)
+// currentLine steps (unique to C20, no conflicts)
 
 Given(
   'the single line {string}',
@@ -392,7 +392,7 @@ When(
   function (this: ChangeDownWorld) {
     const line = singleLineInput.get(this);
     assert.ok(line !== undefined, 'No single line input');
-    settledLineResult.set(this, settledLine(line));
+    settledLineResult.set(this, currentLine(line));
   },
 );
 
@@ -494,7 +494,7 @@ Then(
     assert.ok(this.lastDoc, 'No parsed document available');
     const c = this.lastDoc.getChanges()[index - 1];
     assert.ok(c, `No change at index ${index}`);
-    assert.equal(c.settled, true, `Expected change ${index} to be settled but settled=${c.settled}`);
+    assert.equal(c.decided, true, `Expected change ${index} to be decided but decided=${c.decided}`);
   },
 );
 
@@ -504,6 +504,6 @@ Then(
     assert.ok(this.lastDoc, 'No parsed document available');
     const c = this.lastDoc.getChanges()[index - 1];
     assert.ok(c, `No change at index ${index}`);
-    assert.ok(c.settled === undefined || c.settled === false, `Expected change ${index} to not be settled but settled=${c.settled}`);
+    assert.ok(c.decided === undefined || c.decided === false, `Expected change ${index} to not be decided but decided=${c.decided}`);
   },
 );

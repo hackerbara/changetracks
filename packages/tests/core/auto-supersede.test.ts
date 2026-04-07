@@ -18,8 +18,8 @@ describe('resolveOverlapWithAuthor', () => {
     expect(result).not.toBeNull();
     expect(result!.supersededIds).toEqual(['cn-1']);
     // Settled content should have the proposed sub rejected and settled (reverted to "quick")
-    expect(result!.settledContent).toContain('quick');
-    expect(result!.settledContent).not.toContain('{~~');
+    expect(result!.currentContent).toContain('quick');
+    expect(result!.currentContent).not.toContain('{~~');
   });
 
   it('throws for different-author overlap', () => {
@@ -74,8 +74,8 @@ describe('resolveOverlapWithAuthor', () => {
     const result = resolveOverlapWithAuthor(text, insStart, insEnd - insStart, '@ai:opus');
     expect(result).not.toBeNull();
     // Rejected insertion: text is removed (reverted to nothing)
-    expect(result!.settledContent).not.toContain('{++');
-    expect(result!.settledContent).not.toContain('world');
+    expect(result!.currentContent).not.toContain('{++');
+    expect(result!.currentContent).not.toContain('world');
     expect(result!.supersededIds).toEqual(['cn-1']);
   });
 
@@ -97,7 +97,7 @@ describe('resolveOverlapWithAuthor', () => {
     expect(result).not.toBeNull();
     expect(result!.supersededIds).toEqual(['cn-1']);
     // Rejected deletion: original text is restored
-    expect(result!.settledContent).toContain('quick');
-    expect(result!.settledContent).not.toContain('{--');
+    expect(result!.currentContent).toContain('quick');
+    expect(result!.currentContent).not.toContain('{--');
   });
 });

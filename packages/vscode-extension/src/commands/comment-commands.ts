@@ -3,24 +3,28 @@ import { scanMaxCnId, generateFootnoteDefinition } from '@changedown/core';
 import { findReplyInsertionPoint, formatReply } from '../footnote-writer';
 import { offsetToPosition } from '../converters';
 import { resolveAuthorIdentity } from '../author-identity';
-import type { ExtensionController } from '../controller';
+import type { BaseController } from '@changedown/core/host';
+import { LSP_METHOD } from '@changedown/core/host';
+import type { ReviewCommands } from './review-commands';
+
 export interface CommentCommandsContext {
     getChangeIdForThread(thread: vscode.CommentThread): string | undefined;
 }
 
 export function registerCommentCommands(
     context: vscode.ExtensionContext,
-    controller: ExtensionController,
+    controller: BaseController,
+    reviewCommands: ReviewCommands,
     changeComments: CommentCommandsContext
 ): void {
     context.subscriptions.push(
         vscode.commands.registerCommand('changedown.acceptChangeFromThread', async (thread: vscode.CommentThread) => {
             const changeId = changeComments.getChangeIdForThread(thread);
-            if (changeId) await controller.acceptChangeAtCursor(changeId);
+            if (changeId) await reviewCommands.acceptChangeAtCursor(changeId);
         }),
         vscode.commands.registerCommand('changedown.rejectChangeFromThread', async (thread: vscode.CommentThread) => {
             const changeId = changeComments.getChangeIdForThread(thread);
-            if (changeId) await controller.rejectChangeAtCursor(changeId);
+            if (changeId) await reviewCommands.rejectChangeAtCursor(changeId);
         }),
         vscode.commands.registerCommand('changedown.createComment', async (reply: vscode.CommentReply) => {
             const thread = reply.thread;
@@ -60,18 +64,18 @@ export function registerCommentCommands(
                 const newText = `{==${rangeText}==}{>> ${body} <<}`;
                 wsEdit.replace(thread.uri, thread.range, newText);
             }
-            await controller.runWithTrackedEditGuard(() => vscode.workspace.applyEdit(wsEdit));
+            await vscode.workspace.applyEdit(wsEdit);
             thread.dispose();
         }),
         vscode.commands.registerCommand('changedown.resolveThread', async (thread: vscode.CommentThread) => {
             const changeId = changeComments.getChangeIdForThread(thread);
             if (!changeId) return;
-            await controller.sendLifecycleRequest('changedown/resolveThread', { changeId });
+            await reviewCommands.sendLifecycleRequest(LSP_METHOD.RESOLVE_THREAD, { changeId });
         }),
         vscode.commands.registerCommand('changedown.unresolveThread', async (thread: vscode.CommentThread) => {
             const changeId = changeComments.getChangeIdForThread(thread);
             if (!changeId) return;
-            await controller.sendLifecycleRequest('changedown/unresolveThread', { changeId });
+            await reviewCommands.sendLifecycleRequest(LSP_METHOD.UNRESOLVE_THREAD, { changeId });
         }),
         vscode.commands.registerCommand('changedown.replyToThread', async (reply: vscode.CommentReply) => {
             const editor = vscode.window.activeTextEditor;
@@ -86,13 +90,11 @@ export function registerCommentCommands(
                 if (insertOffset === null) return;
                 const replyText = formatReply(author, reply.text);
                 const pos = editor.document.positionAt(insertOffset);
-                await controller.runWithTrackedEditGuard(() =>
-                    editor.edit(editBuilder => {
-                        editBuilder.insert(pos, replyText);
-                    })
-                );
+                await editor.edit(editBuilder => {
+                    editBuilder.insert(pos, replyText);
+                });
             } else {
-                const changes = controller.getChangesForDocument(editor.document);
+                const changes = controller.getAuthoredChanges(editor.document.uri.toString());
                 const date = new Date().toISOString().slice(0, 10);
                 const threadRange = reply.thread.range;
                 if (!threadRange) return;
@@ -119,7 +121,7 @@ export function registerCommentCommands(
                 wsEdit.insert(editor.document.uri, refPos, footnoteRef);
                 wsEdit.insert(editor.document.uri, endPos, footnoteDef + replyLine);
 
-                await controller.runWithTrackedEditGuard(() => vscode.workspace.applyEdit(wsEdit));
+                await vscode.workspace.applyEdit(wsEdit);
             }
         })
     );

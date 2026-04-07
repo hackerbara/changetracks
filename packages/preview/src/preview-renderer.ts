@@ -1,9 +1,10 @@
 import MarkdownIt from 'markdown-it';
 import markdownItKatex from '@traptitech/markdown-it-katex';
-import { CriticMarkupParser, computeSettledView, computeOriginalText } from '@changedown/core';
+import { CriticMarkupParser, computeCurrentView, computeOriginalText } from '@changedown/core';
 import type { ChangeNode } from '@changedown/core';
-import type { ViewMode } from '@changedown/core/host';
+import type { View } from '@changedown/core/host';
 import { changedownPlugin } from './plugin.js';
+import { headingIdPlugin } from './heading-id-plugin.js';
 import type { PluginConfig } from './plugin.js';
 
 export interface PreviewRendererOptions {
@@ -17,23 +18,24 @@ export interface RenderResult {
 }
 
 export interface PreviewRenderer {
-  render(text: string, viewMode: ViewMode): RenderResult;
+  render(text: string, view: View, env?: Record<string, unknown>): RenderResult;
   dispose(): void;
 }
 
 const parser = new CriticMarkupParser();
 
-function makeConfig(viewMode: ViewMode, opts: PreviewRendererOptions): PluginConfig {
+function makeConfig(view: View, opts: PreviewRendererOptions): PluginConfig {
   return {
     enabled: true,
-    showFootnotes: viewMode === 'review',
+    showFootnotes: (view.display.footnotes ?? 'show') !== 'hide',
     showComments: true,
     renderInCodeFences: true,
     metadataDetail: 'badge',
-    authorColors: 'auto',
+    authorColors: view.display.authorColors ?? 'auto',
     isDarkTheme: true,
     emitSourceMap: opts.sourceMap,
     urlResolver: opts.urlResolver,
+    viewName: view.name,
   };
 }
 
@@ -54,9 +56,9 @@ function addSourceLinePlugin(md: MarkdownIt): void {
     md.renderer.rules[rule] = function (tokens: any, idx: any, options: any, env: any, self: any) {
       const token = tokens[idx];
       if (token.map && token.map.length >= 1) {
-        const settledLine = token.map[0] + 1; // 1-based
-        const settledToRaw: Map<number, number> | undefined = env?.settledToRaw;
-        const originalLine = settledToRaw?.get(settledLine) ?? settledLine;
+        const currentLine = token.map[0] + 1; // 1-based
+        const currentToRaw: Map<number, number> | undefined = env?.currentToRaw;
+        const originalLine = currentToRaw?.get(currentLine) ?? currentLine;
         token.attrSet('data-source-line', String(originalLine));
       }
       return original
@@ -68,18 +70,20 @@ function addSourceLinePlugin(md: MarkdownIt): void {
 
 export function createPreviewRenderer(opts: PreviewRendererOptions = {}): PreviewRenderer {
   let pluginMd: MarkdownIt | null = null;
-  let lastPluginViewMode: ViewMode | null = null;
+  let lastCacheKey: string | null = null;
   let plainMd: MarkdownIt | null = null;
 
-  function getPluginMd(viewMode: ViewMode): MarkdownIt {
-    if (pluginMd && lastPluginViewMode === viewMode) return pluginMd;
-    const config = makeConfig(viewMode, opts);
+  function getPluginMd(view: View): MarkdownIt {
+    const cacheKey = `${view.name}:${view.display.footnotes ?? 'show'}:${view.display.authorColors ?? 'auto'}`;
+    if (pluginMd && lastCacheKey === cacheKey) return pluginMd;
+    const config = makeConfig(view, opts);
     const instance = new MarkdownIt({ html: true, linkify: true });
     applyMathPlugin(instance);
     changedownPlugin(instance, () => config);
+    instance.use(headingIdPlugin);
     // sourceMap handled by changedownPlugin when emitSourceMap is true
     pluginMd = instance;
-    lastPluginViewMode = viewMode;
+    lastCacheKey = cacheKey;
     return instance;
   }
 
@@ -87,31 +91,33 @@ export function createPreviewRenderer(opts: PreviewRendererOptions = {}): Previe
     if (plainMd) return plainMd;
     plainMd = new MarkdownIt({ html: true, linkify: true });
     applyMathPlugin(plainMd);
+    plainMd.use(headingIdPlugin);
     if (opts.sourceMap) addSourceLinePlugin(plainMd);
     return plainMd;
   }
 
   return {
-    render(text: string, viewMode: ViewMode): RenderResult {
+    render(text: string, view: View, env?: Record<string, unknown>): RenderResult {
       const changes = parser.parse(text).getChanges();
 
-      if (viewMode === 'settled') {
-        const view = computeSettledView(text, changes);
-        const settledText = view.lines.map(l => l.text).join('\n');
-        const env = { settledToRaw: view.settledToRaw };
-        return { html: getPlainMd().render(settledText, env), changes };
+      if (view.projection === 'decided') {
+        const settled = computeCurrentView(text, changes);
+        const currentText = settled.lines.map(l => l.text).join('\n');
+        const currentEnv = { currentToRaw: settled.currentToRaw, ...env };
+        return { html: getPlainMd().render(currentText, currentEnv), changes };
       }
 
-      if (viewMode === 'raw') {
+      if (view.projection === 'original') {
         const original = computeOriginalText(text);
-        return { html: getPlainMd().render(original), changes };
+        return { html: getPlainMd().render(original, env ?? {}), changes };
       }
 
-      return { html: getPluginMd(viewMode).render(text), changes };
+      return { html: getPluginMd(view).render(text, env ?? {}), changes };
     },
 
     dispose() {
       pluginMd = null;
+      lastCacheKey = null;
       plainMd = null;
     },
   };

@@ -37,10 +37,58 @@ cd "$WORKTREE"
 echo -e "${BOLD}Setting up worktree at${RESET} $WORKTREE"
 echo ""
 
-# Step 1: Clean install (avoids npm cache corruption in worktrees)
-echo -e "${BOLD}[1/4]${RESET} npm ci (clean install)..."
-npm ci --loglevel=warn 2>&1 | tail -5
-echo -e "${GREEN}ok${RESET}"
+# Step 1: Install node_modules.
+#
+# Prefer rsync from the main worktree when available — it avoids a known npm 11
+# bug where packages/vienna-plugin (not in the root workspaces array) can cause
+# npm to install the npm-published @changedown/lsp-server@0.1.0 into a nested
+# packages/vienna-plugin/node_modules/. That registry package carries
+# file:../core and file:../cli deps which are invalid in the nested location,
+# and arborist crashes with "Cannot read properties of null (reading 'name')".
+#
+# rsync from the main repo avoids all of this and is also much faster.
+#
+# Fallback: if no main worktree is found, clear any stale nested package
+# node_modules first (they're the vector for the corruption), then npm ci.
+MAIN_REPO="$(git rev-parse --show-superproject-working-tree 2>/dev/null || echo "")"
+if [ -z "$MAIN_REPO" ]; then
+  # Also try the common worktree layout: worktrees live under .claude/worktrees/
+  # inside the main repo, so ../../.. from here is typically the main repo root.
+  CANDIDATE="$(cd "$WORKTREE/../../.." 2>/dev/null && pwd)"
+  if [ -f "$CANDIDATE/package.json" ] && [ -d "$CANDIDATE/node_modules" ]; then
+    MAIN_REPO="$CANDIDATE"
+  fi
+fi
+
+if [ -n "$MAIN_REPO" ] && [ -d "$MAIN_REPO/node_modules" ]; then
+  echo -e "${BOLD}[1/4]${RESET} Syncing node_modules from main repo via rsync..."
+  echo -e "  ${DIM}Source: $MAIN_REPO${RESET}"
+  # Copy the clean lock file so npm commands run in the worktree stay consistent
+  cp "$MAIN_REPO/package-lock.json" "$WORKTREE/package-lock.json"
+  # Sync root node_modules
+  rsync -a --delete "$MAIN_REPO/node_modules/" "$WORKTREE/node_modules/"
+  # Sync nested package-level node_modules (e.g. vienna-plugin, vscode-extension)
+  for d in "$MAIN_REPO"/packages/*/node_modules; do
+    pkg=$(basename "$(dirname "$d")")
+    rsync -a --delete "$d/" "$WORKTREE/packages/$pkg/node_modules/" 2>/dev/null || true
+  done
+  # Sync top-level subdirectory node_modules (e.g. website-v2)
+  for d in "$MAIN_REPO"/*/node_modules; do
+    subdir=$(basename "$(dirname "$d")")
+    [ "$subdir" = "packages" ] && continue
+    [ -d "$WORKTREE/$subdir" ] || continue
+    rsync -a --delete "$d/" "$WORKTREE/$subdir/node_modules/" 2>/dev/null || true
+  done
+  echo -e "${GREEN}ok${RESET}"
+else
+  echo -e "${BOLD}[1/4]${RESET} npm ci (clean install — no main repo found for rsync)..."
+  # Clear stale nested package node_modules before npm ci to avoid corruption
+  for pkg_nm in "$WORKTREE"/packages/*/node_modules; do
+    [ -d "$pkg_nm" ] && rm -rf "$pkg_nm"
+  done
+  npm ci --loglevel=warn 2>&1 | tail -5
+  echo -e "${GREEN}ok${RESET}"
+fi
 echo ""
 
 # Step 2: Build all packages

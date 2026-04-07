@@ -1,4 +1,4 @@
-import type { VirtualDocument, ViewName } from '@changedown/core';
+import type { VirtualDocument, ViewMode } from '@changedown/core';
 import type { CursorState } from './capabilities/code-lens';
 
 /**
@@ -12,20 +12,27 @@ export interface PendingOverlay {
   scId?: string;
 }
 
+/** Cut context for server-side move correlation. */
+export interface PendingMoveContext {
+  cutText: string;
+  cutOffset: number;
+  timestamp: number;
+}
+
 export interface LspDocumentState {
   version: number;
   parseResult: VirtualDocument;
   text: string;
   languageId: string;
   overlay: PendingOverlay | null;
-  viewMode: ViewName;
+  viewMode: ViewMode;
   cursorState: CursorState | null;
   decorationTimeout: ReturnType<typeof setTimeout> | null;
-  isPromoting: boolean;
   isBatchEditing: boolean;
-  suppressRepromotion: boolean;
   /** True after autoFoldLines has been sent for this document. Reset on view mode leave from review/changes. */
   autoFoldSent: boolean;
+  /** Pending move correlation — set by moveMetadata notification, consumed by next didChange. */
+  pendingMove?: PendingMoveContext;
 }
 
 export function createLspDocumentState(
@@ -40,9 +47,7 @@ export function createLspDocumentState(
     viewMode: 'review',
     cursorState: null,
     decorationTimeout: null,
-    isPromoting: false,
     isBatchEditing: false,
-    suppressRepromotion: false,
     autoFoldSent: false,
   };
 }

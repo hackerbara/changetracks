@@ -113,8 +113,8 @@ describe('AJ2: Amendment negotiation cycle', () => {
 
     const settleData = ctx.parseResult(settleResult);
     expect(settleData.settled).toBeDefined();
-    const settledIds = settleData.settled as string[];
-    expect(settledIds).toContain(newChangeId);
+    const appliedIds = settleData.settled as string[];
+    expect(appliedIds).toContain(newChangeId);
 
     // Verify clean state
     await ctx.assertNoMarkupInBody(filePath);
@@ -275,9 +275,9 @@ describe('AJ2: Amendment negotiation cycle', () => {
     // ── Settle rejected change so inline markup is removed ───────────
     // We need to enable auto_on_reject or settle manually.
     // Use settle flag to remove rejected markup so new proposal can target the text.
-    // Actually, settleAcceptedChanges only handles accepted changes.
-    // For rejected changes, we need to use settleRejectedChanges.
-    // The settle flag in review_changes only calls settleAcceptedChanges.
+    // Actually, applyAcceptedChanges only handles accepted changes.
+    // For rejected changes, we need to use applyRejectedChanges.
+    // The settle flag in review_changes only calls applyAcceptedChanges.
     // So we need auto_on_reject or handle this differently.
     //
     // Since auto_on_reject is false, the rejected markup stays. The proposer

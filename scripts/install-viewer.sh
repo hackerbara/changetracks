@@ -1,5 +1,5 @@
 #!/bin/sh
-# ChangeDown Viewer — Install Script
+# CD Viewer — Install Script (macOS viewer from GitHub Releases)
 # Usage: curl -fsSL https://raw.githubusercontent.com/hackerbara/changedown/main/scripts/install-viewer.sh | sh
 #    or: VERSION=0.1.0 sh install-viewer.sh
 #    or: sh install-viewer.sh            (installs latest)
@@ -15,7 +15,7 @@ ARCH=$(uname -m)
 
 case "$OS" in
   Darwin) ;;
-  *) echo "Error: ChangeDown viewer is macOS-only (got $OS). Cross-platform support coming via Tauri."; exit 1 ;;
+  *) echo "Error: CD Viewer is macOS-only (got $OS). Cross-platform support coming via Tauri."; exit 1 ;;
 esac
 
 case "$ARCH" in
@@ -39,7 +39,7 @@ ZIP_URL="https://github.com/$REPO/releases/download/v${VERSION}/${ZIP_NAME}"
 SHA_URL="${ZIP_URL}.sha256"
 
 echo ""
-echo "  ChangeDown Viewer v${VERSION} (${ARCH_LABEL})"
+echo "  CD Viewer v${VERSION} (${ARCH_LABEL})"
 echo "  ─────────────────────────────────"
 echo ""
 
@@ -80,24 +80,25 @@ rm -rf "$INSTALL_DIR/ChangeDown.app"
 mv "$TMP_DIR/ChangeDown.app" "$INSTALL_DIR/ChangeDown.app"
 echo "ok"
 
-# --- CLI launcher ---
+# --- CLI launcher (executable inside .app; binary detaches from TTY via NSWorkspace) ---
 printf "  CLI launcher...  "
 mkdir -p "$BIN_DIR"
-cat > "$BIN_DIR/changedown" << 'LAUNCHER'
+rm -f "$BIN_DIR/changedown"
+cat > "$BIN_DIR/cdviewer" << 'LAUNCHER'
 #!/bin/sh
 APP_DIR="${CHANGEDOWN_INSTALL:-$HOME/.local/share/changedown}"
 APP="$APP_DIR/ChangeDown.app"
 BIN="$APP/Contents/MacOS/ChangeDown"
 
 if [ ! -x "$BIN" ]; then
-  echo "Error: ChangeDown not found at $APP"
+  echo "Error: CD Viewer not found at $APP"
   echo "Run the installer: curl -fsSL https://raw.githubusercontent.com/hackerbara/changedown/main/scripts/install-viewer.sh | sh"
   exit 1
 fi
 
 exec "$BIN" "$@"
 LAUNCHER
-chmod +x "$BIN_DIR/changedown"
+chmod +x "$BIN_DIR/cdviewer"
 echo "ok"
 
 # --- PATH check ---
@@ -112,11 +113,11 @@ esac
 
 echo ""
 echo "  Installed to: $INSTALL_DIR/ChangeDown.app"
-echo "  CLI command:  changedown [file.md]"
+echo "  CLI command:  cdviewer [file.md]"
 echo ""
-echo "  To open the app:    changedown"
-echo "  To open a file:     changedown ~/docs/readme.md"
-echo "  To open a folder:   changedown ~/docs/"
+echo "  To open the app:    cdviewer"
+echo "  To open a file:     cdviewer ~/docs/readme.md"
+echo "  To open a folder:   cdviewer ~/docs/"
 echo "  If downloaded via browser and blocked by Gatekeeper:"
 echo "    xattr -cr ~/.local/share/changedown/ChangeDown.app"
 echo ""

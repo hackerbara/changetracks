@@ -3,17 +3,17 @@ import {
   computeLineHash,
   CriticMarkupParser,
   ChangeStatus,
-  settleAcceptedChangesOnly,
-  settleRejectedChangesOnly,
+  applyAcceptedChanges,
+  applyRejectedChanges,
   nowTimestamp,
   defaultNormalizer,
   generateFootnoteDefinition,
   resolveAt,
-  computeCommittedView,
-  computeSettledView,
+  computeDecidedView,
+  computeCurrentView,
 } from '@changedown/core';
 import { validateOrAutoRemap, HashlineMismatchError, type RelocationEntry, type AutoRemapResult } from './hashline-relocate.js';
-import type { SessionState, ViewName } from '../state.js';
+import type { SessionState, ViewMode } from '../state.js';
 import type { ChangeDownConfig } from '../config.js';
 import {
   findUniqueMatch,
@@ -41,7 +41,7 @@ export interface ResolvedCoordinates {
   content: string;
   relocations: RelocationEntry[];
   remaps: AutoRemapResult[];
-  viewResolved?: ViewName;
+  viewResolved?: ViewMode;
   op: NormalizedCompactOp;
 }
 
@@ -53,7 +53,7 @@ export interface ApplyResult {
   affectedEndLine: number;
   relocations: RelocationEntry[];
   remaps: AutoRemapResult[];
-  viewResolved?: ViewName;
+  viewResolved?: ViewMode;
   settled: boolean;
 }
 
@@ -75,7 +75,7 @@ export function resolveCoordinates(
   let startHash = parsed.startHash;
   let endLine = parsed.endLine;
   let endHash = parsed.endHash;
-  let viewResolved: ViewName | undefined;
+  let viewResolved: ViewMode | undefined;
 
   // Stage 2: View-aware translation
   const startResolution = state.resolveHash(filePath, startLine, startHash);
@@ -181,21 +181,21 @@ export function resolveCoordinates(
     const lastView = state.getLastReadView(filePath) ?? 'raw';
     const useSettled = lastView === 'settled';
 
-    // Compute the appropriate view — committed strips pending proposals,
-    // settled accepts them. Both return line-number mappings to raw file.
+    // Compute the appropriate view — decided strips pending proposals,
+    // current accepts them. Both return line-number mappings to raw file.
     const viewResult = useSettled
-      ? computeSettledView(fileContent)
-      : computeCommittedView(fileContent);
+      ? computeCurrentView(fileContent)
+      : computeDecidedView(fileContent);
 
     const viewLines = viewResult.lines;
     const viewToRaw: Map<number, number> = useSettled
-      ? (viewResult as ReturnType<typeof computeSettledView>).settledToRaw
-      : (viewResult as ReturnType<typeof computeCommittedView>).committedToRaw;
+      ? (viewResult as ReturnType<typeof computeCurrentView>).currentToRaw
+      : (viewResult as ReturnType<typeof computeDecidedView>).decidedToRaw;
 
     const getViewLineNum = (entry: (typeof viewLines)[0]): number =>
       useSettled
-        ? (entry as { settledLineNum: number }).settledLineNum
-        : (entry as { committedLineNum: number }).committedLineNum;
+        ? (entry as { currentLineNum: number }).currentLineNum
+        : (entry as { decidedLineNum: number }).decidedLineNum;
 
     const findInView = (targetLine: number, targetHash: string): number | undefined => {
       // Try exact line match first
@@ -335,8 +335,8 @@ function settleOnDemandForCompact(
   }
 
   // Settle accepted then rejected (same as classic path)
-  const { settledContent: afterAccepted } = settleAcceptedChangesOnly(fileContent);
-  const { settledContent: afterRejected } = settleRejectedChangesOnly(afterAccepted);
+  const { currentContent: afterAccepted } = applyAcceptedChanges(fileContent);
+  const { currentContent: afterRejected } = applyRejectedChanges(afterAccepted);
 
   return { content: afterRejected, settled: true };
 }
@@ -411,7 +411,7 @@ export function applyCompactOp(
       fileContent, overlapStart, overlapLength, author,
     );
     if (supersedeResult) {
-      fileContent = supersedeResult.settledContent;
+      fileContent = supersedeResult.currentContent;
       fileLines = fileContent.split('\n');
       supersededIds.push(...supersedeResult.supersededIds);
       // Re-resolve target after settlement (offsets shift when markup is settled)

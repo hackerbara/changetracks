@@ -9766,7 +9766,7 @@ ${JSON.stringify(message, null, 4)}`);
                 contentRange: { start: offset, end: offset + refLength },
                 // covers [^cn-N] ref
                 level: 2,
-                settled: true,
+                decided: true,
                 anchored: true,
                 metadata: {
                   author: def.author,
@@ -12436,17 +12436,17 @@ ${JSON.stringify(message, null, 4)}`);
     }
   });
 
-  // ../core/dist/operations/settled-text.js
-  var require_settled_text = __commonJS({
-    "../core/dist/operations/settled-text.js"(exports) {
+  // ../core/dist/operations/current-text.js
+  var require_current_text = __commonJS({
+    "../core/dist/operations/current-text.js"(exports) {
       "use strict";
       Object.defineProperty(exports, "__esModule", { value: true });
-      exports.computeSettledReplace = computeSettledReplace;
-      exports.computeSettledText = computeSettledText;
+      exports.computeCurrentReplace = computeCurrentReplace;
+      exports.computeCurrentText = computeCurrentText;
       exports.computeOriginalText = computeOriginalText;
-      exports.settleAcceptedChangesOnly = settleAcceptedChangesOnly;
-      exports.settleRejectedChangesOnly = settleRejectedChangesOnly;
-      exports.computeSettledView = computeSettledView;
+      exports.applyAcceptedChanges = applyAcceptedChanges;
+      exports.applyRejectedChanges = applyRejectedChanges;
+      exports.computeCurrentView = computeCurrentView;
       var types_js_1 = require_types();
       var accept_reject_js_1 = require_accept_reject();
       var hashline_js_1 = require_hashline();
@@ -12454,7 +12454,7 @@ ${JSON.stringify(message, null, 4)}`);
       var code_zones_js_1 = require_code_zones();
       var format_aware_parse_js_1 = require_format_aware_parse();
       var footnote_generator_js_1 = require_footnote_generator();
-      function computeSettledReplace(change) {
+      function computeCurrentReplace(change) {
         const rangeLength = change.range.end - change.range.start;
         if (change.type === types_js_1.ChangeType.Comment) {
           return { offset: change.range.start, length: rangeLength, newText: "" };
@@ -12514,7 +12514,7 @@ ${JSON.stringify(message, null, 4)}`);
           return "";
         });
       }
-      function computeSettledTextL3(text) {
+      function computeCurrentTextL3(text) {
         const { bodyLines } = (0, footnote_patterns_js_1.splitBodyAndFootnotes)(text.split("\n"));
         return bodyLines.join("\n") + "\n";
       }
@@ -12543,17 +12543,19 @@ ${JSON.stringify(message, null, 4)}`);
       }
       function computeOriginalTextL3(text) {
         const doc = (0, format_aware_parse_js_1.parseForFormat)(text);
-        const proposed = doc.getChanges().filter((c) => c.status === types_js_1.ChangeStatus.Proposed);
+        const allChanges = doc.getChanges();
         const { bodyLines } = (0, footnote_patterns_js_1.splitBodyAndFootnotes)(text.split("\n"));
         let body = bodyLines.join("\n");
-        if (proposed.length > 0) {
-          body = revertChangesInBody(body, proposed);
+        if (allChanges.length > 0) {
+          body = revertChangesInBody(body, allChanges);
         }
+        const zones = (0, code_zones_js_1.findCodeZones)(body);
+        body = stripInlineFootnoteRefs(body, zones);
         return body + "\n";
       }
-      function computeSettledText(text, options) {
+      function computeCurrentText(text, options) {
         if ((0, footnote_patterns_js_1.isL3Format)(text)) {
-          return computeSettledTextL3(text);
+          return computeCurrentTextL3(text);
         }
         const doc = (0, format_aware_parse_js_1.parseForFormat)(text, { skipCodeBlocks: options?.skipCodeBlocks ?? false });
         const changes = doc.getChanges();
@@ -12561,7 +12563,7 @@ ${JSON.stringify(message, null, 4)}`);
           const zones2 = (0, code_zones_js_1.findCodeZones)(text);
           return stripInlineFootnoteRefs(stripFootnoteDefinitions(text, zones2), zones2);
         }
-        const edits = [...changes].sort((a, b) => b.range.start - a.range.start).map(computeSettledReplace);
+        const edits = [...changes].sort((a, b) => b.range.start - a.range.start).map(computeCurrentReplace);
         let result = text;
         for (const edit of edits) {
           result = result.slice(0, edit.offset) + edit.newText + result.slice(edit.offset + edit.length);
@@ -12687,20 +12689,20 @@ ${JSON.stringify(message, null, 4)}`);
         }
         return { originalText: orig, currentText: cur };
       }
-      function settleAcceptedChangesOnly(text) {
+      function applyAcceptedChanges(text) {
         if ((0, footnote_patterns_js_1.isL3Format)(text)) {
-          return { settledContent: text, settledIds: [] };
+          return { currentContent: text, appliedIds: [] };
         }
         const doc = (0, format_aware_parse_js_1.parseForFormat)(text, { skipCodeBlocks: false });
         const accepted = doc.getChanges().filter((c) => c.status === types_js_1.ChangeStatus.Accepted);
-        const settledIds = accepted.map((c) => c.id);
+        const appliedIds = accepted.map((c) => c.id);
         if (accepted.length === 0) {
-          return { settledContent: text, settledIds: [] };
+          return { currentContent: text, appliedIds: [] };
         }
         const parts = [...accepted].sort((a, b) => a.range.start - b.range.start).map(accept_reject_js_1.computeAcceptParts);
         const zones = (0, code_zones_js_1.findCodeZones)(text);
-        const rawSettledContent = buildSegmentsWithZoneAwareness(text, parts, zones);
-        const { bodyLines, footnoteLines } = (0, footnote_patterns_js_1.splitBodyAndFootnotes)(rawSettledContent.split("\n"));
+        const rawCurrentContent = buildSegmentsWithZoneAwareness(text, parts, zones);
+        const { bodyLines, footnoteLines } = (0, footnote_patterns_js_1.splitBodyAndFootnotes)(rawCurrentContent.split("\n"));
         const refRe = (0, footnote_patterns_js_1.footnoteRefGlobal)();
         const cleanBodyLines = bodyLines.map((line) => line.replace(refRe, ""));
         const refIndex = /* @__PURE__ */ new Map();
@@ -12771,57 +12773,57 @@ ${JSON.stringify(message, null, 4)}`);
         for (const { headerLine, editOpLine } of editOpInsertions) {
           footnoteLines.splice(headerLine + 1, 0, editOpLine);
         }
-        const settledContent = [...bodyLines, "", ...footnoteLines].join("\n");
-        return { settledContent, settledIds };
+        const currentContent = [...bodyLines, "", ...footnoteLines].join("\n");
+        return { currentContent, appliedIds };
       }
-      function settleRejectedChangesOnly(text) {
+      function applyRejectedChanges(text) {
         if ((0, footnote_patterns_js_1.isL3Format)(text)) {
           const doc2 = (0, format_aware_parse_js_1.parseForFormat)(text);
           const rejected2 = doc2.getChanges().filter((c) => c.status === types_js_1.ChangeStatus.Rejected);
-          const settledIds2 = rejected2.map((c) => c.id);
+          const appliedIds2 = rejected2.map((c) => c.id);
           if (rejected2.length === 0)
-            return { settledContent: text, settledIds: [] };
+            return { currentContent: text, appliedIds: [] };
           const { bodyLines, footnoteLines } = (0, footnote_patterns_js_1.splitBodyAndFootnotes)(text.split("\n"));
           const body = revertChangesInBody(bodyLines.join("\n"), rejected2);
-          const settledContent2 = footnoteLines.length > 0 ? body + "\n\n" + footnoteLines.join("\n") : body;
-          return { settledContent: settledContent2, settledIds: settledIds2 };
+          const currentContent2 = footnoteLines.length > 0 ? body + "\n\n" + footnoteLines.join("\n") : body;
+          return { currentContent: currentContent2, appliedIds: appliedIds2 };
         }
         const doc = (0, format_aware_parse_js_1.parseForFormat)(text, { skipCodeBlocks: false });
         const rejected = doc.getChanges().filter((c) => c.status === types_js_1.ChangeStatus.Rejected);
-        const settledIds = rejected.map((c) => c.id);
+        const appliedIds = rejected.map((c) => c.id);
         if (rejected.length === 0) {
-          return { settledContent: text, settledIds: [] };
+          return { currentContent: text, appliedIds: [] };
         }
         const parts = [...rejected].sort((a, b) => a.range.start - b.range.start).map(accept_reject_js_1.computeRejectParts);
         const zones = (0, code_zones_js_1.findCodeZones)(text);
-        const settledContent = buildSegmentsWithZoneAwareness(text, parts, zones);
-        return { settledContent, settledIds };
+        const currentContent = buildSegmentsWithZoneAwareness(text, parts, zones);
+        return { currentContent, appliedIds };
       }
-      function computeSettledViewL3(rawText) {
+      function computeCurrentViewL3(rawText) {
         const { bodyLines } = (0, footnote_patterns_js_1.splitBodyAndFootnotes)(rawText.split("\n"));
         const lines = [];
-        const settledToRaw = /* @__PURE__ */ new Map();
-        const rawToSettled = /* @__PURE__ */ new Map();
+        const currentToRaw = /* @__PURE__ */ new Map();
+        const rawToCurrent = /* @__PURE__ */ new Map();
         for (let i = 0; i < bodyLines.length; i++) {
-          const settledNum = i + 1;
+          const currentNum = i + 1;
           const rawNum = i + 1;
           lines.push({
-            settledLineNum: settledNum,
+            currentLineNum: currentNum,
             rawLineNum: rawNum,
             text: bodyLines[i],
             hash: (0, hashline_js_1.computeLineHash)(i, bodyLines[i], bodyLines)
           });
-          settledToRaw.set(settledNum, rawNum);
-          rawToSettled.set(rawNum, settledNum);
+          currentToRaw.set(currentNum, rawNum);
+          rawToCurrent.set(rawNum, currentNum);
         }
-        return { lines, settledToRaw, rawToSettled };
+        return { lines, currentToRaw, rawToCurrent };
       }
-      function computeSettledView(rawText, preParsed) {
+      function computeCurrentView(rawText, preParsed) {
         if ((0, footnote_patterns_js_1.isL3Format)(rawText)) {
-          return computeSettledViewL3(rawText);
+          return computeCurrentViewL3(rawText);
         }
         const changes = preParsed ?? (0, format_aware_parse_js_1.parseForFormat)(rawText, { skipCodeBlocks: false }).getChanges();
-        const edits = [...changes].sort((a, b) => a.range.start - b.range.start).map(computeSettledReplace);
+        const edits = [...changes].sort((a, b) => a.range.start - b.range.start).map(computeCurrentReplace);
         const deltaTable = [];
         let cumulativeDelta = 0;
         for (const edit of edits) {
@@ -12831,32 +12833,32 @@ ${JSON.stringify(message, null, 4)}`);
           cumulativeDelta += newLen - oldLen;
         }
         const editsByOffset = new Map(edits.map((e) => [e.offset, e]));
-        function settledOffsetToRawOffset(settledOffset) {
+        function currentOffsetToRawOffset(currentOffset) {
           let delta = 0;
           let rawConsumed = 0;
-          let settledConsumed = 0;
+          let currentConsumed = 0;
           for (const entry of deltaTable) {
             const rawGap = entry.rawOffset - rawConsumed;
-            if (settledOffset <= settledConsumed + rawGap) {
-              return rawConsumed + (settledOffset - settledConsumed);
+            if (currentOffset <= currentConsumed + rawGap) {
+              return rawConsumed + (currentOffset - currentConsumed);
             }
-            settledConsumed += rawGap;
+            currentConsumed += rawGap;
             rawConsumed = entry.rawOffset;
             delta = entry.delta;
             const edit = editsByOffset.get(entry.rawOffset);
             if (edit) {
               const oldLen = edit.length;
               const newLen = edit.newText.length;
-              if (settledOffset < settledConsumed + newLen) {
+              if (currentOffset < currentConsumed + newLen) {
                 return rawConsumed;
               }
-              settledConsumed += newLen;
+              currentConsumed += newLen;
               rawConsumed += oldLen;
             }
           }
-          return rawConsumed + (settledOffset - settledConsumed);
+          return rawConsumed + (currentOffset - currentConsumed);
         }
-        const settledText = computeSettledText(rawText);
+        const currentText = computeCurrentText(rawText);
         const rawLines = rawText.split("\n");
         const rawLineStarts = [0];
         for (let i = 0; i < rawLines.length - 1; i++) {
@@ -12874,30 +12876,30 @@ ${JSON.stringify(message, null, 4)}`);
           }
           return lo + 1;
         }
-        const settledTextLines = settledText.split("\n");
-        const settledLines = [];
-        const settledToRaw = /* @__PURE__ */ new Map();
-        const rawToSettled = /* @__PURE__ */ new Map();
-        let settledCharOffset = 0;
-        for (let i = 0; i < settledTextLines.length; i++) {
-          const settledLineText = settledTextLines[i];
-          const settledLineNum = i + 1;
-          const rawOffset = settledOffsetToRawOffset(settledCharOffset);
+        const currentTextLines = currentText.split("\n");
+        const currentLines = [];
+        const currentToRaw = /* @__PURE__ */ new Map();
+        const rawToCurrent = /* @__PURE__ */ new Map();
+        let currentCharOffset = 0;
+        for (let i = 0; i < currentTextLines.length; i++) {
+          const currentLineText = currentTextLines[i];
+          const currentLineNum = i + 1;
+          const rawOffset = currentOffsetToRawOffset(currentCharOffset);
           const rawLineNum = rawOffsetToLineNum(rawOffset);
-          const hash = (0, hashline_js_1.computeLineHash)(settledLineNum - 1, settledLineText, settledTextLines);
-          settledLines.push({
-            settledLineNum,
+          const hash = (0, hashline_js_1.computeLineHash)(currentLineNum - 1, currentLineText, currentTextLines);
+          currentLines.push({
+            currentLineNum,
             rawLineNum,
-            text: settledLineText,
+            text: currentLineText,
             hash
           });
-          settledToRaw.set(settledLineNum, rawLineNum);
-          if (!rawToSettled.has(rawLineNum)) {
-            rawToSettled.set(rawLineNum, settledLineNum);
+          currentToRaw.set(currentLineNum, rawLineNum);
+          if (!rawToCurrent.has(rawLineNum)) {
+            rawToCurrent.set(rawLineNum, currentLineNum);
           }
-          settledCharOffset += settledLineText.length + 1;
+          currentCharOffset += currentLineText.length + 1;
         }
-        return { lines: settledLines, settledToRaw, rawToSettled, changes };
+        return { lines: currentLines, currentToRaw, rawToCurrent, changes };
       }
     }
   });
@@ -12973,7 +12975,7 @@ ${JSON.stringify(message, null, 4)}`);
       var footnote_generator_js_1 = require_footnote_generator();
       var timestamp_js_1 = require_timestamp();
       var apply_review_js_1 = require_apply_review();
-      var settled_text_js_1 = require_settled_text();
+      var current_text_js_1 = require_current_text();
       var text_normalizer_js_1 = require_text_normalizer();
       var hashline_cleanup_js_1 = require_hashline_cleanup();
       var format_aware_parse_js_1 = require_format_aware_parse();
@@ -13000,7 +13002,7 @@ ${JSON.stringify(message, null, 4)}`);
         const { changes } = resolveProposedChanges(text);
         const matchEnd = matchStart + matchLength;
         for (const node of changes) {
-          if (node.settled || node.status !== types_js_1.ChangeStatus.Proposed)
+          if (node.decided || node.status !== types_js_1.ChangeStatus.Proposed)
             continue;
           const spanStart = node.range.start;
           const spanEnd = node.range.end;
@@ -13037,7 +13039,7 @@ ${JSON.stringify(message, null, 4)}`);
         const matchEnd = matchStart + matchLength;
         const results = [];
         for (const node of changes) {
-          if (node.settled || node.status !== types_js_1.ChangeStatus.Proposed)
+          if (node.decided || node.status !== types_js_1.ChangeStatus.Proposed)
             continue;
           const spanStart = node.range.start;
           const spanEnd = node.range.end;
@@ -13101,8 +13103,8 @@ ${JSON.stringify(message, null, 4)}`);
             throw new Error(`Auto-supersede failed: could not reject change ${id}. ${"error" in result ? result.error : "Unknown error"}`);
           }
         }
-        const settled = (0, settled_text_js_1.settleRejectedChangesOnly)(content);
-        return { settledContent: settled.settledContent, supersededIds };
+        const rejected = (0, current_text_js_1.applyRejectedChanges)(content);
+        return { currentContent: rejected.currentContent, supersededIds };
       }
       function stripRefsFromContent(text) {
         const refs = [];
@@ -13113,7 +13115,7 @@ ${JSON.stringify(message, null, 4)}`);
         return { cleaned, refs };
       }
       function stripCriticMarkupWithMap(text) {
-        const settled = [];
+        const current = [];
         const toRaw = [];
         const markupRanges = [];
         let i = 0;
@@ -13137,7 +13139,7 @@ ${JSON.stringify(message, null, 4)}`);
                 const constructEnd = end + 3;
                 markupRanges.push({ rawStart: constructStart, rawEnd: constructEnd });
                 for (let j = contentStart; j < contentEnd; j++) {
-                  settled.push(text[j]);
+                  current.push(text[j]);
                   toRaw.push(j);
                 }
                 i = constructEnd;
@@ -13164,7 +13166,7 @@ ${JSON.stringify(message, null, 4)}`);
                   const constructEnd = end + 3;
                   markupRanges.push({ rawStart: constructStart, rawEnd: constructEnd });
                   for (let j = newStart; j < newEnd; j++) {
-                    settled.push(text[j]);
+                    current.push(text[j]);
                     toRaw.push(j);
                   }
                   i = constructEnd;
@@ -13181,7 +13183,7 @@ ${JSON.stringify(message, null, 4)}`);
                 const constructEnd = end + 3;
                 markupRanges.push({ rawStart: constructStart, rawEnd: constructEnd });
                 for (let j = contentStart; j < contentEnd; j++) {
-                  settled.push(text[j]);
+                  current.push(text[j]);
                   toRaw.push(j);
                 }
                 i = constructEnd;
@@ -13198,14 +13200,14 @@ ${JSON.stringify(message, null, 4)}`);
               }
             }
           }
-          settled.push(text[i]);
+          current.push(text[i]);
           toRaw.push(i);
           i++;
         }
-        return { settled: settled.join(""), toRaw, markupRanges };
+        return { current: current.join(""), toRaw, markupRanges };
       }
       function stripCriticMarkup(text) {
-        return stripCriticMarkupWithMap(text).settled;
+        return stripCriticMarkupWithMap(text).current;
       }
       function stripCriticMarkupToCommittedWithMap(text) {
         const footnotes = (0, footnote_utils_js_1.extractFootnoteStatuses)(text);
@@ -13453,16 +13455,16 @@ ${JSON.stringify(message, null, 4)}`);
           }
         }
         if (containsCriticMarkup(text)) {
-          const { settled, toRaw, markupRanges } = stripCriticMarkupWithMap(text);
-          const settledIdx = settled.indexOf(target);
-          if (settledIdx !== -1) {
-            const settledSecondIdx = settled.indexOf(target, settledIdx + 1);
-            if (settledSecondIdx !== -1) {
-              throw new Error(`Text "${target}" found multiple times in settled text (ambiguous). Provide more context to uniquely identify the location. Use LINE:HASH coordinates from read_tracked_file for precise targeting (e.g., at: '15:a3').`);
+          const { current, toRaw, markupRanges } = stripCriticMarkupWithMap(text);
+          const currentIdx = current.indexOf(target);
+          if (currentIdx !== -1) {
+            const currentSecondIdx = current.indexOf(target, currentIdx + 1);
+            if (currentSecondIdx !== -1) {
+              throw new Error(`Text "${target}" found multiple times in current text (ambiguous). Provide more context to uniquely identify the location. Use LINE:HASH coordinates from read_tracked_file for precise targeting (e.g., at: '15:a3').`);
             }
-            const settledEnd = settledIdx + target.length - 1;
-            let rawStart = toRaw[settledIdx];
-            let rawEnd = toRaw[settledEnd] + 1;
+            const currentEnd = currentIdx + target.length - 1;
+            let rawStart = toRaw[currentIdx];
+            let rawEnd = toRaw[currentEnd] + 1;
             let expanded = true;
             while (expanded) {
               expanded = false;
@@ -13494,7 +13496,7 @@ ${JSON.stringify(message, null, 4)}`);
             };
           }
         }
-        const hint = normalizer ? "Tried: exact match, normalized match (NFKC), whitespace-collapsed match, view-surface match, committed-text match, settled-text match." : "Tried: exact match only (no normalizer), whitespace-collapsed match, view-surface match, committed-text match, settled-text match.";
+        const hint = normalizer ? "Tried: exact match, normalized match (NFKC), whitespace-collapsed match, view-surface match, decided-text match, current-text match." : "Tried: exact match only (no normalizer), whitespace-collapsed match, view-surface match, decided-text match, current-text match.";
         const preview = target.length > 80 ? target.slice(0, 80) + "..." : target;
         const haystackPreview = text.length > 200 ? text.slice(0, 200) + "..." : text;
         const haystackLineCount = text.split("\n").length;
@@ -15184,7 +15186,7 @@ Hint: Re-read the file for current content, or use LINE:HASH addressing.`);
       var constants_js_1 = require_constants();
       var footnote_patterns_js_1 = require_footnote_patterns();
       var format_aware_parse_js_1 = require_format_aware_parse();
-      var settled_text_js_1 = require_settled_text();
+      var current_text_js_1 = require_current_text();
       var Workspace = class {
         constructor() {
           this.criticParser = new parser_js_1.CriticMarkupParser();
@@ -15354,14 +15356,14 @@ Hint: Re-read the file for current content, or use LINE:HASH addressing.`);
          * Routes through format detection so L3 documents are handled correctly.
          */
         settledText(text, options) {
-          return (0, settled_text_js_1.computeSettledText)(text, options);
+          return (0, current_text_js_1.computeCurrentText)(text, options);
         }
         /**
          * Computes the original (reject-all) view of a document.
          * Routes through format detection so L3 documents are handled correctly.
          */
         originalText(text, options) {
-          return (0, settled_text_js_1.computeOriginalText)(text, options);
+          return (0, current_text_js_1.computeOriginalText)(text, options);
         }
         /**
          * Determines whether to use the SidecarParser for a given text + languageId.
@@ -15665,8 +15667,10 @@ Hint: Re-read the file for current content, or use LINE:HASH addressing.`);
       exports.maximumOverlap = maximumOverlap;
       exports.hasOnlyWinLineEndings = hasOnlyWinLineEndings;
       exports.hasOnlyUnixLineEndings = hasOnlyUnixLineEndings;
+      exports.segment = segment;
       exports.trailingWs = trailingWs;
       exports.leadingWs = leadingWs;
+      exports.leadingAndTrailingWs = leadingAndTrailingWs;
       function longestCommonPrefix(str1, str2) {
         var i;
         for (i = 0; i < str1.length && i < str2.length; i++) {
@@ -15754,7 +15758,23 @@ Hint: Re-read the file for current content, or use LINE:HASH addressing.`);
       function hasOnlyUnixLineEndings(string) {
         return !string.includes("\r\n") && string.includes("\n");
       }
-      function trailingWs(string) {
+      function segment(string, segmenter) {
+        var parts = [];
+        for (var _i = 0, _a = Array.from(segmenter.segment(string)); _i < _a.length; _i++) {
+          var segmentObj = _a[_i];
+          var segment_1 = segmentObj.segment;
+          if (parts.length && /\s/.test(parts[parts.length - 1]) && /\s/.test(segment_1)) {
+            parts[parts.length - 1] += segment_1;
+          } else {
+            parts.push(segment_1);
+          }
+        }
+        return parts;
+      }
+      function trailingWs(string, segmenter) {
+        if (segmenter) {
+          return leadingAndTrailingWs(string, segmenter)[1];
+        }
         var i;
         for (i = string.length - 1; i >= 0; i--) {
           if (!string[i].match(/\s/)) {
@@ -15763,9 +15783,26 @@ Hint: Re-read the file for current content, or use LINE:HASH addressing.`);
         }
         return string.substring(i + 1);
       }
-      function leadingWs(string) {
+      function leadingWs(string, segmenter) {
+        if (segmenter) {
+          return leadingAndTrailingWs(string, segmenter)[0];
+        }
         var match = string.match(/^\s*/);
         return match ? match[0] : "";
+      }
+      function leadingAndTrailingWs(string, segmenter) {
+        if (!segmenter) {
+          return [leadingWs(string), trailingWs(string)];
+        }
+        if (segmenter.resolvedOptions().granularity != "word") {
+          throw new Error('The segmenter passed must have a granularity of "word"');
+        }
+        var segments = segment(string, segmenter);
+        var firstSeg = segments[0];
+        var lastSeg = segments[segments.length - 1];
+        var head = /\s/.test(firstSeg) ? firstSeg : "";
+        var tail = /\s/.test(lastSeg) ? lastSeg : "";
+        return [head, tail];
       }
     }
   });
@@ -15825,16 +15862,7 @@ Hint: Re-read the file for current content, or use LINE:HASH addressing.`);
               if (segmenter.resolvedOptions().granularity != "word") {
                 throw new Error('The segmenter passed must have a granularity of "word"');
               }
-              parts = [];
-              for (var _i = 0, _a = Array.from(segmenter.segment(value)); _i < _a.length; _i++) {
-                var segmentObj = _a[_i];
-                var segment = segmentObj.segment;
-                if (parts.length && /\s/.test(parts[parts.length - 1]) && /\s/.test(segment)) {
-                  parts[parts.length - 1] += segment;
-                } else {
-                  parts.push(segment);
-                }
-              }
+              parts = (0, string_js_1.segment)(value, segmenter);
             } else {
               parts = value.match(tokenizeIncludingWhitespace) || [];
             }
@@ -15883,7 +15911,7 @@ Hint: Re-read the file for current content, or use LINE:HASH addressing.`);
                 deletion = change;
               } else {
                 if (insertion || deletion) {
-                  dedupeWhitespaceInChangeObjects(lastKeep, deletion, insertion, change);
+                  dedupeWhitespaceInChangeObjects(lastKeep, deletion, insertion, change, options.intlSegmenter);
                 }
                 lastKeep = change;
                 insertion = null;
@@ -15891,7 +15919,7 @@ Hint: Re-read the file for current content, or use LINE:HASH addressing.`);
               }
             });
             if (insertion || deletion) {
-              dedupeWhitespaceInChangeObjects(lastKeep, deletion, insertion, null);
+              dedupeWhitespaceInChangeObjects(lastKeep, deletion, insertion, null, options.intlSegmenter);
             }
             return changes;
           };
@@ -15905,12 +15933,10 @@ Hint: Re-read the file for current content, or use LINE:HASH addressing.`);
         }
         return exports.wordDiff.diff(oldStr, newStr, options);
       }
-      function dedupeWhitespaceInChangeObjects(startKeep, deletion, insertion, endKeep) {
+      function dedupeWhitespaceInChangeObjects(startKeep, deletion, insertion, endKeep, segmenter) {
         if (deletion && insertion) {
-          var oldWsPrefix = (0, string_js_1.leadingWs)(deletion.value);
-          var oldWsSuffix = (0, string_js_1.trailingWs)(deletion.value);
-          var newWsPrefix = (0, string_js_1.leadingWs)(insertion.value);
-          var newWsSuffix = (0, string_js_1.trailingWs)(insertion.value);
+          var _a = (0, string_js_1.leadingAndTrailingWs)(deletion.value, segmenter), oldWsPrefix = _a[0], oldWsSuffix = _a[1];
+          var _b = (0, string_js_1.leadingAndTrailingWs)(insertion.value, segmenter), newWsPrefix = _b[0], newWsSuffix = _b[1];
           if (startKeep) {
             var commonWsPrefix = (0, string_js_1.longestCommonPrefix)(oldWsPrefix, newWsPrefix);
             startKeep.value = (0, string_js_1.replaceSuffix)(startKeep.value, newWsPrefix, commonWsPrefix);
@@ -15925,15 +15951,15 @@ Hint: Re-read the file for current content, or use LINE:HASH addressing.`);
           }
         } else if (insertion) {
           if (startKeep) {
-            var ws = (0, string_js_1.leadingWs)(insertion.value);
+            var ws = (0, string_js_1.leadingWs)(insertion.value, segmenter);
             insertion.value = insertion.value.substring(ws.length);
           }
           if (endKeep) {
-            var ws = (0, string_js_1.leadingWs)(endKeep.value);
+            var ws = (0, string_js_1.leadingWs)(endKeep.value, segmenter);
             endKeep.value = endKeep.value.substring(ws.length);
           }
         } else if (startKeep && endKeep) {
-          var newWsFull = (0, string_js_1.leadingWs)(endKeep.value), delWsStart = (0, string_js_1.leadingWs)(deletion.value), delWsEnd = (0, string_js_1.trailingWs)(deletion.value);
+          var newWsFull = (0, string_js_1.leadingWs)(endKeep.value, segmenter), _c = (0, string_js_1.leadingAndTrailingWs)(deletion.value, segmenter), delWsStart = _c[0], delWsEnd = _c[1];
           var newWsStart = (0, string_js_1.longestCommonPrefix)(newWsFull, delWsStart);
           deletion.value = (0, string_js_1.removePrefix)(deletion.value, newWsStart);
           var newWsEnd = (0, string_js_1.longestCommonSuffix)((0, string_js_1.removePrefix)(newWsFull, newWsStart), delWsEnd);
@@ -15941,13 +15967,13 @@ Hint: Re-read the file for current content, or use LINE:HASH addressing.`);
           endKeep.value = (0, string_js_1.replacePrefix)(endKeep.value, newWsFull, newWsEnd);
           startKeep.value = (0, string_js_1.replaceSuffix)(startKeep.value, newWsFull, newWsFull.slice(0, newWsFull.length - newWsEnd.length));
         } else if (endKeep) {
-          var endKeepWsPrefix = (0, string_js_1.leadingWs)(endKeep.value);
-          var deletionWsSuffix = (0, string_js_1.trailingWs)(deletion.value);
+          var endKeepWsPrefix = (0, string_js_1.leadingWs)(endKeep.value, segmenter);
+          var deletionWsSuffix = (0, string_js_1.trailingWs)(deletion.value, segmenter);
           var overlap = (0, string_js_1.maximumOverlap)(deletionWsSuffix, endKeepWsPrefix);
           deletion.value = (0, string_js_1.removeSuffix)(deletion.value, overlap);
         } else if (startKeep) {
-          var startKeepWsSuffix = (0, string_js_1.trailingWs)(startKeep.value);
-          var deletionWsPrefix = (0, string_js_1.leadingWs)(deletion.value);
+          var startKeepWsSuffix = (0, string_js_1.trailingWs)(startKeep.value, segmenter);
+          var deletionWsPrefix = (0, string_js_1.leadingWs)(deletion.value, segmenter);
           var overlap = (0, string_js_1.maximumOverlap)(startKeepWsSuffix, deletionWsPrefix);
           deletion.value = (0, string_js_1.removePrefix)(deletion.value, overlap);
         }
@@ -17525,14 +17551,14 @@ ${sidecarSection}
     "../core/dist/hashline-tracked.js"(exports) {
       "use strict";
       Object.defineProperty(exports, "__esModule", { value: true });
-      exports.settledLine = settledLine;
-      exports.computeSettledLineHash = computeSettledLineHash;
+      exports.currentLine = currentLine;
+      exports.computeCurrentLineHash = computeCurrentLineHash;
       exports.formatTrackedHashLines = formatTrackedHashLines;
       exports.formatTrackedHeader = formatTrackedHeader;
       var hashline_js_1 = require_hashline();
       var critic_regex_js_1 = require_critic_regex();
       var footnote_patterns_js_1 = require_footnote_patterns();
-      function settledLine(line) {
+      function currentLine(line) {
         let result = line;
         result = result.replace((0, critic_regex_js_1.singleLineSubstitution)(), "$1");
         result = result.replace((0, critic_regex_js_1.singleLineDeletion)(), "");
@@ -17542,8 +17568,8 @@ ${sidecarSection}
         result = result.replace((0, footnote_patterns_js_1.footnoteRefGlobal)(), "");
         return result;
       }
-      function computeSettledLineHash(idx, line, allSettledLines) {
-        return (0, hashline_js_1.computeLineHash)(idx, settledLine(line), allSettledLines);
+      function computeCurrentLineHash(idx, line, allCurrentLines) {
+        return (0, hashline_js_1.computeLineHash)(idx, currentLine(line), allCurrentLines);
       }
       function formatTrackedHashLines(content, options) {
         const startLine = options?.startLine ?? 1;
@@ -17680,14 +17706,14 @@ ${sidecarSection}
     }
   });
 
-  // ../core/dist/committed-text.js
-  var require_committed_text = __commonJS({
-    "../core/dist/committed-text.js"(exports) {
+  // ../core/dist/decided-text.js
+  var require_decided_text = __commonJS({
+    "../core/dist/decided-text.js"(exports) {
       "use strict";
       Object.defineProperty(exports, "__esModule", { value: true });
-      exports.computeCommittedLine = computeCommittedLine;
-      exports.computeCommittedView = computeCommittedView;
-      exports.formatCommittedOutput = formatCommittedOutput;
+      exports.computeDecidedLine = computeDecidedLine;
+      exports.computeDecidedView = computeDecidedView;
+      exports.formatDecidedOutput = formatDecidedOutput;
       var footnote_utils_js_1 = require_footnote_utils();
       var format_aware_parse_js_1 = require_format_aware_parse();
       var types_js_1 = require_types();
@@ -17702,7 +17728,7 @@ ${sidecarSection}
           return "proposed";
         return info.status;
       }
-      function computeCommittedLine(line, footnotes) {
+      function computeDecidedLine(line, footnotes) {
         let result = line;
         const changeIds = [];
         let hasProposed = false;
@@ -17773,7 +17799,7 @@ ${sidecarSection}
         }
         return indices;
       }
-      function computeCommittedView(rawText, preParsed) {
+      function computeDecidedView(rawText, preParsed) {
         const rawLines = rawText.split("\n");
         const changes = preParsed ?? (0, format_aware_parse_js_1.parseForFormat)(rawText).getChanges();
         const statusMap = /* @__PURE__ */ new Map();
@@ -17785,25 +17811,25 @@ ${sidecarSection}
         }
         const footnoteLineIndices = findFootnoteLineIndices(rawLines);
         const preLines = [];
-        let committedLineNum = 0;
+        let decidedLineNum = 0;
         let cleanCount = 0;
         for (let rawIdx = 0; rawIdx < rawLines.length; rawIdx++) {
           if (footnoteLineIndices.has(rawIdx))
             continue;
           const rawLine = rawLines[rawIdx];
-          const lineResult = computeCommittedLine(rawLine, statusMap);
+          const lineResult = computeDecidedLine(rawLine, statusMap);
           const rawIsBlank = rawLine.trim() === "";
           const committedIsBlank = lineResult.text.trim() === "";
           if (!rawIsBlank && committedIsBlank && (0, critic_regex_js_1.hasCriticMarkup)(rawLine)) {
             continue;
           }
-          committedLineNum++;
+          decidedLineNum++;
           const rawLineNum = rawIdx + 1;
           if (lineResult.flag === "") {
             cleanCount++;
           }
           preLines.push({
-            committedLineNum,
+            decidedLineNum,
             rawLineNum,
             text: lineResult.text,
             flag: lineResult.flag,
@@ -17811,21 +17837,21 @@ ${sidecarSection}
           });
         }
         const allCommittedTexts = preLines.map((l) => l.text);
-        const committedLines = [];
-        const committedToRaw = /* @__PURE__ */ new Map();
-        const rawToCommitted = /* @__PURE__ */ new Map();
+        const decidedLines = [];
+        const decidedToRaw = /* @__PURE__ */ new Map();
+        const rawToDecided = /* @__PURE__ */ new Map();
         for (const pre of preLines) {
-          const hash = (0, hashline_js_1.computeLineHash)(pre.committedLineNum - 1, pre.text, allCommittedTexts);
-          committedLines.push({
-            committedLineNum: pre.committedLineNum,
+          const hash = (0, hashline_js_1.computeLineHash)(pre.decidedLineNum - 1, pre.text, allCommittedTexts);
+          decidedLines.push({
+            decidedLineNum: pre.decidedLineNum,
             rawLineNum: pre.rawLineNum,
             text: pre.text,
             hash,
             flag: pre.flag,
             changeIds: pre.changeIds
           });
-          committedToRaw.set(pre.committedLineNum, pre.rawLineNum);
-          rawToCommitted.set(pre.rawLineNum, pre.committedLineNum);
+          decidedToRaw.set(pre.decidedLineNum, pre.rawLineNum);
+          rawToDecided.set(pre.rawLineNum, pre.decidedLineNum);
         }
         const summary = { proposed: 0, accepted: 0, rejected: 0, clean: cleanCount };
         for (const node of changes) {
@@ -17837,9 +17863,9 @@ ${sidecarSection}
           else if (s === "rejected")
             summary.rejected++;
         }
-        return { lines: committedLines, summary, committedToRaw, rawToCommitted, changes };
+        return { lines: decidedLines, summary, decidedToRaw, rawToDecided, changes };
       }
-      function formatCommittedOutput(view, options) {
+      function formatDecidedOutput(view, options) {
         const headerLines = [];
         headerLines.push(`## file: ${options.filePath}`);
         const summaryParts = [];
@@ -17857,10 +17883,10 @@ ${sidecarSection}
         } else {
           headerLines.push("## lines: (empty)");
         }
-        const maxLineNum = totalLines > 0 ? view.lines[view.lines.length - 1].committedLineNum : 1;
+        const maxLineNum = totalLines > 0 ? view.lines[view.lines.length - 1].decidedLineNum : 1;
         const padWidth = Math.max(String(maxLineNum).length, 2);
         const contentLines = view.lines.map((line) => {
-          const num = String(line.committedLineNum).padStart(padWidth, " ");
+          const num = String(line.decidedLineNum).padStart(padWidth, " ");
           const flag = line.flag || " ";
           return `${num}:${line.hash}${flag}|${line.text}`;
         });
@@ -17962,10 +17988,10 @@ ${sidecarSection}
     "../core/dist/renderers/three-zone-types.js"(exports) {
       "use strict";
       Object.defineProperty(exports, "__esModule", { value: true });
-      exports.VIEW_NAMES = exports.VIEW_NAME_DISPLAY_NAMES = exports.VIEW_NAME_ALIASES = void 0;
-      exports.resolveViewName = resolveViewName;
-      exports.nextViewName = nextViewName;
-      exports.VIEW_NAME_ALIASES = {
+      exports.VIEW_MODES = exports.VIEW_MODE_LABELS = exports.VIEW_MODE_ALIASES = void 0;
+      exports.resolveViewMode = resolveViewMode;
+      exports.nextViewMode = nextViewMode;
+      exports.VIEW_MODE_ALIASES = {
         "all-markup": "review",
         "simple": "changes",
         "final": "settled",
@@ -17976,19 +18002,19 @@ ${sidecarSection}
         "settled": "settled",
         "raw": "raw"
       };
-      exports.VIEW_NAME_DISPLAY_NAMES = {
+      exports.VIEW_MODE_LABELS = {
         review: "All Markup",
         changes: "Simple Markup",
         settled: "Final",
         raw: "Original"
       };
-      exports.VIEW_NAMES = ["review", "changes", "settled", "raw"];
-      function resolveViewName(name) {
-        return exports.VIEW_NAME_ALIASES[name];
+      exports.VIEW_MODES = ["review", "changes", "settled", "raw"];
+      function resolveViewMode(name) {
+        return exports.VIEW_MODE_ALIASES[name];
       }
-      function nextViewName(current) {
-        const idx = exports.VIEW_NAMES.indexOf(current);
-        return exports.VIEW_NAMES[(idx + 1) % exports.VIEW_NAMES.length];
+      function nextViewMode(current) {
+        const idx = exports.VIEW_MODES.indexOf(current);
+        return exports.VIEW_MODES[(idx + 1) % exports.VIEW_MODES.length];
       }
     }
   });
@@ -18420,7 +18446,7 @@ ${sidecarSection}
       "use strict";
       Object.defineProperty(exports, "__esModule", { value: true });
       exports.buildReviewDocument = buildReviewDocument;
-      var committed_text_js_1 = require_committed_text();
+      var decided_text_js_1 = require_decided_text();
       var footnote_utils_js_1 = require_footnote_utils();
       var types_js_1 = require_types();
       var hashline_js_1 = require_hashline();
@@ -18429,16 +18455,16 @@ ${sidecarSection}
       var CRITIC_MARKUP_RE = /\{\+\+((?:[^+]|\+(?!\+\}))*?)\+\+\}|\{--((?:[^-]|-(?!-\}))*?)--\}|\{~~((?:[^~]|~(?!>))*?)~>((?:[^~]|~(?!~\}))*?)~~\}|\{==((?:[^=]|=(?!=\}))*?)==\}|\{>>((?:[^<]|<(?!<\}))*?)<<\}/g;
       var FOOTNOTE_REF_RE = /\[\^(cn-\d+(?:\.\d+)?)\]/g;
       function buildReviewDocument(content, options) {
-        const committedResult = (0, committed_text_js_1.computeCommittedView)(content);
-        const changes = committedResult.changes;
+        const decidedResult = (0, decided_text_js_1.computeDecidedView)(content);
+        const changes = decidedResult.changes;
         const footnoteMap = /* @__PURE__ */ new Map();
         for (const node of changes) {
           footnoteMap.set(node.id, node);
         }
         const rawLines = content.split("\n");
-        const allSettled = rawLines.map((l) => (0, hashline_tracked_js_1.settledLine)(l));
+        const allCurrent = rawLines.map((l) => (0, hashline_tracked_js_1.currentLine)(l));
         const rawToCommittedHash = /* @__PURE__ */ new Map();
-        for (const cl of committedResult.lines) {
+        for (const cl of decidedResult.lines) {
           rawToCommittedHash.set(cl.rawLineNum, cl.hash);
         }
         let fnRange = (0, view_builder_utils_js_1.findFootnoteSectionRange)(changes);
@@ -18474,7 +18500,7 @@ ${sidecarSection}
             continuesChange: continuations.has(i) || void 0,
             sessionHashes: {
               raw: rawHash,
-              settled: (0, hashline_tracked_js_1.computeSettledLineHash)(lineNum, rawLine, allSettled),
+              current: (0, hashline_tracked_js_1.computeCurrentLineHash)(lineNum, rawLine, allCurrent),
               committed: rawToCommittedHash.get(lineNum)
             }
           });
@@ -18608,24 +18634,24 @@ ${sidecarSection}
       "use strict";
       Object.defineProperty(exports, "__esModule", { value: true });
       exports.buildChangesDocument = buildChangesDocument;
-      var committed_text_js_1 = require_committed_text();
+      var decided_text_js_1 = require_decided_text();
       var hashline_js_1 = require_hashline();
       var hashline_tracked_js_1 = require_hashline_tracked();
       var view_builder_utils_js_1 = require_view_builder_utils();
       function buildChangesDocument(rawContent, options) {
-        const committedResult = (0, committed_text_js_1.computeCommittedView)(rawContent);
-        const changes = committedResult.changes;
+        const decidedResult = (0, decided_text_js_1.computeDecidedView)(rawContent);
+        const changes = decidedResult.changes;
         const rawLines = rawContent.split("\n");
-        const allSettled = rawLines.map((l) => (0, hashline_tracked_js_1.settledLine)(l));
-        while (committedResult.lines.length > 0 && committedResult.lines[committedResult.lines.length - 1].text.trim() === "") {
-          committedResult.lines.pop();
+        const allCurrent = rawLines.map((l) => (0, hashline_tracked_js_1.currentLine)(l));
+        while (decidedResult.lines.length > 0 && decidedResult.lines[decidedResult.lines.length - 1].text.trim() === "") {
+          decidedResult.lines.pop();
         }
-        const lines = committedResult.lines.map((cl) => {
+        const lines = decidedResult.lines.map((cl) => {
           const flags = cl.flag === "P" ? ["P"] : cl.flag === "A" ? ["A"] : [];
           const metadata = cl.changeIds.map((id) => ({ changeId: id }));
           return {
             margin: {
-              lineNumber: cl.committedLineNum,
+              lineNumber: cl.decidedLineNum,
               hash: cl.hash,
               flags
             },
@@ -18634,7 +18660,7 @@ ${sidecarSection}
             rawLineNumber: cl.rawLineNum,
             sessionHashes: {
               raw: (0, hashline_js_1.computeLineHash)(cl.rawLineNum - 1, rawLines[cl.rawLineNum - 1] ?? "", rawLines),
-              settled: (0, hashline_tracked_js_1.computeSettledLineHash)(cl.rawLineNum, rawLines[cl.rawLineNum - 1] ?? "", allSettled),
+              current: (0, hashline_tracked_js_1.computeCurrentLineHash)(cl.rawLineNum, rawLines[cl.rawLineNum - 1] ?? "", allCurrent),
               committed: cl.hash,
               rawLineNum: cl.rawLineNum
             }
@@ -18650,28 +18676,28 @@ ${sidecarSection}
     }
   });
 
-  // ../core/dist/renderers/view-builders/settled.js
-  var require_settled = __commonJS({
-    "../core/dist/renderers/view-builders/settled.js"(exports) {
+  // ../core/dist/renderers/view-builders/current.js
+  var require_current = __commonJS({
+    "../core/dist/renderers/view-builders/current.js"(exports) {
       "use strict";
       Object.defineProperty(exports, "__esModule", { value: true });
-      exports.buildSettledDocument = buildSettledDocument;
-      var settled_text_js_1 = require_settled_text();
+      exports.buildCurrentDocument = buildCurrentDocument;
+      var current_text_js_1 = require_current_text();
       var hashline_js_1 = require_hashline();
       var hashline_tracked_js_1 = require_hashline_tracked();
       var format_aware_parse_js_1 = require_format_aware_parse();
       var view_builder_utils_js_1 = require_view_builder_utils();
-      function buildSettledDocument(rawContent, options) {
+      function buildCurrentDocument(rawContent, options) {
         const changes = (0, format_aware_parse_js_1.parseForFormat)(rawContent, { skipCodeBlocks: false }).getChanges();
-        const settledResult = (0, settled_text_js_1.computeSettledView)(rawContent, changes);
+        const currentResult = (0, current_text_js_1.computeCurrentView)(rawContent, changes);
         const rawLines = rawContent.split("\n");
-        const allSettled = rawLines.map((l) => (0, hashline_tracked_js_1.settledLine)(l));
-        while (settledResult.lines.length > 0 && settledResult.lines[settledResult.lines.length - 1].text.trim() === "") {
-          settledResult.lines.pop();
+        const allCurrent = rawLines.map((l) => (0, hashline_tracked_js_1.currentLine)(l));
+        while (currentResult.lines.length > 0 && currentResult.lines[currentResult.lines.length - 1].text.trim() === "") {
+          currentResult.lines.pop();
         }
-        const lines = settledResult.lines.map((sl) => ({
+        const lines = currentResult.lines.map((sl) => ({
           margin: {
-            lineNumber: sl.settledLineNum,
+            lineNumber: sl.currentLineNum,
             hash: sl.hash,
             flags: []
           },
@@ -18680,8 +18706,8 @@ ${sidecarSection}
           rawLineNumber: sl.rawLineNum,
           sessionHashes: {
             raw: (0, hashline_js_1.computeLineHash)(sl.rawLineNum - 1, rawLines[sl.rawLineNum - 1] ?? "", rawLines),
-            settled: (0, hashline_tracked_js_1.computeSettledLineHash)(sl.rawLineNum, rawLines[sl.rawLineNum - 1] ?? "", allSettled),
-            settledView: sl.hash,
+            current: (0, hashline_tracked_js_1.computeCurrentLineHash)(sl.rawLineNum, rawLines[sl.rawLineNum - 1] ?? "", allCurrent),
+            currentView: sl.hash,
             rawLineNum: sl.rawLineNum
           }
         }));
@@ -18708,7 +18734,7 @@ ${sidecarSection}
       function buildRawDocument(rawContent, options) {
         const changes = (0, format_aware_parse_js_1.parseForFormat)(rawContent).getChanges();
         const rawLines = rawContent.split("\n");
-        const allSettled = rawLines.map((l) => (0, hashline_tracked_js_1.settledLine)(l));
+        const allCurrent = rawLines.map((l) => (0, hashline_tracked_js_1.currentLine)(l));
         const continuations = (0, view_builder_utils_js_1.computeContinuationLines)(rawContent, changes);
         const lines = rawLines.map((text, i) => {
           const rawHash = (0, hashline_js_1.computeLineHash)(i, text, rawLines);
@@ -18724,7 +18750,7 @@ ${sidecarSection}
             continuesChange: continuations.has(i) || void 0,
             sessionHashes: {
               raw: rawHash,
-              settled: (0, hashline_tracked_js_1.computeSettledLineHash)(i + 1, text, allSettled)
+              current: (0, hashline_tracked_js_1.computeCurrentLineHash)(i + 1, text, allCurrent)
             }
           };
         });
@@ -18745,7 +18771,7 @@ ${sidecarSection}
     "../core/dist/renderers/view-builders/index.js"(exports) {
       "use strict";
       Object.defineProperty(exports, "__esModule", { value: true });
-      exports.buildRawDocument = exports.buildSettledDocument = exports.buildChangesDocument = exports.buildReviewDocument = void 0;
+      exports.buildRawDocument = exports.buildCurrentDocument = exports.buildChangesDocument = exports.buildReviewDocument = void 0;
       exports.buildViewDocument = buildViewDocument;
       var review_js_1 = require_review();
       Object.defineProperty(exports, "buildReviewDocument", { enumerable: true, get: function() {
@@ -18755,9 +18781,9 @@ ${sidecarSection}
       Object.defineProperty(exports, "buildChangesDocument", { enumerable: true, get: function() {
         return changes_js_1.buildChangesDocument;
       } });
-      var settled_js_1 = require_settled();
-      Object.defineProperty(exports, "buildSettledDocument", { enumerable: true, get: function() {
-        return settled_js_1.buildSettledDocument;
+      var current_js_1 = require_current();
+      Object.defineProperty(exports, "buildCurrentDocument", { enumerable: true, get: function() {
+        return current_js_1.buildCurrentDocument;
       } });
       var raw_js_1 = require_raw();
       Object.defineProperty(exports, "buildRawDocument", { enumerable: true, get: function() {
@@ -18770,7 +18796,7 @@ ${sidecarSection}
           case "changes":
             return (0, changes_js_1.buildChangesDocument)(rawContent, options);
           case "settled":
-            return (0, settled_js_1.buildSettledDocument)(rawContent, options);
+            return (0, current_js_1.buildCurrentDocument)(rawContent, options);
           case "raw":
             return (0, raw_js_1.buildRawDocument)(rawContent, options);
           default:
@@ -19305,9 +19331,9 @@ ${sidecarSection}
       "use strict";
       Object.defineProperty(exports, "__esModule", { value: true });
       exports.promoteToLevel1 = exports.computeSupersedeResult = exports.computeAmendEdits = exports.VALID_DECISIONS = exports.applyReview = exports.ensureL2 = exports.buildContextualL3EditOp = exports.formatL3EditOpLine = exports.buildEditOpFromParts = exports.scanMaxCnId = exports.generateFootnoteDefinition = exports.insertComment = exports.wrapSubstitution = exports.wrapDeletion = exports.wrapInsertion = exports.previousChange = exports.nextChange = exports.computeReplyEdit = exports.computeUnresolveEdit = exports.computeResolutionEdit = exports.computeFootnoteArchiveLineEdit = exports.computeApprovalLineEdit = exports.computeFootnoteStatusEdits = exports.computeRejectParts = exports.computeAcceptParts = exports.computeReject = exports.computeAccept = exports.isFenceCloserLine = exports.skipInlineCode = exports.tryMatchFenceClose = exports.tryMatchFenceOpen = exports.findCodeZones = exports.CriticMarkupParser = exports.TokenType = exports.VirtualDocument = exports.nodeStatus = exports.consumptionLabel = exports.isGhostNode = exports.changeTypeToAbbrev = exports.ChangeStatus = exports.ChangeType = exports.formatTimestamp = exports.compareTimestamps = exports.nowTimestamp = exports.parseTimestamp = exports.canWithdraw = exports.canAccept = exports.reviewerType = exports.DEFAULT_CONFIG = exports.parseProjectConfig = void 0;
-      exports.initHashline = exports.computeSettledView = exports.settleRejectedChangesOnly = exports.settleAcceptedChangesOnly = exports.computeOriginalText = exports.computeSettledText = exports.computeSettledReplace = exports.tryDiagnosticConfusableMatch = exports.unicodeName = exports.diagnosticConfusableNormalize = exports.whitespaceCollapsedIsAmbiguous = exports.whitespaceCollapsedFind = exports.buildWhitespaceCollapseMap = exports.collapseWhitespace = exports.normalizedIndexOf = exports.defaultNormalizer = exports.insertTrackingHeader = exports.generateTrackingHeader = exports.parseTrackingHeader = exports.computeSidecarResolveAll = exports.computeSidecarReject = exports.computeSidecarAccept = exports.parseContextualEditOp = exports.FootnoteNativeParser = exports.SidecarParser = exports.annotateSidecar = exports.annotateMarkdown = exports.lineOffset = exports.escapeRegex = exports.stripLineComment = exports.wrapLineComment = exports.getCommentSyntax = exports.Workspace = exports.resolveReplayFromParsedFootnotes = exports.traceDependencies = exports.resolve = exports.scrubForward = exports.scrubBackward = exports.convertL3ToL2 = exports.offsetToLineNumber = exports.buildLineStarts = exports.bodyReplacement = exports.convertL2ToL3 = exports.checkSupersedesIntegrity = exports.compactL2 = exports.compact = exports.analyzeCompactionCandidates = exports.compactToLevel0 = exports.compactToLevel1 = exports.promoteToLevel2 = void 0;
-      exports.isL3Format = exports.FOOTNOTE_L3_EDIT_OP = exports.FOOTNOTE_THREAD_REPLY = exports.FOOTNOTE_CONTINUATION = exports.FOOTNOTE_DEF_STATUS_VALUE = exports.FOOTNOTE_DEF_STATUS = exports.FOOTNOTE_DEF_STRICT = exports.FOOTNOTE_DEF_LENIENT = exports.FOOTNOTE_DEF_START_QUICK = exports.FOOTNOTE_DEF_START = exports.footnoteRefNumericGlobal = exports.footnoteRefGlobal = exports.FOOTNOTE_REF_ANCHORED = exports.FOOTNOTE_ID_NUMERIC_PATTERN = exports.FOOTNOTE_ID_PATTERN = exports.markupWithRef = exports.inlineMarkupAll = exports.hasCriticMarkup = exports.HAS_CRITIC_MARKUP = exports.multiLineComment = exports.multiLineHighlight = exports.multiLineDeletion = exports.multiLineInsertion = exports.multiLineSubstitution = exports.singleLineComment = exports.singleLineHighlight = exports.singleLineInsertion = exports.singleLineDeletion = exports.singleLineSubstitution = exports.findSidecarBlockStart = exports.SIDECAR_BLOCK_MARKER = exports.formatCommittedOutput = exports.computeCommittedView = exports.computeCommittedLine = exports.parseFootnotes = exports.findFootnoteBlockStart = exports.stripBoundaryEcho = exports.relocateHashRef = exports.detectNoOp = exports.stripHashlinePrefixes = exports.formatTrackedHeader = exports.formatTrackedHashLines = exports.computeSettledLineHash = exports.settledLine = exports.HashlineMismatchError = exports.validateLineRef = exports.parseLineRef = exports.formatHashLines = exports.computeLineHash = exports.ensureHashlineReady = void 0;
-      exports.isBufferEmpty = exports.DEFAULT_EDIT_BOUNDARY_CONFIG = exports.computeContinuationLines = exports.findFootnoteSectionRange = exports.buildLineRefMap = exports.buildDeliberationHeader = exports.buildRawDocument = exports.buildSettledDocument = exports.buildChangesDocument = exports.buildReviewDocument = exports.buildViewDocument = exports.formatHtml = exports.formatAnsi = exports.formatPlainText = exports.formatDocument = exports.nextViewName = exports.resolveViewName = exports.VIEW_NAMES = exports.VIEW_NAME_DISPLAY_NAMES = exports.VIEW_NAME_ALIASES = exports.parseOp = exports.resolveAt = exports.parseAt = exports.extractFootnoteStatuses = exports.resolveChangeById = exports.findChildFootnoteIds = exports.findReviewInsertionIndex = exports.findDiscussionInsertionIndex = exports.parseFootnoteHeader = exports.findFootnoteBlock = exports.countFootnoteHeadersWithStatus = exports.contentZoneText = exports.resolveOverlapWithAuthor = exports.findAllProposedOverlaps = exports.stripRefsFromContent = exports.guardOverlap = exports.checkCriticMarkupOverlap = exports.stripCriticMarkupToCommittedWithMap = exports.stripCriticMarkup = exports.stripCriticMarkupWithMap = exports.replaceUnique = exports.extractLineRange = exports.appendFootnote = exports.applySingleOperation = exports.applyProposeChange = exports.tryFindUniqueMatch = exports.findUniqueMatch = exports.viewAwareFind = exports.buildViewSurfaceMap = exports.splitBodyAndFootnotes = void 0;
+      exports.initHashline = exports.computeCurrentView = exports.applyRejectedChanges = exports.applyAcceptedChanges = exports.computeOriginalText = exports.computeCurrentText = exports.computeCurrentReplace = exports.tryDiagnosticConfusableMatch = exports.unicodeName = exports.diagnosticConfusableNormalize = exports.whitespaceCollapsedIsAmbiguous = exports.whitespaceCollapsedFind = exports.buildWhitespaceCollapseMap = exports.collapseWhitespace = exports.normalizedIndexOf = exports.defaultNormalizer = exports.insertTrackingHeader = exports.generateTrackingHeader = exports.parseTrackingHeader = exports.computeSidecarResolveAll = exports.computeSidecarReject = exports.computeSidecarAccept = exports.parseContextualEditOp = exports.FootnoteNativeParser = exports.SidecarParser = exports.annotateSidecar = exports.annotateMarkdown = exports.lineOffset = exports.escapeRegex = exports.stripLineComment = exports.wrapLineComment = exports.getCommentSyntax = exports.Workspace = exports.resolveReplayFromParsedFootnotes = exports.traceDependencies = exports.resolve = exports.scrubForward = exports.scrubBackward = exports.convertL3ToL2 = exports.offsetToLineNumber = exports.buildLineStarts = exports.bodyReplacement = exports.convertL2ToL3 = exports.checkSupersedesIntegrity = exports.compactL2 = exports.compact = exports.analyzeCompactionCandidates = exports.compactToLevel0 = exports.compactToLevel1 = exports.promoteToLevel2 = void 0;
+      exports.isL3Format = exports.FOOTNOTE_L3_EDIT_OP = exports.FOOTNOTE_THREAD_REPLY = exports.FOOTNOTE_CONTINUATION = exports.FOOTNOTE_DEF_STATUS_VALUE = exports.FOOTNOTE_DEF_STATUS = exports.FOOTNOTE_DEF_STRICT = exports.FOOTNOTE_DEF_LENIENT = exports.FOOTNOTE_DEF_START_QUICK = exports.FOOTNOTE_DEF_START = exports.footnoteRefNumericGlobal = exports.footnoteRefGlobal = exports.FOOTNOTE_REF_ANCHORED = exports.FOOTNOTE_ID_NUMERIC_PATTERN = exports.FOOTNOTE_ID_PATTERN = exports.markupWithRef = exports.inlineMarkupAll = exports.hasCriticMarkup = exports.HAS_CRITIC_MARKUP = exports.multiLineComment = exports.multiLineHighlight = exports.multiLineDeletion = exports.multiLineInsertion = exports.multiLineSubstitution = exports.singleLineComment = exports.singleLineHighlight = exports.singleLineInsertion = exports.singleLineDeletion = exports.singleLineSubstitution = exports.findSidecarBlockStart = exports.SIDECAR_BLOCK_MARKER = exports.formatDecidedOutput = exports.computeDecidedView = exports.computeDecidedLine = exports.parseFootnotes = exports.findFootnoteBlockStart = exports.stripBoundaryEcho = exports.relocateHashRef = exports.detectNoOp = exports.stripHashlinePrefixes = exports.formatTrackedHeader = exports.formatTrackedHashLines = exports.computeCurrentLineHash = exports.currentLine = exports.HashlineMismatchError = exports.validateLineRef = exports.parseLineRef = exports.formatHashLines = exports.computeLineHash = exports.ensureHashlineReady = void 0;
+      exports.isBufferEmpty = exports.DEFAULT_EDIT_BOUNDARY_CONFIG = exports.computeContinuationLines = exports.findFootnoteSectionRange = exports.buildLineRefMap = exports.buildDeliberationHeader = exports.buildRawDocument = exports.buildCurrentDocument = exports.buildChangesDocument = exports.buildReviewDocument = exports.buildViewDocument = exports.formatHtml = exports.formatAnsi = exports.formatPlainText = exports.formatDocument = exports.nextViewMode = exports.resolveViewMode = exports.VIEW_MODES = exports.VIEW_MODE_LABELS = exports.VIEW_MODE_ALIASES = exports.parseOp = exports.resolveAt = exports.parseAt = exports.extractFootnoteStatuses = exports.resolveChangeById = exports.findChildFootnoteIds = exports.findReviewInsertionIndex = exports.findDiscussionInsertionIndex = exports.parseFootnoteHeader = exports.findFootnoteBlock = exports.countFootnoteHeadersWithStatus = exports.contentZoneText = exports.resolveOverlapWithAuthor = exports.findAllProposedOverlaps = exports.stripRefsFromContent = exports.guardOverlap = exports.checkCriticMarkupOverlap = exports.stripCriticMarkupToCommittedWithMap = exports.stripCriticMarkup = exports.stripCriticMarkupWithMap = exports.replaceUnique = exports.extractLineRange = exports.appendFootnote = exports.applySingleOperation = exports.applyProposeChange = exports.tryFindUniqueMatch = exports.findUniqueMatch = exports.viewAwareFind = exports.buildViewSurfaceMap = exports.splitBodyAndFootnotes = void 0;
       exports.stripFootnoteBlocks = exports.parseForFormat = exports.processEvent = exports.classifySignal = exports.createBuffer = exports.spliceDelete = exports.spliceInsert = exports.appendOriginal = exports.prependOriginal = exports.extendBuffer = exports.bufferContainsOffset = exports.bufferEnd = void 0;
       var index_js_1 = require_config();
       Object.defineProperty(exports, "parseProjectConfig", { enumerable: true, get: function() {
@@ -19622,24 +19648,24 @@ ${sidecarSection}
       Object.defineProperty(exports, "tryDiagnosticConfusableMatch", { enumerable: true, get: function() {
         return text_normalizer_js_1.tryDiagnosticConfusableMatch;
       } });
-      var settled_text_js_1 = require_settled_text();
-      Object.defineProperty(exports, "computeSettledReplace", { enumerable: true, get: function() {
-        return settled_text_js_1.computeSettledReplace;
+      var current_text_js_1 = require_current_text();
+      Object.defineProperty(exports, "computeCurrentReplace", { enumerable: true, get: function() {
+        return current_text_js_1.computeCurrentReplace;
       } });
-      Object.defineProperty(exports, "computeSettledText", { enumerable: true, get: function() {
-        return settled_text_js_1.computeSettledText;
+      Object.defineProperty(exports, "computeCurrentText", { enumerable: true, get: function() {
+        return current_text_js_1.computeCurrentText;
       } });
       Object.defineProperty(exports, "computeOriginalText", { enumerable: true, get: function() {
-        return settled_text_js_1.computeOriginalText;
+        return current_text_js_1.computeOriginalText;
       } });
-      Object.defineProperty(exports, "settleAcceptedChangesOnly", { enumerable: true, get: function() {
-        return settled_text_js_1.settleAcceptedChangesOnly;
+      Object.defineProperty(exports, "applyAcceptedChanges", { enumerable: true, get: function() {
+        return current_text_js_1.applyAcceptedChanges;
       } });
-      Object.defineProperty(exports, "settleRejectedChangesOnly", { enumerable: true, get: function() {
-        return settled_text_js_1.settleRejectedChangesOnly;
+      Object.defineProperty(exports, "applyRejectedChanges", { enumerable: true, get: function() {
+        return current_text_js_1.applyRejectedChanges;
       } });
-      Object.defineProperty(exports, "computeSettledView", { enumerable: true, get: function() {
-        return settled_text_js_1.computeSettledView;
+      Object.defineProperty(exports, "computeCurrentView", { enumerable: true, get: function() {
+        return current_text_js_1.computeCurrentView;
       } });
       var hashline_js_1 = require_hashline();
       Object.defineProperty(exports, "initHashline", { enumerable: true, get: function() {
@@ -19664,11 +19690,11 @@ ${sidecarSection}
         return hashline_js_1.HashlineMismatchError;
       } });
       var hashline_tracked_js_1 = require_hashline_tracked();
-      Object.defineProperty(exports, "settledLine", { enumerable: true, get: function() {
-        return hashline_tracked_js_1.settledLine;
+      Object.defineProperty(exports, "currentLine", { enumerable: true, get: function() {
+        return hashline_tracked_js_1.currentLine;
       } });
-      Object.defineProperty(exports, "computeSettledLineHash", { enumerable: true, get: function() {
-        return hashline_tracked_js_1.computeSettledLineHash;
+      Object.defineProperty(exports, "computeCurrentLineHash", { enumerable: true, get: function() {
+        return hashline_tracked_js_1.computeCurrentLineHash;
       } });
       Object.defineProperty(exports, "formatTrackedHashLines", { enumerable: true, get: function() {
         return hashline_tracked_js_1.formatTrackedHashLines;
@@ -19697,15 +19723,15 @@ ${sidecarSection}
       Object.defineProperty(exports, "parseFootnotes", { enumerable: true, get: function() {
         return footnote_parser_js_1.parseFootnotes;
       } });
-      var committed_text_js_1 = require_committed_text();
-      Object.defineProperty(exports, "computeCommittedLine", { enumerable: true, get: function() {
-        return committed_text_js_1.computeCommittedLine;
+      var decided_text_js_1 = require_decided_text();
+      Object.defineProperty(exports, "computeDecidedLine", { enumerable: true, get: function() {
+        return decided_text_js_1.computeDecidedLine;
       } });
-      Object.defineProperty(exports, "computeCommittedView", { enumerable: true, get: function() {
-        return committed_text_js_1.computeCommittedView;
+      Object.defineProperty(exports, "computeDecidedView", { enumerable: true, get: function() {
+        return decided_text_js_1.computeDecidedView;
       } });
-      Object.defineProperty(exports, "formatCommittedOutput", { enumerable: true, get: function() {
-        return committed_text_js_1.formatCommittedOutput;
+      Object.defineProperty(exports, "formatDecidedOutput", { enumerable: true, get: function() {
+        return decided_text_js_1.formatDecidedOutput;
       } });
       var constants_js_1 = require_constants();
       Object.defineProperty(exports, "SIDECAR_BLOCK_MARKER", { enumerable: true, get: function() {
@@ -19899,20 +19925,20 @@ ${sidecarSection}
         return op_parser_js_1.parseOp;
       } });
       var three_zone_types_js_1 = require_three_zone_types();
-      Object.defineProperty(exports, "VIEW_NAME_ALIASES", { enumerable: true, get: function() {
-        return three_zone_types_js_1.VIEW_NAME_ALIASES;
+      Object.defineProperty(exports, "VIEW_MODE_ALIASES", { enumerable: true, get: function() {
+        return three_zone_types_js_1.VIEW_MODE_ALIASES;
       } });
-      Object.defineProperty(exports, "VIEW_NAME_DISPLAY_NAMES", { enumerable: true, get: function() {
-        return three_zone_types_js_1.VIEW_NAME_DISPLAY_NAMES;
+      Object.defineProperty(exports, "VIEW_MODE_LABELS", { enumerable: true, get: function() {
+        return three_zone_types_js_1.VIEW_MODE_LABELS;
       } });
-      Object.defineProperty(exports, "VIEW_NAMES", { enumerable: true, get: function() {
-        return three_zone_types_js_1.VIEW_NAMES;
+      Object.defineProperty(exports, "VIEW_MODES", { enumerable: true, get: function() {
+        return three_zone_types_js_1.VIEW_MODES;
       } });
-      Object.defineProperty(exports, "resolveViewName", { enumerable: true, get: function() {
-        return three_zone_types_js_1.resolveViewName;
+      Object.defineProperty(exports, "resolveViewMode", { enumerable: true, get: function() {
+        return three_zone_types_js_1.resolveViewMode;
       } });
-      Object.defineProperty(exports, "nextViewName", { enumerable: true, get: function() {
-        return three_zone_types_js_1.nextViewName;
+      Object.defineProperty(exports, "nextViewMode", { enumerable: true, get: function() {
+        return three_zone_types_js_1.nextViewMode;
       } });
       var index_js_2 = require_formatters();
       Object.defineProperty(exports, "formatDocument", { enumerable: true, get: function() {
@@ -19937,8 +19963,8 @@ ${sidecarSection}
       Object.defineProperty(exports, "buildChangesDocument", { enumerable: true, get: function() {
         return index_js_3.buildChangesDocument;
       } });
-      Object.defineProperty(exports, "buildSettledDocument", { enumerable: true, get: function() {
-        return index_js_3.buildSettledDocument;
+      Object.defineProperty(exports, "buildCurrentDocument", { enumerable: true, get: function() {
+        return index_js_3.buildCurrentDocument;
       } });
       Object.defineProperty(exports, "buildRawDocument", { enumerable: true, get: function() {
         return index_js_3.buildRawDocument;
@@ -20001,6 +20027,2986 @@ ${sidecarSection}
       } });
       Object.defineProperty(exports, "stripFootnoteBlocks", { enumerable: true, get: function() {
         return format_aware_parse_js_1.stripFootnoteBlocks;
+      } });
+    }
+  });
+
+  // ../core/dist/host/types.js
+  var require_types3 = __commonJS({
+    "../core/dist/host/types.js"(exports) {
+      "use strict";
+      Object.defineProperty(exports, "__esModule", { value: true });
+      exports.NULL_LSP_CONNECTION = exports.VIEW_MODE_PRESETS = exports.VIEW_PRESETS = exports.EventEmitter = void 0;
+      exports.projectionToViewMode = projectionToViewMode;
+      var EventEmitter = class {
+        constructor() {
+          this.listeners = [];
+          this.event = (listener) => {
+            this.listeners.push(listener);
+            return {
+              dispose: () => {
+                const idx = this.listeners.indexOf(listener);
+                if (idx >= 0)
+                  this.listeners.splice(idx, 1);
+              }
+            };
+          };
+        }
+        fire(value) {
+          for (const listener of [...this.listeners])
+            listener(value);
+        }
+        dispose() {
+          this.listeners = [];
+        }
+      };
+      exports.EventEmitter = EventEmitter;
+      exports.VIEW_PRESETS = {
+        review: {
+          name: "review",
+          projection: "current",
+          display: {
+            insertions: "inline",
+            deletions: "inline",
+            substitutions: "inline",
+            highlights: "inline",
+            comments: "inline-marker",
+            delimiters: "show",
+            footnoteRefs: "show",
+            footnotes: "show",
+            authorColors: "auto",
+            cursorReveal: false
+          }
+        },
+        simple: {
+          name: "simple",
+          projection: "current",
+          display: {
+            insertions: "inline",
+            deletions: "hide",
+            substitutions: "inline",
+            highlights: "inline",
+            comments: "hide",
+            delimiters: "hide",
+            footnoteRefs: "hide",
+            footnotes: "hide",
+            authorColors: "auto",
+            cursorReveal: false
+          }
+        },
+        final: {
+          name: "final",
+          projection: "decided",
+          display: {
+            insertions: "inline",
+            deletions: "hide",
+            substitutions: "inline",
+            highlights: "hide",
+            comments: "hide",
+            delimiters: "hide",
+            footnoteRefs: "hide",
+            footnotes: "hide",
+            authorColors: "never",
+            cursorReveal: false
+          }
+        },
+        original: {
+          name: "original",
+          projection: "original",
+          display: {
+            insertions: "hide",
+            deletions: "inline",
+            substitutions: "inline",
+            highlights: "hide",
+            comments: "hide",
+            delimiters: "hide",
+            footnoteRefs: "hide",
+            footnotes: "hide",
+            authorColors: "never",
+            cursorReveal: false
+          }
+        },
+        raw: {
+          name: "raw",
+          projection: "none",
+          display: {
+            insertions: "inline",
+            deletions: "inline",
+            substitutions: "inline",
+            highlights: "inline",
+            comments: "inline-marker",
+            delimiters: "show",
+            footnoteRefs: "show",
+            footnotes: "show",
+            authorColors: "never",
+            cursorReveal: false
+          }
+        }
+      };
+      exports.VIEW_MODE_PRESETS = {
+        review: { projection: "current", display: { insertions: "inline", deletions: "inline", substitutions: "inline", delimiters: "show" } },
+        changes: { projection: "current", display: { insertions: "inline", deletions: "inline", substitutions: "inline", delimiters: "hide" } },
+        settled: { projection: "decided", display: {} },
+        raw: { projection: "original", display: {} }
+      };
+      function projectionToViewMode(projection) {
+        switch (projection) {
+          case "decided":
+            return "settled";
+          case "original":
+            return "raw";
+          default:
+            return "review";
+        }
+      }
+      exports.NULL_LSP_CONNECTION = {
+        sendRequest: () => Promise.resolve({}),
+        sendNotification: () => {
+        },
+        onNotification: () => ({ dispose: () => {
+        } })
+      };
+    }
+  });
+
+  // ../core/dist/host/decorations/helpers.js
+  var require_helpers = __commonJS({
+    "../core/dist/host/decorations/helpers.js"(exports) {
+      "use strict";
+      Object.defineProperty(exports, "__esModule", { value: true });
+      exports.computeLineStarts = computeLineStarts;
+      exports.offsetToLine = offsetToLine;
+      exports.isOffsetInRange = isOffsetInRange;
+      exports.hideDelimiters = hideDelimiters;
+      exports.revealDelimiters = revealDelimiters;
+      exports.injectGhostDelimiters = injectGhostDelimiters;
+      exports.hideOrGhostDelimiters = hideOrGhostDelimiters;
+      exports.getCharLevelRanges = getCharLevelRanges;
+      exports.createEmptyPlan = createEmptyPlan;
+      var diff_1 = require_libcjs();
+      function computeLineStarts(text) {
+        const starts = [0];
+        for (let i = 0; i < text.length; i++) {
+          if (text[i] === "\n")
+            starts.push(i + 1);
+        }
+        return starts;
+      }
+      function offsetToLine(lineStarts, offset) {
+        let lo = 0, hi = lineStarts.length - 1;
+        while (lo < hi) {
+          const mid = lo + hi + 1 >> 1;
+          if (lineStarts[mid] <= offset)
+            lo = mid;
+          else
+            hi = mid - 1;
+        }
+        return lo;
+      }
+      function isOffsetInRange(offset, range) {
+        return offset >= range.start && offset <= range.end;
+      }
+      function hideDelimiters(fullRange, contentRange, hiddens) {
+        if (fullRange.start < contentRange.start) {
+          hiddens.push({ range: { start: fullRange.start, end: contentRange.start } });
+        }
+        if (contentRange.end < fullRange.end) {
+          hiddens.push({ range: { start: contentRange.end, end: fullRange.end } });
+        }
+      }
+      function revealDelimiters(fullRange, contentRange, unfoldedDelimiters) {
+        if (fullRange.start < contentRange.start) {
+          unfoldedDelimiters.push({ range: { start: fullRange.start, end: contentRange.start } });
+        }
+        if (contentRange.end < fullRange.end) {
+          unfoldedDelimiters.push({ range: { start: contentRange.end, end: fullRange.end } });
+        }
+      }
+      function injectGhostDelimiters(fullRange, contentRange, ghostDelimiters, openDelimiter, closeDelimiter) {
+        if (fullRange.start < contentRange.start) {
+          ghostDelimiters.push({
+            range: { start: contentRange.start, end: contentRange.start },
+            renderBefore: { contentText: openDelimiter }
+          });
+        }
+        if (contentRange.end < fullRange.end) {
+          ghostDelimiters.push({
+            range: { start: contentRange.end, end: contentRange.end },
+            renderAfter: { contentText: closeDelimiter }
+          });
+        }
+      }
+      function hideOrGhostDelimiters(fullRange, contentRange, plan, isL3Format, showGhostDelimiters, openDelim, closeDelim) {
+        if (isL3Format && showGhostDelimiters) {
+          injectGhostDelimiters(fullRange, contentRange, plan.ghostDelimiters, openDelim, closeDelim);
+        } else if (!isL3Format) {
+          hideDelimiters(fullRange, contentRange, plan.hiddens);
+        }
+      }
+      function getCharLevelRanges(change) {
+        if (!change.originalText || !change.modifiedText)
+          return [];
+        if (change.originalText.includes("\n") || change.modifiedText.includes("\n"))
+          return [];
+        const charDiffs = (0, diff_1.diffChars)(change.originalText, change.modifiedText);
+        const ranges = [];
+        let modOffset = 0;
+        for (const diff of charDiffs) {
+          if (diff.added) {
+            ranges.push({
+              start: change.contentRange.start + modOffset,
+              end: change.contentRange.start + modOffset + diff.value.length
+            });
+            modOffset += diff.value.length;
+          } else if (!diff.removed) {
+            modOffset += diff.value.length;
+          }
+        }
+        return ranges;
+      }
+      function createEmptyPlan() {
+        return {
+          insertions: [],
+          deletions: [],
+          substitutionOriginals: [],
+          substitutionModifieds: [],
+          highlights: [],
+          comments: [],
+          hiddens: [],
+          unfoldedDelimiters: [],
+          commentIcons: [],
+          activeHighlights: [],
+          moveFroms: [],
+          moveTos: [],
+          decidedRefs: [],
+          decidedDims: [],
+          ghostDeletions: [],
+          consumedRanges: [],
+          consumingOpAnnotations: [],
+          ghostDelimiters: [],
+          ghostRefs: [],
+          hiddenOffsets: [],
+          authorDecorations: /* @__PURE__ */ new Map()
+        };
+      }
+    }
+  });
+
+  // ../core/dist/host/edit-convert.js
+  var require_edit_convert = __commonJS({
+    "../core/dist/host/edit-convert.js"(exports) {
+      "use strict";
+      Object.defineProperty(exports, "__esModule", { value: true });
+      exports.offsetToRange = offsetToRange;
+      exports.rangeToOffset = rangeToOffset;
+      exports.rangeToOffsetBatch = rangeToOffsetBatch;
+      var helpers_js_1 = require_helpers();
+      function offsetToPosition(lineStarts, offset) {
+        const line = (0, helpers_js_1.offsetToLine)(lineStarts, offset);
+        return { line, character: offset - lineStarts[line] };
+      }
+      function positionToOffset(lineStarts, pos) {
+        return (lineStarts[pos.line] ?? 0) + pos.character;
+      }
+      function offsetToRange(text, edit) {
+        const lineStarts = (0, helpers_js_1.computeLineStarts)(text);
+        const start = offsetToPosition(lineStarts, edit.offset);
+        const end = offsetToPosition(lineStarts, edit.offset + edit.length);
+        return { range: { start, end }, newText: edit.newText };
+      }
+      function rangeToOffset(text, edit) {
+        const lineStarts = (0, helpers_js_1.computeLineStarts)(text);
+        const offset = positionToOffset(lineStarts, edit.range.start);
+        const endOffset = positionToOffset(lineStarts, edit.range.end);
+        return { offset, length: endOffset - offset, newText: edit.newText };
+      }
+      function rangeToOffsetBatch(text, edits) {
+        const lineStarts = (0, helpers_js_1.computeLineStarts)(text);
+        return edits.map((edit) => {
+          const offset = positionToOffset(lineStarts, edit.range.start);
+          const endOffset = positionToOffset(lineStarts, edit.range.end);
+          return { offset, length: endOffset - offset, newText: edit.newText };
+        });
+      }
+    }
+  });
+
+  // ../core/dist/host/range-transform.js
+  var require_range_transform = __commonJS({
+    "../core/dist/host/range-transform.js"(exports) {
+      "use strict";
+      Object.defineProperty(exports, "__esModule", { value: true });
+      exports.transformRange = transformRange;
+      function transformRange(range, editStart, editEnd, delta) {
+        if (editEnd <= range.start) {
+          range.start += delta;
+          range.end += delta;
+        } else if (editStart >= range.end) {
+        } else if (editStart >= range.start && editEnd <= range.end) {
+          range.end += delta;
+        } else {
+          range.end = Math.max(range.start, range.end + delta);
+        }
+      }
+    }
+  });
+
+  // ../core/dist/host/uri.js
+  var require_uri = __commonJS({
+    "../core/dist/host/uri.js"(exports) {
+      "use strict";
+      Object.defineProperty(exports, "__esModule", { value: true });
+      exports.UriSet = exports.UriMap = void 0;
+      exports.normalizeUri = normalizeUri;
+      var UNRESERVED = /^[A-Za-z0-9\-._~]$/;
+      function normalizeUri(raw) {
+        const schemeEnd = raw.indexOf("://");
+        if (schemeEnd === -1) {
+          return raw.replace(/\/+$/, "");
+        }
+        const scheme = raw.substring(0, schemeEnd).toLowerCase();
+        const rest = raw.substring(schemeEnd + 3);
+        const pathStart = rest.indexOf("/");
+        const authority = pathStart === -1 ? rest : rest.substring(0, pathStart);
+        const path = pathStart === -1 ? "" : rest.substring(pathStart);
+        const decodedPath = path.replace(/%([0-9A-Fa-f]{2})/g, (match, hex) => {
+          const char = String.fromCharCode(parseInt(hex, 16));
+          return UNRESERVED.test(char) ? char : match;
+        });
+        const trimmedPath = decodedPath.length > 1 ? decodedPath.replace(/\/+$/, "") : decodedPath;
+        return `${scheme}://${authority.toLowerCase()}${trimmedPath}`;
+      }
+      var UriMap = class {
+        constructor() {
+          this.map = /* @__PURE__ */ new Map();
+        }
+        set(uri, value) {
+          this.map.set(uri, value);
+        }
+        get(uri) {
+          return this.map.get(uri);
+        }
+        has(uri) {
+          return this.map.has(uri);
+        }
+        delete(uri) {
+          return this.map.delete(uri);
+        }
+        get size() {
+          return this.map.size;
+        }
+        clear() {
+          this.map.clear();
+        }
+        keys() {
+          return this.map.keys();
+        }
+        values() {
+          return this.map.values();
+        }
+        entries() {
+          return this.map.entries();
+        }
+        forEach(fn) {
+          this.map.forEach(fn);
+        }
+      };
+      exports.UriMap = UriMap;
+      var UriSet = class {
+        constructor() {
+          this.set = /* @__PURE__ */ new Set();
+        }
+        add(uri) {
+          this.set.add(uri);
+        }
+        has(uri) {
+          return this.set.has(uri);
+        }
+        delete(uri) {
+          return this.set.delete(uri);
+        }
+        get size() {
+          return this.set.size;
+        }
+        clear() {
+          this.set.clear();
+        }
+      };
+      exports.UriSet = UriSet;
+    }
+  });
+
+  // ../core/dist/host/document-state-manager.js
+  var require_document_state_manager = __commonJS({
+    "../core/dist/host/document-state-manager.js"(exports) {
+      "use strict";
+      Object.defineProperty(exports, "__esModule", { value: true });
+      exports.DocumentStateManager = void 0;
+      var types_js_1 = require_types3();
+      var range_transform_js_1 = require_range_transform();
+      var uri_js_1 = require_uri();
+      var NOTIFY_CHANGES_DEBOUNCE_MS = 120;
+      var DocumentStateManager = class {
+        constructor() {
+          this.states = new uri_js_1.UriMap();
+          this.pendingNotifyUris = /* @__PURE__ */ new Set();
+          this.notifyTimer = null;
+          this._onDidChangeChanges = new types_js_1.EventEmitter();
+          this.onDidChangeChanges = this._onDidChangeChanges.event;
+        }
+        ensureState(uri, text, version) {
+          const key = uri;
+          const existing = this.states.get(key);
+          if (existing)
+            return existing;
+          const state = {
+            uri,
+            version,
+            text,
+            cachedChanges: [],
+            cacheVersion: -1,
+            format: "L2"
+          };
+          this.states.set(key, state);
+          return state;
+        }
+        getState(uri) {
+          return this.states.get(uri);
+        }
+        removeState(uri) {
+          this.states.delete(uri);
+          this.pendingNotifyUris.delete(uri);
+        }
+        setCachedDecorations(uri, changes, version) {
+          const state = this.states.get(uri);
+          if (!state)
+            return false;
+          if (version < state.cacheVersion)
+            return false;
+          const prev = state.cachedChanges;
+          state.cachedChanges = changes;
+          state.cacheVersion = version;
+          if (this.changesEqual(prev, changes))
+            return true;
+          this.scheduleNotify(uri);
+          return true;
+        }
+        changesEqual(a, b) {
+          if (a.length !== b.length)
+            return false;
+          for (let i = 0; i < a.length; i++) {
+            const ca = a[i], cb = b[i];
+            if (ca.id !== cb.id)
+              return false;
+            if (ca.range.start !== cb.range.start)
+              return false;
+            if (ca.range.end !== cb.range.end)
+              return false;
+            if (ca.status !== cb.status)
+              return false;
+            if (ca.modifiedText !== cb.modifiedText)
+              return false;
+            if (ca.consumedBy !== cb.consumedBy)
+              return false;
+            if ((ca.replyCount ?? 0) !== (cb.replyCount ?? 0))
+              return false;
+            if ((ca.metadata?.approvals?.length ?? 0) !== (cb.metadata?.approvals?.length ?? 0))
+              return false;
+            if ((ca.metadata?.rejections?.length ?? 0) !== (cb.metadata?.rejections?.length ?? 0))
+              return false;
+            if ((ca.metadata?.discussion?.length ?? 0) !== (cb.metadata?.discussion?.length ?? 0))
+              return false;
+          }
+          return true;
+        }
+        scheduleNotify(uri) {
+          this.pendingNotifyUris.add(uri);
+          if (this.notifyTimer !== null)
+            return;
+          this.notifyTimer = setTimeout(() => {
+            this.notifyTimer = null;
+            const uris = Array.from(this.pendingNotifyUris);
+            this.pendingNotifyUris.clear();
+            this._onDidChangeChanges.fire(uris);
+          }, NOTIFY_CHANGES_DEBOUNCE_MS);
+        }
+        dispose() {
+          if (this.notifyTimer !== null) {
+            clearTimeout(this.notifyTimer);
+            this.notifyTimer = null;
+          }
+          this.pendingNotifyUris.clear();
+          this._onDidChangeChanges.dispose();
+        }
+        getCachedDecorations(uri, currentVersion) {
+          const state = this.states.get(uri);
+          if (!state)
+            return null;
+          if (state.cacheVersion < currentVersion)
+            return null;
+          return state.cachedChanges;
+        }
+        applyContentChange(uri, text, version, contentChanges) {
+          const state = this.states.get(uri);
+          if (!state)
+            return false;
+          const hadChanges = state.cachedChanges.length > 0;
+          if (hadChanges) {
+            for (const change of contentChanges) {
+              const editStart = change.rangeOffset;
+              const editEnd = change.rangeOffset + change.rangeLength;
+              const delta = change.text.length - change.rangeLength;
+              for (const node of state.cachedChanges) {
+                (0, range_transform_js_1.transformRange)(node.range, editStart, editEnd, delta);
+                (0, range_transform_js_1.transformRange)(node.contentRange, editStart, editEnd, delta);
+                if (node.originalRange) {
+                  (0, range_transform_js_1.transformRange)(node.originalRange, editStart, editEnd, delta);
+                }
+                if (node.modifiedRange) {
+                  (0, range_transform_js_1.transformRange)(node.modifiedRange, editStart, editEnd, delta);
+                }
+              }
+            }
+            state.cachedChanges = state.cachedChanges.filter((n) => n.range.end >= n.range.start && n.range.start >= 0);
+          }
+          state.text = text;
+          state.version = version;
+          state.cacheVersion = version;
+          return hadChanges;
+        }
+        invalidateCache(uri) {
+          const state = this.states.get(uri);
+          if (state) {
+            state.cachedChanges = [];
+            state.cacheVersion = -1;
+          }
+        }
+        migrateState(oldUri, newUri) {
+          const state = this.states.get(oldUri);
+          if (state) {
+            state.uri = newUri;
+            this.states.set(newUri, state);
+            this.states.delete(oldUri);
+          }
+        }
+        /** Convenience: return cached changes for a URI, or empty array. */
+        getChangesForUri(uri) {
+          return this.states.get(uri)?.cachedChanges ?? [];
+        }
+      };
+      exports.DocumentStateManager = DocumentStateManager;
+    }
+  });
+
+  // ../core/dist/host/decoration-scheduler.js
+  var require_decoration_scheduler = __commonJS({
+    "../core/dist/host/decoration-scheduler.js"(exports) {
+      "use strict";
+      Object.defineProperty(exports, "__esModule", { value: true });
+      exports.DecorationScheduler = void 0;
+      var uri_js_1 = require_uri();
+      var DecorationScheduler = class _DecorationScheduler {
+        constructor(performUpdate) {
+          this.performUpdate = performUpdate;
+          this.timers = new uri_js_1.UriMap();
+        }
+        schedule(uri) {
+          const key = uri;
+          const existing = this.timers.get(key);
+          if (existing !== void 0)
+            clearTimeout(existing);
+          this.timers.set(key, setTimeout(() => {
+            this.timers.delete(key);
+            this.performUpdate(uri);
+          }, _DecorationScheduler.DEBOUNCE_MS));
+        }
+        updateNow(uri) {
+          const key = uri;
+          const existing = this.timers.get(key);
+          if (existing !== void 0) {
+            clearTimeout(existing);
+            this.timers.delete(key);
+          }
+          this.performUpdate(uri);
+        }
+        dispose() {
+          for (const timer of this.timers.values())
+            clearTimeout(timer);
+          this.timers.clear();
+        }
+      };
+      exports.DecorationScheduler = DecorationScheduler;
+      DecorationScheduler.DEBOUNCE_MS = 50;
+    }
+  });
+
+  // ../core/dist/host/pending-edit-manager.js
+  var require_pending_edit_manager = __commonJS({
+    "../core/dist/host/pending-edit-manager.js"(exports) {
+      "use strict";
+      Object.defineProperty(exports, "__esModule", { value: true });
+      exports.PendingEditManager = void 0;
+      var index_js_1 = require_edit_boundary();
+      var critic_regex_js_1 = require_critic_regex();
+      var PendingEditManager = class {
+        constructor(onCrystallize, onOverlayChange) {
+          this.onCrystallize = onCrystallize;
+          this.onOverlayChange = onOverlayChange;
+          this.states = /* @__PURE__ */ new Map();
+          this.pendingEchos = /* @__PURE__ */ new Set();
+          this.safetyNetInterval = null;
+          this._pauseThresholdMs = 2e3;
+          this._author = "@unknown";
+        }
+        // ── Public API ─────────────────────────────────────────────────────
+        /**
+         * Process an edit event. Returns false if the edit was an echo from
+         * our own crystallize (feedback loop guard).
+         */
+        handleChange(uri, type, offset, text, deletedText, documentText) {
+          if (this.pendingEchos.has(uri)) {
+            this.pendingEchos.delete(uri);
+            return false;
+          }
+          if ((0, critic_regex_js_1.hasCriticMarkup)(text) || (0, critic_regex_js_1.hasCriticMarkup)(deletedText)) {
+            return false;
+          }
+          let event;
+          switch (type) {
+            case "insertion":
+              event = { type: "insertion", offset, text };
+              break;
+            case "deletion":
+              event = { type: "deletion", offset, deletedText };
+              break;
+            case "substitution":
+              event = { type: "substitution", offset, oldText: deletedText, newText: text };
+              break;
+          }
+          const uriState = this.getUriState(uri);
+          uriState.lastDocumentText = documentText;
+          const ctx = this.buildContext(uri, uriState, documentText);
+          const { newState, effects } = (0, index_js_1.processEvent)(uriState.boundary, event, ctx);
+          uriState.boundary = newState;
+          this.executeEffects(uri, effects);
+          if (uriState.boundary.pending) {
+            this.ensureSafetyNet();
+          }
+          return true;
+        }
+        /**
+         * Process a cursor move event.
+         */
+        handleCursorMove(uri, offset, documentText) {
+          const uriState = this.states.get(uri);
+          if (!uriState?.boundary.pending)
+            return;
+          const event = { type: "cursorMove", offset };
+          const ctx = this.buildContext(uri, uriState, documentText);
+          const { newState, effects } = (0, index_js_1.processEvent)(uriState.boundary, event, ctx);
+          uriState.boundary = newState;
+          this.executeEffects(uri, effects);
+        }
+        /**
+         * Force flush a document's pending buffer.
+         */
+        flush(uri, documentText) {
+          const uriState = this.states.get(uri);
+          if (!uriState?.boundary.pending)
+            return;
+          const event = { type: "flush" };
+          const text = documentText ?? uriState.lastDocumentText;
+          const ctx = this.buildContext(uri, uriState, text);
+          const { newState, effects } = (0, index_js_1.processEvent)(uriState.boundary, event, ctx);
+          uriState.boundary = newState;
+          this.executeEffects(uri, effects);
+        }
+        /**
+         * Flush all documents with pending buffers.
+         */
+        flushAll() {
+          for (const uri of this.states.keys()) {
+            this.flush(uri);
+          }
+        }
+        /**
+         * Check if a document has a pending edit buffer.
+         */
+        hasPendingEdit(uri) {
+          return this.states.get(uri)?.boundary.pending !== null && this.states.get(uri)?.boundary.pending !== void 0;
+        }
+        /**
+         * Clean up state for a closed document.
+         */
+        removeDocument(uri) {
+          this.states.delete(uri);
+          this.pendingEchos.delete(uri);
+          if (!this.anyPending()) {
+            this.stopSafetyNet();
+          }
+        }
+        /**
+         * Abandon any in-flight pending state for this URI without emitting crystallize.
+         * Called on client-side undo/redo: the client already discarded the edit, so
+         * the server must drop its pending buffer rather than misclassifying the undo.
+         */
+        abandon(uri) {
+          const uriState = this.states.get(uri);
+          if (!uriState)
+            return;
+          uriState.boundary = { ...uriState.boundary, pending: null };
+          this.pendingEchos.delete(uri);
+          if (!this.anyPending()) {
+            this.stopSafetyNet();
+          }
+        }
+        /**
+         * Mark that we expect an echo didChange from our own crystallize edit.
+         */
+        expectEcho(uri) {
+          this.pendingEchos.add(uri);
+        }
+        /**
+         * Consume a pending echo without processing it as a real edit.
+         * Used when a full-doc sync arrives (no range) — the echo is expected
+         * but handleChange is never called, so we must clear it explicitly.
+         */
+        consumeEcho(uri) {
+          this.pendingEchos.delete(uri);
+        }
+        /**
+         * Get the current pause threshold in milliseconds. 0 means disabled.
+         */
+        getPauseThresholdMs() {
+          return this._pauseThresholdMs;
+        }
+        /**
+         * Configure pause threshold in milliseconds.
+         * ms <= 0 means "disable timer".
+         */
+        setPauseThresholdMs(ms) {
+          this._pauseThresholdMs = ms <= 0 ? 0 : ms;
+          for (const uriState of this.states.values()) {
+            uriState.boundary = {
+              ...uriState.boundary,
+              config: { ...uriState.boundary.config, pauseThresholdMs: this._pauseThresholdMs }
+            };
+          }
+        }
+        /**
+         * Set the author identity for footnote metadata.
+         */
+        setAuthor(author) {
+          this._author = author;
+        }
+        /**
+         * Initialize the scId counter from existing document content.
+         * Call on document open with the max cn-N found in the document.
+         */
+        initScIdCounter(uri, maxId) {
+          const uriState = this.getUriState(uri);
+          uriState.scIdCounter = maxId;
+        }
+        /**
+         * Clean up all state and stop timers.
+         */
+        dispose() {
+          this.stopSafetyNet();
+          this.states.clear();
+          this.pendingEchos.clear();
+        }
+        // ── Internals ──────────────────────────────────────────────────────
+        getUriState(uri) {
+          let uriState = this.states.get(uri);
+          if (!uriState) {
+            uriState = {
+              boundary: {
+                pending: null,
+                isComposing: false,
+                config: {
+                  ...index_js_1.DEFAULT_EDIT_BOUNDARY_CONFIG,
+                  pauseThresholdMs: this._pauseThresholdMs
+                }
+              },
+              scIdCounter: 0
+            };
+            this.states.set(uri, uriState);
+          }
+          return uriState;
+        }
+        buildContext(uri, uriState, documentText) {
+          return {
+            now: Date.now(),
+            allocateScId: () => {
+              uriState.scIdCounter++;
+              return `cn-${uriState.scIdCounter}`;
+            },
+            author: this._author,
+            documentText,
+            documentFormat: "l2"
+          };
+        }
+        /**
+         * Interpret effects from the core state machine.
+         */
+        executeEffects(uri, effects) {
+          for (const effect of effects) {
+            switch (effect.type) {
+              case "crystallize":
+                if ("edits" in effect) {
+                  const fullEffect = effect;
+                  if (fullEffect.edits.format === "l2" || fullEffect.edits.format === "l3") {
+                    this.pendingEchos.add(uri);
+                    this.onCrystallize({ uri, edits: fullEffect.edits });
+                  }
+                }
+                break;
+              case "mergeAdjacent":
+                break;
+              case "updatePendingOverlay": {
+                const overlay = effect.overlay;
+                if (overlay) {
+                  const pending = this.states.get(uri)?.boundary.pending;
+                  this.onOverlayChange(uri, {
+                    range: { start: overlay.anchorOffset, end: overlay.anchorOffset + overlay.currentLength },
+                    text: overlay.currentText,
+                    type: "insertion",
+                    scId: pending?.scId
+                  });
+                } else {
+                  this.onOverlayChange(uri, null);
+                }
+                break;
+              }
+            }
+          }
+        }
+        // ── Safety net timer ───────────────────────────────────────────────
+        ensureSafetyNet() {
+          if (this.safetyNetInterval)
+            return;
+          if (this._pauseThresholdMs <= 0)
+            return;
+          const checkMs = Math.min(5e3, this._pauseThresholdMs);
+          this.safetyNetInterval = setInterval(() => {
+            const now = Date.now();
+            let anyPending = false;
+            for (const [uri, uriState] of this.states) {
+              if (uriState.boundary.pending) {
+                anyPending = true;
+                if (uriState.boundary.config.pauseThresholdMs > 0 && now - uriState.boundary.pending.lastEditTime > uriState.boundary.config.pauseThresholdMs) {
+                  this.flush(uri);
+                }
+              }
+            }
+            if (!anyPending) {
+              this.stopSafetyNet();
+            }
+          }, checkMs);
+        }
+        stopSafetyNet() {
+          if (this.safetyNetInterval) {
+            clearInterval(this.safetyNetInterval);
+            this.safetyNetInterval = null;
+          }
+        }
+        anyPending() {
+          for (const uriState of this.states.values()) {
+            if (uriState.boundary.pending)
+              return true;
+          }
+          return false;
+        }
+      };
+      exports.PendingEditManager = PendingEditManager;
+    }
+  });
+
+  // ../core/dist/host/services/tracking-service.js
+  var require_tracking_service = __commonJS({
+    "../core/dist/host/services/tracking-service.js"(exports) {
+      "use strict";
+      Object.defineProperty(exports, "__esModule", { value: true });
+      exports.TrackingService = void 0;
+      var pending_edit_manager_js_1 = require_pending_edit_manager();
+      var types_js_1 = require_types3();
+      var TrackingService = class {
+        constructor(config) {
+          this.trackingState = /* @__PURE__ */ new Map();
+          this._onDidChangeTrackingState = new types_js_1.EventEmitter();
+          this.onDidChangeTrackingState = this._onDidChangeTrackingState.event;
+          this._onDidCrystallize = new types_js_1.EventEmitter();
+          this.onDidCrystallize = this._onDidCrystallize.event;
+          this._onDidChangeOverlay = new types_js_1.EventEmitter();
+          this.onDidChangeOverlay = this._onDidChangeOverlay.event;
+          this.pem = new pending_edit_manager_js_1.PendingEditManager((edit) => this._onDidCrystallize.fire(edit), (uri, overlay) => this._onDidChangeOverlay.fire({ uri, overlay }));
+          if (config?.pauseThresholdMs !== void 0) {
+            this.pem.setPauseThresholdMs(config.pauseThresholdMs);
+          }
+        }
+        // ── Tracking state ─────────────────────────────────────────
+        isTrackingEnabled(uri) {
+          return this.trackingState.get(uri) ?? false;
+        }
+        setTrackingEnabled(uri, enabled) {
+          const prev = this.trackingState.get(uri) ?? false;
+          if (prev === enabled)
+            return;
+          this.trackingState.set(uri, enabled);
+          if (!enabled) {
+            this.pem.removeDocument(uri);
+          }
+          this._onDidChangeTrackingState.fire({ uri, enabled });
+        }
+        toggleTracking(uri) {
+          this.setTrackingEnabled(uri, !this.isTrackingEnabled(uri));
+        }
+        // ── Content routing ────────────────────────────────────────
+        handleContentChange(uri, type, offset, text, deletedText, documentText) {
+          if (!this.isTrackingEnabled(uri))
+            return false;
+          return this.pem.handleChange(uri, type, offset, text, deletedText, documentText);
+        }
+        handleCursorMove(uri, offset, documentText) {
+          if (!this.isTrackingEnabled(uri))
+            return;
+          this.pem.handleCursorMove(uri, offset, documentText);
+        }
+        handleSave(uri) {
+          if (!this.isTrackingEnabled(uri))
+            return;
+          this.pem.flush(uri);
+        }
+        /** Force-flush PEM state. No tracking guard — safe because PEM has no state for disabled URIs. */
+        flush(uri) {
+          this.pem.flush(uri);
+        }
+        closeDocument(uri) {
+          this.pem.removeDocument(uri);
+          this.trackingState.delete(uri);
+        }
+        // ── Echo management ────────────────────────────────────────
+        expectEcho(uri) {
+          this.pem.expectEcho(uri);
+        }
+        consumeEcho(uri) {
+          this.pem.consumeEcho(uri);
+        }
+        // ── Lifecycle ──────────────────────────────────────────────
+        dispose() {
+          this.pem.dispose();
+          this._onDidChangeTrackingState.dispose();
+          this._onDidCrystallize.dispose();
+          this._onDidChangeOverlay.dispose();
+          this.trackingState.clear();
+        }
+      };
+      exports.TrackingService = TrackingService;
+    }
+  });
+
+  // ../core/dist/host/services/navigation-service.js
+  var require_navigation_service = __commonJS({
+    "../core/dist/host/services/navigation-service.js"(exports) {
+      "use strict";
+      Object.defineProperty(exports, "__esModule", { value: true });
+      exports.NavigationService = void 0;
+      var types_js_1 = require_types3();
+      var NavigationService = class {
+        constructor(stateManager) {
+          this.stateManager = stateManager;
+          this.lastChangeId = null;
+          this.onDidChangeCursorContext = new types_js_1.EventEmitter();
+        }
+        nextChange(uri, currentOffset, filter) {
+          const changes = filter ? this.getChanges(uri).filter(filter) : this.getChanges(uri);
+          for (const change of changes) {
+            if (change.range.start > currentOffset)
+              return change;
+            if (change.range.start <= currentOffset && change.range.end > currentOffset)
+              continue;
+          }
+          return null;
+        }
+        previousChange(uri, currentOffset, filter) {
+          const changes = filter ? this.getChanges(uri).filter(filter) : this.getChanges(uri);
+          let idx = -1;
+          for (let i = changes.length - 1; i >= 0; i--) {
+            if (changes[i].range.start <= currentOffset) {
+              idx = i;
+              break;
+            }
+          }
+          if (idx === -1)
+            return null;
+          const change = changes[idx];
+          if (change.range.end > currentOffset && idx < changes.length - 1) {
+            return idx > 0 ? changes[idx - 1] : null;
+          }
+          return change;
+        }
+        getChangeAtOffset(uri, offset) {
+          const changes = this.getChanges(uri);
+          for (const change of changes) {
+            if (offset >= change.range.start && offset < change.range.end)
+              return change;
+            if (change.range.start > offset)
+              break;
+          }
+          return null;
+        }
+        updateCursorContext(uri, offset) {
+          const change = this.getChangeAtOffset(uri, offset);
+          const changeId = change?.id ?? null;
+          if (changeId !== this.lastChangeId) {
+            this.lastChangeId = changeId;
+            this.onDidChangeCursorContext.fire({ uri, change });
+          }
+        }
+        getChanges(uri) {
+          return this.stateManager.getState(uri)?.cachedChanges ?? [];
+        }
+        dispose() {
+          this.onDidChangeCursorContext.dispose();
+        }
+      };
+      exports.NavigationService = NavigationService;
+    }
+  });
+
+  // ../core/dist/host/services/review-service.js
+  var require_review_service = __commonJS({
+    "../core/dist/host/services/review-service.js"(exports) {
+      "use strict";
+      Object.defineProperty(exports, "__esModule", { value: true });
+      exports.ReviewService = void 0;
+      var apply_review_js_1 = require_apply_review();
+      var amend_js_1 = require_amend();
+      var supersede_js_1 = require_supersede();
+      var resolution_js_1 = require_resolution();
+      var current_text_js_1 = require_current_text();
+      var format_aware_parse_js_1 = require_format_aware_parse();
+      var types_js_1 = require_types();
+      var types_js_2 = require_types3();
+      var ReviewService = class {
+        constructor(config) {
+          this.config = config;
+          this._onDidCompleteReview = new types_js_2.EventEmitter();
+          this.onDidCompleteReview = this._onDidCompleteReview.event;
+          this._onReviewError = new types_js_2.EventEmitter();
+          this.onReviewError = this._onReviewError.event;
+        }
+        acceptChange(text, changeId, author) {
+          return this.executeReview(text, changeId, "approve", author);
+        }
+        rejectChange(text, changeId, author) {
+          return this.executeReview(text, changeId, "reject", author);
+        }
+        acceptAll(text, changeIds, author) {
+          return this.executeBatchReview(text, "approve", changeIds, author);
+        }
+        rejectAll(text, changeIds, author) {
+          return this.executeBatchReview(text, "reject", changeIds, author);
+        }
+        async amendChange(text, changeId, newOp, author) {
+          const result = (0, amend_js_1.computeAmendEdits)(text, changeId, { newText: newOp, author });
+          if (result.isError) {
+            const errorResult = { updatedText: text, affectedChangeIds: [], error: result.error };
+            this._onReviewError.fire({ error: result.error });
+            return errorResult;
+          }
+          const successResult = {
+            updatedText: result.text,
+            affectedChangeIds: [changeId]
+          };
+          this._onDidCompleteReview.fire(successResult);
+          return successResult;
+        }
+        async supersedeChange(text, changeId, newOp, author) {
+          const result = await (0, supersede_js_1.computeSupersedeResult)(text, changeId, { newText: newOp, author });
+          if (result.isError) {
+            const errorResult = { updatedText: text, affectedChangeIds: [], error: result.error };
+            this._onReviewError.fire({ error: result.error });
+            return errorResult;
+          }
+          let finalText = result.text;
+          if (this.config?.settlement?.autoOnReject) {
+            const settled = (0, current_text_js_1.applyRejectedChanges)(finalText);
+            finalText = settled.currentContent;
+          }
+          const successResult = {
+            updatedText: finalText,
+            affectedChangeIds: [result.originalChangeId, result.newChangeId]
+          };
+          this._onDidCompleteReview.fire(successResult);
+          return successResult;
+        }
+        resolveThread(text, changeId, author) {
+          const edit = (0, resolution_js_1.computeResolutionEdit)(text, changeId, { author });
+          if (!edit) {
+            const errorResult = {
+              updatedText: text,
+              affectedChangeIds: [],
+              error: `Change "${changeId}" not found in file.`
+            };
+            this._onReviewError.fire({ error: errorResult.error });
+            return errorResult;
+          }
+          const updatedText = text.slice(0, edit.offset) + edit.newText + text.slice(edit.offset + edit.length);
+          const successResult = {
+            updatedText,
+            affectedChangeIds: [changeId]
+          };
+          this._onDidCompleteReview.fire(successResult);
+          return successResult;
+        }
+        dispose() {
+          this._onDidCompleteReview.dispose();
+          this._onReviewError.dispose();
+        }
+        // ── Private ──────────────────────────────────────────────────
+        executeReview(text, changeId, decision, author) {
+          const result = (0, apply_review_js_1.applyReview)(text, changeId, decision, "", author);
+          if ("error" in result) {
+            const errorResult = {
+              updatedText: text,
+              affectedChangeIds: [],
+              error: result.error
+            };
+            this._onReviewError.fire({ error: result.error });
+            return errorResult;
+          }
+          let finalText = result.updatedContent;
+          const affectedIds = [changeId];
+          if (result.result.cascaded_children) {
+            affectedIds.push(...result.result.cascaded_children);
+          }
+          if (result.result.status_updated) {
+            if (decision === "approve" && this.config?.settlement?.autoOnApprove) {
+              const settled = (0, current_text_js_1.applyAcceptedChanges)(finalText);
+              finalText = settled.currentContent;
+              if (settled.appliedIds.length > 0) {
+                for (const id of settled.appliedIds) {
+                  if (!affectedIds.includes(id))
+                    affectedIds.push(id);
+                }
+              }
+            } else if (decision === "reject" && this.config?.settlement?.autoOnReject) {
+              const settled = (0, current_text_js_1.applyRejectedChanges)(finalText);
+              finalText = settled.currentContent;
+              if (settled.appliedIds.length > 0) {
+                for (const id of settled.appliedIds) {
+                  if (!affectedIds.includes(id))
+                    affectedIds.push(id);
+                }
+              }
+            }
+          }
+          const successResult = {
+            updatedText: finalText,
+            affectedChangeIds: affectedIds
+          };
+          this._onDidCompleteReview.fire(successResult);
+          return successResult;
+        }
+        executeBatchReview(text, decision, changeIds, author) {
+          const doc = (0, format_aware_parse_js_1.parseForFormat)(text);
+          let proposed = doc.getChanges().filter((c) => c.status === types_js_1.ChangeStatus.Proposed);
+          if (changeIds && changeIds.length > 0) {
+            const idSet = new Set(changeIds);
+            proposed = proposed.filter((c) => idSet.has(c.id));
+          }
+          if (proposed.length === 0) {
+            return { updatedText: text, affectedChangeIds: [] };
+          }
+          const sorted = [...proposed].sort((a, b) => b.range.start - a.range.start);
+          let currentText = text;
+          const affectedIds = /* @__PURE__ */ new Set();
+          const errors = [];
+          for (const change of sorted) {
+            const result = (0, apply_review_js_1.applyReview)(currentText, change.id, decision, "", author ?? "system");
+            if ("error" in result) {
+              errors.push(result.error);
+              continue;
+            }
+            currentText = result.updatedContent;
+            affectedIds.add(change.id);
+            if (result.result.cascaded_children) {
+              for (const id of result.result.cascaded_children)
+                affectedIds.add(id);
+            }
+          }
+          if (affectedIds.size > 0) {
+            if (decision === "approve" && this.config?.settlement?.autoOnApprove) {
+              const settled = (0, current_text_js_1.applyAcceptedChanges)(currentText);
+              currentText = settled.currentContent;
+              for (const id of settled.appliedIds)
+                affectedIds.add(id);
+            } else if (decision === "reject" && this.config?.settlement?.autoOnReject) {
+              const settled = (0, current_text_js_1.applyRejectedChanges)(currentText);
+              currentText = settled.currentContent;
+              for (const id of settled.appliedIds)
+                affectedIds.add(id);
+            }
+          }
+          const affectedArray = [...affectedIds];
+          const successResult = {
+            updatedText: currentText,
+            affectedChangeIds: affectedArray,
+            error: errors.length > 0 ? errors.join("; ") : void 0
+          };
+          if (affectedArray.length > 0) {
+            this._onDidCompleteReview.fire(successResult);
+          }
+          if (errors.length > 0) {
+            this._onReviewError.fire({ error: errors.join("; ") });
+          }
+          return successResult;
+        }
+      };
+      exports.ReviewService = ReviewService;
+    }
+  });
+
+  // ../core/dist/host/uri-keyed-store.js
+  var require_uri_keyed_store = __commonJS({
+    "../core/dist/host/uri-keyed-store.js"(exports) {
+      "use strict";
+      Object.defineProperty(exports, "__esModule", { value: true });
+      exports.UriKeyedStore = void 0;
+      var uri_js_1 = require_uri();
+      var UriKeyedStore = class {
+        constructor() {
+          this.entries = /* @__PURE__ */ new Map();
+        }
+        ensure(uri, factory) {
+          const key = (0, uri_js_1.normalizeUri)(uri);
+          let entry = this.entries.get(key);
+          if (!entry) {
+            entry = factory();
+            this.entries.set(key, entry);
+          }
+          return entry;
+        }
+        get(uri) {
+          return this.entries.get((0, uri_js_1.normalizeUri)(uri));
+        }
+        has(uri) {
+          return this.entries.has((0, uri_js_1.normalizeUri)(uri));
+        }
+        set(uri, entry) {
+          this.entries.set((0, uri_js_1.normalizeUri)(uri), entry);
+        }
+        delete(uri) {
+          return this.entries.delete((0, uri_js_1.normalizeUri)(uri));
+        }
+        clear() {
+          this.entries.clear();
+        }
+        get size() {
+          return this.entries.size;
+        }
+        [Symbol.iterator]() {
+          return this.entries[Symbol.iterator]();
+        }
+      };
+      exports.UriKeyedStore = UriKeyedStore;
+    }
+  });
+
+  // ../core/dist/host/services/coherence-service.js
+  var require_coherence_service = __commonJS({
+    "../core/dist/host/services/coherence-service.js"(exports) {
+      "use strict";
+      Object.defineProperty(exports, "__esModule", { value: true });
+      exports.CoherenceService = void 0;
+      var types_js_1 = require_types3();
+      var uri_keyed_store_js_1 = require_uri_keyed_store();
+      var CoherenceService = class extends uri_keyed_store_js_1.UriKeyedStore {
+        constructor() {
+          super(...arguments);
+          this._onDidChangeCoherence = new types_js_1.EventEmitter();
+          this.onDidChangeCoherence = this._onDidChangeCoherence.event;
+        }
+        update(uri, rate, unresolvedCount, threshold) {
+          const prev = this.get(uri);
+          if (prev && prev.rate === rate && prev.unresolvedCount === unresolvedCount && prev.threshold === threshold)
+            return;
+          this.set(uri, { rate, unresolvedCount, threshold });
+          this._onDidChangeCoherence.fire({ uri, rate, unresolvedCount, threshold });
+        }
+        getCoherence(uri) {
+          return this.get(uri);
+        }
+        remove(uri) {
+          this.delete(uri);
+        }
+        dispose() {
+          this.clear();
+          this._onDidChangeCoherence.dispose();
+        }
+      };
+      exports.CoherenceService = CoherenceService;
+    }
+  });
+
+  // ../core/dist/host/decorations/styles.js
+  var require_styles = __commonJS({
+    "../core/dist/host/decorations/styles.js"(exports) {
+      "use strict";
+      Object.defineProperty(exports, "__esModule", { value: true });
+      exports.VIEW_MODE_VISIBILITY = exports.AUTHOR_PALETTE = exports.OVERVIEW_RULER_COLORS = exports.DECORATION_STYLES = void 0;
+      exports.isTypeVisibleInMode = isTypeVisibleInMode;
+      var types_js_1 = require_types();
+      exports.DECORATION_STYLES = {
+        insertion: {
+          light: { color: "#1E824C", textDecoration: "underline dotted #1E824C40" },
+          dark: { color: "#66BB6A", textDecoration: "underline dotted #66BB6A40" },
+          overviewRuler: { color: "#66BB6A80", lane: "left" }
+        },
+        deletion: {
+          light: { color: "#C0392B", textDecoration: "line-through" },
+          dark: { color: "#EF5350", textDecoration: "line-through" },
+          overviewRuler: { color: "#EF535080", lane: "left" }
+        },
+        substitutionOriginal: {
+          light: { color: "#C0392B", textDecoration: "line-through" },
+          dark: { color: "#EF5350", textDecoration: "line-through" },
+          overviewRuler: { color: "#FFB74D80", lane: "left" }
+        },
+        substitutionModified: {
+          light: { color: "#1E824C", textDecoration: "none" },
+          dark: { color: "#66BB6A", textDecoration: "none" },
+          overviewRuler: { color: "#FFB74D80", lane: "left" }
+        },
+        highlight: {
+          light: { textDecoration: "none", backgroundColor: "rgba(255,255,0,0.3)" },
+          dark: { textDecoration: "none", backgroundColor: "rgba(255,255,0,0.3)" },
+          overviewRuler: { color: "#FFFF0080", lane: "left" }
+        },
+        comment: {
+          light: { textDecoration: "none", backgroundColor: "rgba(173,216,230,0.2)", border: "1px solid rgba(100,149,237,0.5)" },
+          dark: { textDecoration: "none", backgroundColor: "rgba(173,216,230,0.2)", border: "1px solid rgba(100,149,237,0.5)" }
+        },
+        hidden: {
+          light: { textDecoration: "none; display: none" },
+          dark: { textDecoration: "none; display: none" }
+        },
+        unfoldedDelimiter: {
+          light: { color: "rgba(100, 100, 100, 0.85)", fontStyle: "italic" },
+          dark: { color: "rgba(180, 180, 180, 0.7)", fontStyle: "italic" }
+        },
+        commentIcon: {
+          light: {},
+          dark: {},
+          after: { contentText: "\u{1F4AC}", color: { light: "rgba(100, 149, 237, 0.8)", dark: "rgba(100, 149, 237, 0.8)" }, margin: "0 0 0 4px" }
+        },
+        activeHighlight: {
+          light: { backgroundColor: "rgba(100, 149, 237, 0.18)" },
+          dark: { backgroundColor: "rgba(100, 149, 237, 0.18)" }
+        },
+        moveFrom: {
+          light: { color: "#6C3483", textDecoration: "line-through" },
+          dark: { color: "#CE93D8", textDecoration: "line-through" },
+          after: { contentText: " \u2934", color: { light: "rgba(108, 52, 131, 0.6)", dark: "rgba(108, 52, 131, 0.6)" } },
+          overviewRuler: { color: "#CE93D880", lane: "left" }
+        },
+        moveTo: {
+          light: { color: "#6C3483", textDecoration: "underline" },
+          dark: { color: "#CE93D8", textDecoration: "underline" },
+          after: { contentText: " \u2935", color: { light: "rgba(108, 52, 131, 0.6)", dark: "rgba(108, 52, 131, 0.6)" } },
+          overviewRuler: { color: "#CE93D880", lane: "left" }
+        },
+        moveLabel: {
+          light: { color: "#6C3483" },
+          dark: { color: "#CE93D8" }
+        },
+        anchorMeta: {
+          light: { color: "#888888" },
+          dark: { color: "#888888" }
+        },
+        decidedRef: {
+          light: { textDecoration: "none", color: "rgba(128, 128, 128, 0.6)", fontStyle: "italic" },
+          dark: { textDecoration: "none", color: "rgba(160, 160, 160, 0.5)", fontStyle: "italic" }
+        },
+        decidedDim: {
+          light: { opacity: "0.5", fontStyle: "italic" },
+          dark: { opacity: "0.5", fontStyle: "italic" }
+        },
+        footnoteBlock: {
+          light: { color: "#888888" },
+          dark: { color: "#888888" }
+        },
+        ghostDeletion: {
+          light: {},
+          dark: {},
+          before: {
+            color: { light: "#C0392B", dark: "#EF5350" },
+            fontStyle: "italic",
+            textDecoration: "line-through"
+          }
+        },
+        consumed: {
+          light: { opacity: "0.45", fontStyle: "italic" },
+          dark: { opacity: "0.45", fontStyle: "italic" }
+        },
+        consumingAnnotation: {
+          light: {},
+          dark: {}
+        },
+        ghostDelimiter: {
+          light: { color: "rgba(120, 120, 120, 0.6)", fontStyle: "italic" },
+          dark: { color: "rgba(160, 160, 160, 0.5)", fontStyle: "italic" }
+        },
+        ghostRef: {
+          light: { color: "rgba(100, 149, 237, 0.5)", fontStyle: "italic" },
+          dark: { color: "rgba(100, 149, 237, 0.4)", fontStyle: "italic" }
+        }
+      };
+      exports.OVERVIEW_RULER_COLORS = {
+        insertion: "#66BB6A80",
+        deletion: "#EF535080",
+        substitution: "#FFB74D80",
+        highlight: "#FFFF0080",
+        comment: "#64B5F680"
+      };
+      exports.AUTHOR_PALETTE = [
+        { light: "#1E824C", dark: "#66BB6A" },
+        { light: "#6C3483", dark: "#CE93D8" },
+        { light: "#E67E22", dark: "#FFB74D" },
+        { light: "#16A085", dark: "#4DB6AC" },
+        { light: "#2980B9", dark: "#64B5F6" }
+      ];
+      exports.VIEW_MODE_VISIBILITY = {
+        review: {},
+        changes: {
+          deletion: "hidden",
+          substitutionOriginal: "hidden",
+          moveFrom: "hidden",
+          moveLabel: "hidden",
+          comment: "hidden",
+          highlight: "plain",
+          hidden: "hidden",
+          unfoldedDelimiter: "hidden",
+          anchorMeta: "hidden",
+          decidedRef: "hidden",
+          footnoteBlock: "hidden",
+          consumingAnnotation: "hidden",
+          ghostDelimiter: "hidden",
+          ghostRef: "hidden"
+        },
+        settled: {},
+        raw: {}
+      };
+      function isTypeVisibleInMode(type, mode) {
+        switch (mode) {
+          case "settled":
+            return type !== types_js_1.ChangeType.Deletion && type !== types_js_1.ChangeType.Comment;
+          case "raw":
+            return type !== types_js_1.ChangeType.Insertion && type !== types_js_1.ChangeType.Comment;
+          case "review":
+          case "changes":
+            return true;
+        }
+      }
+    }
+  });
+
+  // ../core/dist/host/decorations/author-colors.js
+  var require_author_colors = __commonJS({
+    "../core/dist/host/decorations/author-colors.js"(exports) {
+      "use strict";
+      Object.defineProperty(exports, "__esModule", { value: true });
+      exports.AuthorColorMap = void 0;
+      var styles_js_1 = require_styles();
+      var AuthorColorMap = class {
+        constructor() {
+          this.map = /* @__PURE__ */ new Map();
+        }
+        getIndex(author) {
+          if (!this.map.has(author)) {
+            this.map.set(author, this.map.size % styles_js_1.AUTHOR_PALETTE.length);
+          }
+          return this.map.get(author);
+        }
+        getColor(author) {
+          return styles_js_1.AUTHOR_PALETTE[this.getIndex(author)];
+        }
+      };
+      exports.AuthorColorMap = AuthorColorMap;
+    }
+  });
+
+  // ../core/dist/host/decorations/plan-builder.js
+  var require_plan_builder = __commonJS({
+    "../core/dist/host/decorations/plan-builder.js"(exports) {
+      "use strict";
+      Object.defineProperty(exports, "__esModule", { value: true });
+      exports.buildDecorationPlan = buildDecorationPlan;
+      var types_js_1 = require_types();
+      var footnote_utils_js_1 = require_footnote_utils();
+      var helpers_js_1 = require_helpers();
+      function buildDecorationPlan(changes, text, view, format, cursorOffset) {
+        const isL3 = format === "L3";
+        const plan = (0, helpers_js_1.createEmptyPlan)();
+        const lineStarts = (0, helpers_js_1.computeLineStarts)(text);
+        const d = view.display;
+        const isDecidedProjection = view.projection === "decided";
+        const isOriginalProjection = view.projection === "original";
+        const isCurrentProjection = view.projection === "current" || view.projection === "none";
+        const showDelimiters = (d.delimiters ?? "show") === "show";
+        const hideDeletions = (d.deletions ?? "inline") === "hide";
+        const hideComments = (d.comments ?? "inline-marker") === "hide";
+        const hideHighlights = (d.highlights ?? "inline") === "hide";
+        const hideFootnoteRefs = (d.footnoteRefs ?? "show") === "hide";
+        const hideFootnotes = (d.footnotes ?? "show") === "hide";
+        const cursorReveal = d.cursorReveal === true;
+        const authorColorMode = d.authorColors ?? "auto";
+        const isFullInlineMode = !hideDeletions && !hideHighlights && !hideComments;
+        const showDelimitersInMarkup = showDelimiters && !isL3 && isFullInlineMode;
+        const cursorRevealMode = (cursorReveal || showDelimiters) && isCurrentProjection && !isFullInlineMode;
+        const showGhostDelimiters = isL3 && showDelimiters && isCurrentProjection;
+        const showGhostRefs = isL3 && !hideFootnoteRefs && isCurrentProjection;
+        let useAuthorColors = authorColorMode === "always";
+        if (authorColorMode === "auto") {
+          const authors = /* @__PURE__ */ new Set();
+          for (const c of changes) {
+            if (c.metadata?.author)
+              authors.add(c.metadata.author);
+            if (c.inlineMetadata?.author)
+              authors.add(c.inlineMetadata.author);
+            if (authors.size >= 2)
+              break;
+          }
+          useAuthorColors = authors.size >= 2;
+        }
+        const addAuthorDecoration = (author, role, decoration) => {
+          const key = `${author}:${role}`;
+          if (!plan.authorDecorations.has(key)) {
+            plan.authorDecorations.set(key, { role, ranges: [] });
+          }
+          plan.authorDecorations.get(key).ranges.push(decoration);
+        };
+        const consumedByMap = /* @__PURE__ */ new Map();
+        for (const c of changes) {
+          if (c.consumedBy) {
+            const list = consumedByMap.get(c.consumedBy) ?? [];
+            list.push(c);
+            consumedByMap.set(c.consumedBy, list);
+          }
+        }
+        const cursorLine = cursorOffset > text.length ? lineStarts.length : (0, helpers_js_1.offsetToLine)(lineStarts, cursorOffset);
+        changes.forEach((change) => {
+          if ((0, types_js_1.isGhostNode)(change))
+            return;
+          if (change.consumedBy) {
+            plan.consumedRanges.push({
+              range: change.range,
+              renderAfter: {
+                contentText: ` consumed by ${change.consumedBy}`,
+                fontStyle: "italic"
+              }
+            });
+            return;
+          }
+          const fullRange = change.range;
+          const contentRange = change.contentRange;
+          const isCursorInChange = (0, helpers_js_1.isOffsetInRange)(cursorOffset, contentRange);
+          const changeStartLine = (0, helpers_js_1.offsetToLine)(lineStarts, fullRange.start);
+          const changeEndLine = (0, helpers_js_1.offsetToLine)(lineStarts, fullRange.end);
+          const isCursorOnChangeLine = changeStartLine <= cursorLine && cursorLine <= changeEndLine;
+          const author = change.metadata?.author ?? change.inlineMetadata?.author;
+          if (isCursorInChange && isCurrentProjection) {
+            if (change.type === types_js_1.ChangeType.Substitution && change.originalRange && change.modifiedRange) {
+              plan.activeHighlights.push({ range: change.originalRange });
+              plan.activeHighlights.push({ range: change.modifiedRange });
+            } else {
+              plan.activeHighlights.push({ range: fullRange });
+            }
+          }
+          const pushInsertion = (d2) => {
+            if (author && useAuthorColors)
+              addAuthorDecoration(author, "insertion", d2);
+            else
+              plan.insertions.push(d2);
+          };
+          const pushDeletion = (d2) => {
+            if (author && useAuthorColors)
+              addAuthorDecoration(author, "deletion", d2);
+            else
+              plan.deletions.push(d2);
+          };
+          const pushSubOriginal = (d2) => {
+            if (author && useAuthorColors)
+              addAuthorDecoration(author, "substitution-original", d2);
+            else
+              plan.substitutionOriginals.push(d2);
+          };
+          const pushSubModified = (d2) => {
+            if (author && useAuthorColors)
+              addAuthorDecoration(author, "substitution-modified", d2);
+            else
+              plan.substitutionModifieds.push(d2);
+          };
+          const pushHighlight = (d2) => {
+            plan.highlights.push(d2);
+          };
+          const pushComment = (d2) => {
+            plan.comments.push(d2);
+          };
+          const pushMoveFrom = (d2) => {
+            if (author && useAuthorColors)
+              addAuthorDecoration(author, "move-from", d2);
+            else
+              plan.moveFroms.push(d2);
+          };
+          const pushMoveTo = (d2) => {
+            if (author && useAuthorColors)
+              addAuthorDecoration(author, "move-to", d2);
+            else
+              plan.moveTos.push(d2);
+          };
+          if (isDecidedProjection || isOriginalProjection) {
+            const effectiveType = change.moveRole === "from" ? types_js_1.ChangeType.Deletion : change.moveRole === "to" ? types_js_1.ChangeType.Insertion : change.type;
+            if (effectiveType === types_js_1.ChangeType.Insertion) {
+              if (isDecidedProjection) {
+                (0, helpers_js_1.hideDelimiters)(fullRange, contentRange, plan.hiddens);
+              } else {
+                plan.hiddens.push({ range: fullRange });
+              }
+            } else if (effectiveType === types_js_1.ChangeType.Deletion) {
+              if (change.range.start === change.range.end) {
+                if (isOriginalProjection) {
+                  const deletedText = change.originalText ?? "";
+                  if (deletedText) {
+                    plan.ghostDeletions.push({
+                      range: fullRange,
+                      renderBefore: { contentText: deletedText }
+                    });
+                  }
+                }
+              } else if (isDecidedProjection) {
+                plan.hiddens.push({ range: fullRange });
+              } else {
+                (0, helpers_js_1.hideDelimiters)(fullRange, contentRange, plan.hiddens);
+              }
+            } else if (effectiveType === types_js_1.ChangeType.Substitution) {
+              if (change.originalRange && change.modifiedRange) {
+                const openDelimiterEnd = change.range.start + 3;
+                const separatorStart = change.originalRange.end;
+                const separatorEnd = change.modifiedRange.start;
+                const closeDelimiterStart = change.modifiedRange.end;
+                if (isDecidedProjection) {
+                  plan.hiddens.push({ range: { start: fullRange.start, end: openDelimiterEnd } });
+                  plan.hiddens.push({ range: { start: change.originalRange.start, end: separatorEnd } });
+                  plan.hiddens.push({ range: { start: closeDelimiterStart, end: fullRange.end } });
+                } else {
+                  plan.hiddens.push({ range: { start: fullRange.start, end: openDelimiterEnd } });
+                  plan.hiddens.push({ range: { start: separatorStart, end: fullRange.end } });
+                }
+              }
+            } else if (effectiveType === types_js_1.ChangeType.Highlight) {
+              if (change.metadata?.comment) {
+                if (fullRange.start < contentRange.start) {
+                  plan.hiddens.push({ range: { start: fullRange.start, end: contentRange.start } });
+                }
+                const highlightCloseEnd = contentRange.end + 3;
+                plan.hiddens.push({ range: { start: contentRange.end, end: highlightCloseEnd } });
+                plan.hiddens.push({ range: { start: highlightCloseEnd, end: fullRange.end } });
+              } else {
+                (0, helpers_js_1.hideDelimiters)(fullRange, contentRange, plan.hiddens);
+              }
+            } else if (effectiveType === types_js_1.ChangeType.Comment) {
+              plan.hiddens.push({ range: fullRange });
+            }
+            return;
+          }
+          if (change.decided) {
+            if (!showDelimiters) {
+              plan.hiddens.push({ range: fullRange });
+              return;
+            }
+            plan.decidedRefs.push({ range: contentRange });
+            if (change.status === types_js_1.ChangeStatus.Accepted || change.status === types_js_1.ChangeStatus.Rejected) {
+              plan.decidedDims.push({ range: contentRange });
+            }
+            return;
+          }
+          if (change.moveRole === "from") {
+            if (showDelimitersInMarkup) {
+              pushMoveFrom({ range: fullRange });
+            } else if (isFullInlineMode) {
+              (0, helpers_js_1.hideOrGhostDelimiters)(fullRange, contentRange, plan, isL3, showGhostDelimiters, "{--", "--}");
+              pushMoveFrom({ range: contentRange });
+            } else if (isCursorOnChangeLine) {
+              if (cursorRevealMode && isCursorInChange) {
+                (0, helpers_js_1.revealDelimiters)(fullRange, contentRange, plan.unfoldedDelimiters);
+              } else {
+                (0, helpers_js_1.hideOrGhostDelimiters)(fullRange, contentRange, plan, isL3, showGhostDelimiters, "{--", "--}");
+              }
+              pushMoveFrom({ range: contentRange });
+            } else {
+              plan.hiddens.push({ range: fullRange });
+            }
+          } else if (change.moveRole === "to") {
+            if (showDelimitersInMarkup) {
+              pushMoveTo({ range: fullRange });
+            } else if (isFullInlineMode) {
+              (0, helpers_js_1.hideOrGhostDelimiters)(fullRange, contentRange, plan, isL3, showGhostDelimiters, "{++", "++}");
+              pushMoveTo({ range: contentRange });
+            } else if (isCursorOnChangeLine) {
+              if (cursorRevealMode && isCursorInChange) {
+                (0, helpers_js_1.revealDelimiters)(fullRange, contentRange, plan.unfoldedDelimiters);
+              } else {
+                (0, helpers_js_1.hideOrGhostDelimiters)(fullRange, contentRange, plan, isL3, showGhostDelimiters, "{++", "++}");
+              }
+              pushMoveTo({ range: contentRange });
+            } else {
+              (0, helpers_js_1.hideOrGhostDelimiters)(fullRange, contentRange, plan, isL3, showGhostDelimiters, "{++", "++}");
+            }
+          } else if (change.type === types_js_1.ChangeType.Insertion) {
+            const reasonHover = change.metadata?.comment ? `**Reason:** ${change.metadata.comment}` : void 0;
+            if (showDelimitersInMarkup) {
+              pushInsertion({ range: fullRange, hoverText: reasonHover });
+            } else if (isFullInlineMode) {
+              (0, helpers_js_1.hideOrGhostDelimiters)(fullRange, contentRange, plan, isL3, showGhostDelimiters, "{++", "++}");
+              pushInsertion({ range: contentRange, hoverText: reasonHover });
+            } else if (isCursorOnChangeLine) {
+              if (cursorRevealMode && isCursorInChange) {
+                (0, helpers_js_1.revealDelimiters)(fullRange, contentRange, plan.unfoldedDelimiters);
+              } else {
+                (0, helpers_js_1.hideOrGhostDelimiters)(fullRange, contentRange, plan, isL3, showGhostDelimiters, "{++", "++}");
+              }
+              pushInsertion({ range: contentRange, hoverText: reasonHover });
+            } else {
+              (0, helpers_js_1.hideOrGhostDelimiters)(fullRange, contentRange, plan, isL3, showGhostDelimiters, "{++", "++}");
+            }
+          } else if (change.type === types_js_1.ChangeType.Deletion) {
+            const reasonHover = change.metadata?.comment ? `**Reason:** ${change.metadata.comment}` : void 0;
+            if (change.range.start === change.range.end) {
+              const deletedText = change.originalText ?? "";
+              if (deletedText && !isDecidedProjection) {
+                if (!hideDeletions || isCursorOnChangeLine) {
+                  plan.ghostDeletions.push({
+                    range: fullRange,
+                    renderBefore: { contentText: deletedText },
+                    hoverText: reasonHover
+                  });
+                }
+              }
+            } else {
+              if (showDelimitersInMarkup) {
+                pushDeletion({ range: fullRange, hoverText: reasonHover });
+              } else if (hideDeletions && !isCursorOnChangeLine) {
+                plan.hiddens.push({ range: fullRange });
+              } else if (isCursorOnChangeLine) {
+                if (cursorRevealMode && isCursorInChange) {
+                  (0, helpers_js_1.revealDelimiters)(fullRange, contentRange, plan.unfoldedDelimiters);
+                } else {
+                  (0, helpers_js_1.hideOrGhostDelimiters)(fullRange, contentRange, plan, isL3, showGhostDelimiters, "{--", "--}");
+                }
+                pushDeletion({ range: contentRange, hoverText: reasonHover });
+              } else {
+                (0, helpers_js_1.hideOrGhostDelimiters)(fullRange, contentRange, plan, isL3, showGhostDelimiters, "{--", "--}");
+                pushDeletion({ range: contentRange, hoverText: reasonHover });
+              }
+            }
+          } else if (change.type === types_js_1.ChangeType.Substitution) {
+            const reasonHover = change.metadata?.comment ? `**Reason:** ${change.metadata.comment}` : void 0;
+            if (change.originalRange && change.modifiedRange) {
+              const openDelimiterEnd = change.range.start + 3;
+              const separatorStart = change.originalRange.end;
+              const separatorEnd = change.modifiedRange.start;
+              const closeDelimiterStart = change.modifiedRange.end;
+              if (showDelimitersInMarkup) {
+                pushSubOriginal({ range: { start: fullRange.start, end: change.modifiedRange.start }, hoverText: reasonHover });
+                pushSubModified({ range: { start: change.modifiedRange.start, end: fullRange.end }, hoverText: reasonHover });
+              } else if (isFullInlineMode) {
+                if (isL3 && showGhostDelimiters) {
+                  (0, helpers_js_1.injectGhostDelimiters)(fullRange, contentRange, plan.ghostDelimiters, "{~~", "~~}");
+                } else if (!isL3) {
+                  plan.hiddens.push({ range: { start: fullRange.start, end: openDelimiterEnd } });
+                  plan.hiddens.push({ range: { start: separatorStart, end: separatorEnd } });
+                  plan.hiddens.push({ range: { start: closeDelimiterStart, end: fullRange.end } });
+                }
+                pushSubOriginal({ range: change.originalRange, hoverText: reasonHover });
+                pushSubModified({ range: change.modifiedRange, hoverText: reasonHover });
+              } else if (isCursorOnChangeLine) {
+                if (cursorRevealMode && isCursorInChange) {
+                  plan.unfoldedDelimiters.push({ range: { start: fullRange.start, end: openDelimiterEnd } });
+                  plan.unfoldedDelimiters.push({ range: { start: separatorStart, end: separatorEnd } });
+                  plan.unfoldedDelimiters.push({ range: { start: closeDelimiterStart, end: fullRange.end } });
+                } else if (isL3 && showGhostDelimiters) {
+                  (0, helpers_js_1.injectGhostDelimiters)(fullRange, contentRange, plan.ghostDelimiters, "{~~", "~~}");
+                } else if (!isL3) {
+                  plan.hiddens.push({ range: { start: fullRange.start, end: openDelimiterEnd } });
+                  plan.hiddens.push({ range: { start: separatorStart, end: separatorEnd } });
+                  plan.hiddens.push({ range: { start: closeDelimiterStart, end: fullRange.end } });
+                }
+                pushSubOriginal({ range: change.originalRange, hoverText: reasonHover });
+                pushSubModified({ range: change.modifiedRange, hoverText: reasonHover });
+              } else {
+                if (isL3 && showGhostDelimiters) {
+                  (0, helpers_js_1.injectGhostDelimiters)(fullRange, contentRange, plan.ghostDelimiters, "{~~", "~~}");
+                } else if (!isL3) {
+                  plan.hiddens.push({ range: { start: fullRange.start, end: separatorEnd } });
+                  plan.hiddens.push({ range: { start: closeDelimiterStart, end: fullRange.end } });
+                }
+              }
+            } else if (change.originalText || change.modifiedText) {
+              const charRanges = (0, helpers_js_1.getCharLevelRanges)(change);
+              if (!hideDeletions || isCursorOnChangeLine) {
+                if (charRanges.length > 0) {
+                  for (const r of charRanges) {
+                    pushSubModified({ range: r, hoverText: reasonHover });
+                  }
+                } else {
+                  if (change.modifiedText)
+                    pushSubModified({ range: contentRange, hoverText: reasonHover });
+                  if (change.originalText)
+                    pushSubOriginal({ range: contentRange, hoverText: reasonHover });
+                }
+              }
+            }
+          } else if (change.type === types_js_1.ChangeType.Highlight) {
+            const hoverText = change.metadata?.comment ? `**Comment:** ${change.metadata.comment}` : void 0;
+            if (showDelimitersInMarkup) {
+              pushHighlight({ range: fullRange, hoverText });
+            } else if (hideHighlights && !isCursorOnChangeLine) {
+              plan.hiddens.push({ range: fullRange });
+            } else if (isCursorOnChangeLine) {
+              if (cursorRevealMode && isCursorInChange) {
+                (0, helpers_js_1.revealDelimiters)(fullRange, contentRange, plan.unfoldedDelimiters);
+              } else {
+                (0, helpers_js_1.hideOrGhostDelimiters)(fullRange, contentRange, plan, isL3, showGhostDelimiters, "{==", "==}");
+              }
+              pushHighlight({ range: contentRange, hoverText });
+            } else {
+              if (change.metadata?.comment) {
+                if (fullRange.start < contentRange.start) {
+                  plan.hiddens.push({ range: { start: fullRange.start, end: contentRange.start } });
+                }
+                const highlightCloseEnd = contentRange.end + 3;
+                plan.hiddens.push({ range: { start: contentRange.end, end: highlightCloseEnd } });
+                plan.hiddens.push({ range: { start: highlightCloseEnd, end: fullRange.end } });
+                plan.commentIcons.push({
+                  range: { start: contentRange.end, end: contentRange.end },
+                  hoverText
+                });
+                pushHighlight({ range: contentRange, hoverText });
+              } else {
+                (0, helpers_js_1.hideOrGhostDelimiters)(fullRange, contentRange, plan, isL3, showGhostDelimiters, "{==", "==}");
+                pushHighlight({ range: contentRange, hoverText });
+              }
+            }
+          } else if (change.type === types_js_1.ChangeType.Comment) {
+            const hoverText = change.metadata?.comment ? `**Comment:** ${change.metadata.comment}` : void 0;
+            if (showDelimitersInMarkup) {
+              pushComment({ range: fullRange, hoverText });
+            } else if (hideComments && !isCursorOnChangeLine) {
+              plan.hiddens.push({ range: fullRange });
+              plan.commentIcons.push({
+                range: { start: fullRange.start, end: fullRange.start },
+                hoverText
+              });
+            } else if (isCursorOnChangeLine) {
+              if (cursorRevealMode && isCursorInChange) {
+                (0, helpers_js_1.revealDelimiters)(fullRange, contentRange, plan.unfoldedDelimiters);
+                pushComment({ range: contentRange, hoverText });
+              } else {
+                plan.hiddens.push({ range: fullRange });
+                plan.commentIcons.push({
+                  range: { start: fullRange.start, end: fullRange.start },
+                  hoverText
+                });
+              }
+            } else {
+              plan.hiddens.push({ range: fullRange });
+              plan.commentIcons.push({
+                range: { start: fullRange.start, end: fullRange.start },
+                hoverText
+              });
+            }
+          }
+          const consumedPreds = consumedByMap.get(change.id) ?? [];
+          if (consumedPreds.length > 0) {
+            const ids = consumedPreds.map((c) => c.id).join(", ");
+            plan.consumingOpAnnotations.push({
+              range: { start: fullRange.end, end: fullRange.end },
+              renderAfter: {
+                contentText: ` (consumed ${ids})`,
+                fontStyle: "italic"
+              }
+            });
+          }
+          if (showGhostRefs && change.id) {
+            plan.ghostRefs.push({
+              range: { start: contentRange.end, end: contentRange.end },
+              renderAfter: { contentText: `[^${change.id}]`, fontStyle: "italic" }
+            });
+          }
+        });
+        const hasL3Changes = changes.some((c) => c.level >= 2);
+        if (isCurrentProjection && hasL3Changes && !hideFootnotes) {
+          const lines = text.split("\n");
+          const blockStart = (0, footnote_utils_js_1.findFootnoteBlockStart)(lines);
+          if (blockStart < lines.length) {
+            const lastLine = lines.length - 1;
+            const dimStart = lineStarts[blockStart];
+            const dimEnd = lineStarts[lastLine] + lines[lastLine].length;
+            plan.decidedDims.push({ range: { start: dimStart, end: dimEnd } });
+          }
+        }
+        if (!hideFootnoteRefs && text) {
+          const searchArrays = [
+            plan.insertions,
+            plan.deletions,
+            plan.substitutionOriginals,
+            plan.substitutionModifieds,
+            plan.highlights,
+            plan.comments,
+            plan.moveFroms,
+            plan.moveTos
+          ];
+          for (const [, entry] of plan.authorDecorations) {
+            searchArrays.push(entry.ranges);
+          }
+          for (const change of changes) {
+            if (!change.footnoteRefStart || change.decided)
+              continue;
+            const refStart = change.footnoteRefStart;
+            const refEnd = change.range.end;
+            for (const arr of searchArrays) {
+              for (let i = 0; i < arr.length; i++) {
+                const entry = arr[i];
+                if (entry.range.end === refEnd && entry.range.start < refStart) {
+                  arr[i] = { ...entry, range: { start: entry.range.start, end: refStart } };
+                  plan.decidedRefs.push({ range: { start: refStart, end: refEnd } });
+                  break;
+                }
+              }
+            }
+          }
+        }
+        plan.hiddenOffsets = plan.hiddens.map((h) => ({ start: h.range.start, end: h.range.end }));
+        return plan;
+      }
+    }
+  });
+
+  // ../core/dist/host/decorations/ruler-builder.js
+  var require_ruler_builder = __commonJS({
+    "../core/dist/host/decorations/ruler-builder.js"(exports) {
+      "use strict";
+      Object.defineProperty(exports, "__esModule", { value: true });
+      exports.buildOverviewRulerPlan = buildOverviewRulerPlan;
+      var types_js_1 = require_types();
+      function buildOverviewRulerPlan(changes, view) {
+        const plan = {
+          insertions: [],
+          deletions: [],
+          substitutions: [],
+          highlights: [],
+          comments: []
+        };
+        if (view.projection !== "current")
+          return plan;
+        for (const change of changes) {
+          if (change.decided)
+            continue;
+          const effectiveType = change.moveRole === "from" ? types_js_1.ChangeType.Deletion : change.moveRole === "to" ? types_js_1.ChangeType.Insertion : change.type;
+          const range = { start: change.range.start, end: change.range.end };
+          switch (effectiveType) {
+            case types_js_1.ChangeType.Insertion:
+              plan.insertions.push(range);
+              break;
+            case types_js_1.ChangeType.Deletion:
+              plan.deletions.push(range);
+              break;
+            case types_js_1.ChangeType.Substitution:
+              plan.substitutions.push(range);
+              break;
+            case types_js_1.ChangeType.Highlight:
+              plan.highlights.push(range);
+              break;
+            case types_js_1.ChangeType.Comment:
+              plan.comments.push(range);
+              break;
+          }
+        }
+        return plan;
+      }
+    }
+  });
+
+  // ../core/dist/host/decorations/apply-plan.js
+  var require_apply_plan = __commonJS({
+    "../core/dist/host/decorations/apply-plan.js"(exports) {
+      "use strict";
+      Object.defineProperty(exports, "__esModule", { value: true });
+      exports.applyPlan = applyPlan;
+      function applyPlan(target, plan, rulerPlan, text, _changes) {
+        target.beginPass();
+        target.setDecorations("insertion", plan.insertions, text);
+        target.setDecorations("deletion", plan.deletions, text);
+        target.setDecorations("substitutionOriginal", plan.substitutionOriginals, text);
+        target.setDecorations("substitutionModified", plan.substitutionModifieds, text);
+        target.setDecorations("highlight", plan.highlights, text);
+        target.setDecorations("comment", plan.comments, text);
+        target.setDecorations("hidden", plan.hiddens, text);
+        target.setDecorations("unfoldedDelimiter", plan.unfoldedDelimiters, text);
+        target.setDecorations("commentIcon", plan.commentIcons, text);
+        target.setDecorations("activeHighlight", plan.activeHighlights, text);
+        target.setDecorations("moveFrom", plan.moveFroms, text);
+        target.setDecorations("moveTo", plan.moveTos, text);
+        target.setDecorations("decidedRef", plan.decidedRefs, text);
+        target.setDecorations("decidedDim", plan.decidedDims, text);
+        target.setDecorations("ghostDeletion", plan.ghostDeletions, text);
+        target.setDecorations("consumed", plan.consumedRanges, text);
+        target.setDecorations("consumingAnnotation", plan.consumingOpAnnotations, text);
+        target.setDecorations("ghostDelimiter", plan.ghostDelimiters, text);
+        target.setDecorations("ghostRef", plan.ghostRefs, text);
+        for (const [key, entry] of plan.authorDecorations) {
+          target.setDecorations(`author:${key}`, entry.ranges, text);
+        }
+        target.setOverviewRuler("insertion", rulerPlan.insertions, text);
+        target.setOverviewRuler("deletion", rulerPlan.deletions, text);
+        target.setOverviewRuler("substitution", rulerPlan.substitutions, text);
+        target.setOverviewRuler("highlight", rulerPlan.highlights, text);
+        target.setOverviewRuler("comment", rulerPlan.comments, text);
+        target.endPass();
+      }
+    }
+  });
+
+  // ../core/dist/host/decorations/index.js
+  var require_decorations = __commonJS({
+    "../core/dist/host/decorations/index.js"(exports) {
+      "use strict";
+      Object.defineProperty(exports, "__esModule", { value: true });
+      exports.applyPlan = exports.buildOverviewRulerPlan = exports.buildDecorationPlan = exports.getCharLevelRanges = exports.createEmptyPlan = exports.revealDelimiters = exports.hideDelimiters = exports.isOffsetInRange = exports.offsetToLine = exports.computeLineStarts = exports.AuthorColorMap = exports.isTypeVisibleInMode = exports.VIEW_MODE_VISIBILITY = exports.AUTHOR_PALETTE = exports.OVERVIEW_RULER_COLORS = exports.DECORATION_STYLES = void 0;
+      var styles_js_1 = require_styles();
+      Object.defineProperty(exports, "DECORATION_STYLES", { enumerable: true, get: function() {
+        return styles_js_1.DECORATION_STYLES;
+      } });
+      Object.defineProperty(exports, "OVERVIEW_RULER_COLORS", { enumerable: true, get: function() {
+        return styles_js_1.OVERVIEW_RULER_COLORS;
+      } });
+      Object.defineProperty(exports, "AUTHOR_PALETTE", { enumerable: true, get: function() {
+        return styles_js_1.AUTHOR_PALETTE;
+      } });
+      Object.defineProperty(exports, "VIEW_MODE_VISIBILITY", { enumerable: true, get: function() {
+        return styles_js_1.VIEW_MODE_VISIBILITY;
+      } });
+      Object.defineProperty(exports, "isTypeVisibleInMode", { enumerable: true, get: function() {
+        return styles_js_1.isTypeVisibleInMode;
+      } });
+      var author_colors_js_1 = require_author_colors();
+      Object.defineProperty(exports, "AuthorColorMap", { enumerable: true, get: function() {
+        return author_colors_js_1.AuthorColorMap;
+      } });
+      var helpers_js_1 = require_helpers();
+      Object.defineProperty(exports, "computeLineStarts", { enumerable: true, get: function() {
+        return helpers_js_1.computeLineStarts;
+      } });
+      Object.defineProperty(exports, "offsetToLine", { enumerable: true, get: function() {
+        return helpers_js_1.offsetToLine;
+      } });
+      Object.defineProperty(exports, "isOffsetInRange", { enumerable: true, get: function() {
+        return helpers_js_1.isOffsetInRange;
+      } });
+      Object.defineProperty(exports, "hideDelimiters", { enumerable: true, get: function() {
+        return helpers_js_1.hideDelimiters;
+      } });
+      Object.defineProperty(exports, "revealDelimiters", { enumerable: true, get: function() {
+        return helpers_js_1.revealDelimiters;
+      } });
+      Object.defineProperty(exports, "createEmptyPlan", { enumerable: true, get: function() {
+        return helpers_js_1.createEmptyPlan;
+      } });
+      Object.defineProperty(exports, "getCharLevelRanges", { enumerable: true, get: function() {
+        return helpers_js_1.getCharLevelRanges;
+      } });
+      var plan_builder_js_1 = require_plan_builder();
+      Object.defineProperty(exports, "buildDecorationPlan", { enumerable: true, get: function() {
+        return plan_builder_js_1.buildDecorationPlan;
+      } });
+      var ruler_builder_js_1 = require_ruler_builder();
+      Object.defineProperty(exports, "buildOverviewRulerPlan", { enumerable: true, get: function() {
+        return ruler_builder_js_1.buildOverviewRulerPlan;
+      } });
+      var apply_plan_js_1 = require_apply_plan();
+      Object.defineProperty(exports, "applyPlan", { enumerable: true, get: function() {
+        return apply_plan_js_1.applyPlan;
+      } });
+    }
+  });
+
+  // ../core/dist/host/format-service.js
+  var require_format_service = __commonJS({
+    "../core/dist/host/format-service.js"(exports) {
+      "use strict";
+      Object.defineProperty(exports, "__esModule", { value: true });
+      exports.FormatService = void 0;
+      var types_js_1 = require_types3();
+      var uri_keyed_store_js_1 = require_uri_keyed_store();
+      var footnote_patterns_js_1 = require_footnote_patterns();
+      var uri_js_1 = require_uri();
+      var FormatService = class {
+        constructor(adapter) {
+          this.adapter = adapter;
+          this.preferences = new uri_keyed_store_js_1.UriKeyedStore();
+          this._onDidChangePreferredFormat = new types_js_1.EventEmitter();
+          this._onDidCompleteTransition = new types_js_1.EventEmitter();
+          this.onDidChangePreferredFormat = (listener) => this._onDidChangePreferredFormat.event(listener);
+          this.onDidCompleteTransition = (listener) => this._onDidCompleteTransition.event(listener);
+        }
+        getDetectedFormat(_uri, text) {
+          return (0, footnote_patterns_js_1.isL3Format)(text) ? "L3" : "L2";
+        }
+        getPreferredFormat(uri) {
+          return this.preferences.get((0, uri_js_1.normalizeUri)(uri))?.format;
+        }
+        setPreferredFormat(uri, format) {
+          const normalized = (0, uri_js_1.normalizeUri)(uri);
+          this.preferences.set(normalized, { format });
+          this._onDidChangePreferredFormat.fire({ uri: normalized, format });
+        }
+        async promoteToL3(uri, l2Text) {
+          const normalized = (0, uri_js_1.normalizeUri)(uri);
+          const convertedText = await this.adapter.convertL2ToL3(normalized, l2Text);
+          const result = { convertedText, previousFormat: "L2", newFormat: "L3" };
+          this._onDidCompleteTransition.fire({ uri: normalized, from: "L2", to: "L3" });
+          return result;
+        }
+        async demoteToL2(uri, l3Text) {
+          const normalized = (0, uri_js_1.normalizeUri)(uri);
+          const convertedText = await this.adapter.convertL3ToL2(normalized, l3Text);
+          const result = { convertedText, previousFormat: "L3", newFormat: "L2" };
+          this._onDidCompleteTransition.fire({ uri: normalized, from: "L3", to: "L2" });
+          return result;
+        }
+        remove(uri) {
+          this.preferences.delete((0, uri_js_1.normalizeUri)(uri));
+        }
+        dispose() {
+          this.preferences.clear();
+          this._onDidChangePreferredFormat.dispose();
+          this._onDidCompleteTransition.dispose();
+        }
+      };
+      exports.FormatService = FormatService;
+    }
+  });
+
+  // ../core/dist/host/projection-service.js
+  var require_projection_service = __commonJS({
+    "../core/dist/host/projection-service.js"(exports) {
+      "use strict";
+      Object.defineProperty(exports, "__esModule", { value: true });
+      exports.ProjectionService = void 0;
+      var types_js_1 = require_types();
+      var current_text_js_1 = require_current_text();
+      var decided_text_js_1 = require_decided_text();
+      var plan_builder_js_1 = require_plan_builder();
+      var types_js_2 = require_types3();
+      var uri_js_1 = require_uri();
+      function makeCacheKey(uri, version, selector, display) {
+        return `${uri}:${version}:${selector.projection}:${selector.format}:${JSON.stringify(display)}`;
+      }
+      var ProjectionService = class {
+        constructor() {
+          this.cache = /* @__PURE__ */ new Map();
+        }
+        /**
+         * Compute a projection with full control over selector and display.
+         */
+        get(request) {
+          const key = makeCacheKey((0, uri_js_1.normalizeUri)(request.source.uri), request.source.sourceVersion, request.selector, request.display);
+          const cached = this.cache.get(key);
+          if (cached)
+            return cached;
+          const result = this.compute(request);
+          this.cache.set(key, result);
+          return result;
+        }
+        /**
+         * Convenience: compute a named preset (current/decided/original).
+         */
+        getPreset(source, preset) {
+          const viewMode = preset === "current" ? "review" : preset === "decided" ? "settled" : "raw";
+          const presetConfig = types_js_2.VIEW_MODE_PRESETS[viewMode];
+          const selector = { format: source.sourceFormat, projection: presetConfig.projection };
+          const display = presetConfig.display;
+          return this.get({ source, selector, display });
+        }
+        /**
+         * Evict all cached results for a URI.
+         */
+        invalidate(uri) {
+          const normalized = (0, uri_js_1.normalizeUri)(uri);
+          for (const key of this.cache.keys()) {
+            if (key.startsWith(normalized + ":")) {
+              this.cache.delete(key);
+            }
+          }
+        }
+        /**
+         * Pre-warm cache for upcoming projections.
+         */
+        warm(_uri, _selectors, _display) {
+        }
+        dispose() {
+          this.cache.clear();
+        }
+        compute(request) {
+          const { source, selector, display } = request;
+          const { text, changes, sourceVersion } = source;
+          let projectedText;
+          let visibleChanges = changes;
+          switch (selector.projection) {
+            case "current":
+              projectedText = (0, current_text_js_1.computeCurrentText)(text);
+              break;
+            case "decided": {
+              const decidedResult = (0, decided_text_js_1.computeDecidedView)(text, changes);
+              projectedText = decidedResult.lines.map((l) => l.text).join("\n");
+              visibleChanges = changes.filter((c) => c.status === types_js_1.ChangeStatus.Accepted);
+              break;
+            }
+            case "original":
+              projectedText = (0, current_text_js_1.computeOriginalText)(text);
+              visibleChanges = [];
+              break;
+            default:
+              projectedText = text;
+          }
+          const view = {
+            name: "projection-service",
+            projection: selector.projection,
+            display
+          };
+          const decorationPlan = (0, plan_builder_js_1.buildDecorationPlan)([...changes], text, view, selector.format, 0);
+          return {
+            request,
+            sourceVersion,
+            text: projectedText,
+            visibleChanges,
+            decorationPlan
+          };
+        }
+      };
+      exports.ProjectionService = ProjectionService;
+    }
+  });
+
+  // ../core/dist/host/base-controller.js
+  var require_base_controller = __commonJS({
+    "../core/dist/host/base-controller.js"(exports) {
+      "use strict";
+      Object.defineProperty(exports, "__esModule", { value: true });
+      exports.BaseController = void 0;
+      var types_js_1 = require_types3();
+      var document_state_manager_js_1 = require_document_state_manager();
+      var decoration_scheduler_js_1 = require_decoration_scheduler();
+      var tracking_service_js_1 = require_tracking_service();
+      var review_service_js_1 = require_review_service();
+      var navigation_service_js_1 = require_navigation_service();
+      var coherence_service_js_1 = require_coherence_service();
+      var edit_convert_js_1 = require_edit_convert();
+      var uri_js_1 = require_uri();
+      var format_service_js_1 = require_format_service();
+      var projection_service_js_1 = require_projection_service();
+      var BaseController = class {
+        /** @deprecated Use getView() instead. Derives ViewMode from current view for backward compat. */
+        get viewMode() {
+          const view = this.getView(this.activeUri);
+          switch (view.projection) {
+            case "decided":
+              return "settled";
+            case "original":
+              return "raw";
+            case "none":
+              return "raw";
+            default:
+              return view.display.delimiters === "show" ? "review" : "changes";
+          }
+        }
+        get defaultView() {
+          return this._defaultView;
+        }
+        get showDelimiters() {
+          const view = this.getView(this.activeUri);
+          return view.display.delimiters === "show";
+        }
+        get projection() {
+          const view = this.getView(this.activeUri);
+          return view.projection;
+        }
+        /** Get the active view for a URI, falling back to the default. */
+        getView(uri) {
+          if (uri && this._viewOverrides.has(uri)) {
+            return this._viewOverrides.get(uri);
+          }
+          return this._defaultView;
+        }
+        /** Set the active view. Pass a BuiltinView name or a custom View object. */
+        setView(preset, uri) {
+          const view = typeof preset === "string" ? types_js_1.VIEW_PRESETS[preset] : preset;
+          if (uri) {
+            this._viewOverrides.set(uri, view);
+          } else {
+            this._defaultView = view;
+          }
+          if (this.activeUri) {
+            const lspMode = view.projection === "decided" ? "settled" : view.projection === "original" ? "raw" : view.display.delimiters === "show" ? "review" : "changes";
+            this.lsp?.sendViewMode(this.activeUri, lspMode);
+          }
+          this.pushSnapshotForActive();
+          this._onDidChangeView.fire(view);
+        }
+        constructor(config) {
+          this.stateManager = new document_state_manager_js_1.DocumentStateManager();
+          this.activeUri = void 0;
+          this._viewOverrides = new uri_js_1.UriMap();
+          this.lastCursorOffset = new uri_js_1.UriMap();
+          this.disposables = [];
+          this._onDidChangeViewMode = new types_js_1.EventEmitter();
+          this.onDidChangeViewMode = this._onDidChangeViewMode.event;
+          this._onDidChangeView = new types_js_1.EventEmitter();
+          this.onDidChangeView = this._onDidChangeView.event;
+          this.host = config.host;
+          this.lsp = config.lsp;
+          this.decorationPort = config.decorationPort;
+          this.previewPort = config.previewPort;
+          this.defaultFormat = config.defaultFormat ?? "L2";
+          this.hooks = config.hooks;
+          this.parseAdapter = config.parseAdapter;
+          let defaultView = config.defaultView ?? types_js_1.VIEW_PRESETS.review;
+          if (config.defaultDisplay) {
+            defaultView = { ...defaultView, display: { ...defaultView.display, ...config.defaultDisplay } };
+          }
+          this._defaultView = defaultView;
+          this.trackingService = new tracking_service_js_1.TrackingService(config.tracking);
+          this.reviewService = new review_service_js_1.ReviewService(config.settlement ? { settlement: config.settlement } : void 0);
+          this.navigationService = new navigation_service_js_1.NavigationService(this.stateManager);
+          this.coherenceService = new coherence_service_js_1.CoherenceService();
+          this.scheduler = new decoration_scheduler_js_1.DecorationScheduler((uri) => this.pushSnapshot(uri));
+          this.formatService = new format_service_js_1.FormatService(config.formatAdapter);
+          this.projectionService = new projection_service_js_1.ProjectionService();
+          this.disposables.push(this.trackingService.onDidCrystallize(async (edit) => {
+            this.trackingService.expectEcho(edit.uri);
+            const rangeEdits = this.convertCrystallizedEdits(edit);
+            await this.applyMutationEdits(edit.uri, rangeEdits);
+            this.hooks?.onDidCrystallize?.(edit.uri);
+          }), this.trackingService.onDidChangeOverlay(({ uri, overlay }) => {
+            if (overlay) {
+              this.host.showOverlay?.(uri, overlay);
+            } else {
+              this.host.clearOverlay?.(uri);
+            }
+          }));
+          this.disposables.push(this.host.onDidOpenDocument((e) => this.handleOpenDocument(e.uri, e.text)), this.host.onDidCloseDocument((e) => this.handleCloseDocument(e.uri)), this.host.onDidSaveDocument((e) => {
+            this.trackingService.handleSave(e.uri);
+            this.lsp?.sendFlushPending(e.uri);
+          }), this.host.onDidChangeContent((e) => this.handleContentChange(e)), this.host.onDidChangeActiveDocument((e) => {
+            if (e && e.uri !== this.activeUri)
+              this.handleOpenDocument(e.uri, e.text);
+          }), this.host.onDidChangeCursorPosition((e) => {
+            const prev = this.lastCursorOffset.get(e.uri);
+            if (prev !== e.offset) {
+              this.lastCursorOffset.set(e.uri, e.offset);
+              this.lsp?.sendCursorMove(e.uri, e.offset);
+              this.trackingService.handleCursorMove(e.uri, e.offset, this.stateManager.getState(e.uri)?.text ?? "");
+            }
+            this.navigationService.updateCursorContext(e.uri, e.offset);
+            if (this.showDelimiters)
+              this.scheduler.schedule(e.uri);
+          }));
+          if (this.lsp) {
+            this.disposables.push(this.lsp.onDecorationData((data) => {
+              this.stateManager.setCachedDecorations(data.uri, data.changes, data.documentVersion);
+              this.scheduler.schedule(data.uri);
+              this.hooks?.onDecorationData?.(data);
+            }), this.lsp.onPendingEditFlushed((data) => this.handlePendingEditFlushed(data)), this.lsp.onDocumentState((data) => {
+              this.trackingService.setTrackingEnabled(data.uri, data.tracking.enabled);
+              this.hooks?.onDidChangeTrackingState?.(data.uri, data.tracking.enabled);
+            }));
+            if (this.host.showOverlay) {
+              this.disposables.push(this.lsp.onOverlayUpdate((data) => {
+                if (data.overlay) {
+                  this.host.showOverlay?.(data.uri, data.overlay);
+                } else {
+                  this.host.clearOverlay?.(data.uri);
+                }
+              }));
+            }
+          }
+        }
+        // --- Public API ---
+        openDocument(uri, text) {
+          this.handleOpenDocument(uri, text);
+        }
+        closeDocument(uri) {
+          this.handleCloseDocument(uri);
+        }
+        getState(uri) {
+          return this.stateManager.getState(uri);
+        }
+        getActiveUri() {
+          return this.activeUri;
+        }
+        /** @deprecated Use setView() instead. */
+        setProjection(projection) {
+          this._defaultView = { ...this._defaultView, projection };
+          this.pushSnapshotForActive();
+        }
+        setDisplay(partial, uri) {
+          const current = this.getView(uri);
+          const merged = { ...current, display: { ...current.display, ...partial } };
+          if (uri) {
+            this._viewOverrides.set(uri, merged);
+          } else {
+            this._defaultView = merged;
+          }
+          if (this.activeUri) {
+            const lspMode = merged.projection === "decided" ? "settled" : merged.projection === "original" || merged.projection === "none" ? "raw" : merged.display.delimiters === "show" ? "review" : "changes";
+            this.lsp?.sendViewMode(this.activeUri, lspMode);
+          }
+          this.pushSnapshotForActive();
+        }
+        setFormatPreference(uri, format) {
+          this.formatService.setPreferredFormat(uri, format);
+          const state = this.stateManager.getState((0, uri_js_1.normalizeUri)(uri));
+          if (state && state.format !== format) {
+            return this.convertFormat(uri, state.text, format);
+          }
+          return Promise.resolve();
+        }
+        /** @deprecated Use setView() instead. */
+        setViewMode(mode) {
+          const preset = types_js_1.VIEW_MODE_PRESETS[mode];
+          this.setView({
+            name: mode,
+            projection: preset.projection,
+            display: { ...this._defaultView.display, ...preset.display }
+          });
+          this._onDidChangeViewMode.fire(mode);
+        }
+        /** @deprecated Use setDisplay({ delimiters }) instead. */
+        setShowDelimiters(show) {
+          this.setDisplay({ delimiters: show ? "show" : "hide" });
+        }
+        invalidateRendering(uri) {
+          this.scheduler.updateNow(uri);
+        }
+        revealChange(offset) {
+          this.hooks?.onRevealChange?.(offset);
+        }
+        /**
+         * Curated helper: get all changes for a URI.
+         * Shortcut for `controller.stateManager.getChangesForUri(uri)`.
+         */
+        getChangesForUri(uri) {
+          return this.stateManager.getChangesForUri(uri);
+        }
+        /**
+         * Curated helper: get authoring-visible changes (filters out L0 / empty-id ghost nodes).
+         */
+        getAuthoredChanges(uri) {
+          return this.stateManager.getChangesForUri(uri).filter((c) => c.id !== "" && c.level > 0);
+        }
+        /**
+         * Curated helper: is tracking enabled for this URI?
+         * Shortcut for `controller.trackingService.isTrackingEnabled(uri)`.
+         */
+        isTrackingEnabled(uri) {
+          return this.trackingService.isTrackingEnabled(uri);
+        }
+        /**
+         * Curated helper: get coherence state for this URI.
+         * Shortcut for `controller.coherenceService.getCoherence(uri)`.
+         */
+        getCoherence(uri) {
+          return this.coherenceService.getCoherence(uri);
+        }
+        // --- Review convenience methods ---
+        async acceptChange(uri, changeId, author) {
+          return this.executeReviewOp(uri, (text) => this.reviewService.acceptChange(text, changeId, author));
+        }
+        async rejectChange(uri, changeId, author) {
+          return this.executeReviewOp(uri, (text) => this.reviewService.rejectChange(text, changeId, author));
+        }
+        async acceptAll(uri, changeIds, author) {
+          return this.executeReviewOp(uri, (text) => this.reviewService.acceptAll(text, changeIds, author));
+        }
+        async rejectAll(uri, changeIds, author) {
+          return this.executeReviewOp(uri, (text) => this.reviewService.rejectAll(text, changeIds, author));
+        }
+        async executeReviewOp(uri, op) {
+          const text = this.stateManager.getState(uri)?.text;
+          if (text === void 0)
+            return { updatedText: "", affectedChangeIds: [], error: "Document not open" };
+          const result = op(text);
+          if (result.affectedChangeIds.length > 0)
+            await this.applyMutationResult(uri, text, result.updatedText);
+          return result;
+        }
+        dispose() {
+          this.hooks?.onDispose?.();
+          for (const d of this.disposables)
+            d.dispose();
+          this.disposables.length = 0;
+          this.lastCursorOffset.clear();
+          this._viewOverrides.clear();
+          this.scheduler.dispose();
+          this.trackingService.dispose();
+          this.reviewService.dispose();
+          this.navigationService.dispose();
+          this.coherenceService.dispose();
+          this.formatService.dispose();
+          this.projectionService.dispose();
+          this.stateManager.dispose();
+          this._onDidChangeViewMode.dispose();
+          this._onDidChangeView.dispose();
+        }
+        // --- Private handlers ---
+        /** Parse locally and cache results. No-op when parseAdapter is absent. */
+        localParseAndCache(uri, text, version, format) {
+          if (!this.parseAdapter)
+            return;
+          const fmt = format ?? this.stateManager.getState(uri)?.format ?? "L2";
+          const changes = this.parseAdapter.parse(uri, text, fmt);
+          this.stateManager.setCachedDecorations(uri, changes, version);
+        }
+        handleOpenDocument(uri, text) {
+          const docText = text ?? this.host.getDocumentText(uri);
+          this.hooks?.onWillOpenDocument?.(uri);
+          const isNew = !this.stateManager.getState(uri);
+          const state = this.stateManager.ensureState(uri, docText, 1);
+          state.format = this.formatService.getDetectedFormat(uri, docText);
+          this.localParseAndCache(uri, docText, state.version, state.format);
+          const preferred = this.defaultFormat ?? this.formatService.getPreferredFormat(uri);
+          if (preferred && state.format !== preferred) {
+            void this.convertFormat(uri, docText, preferred);
+          }
+          this.activeUri = uri;
+          if (isNew)
+            this.lsp?.sendDidOpen(uri, docText);
+          if (isNew)
+            this.lsp?.sendSetDocumentState(uri, { tracking: { enabled: false } });
+          this.pushSnapshot(uri);
+          this.hooks?.onDidOpenDocument?.(uri, state);
+        }
+        handleCloseDocument(uri) {
+          this.trackingService.closeDocument(uri);
+          this.lsp?.sendDidClose(uri);
+          this.stateManager.removeState(uri);
+          this.formatService.remove(uri);
+          this.projectionService.invalidate(uri);
+          this.decorationPort.clear(uri);
+          this.previewPort?.clear(uri);
+          this.lastCursorOffset.delete(uri);
+          this._viewOverrides.delete(uri);
+          if (this.activeUri === uri)
+            this.activeUri = void 0;
+        }
+        handleContentChange(event) {
+          if (event.isEcho)
+            return;
+          let offsetChanges;
+          if (event.changes.every((c) => c.rangeOffset !== void 0)) {
+            offsetChanges = event.changes.map((c) => ({
+              rangeOffset: c.rangeOffset,
+              rangeLength: c.rangeLength,
+              text: c.text
+            }));
+          } else {
+            const preEditText = this.stateManager.getState(event.uri)?.text ?? event.text;
+            offsetChanges = (0, edit_convert_js_1.rangeToOffsetBatch)(preEditText, event.changes.map((c) => ({ range: c.range, newText: c.text }))).map((e) => ({ rangeOffset: e.offset, rangeLength: e.length, text: e.newText }));
+          }
+          const preEditTextForTracking = this.stateManager.getState(event.uri)?.text ?? "";
+          this.stateManager.applyContentChange(event.uri, event.text, event.version, offsetChanges);
+          if (offsetChanges.length === 1) {
+            const c = offsetChanges[0];
+            const type = c.text.length > 0 && c.rangeLength === 0 ? "insertion" : c.text.length === 0 && c.rangeLength > 0 ? "deletion" : "substitution";
+            const deletedText = c.rangeLength > 0 ? preEditTextForTracking.slice(c.rangeOffset, c.rangeOffset + c.rangeLength) : "";
+            this.trackingService.handleContentChange(event.uri, type, c.rangeOffset, c.text, deletedText, event.text);
+          } else if (offsetChanges.length > 1) {
+            this.trackingService.flush(event.uri);
+          }
+          const totalChangeLength = offsetChanges.reduce((sum, c) => sum + c.rangeLength, 0);
+          if (totalChangeLength > event.text.length * 0.5) {
+            const state = this.stateManager.getState(event.uri);
+            if (state) {
+              state.format = this.formatService.getDetectedFormat(event.uri, event.text);
+            }
+          }
+          this.localParseAndCache(event.uri, event.text, event.version);
+          this.lsp?.sendDidChange(event.uri, event.changes);
+          this.scheduler.schedule(event.uri);
+        }
+        /**
+         * Shared post-mutation handler. All mutation paths (review, crystallize, format convert)
+         * call this after producing edits. Generalizes the existing handlePendingEditFlushed pattern.
+         *
+         * Flow: host.applyEdits → update state → re-parse locally → send to LSP → schedule render.
+         * The echo from host.applyEdits is correctly suppressed by handleContentChange's isEcho guard
+         * because this method updates state BEFORE the echo arrives.
+         */
+        async applyMutationEdits(uri, edits) {
+          if (!this.host.applyEdits)
+            return null;
+          const result = await this.host.applyEdits(uri, edits);
+          if (!result.applied)
+            return result;
+          const state = this.stateManager.getState(uri);
+          if (!state)
+            return result;
+          state.text = result.text;
+          state.version = result.version;
+          this.stateManager.invalidateCache(uri);
+          this.localParseAndCache(uri, result.text, result.version, state.format);
+          this.lsp?.sendDidChangeFullDoc(uri, result.text);
+          this.scheduler.updateNow(uri);
+          return result;
+        }
+        async applyMutationResult(uri, oldText, newText) {
+          if (oldText === newText)
+            return;
+          const edit = (0, edit_convert_js_1.offsetToRange)(oldText, { offset: 0, length: oldText.length, newText });
+          await this.applyMutationEdits(uri, [edit]);
+        }
+        convertCrystallizedEdits(edit) {
+          const state = this.stateManager.getState(edit.uri);
+          if (!state)
+            return [];
+          const text = state.text;
+          const { markupEdit, footnoteEdit } = edit.edits;
+          const result = [];
+          if (markupEdit) {
+            result.push((0, edit_convert_js_1.offsetToRange)(text, markupEdit));
+          }
+          if (footnoteEdit) {
+            const textAfterMarkup = markupEdit ? text.slice(0, markupEdit.offset) + markupEdit.newText + text.slice(markupEdit.offset + markupEdit.length) : text;
+            result.push((0, edit_convert_js_1.offsetToRange)(textAfterMarkup, footnoteEdit));
+          }
+          return result;
+        }
+        async handlePendingEditFlushed(data) {
+          const result = await this.applyMutationEdits(data.uri, data.edits);
+          if (result?.applied) {
+            this.hooks?.onDidCrystallize?.(data.uri);
+          }
+        }
+        pushSnapshotForActive() {
+          if (this.activeUri)
+            this.pushSnapshot(this.activeUri);
+        }
+        pushSnapshot(uri) {
+          const state = this.stateManager.getState(uri);
+          if (!state)
+            return;
+          const view = this.getView(uri);
+          const snapshot = {
+            uri,
+            sourceVersion: state.version,
+            text: state.text,
+            changes: state.cachedChanges,
+            format: state.format,
+            view,
+            cursorOffset: this.lastCursorOffset.get(uri)
+          };
+          this.decorationPort.update(snapshot);
+          this.previewPort?.update(snapshot);
+        }
+        async convertFormat(uri, text, targetFormat) {
+          const result = targetFormat === "L3" ? await this.formatService.promoteToL3(uri, text) : await this.formatService.demoteToL2(uri, text);
+          const state = this.stateManager.getState((0, uri_js_1.normalizeUri)(uri));
+          if (state) {
+            state.text = result.convertedText;
+            state.format = targetFormat;
+          }
+          this.pushSnapshotForActive();
+        }
+      };
+      exports.BaseController = BaseController;
+    }
+  });
+
+  // ../core/dist/host/lsp-methods.js
+  var require_lsp_methods = __commonJS({
+    "../core/dist/host/lsp-methods.js"(exports) {
+      "use strict";
+      Object.defineProperty(exports, "__esModule", { value: true });
+      exports.LSP_METHOD = void 0;
+      exports.LSP_METHOD = {
+        // ── Standard LSP (textDocument/*) ─────────────────────────
+        DID_OPEN: "textDocument/didOpen",
+        DID_CLOSE: "textDocument/didClose",
+        DID_CHANGE: "textDocument/didChange",
+        // ── Client → Server: editor state ─────────────────────────
+        /** Cursor move — offset-based; used by all clients (VS Code + website). Drives server-side PEM flush-on-move. */
+        CURSOR_MOVE: "changedown/cursorMove",
+        SET_VIEW_MODE: "changedown/setViewMode",
+        FLUSH_PENDING: "changedown/flushPending",
+        SET_DOCUMENT_STATE: "changedown/setDocumentState",
+        UNDO_REDO: "changedown/undoRedo",
+        BATCH_EDIT_START: "changedown/batchEditStart",
+        BATCH_EDIT_END: "changedown/batchEditEnd",
+        UPDATE_SETTINGS: "changedown/updateSettings",
+        SET_CODELENS_MODE: "changedown/setCodeLensMode",
+        PENDING_OVERLAY: "changedown/pendingOverlay",
+        /** Cut+paste correlation metadata — client sends before paste to hint server-side PEM. */
+        MOVE_METADATA: "changedown/moveMetadata",
+        // ── Server → Client: notifications ────────────────────────
+        DECORATION_DATA: "changedown/decorationData",
+        PENDING_EDIT_FLUSHED: "changedown/pendingEditFlushed",
+        DOCUMENT_STATE: "changedown/documentState",
+        COHERENCE_STATUS: "changedown/coherenceStatus",
+        VIEW_MODE_CHANGED: "changedown/viewModeChanged",
+        CHANGE_COUNT: "changedown/changeCount",
+        ALL_CHANGES_RESOLVED: "changedown/allChangesResolved",
+        // ── Requests (client → server) ─────────────────────────────
+        ANNOTATE: "changedown/annotate",
+        GET_CHANGES: "changedown/getChanges",
+        GET_PROJECT_CONFIG: "changedown/getProjectConfig",
+        REVIEW_CHANGE: "changedown/reviewChange",
+        REPLY_TO_THREAD: "changedown/replyToThread",
+        AMEND_CHANGE: "changedown/amendChange",
+        SUPERSEDE_CHANGE: "changedown/supersedeChange",
+        RESOLVE_THREAD: "changedown/resolveThread",
+        UNRESOLVE_THREAD: "changedown/unresolveThread",
+        COMPACT_CHANGE: "changedown/compactChange",
+        COMPACT_CHANGES: "changedown/compactChanges",
+        REVIEW_ALL: "changedown/reviewAll",
+        CONVERT_FORMAT: "changedown/convertFormat"
+      };
+    }
+  });
+
+  // ../core/dist/host/adapters/lsp-format-adapter.js
+  var require_lsp_format_adapter = __commonJS({
+    "../core/dist/host/adapters/lsp-format-adapter.js"(exports) {
+      "use strict";
+      Object.defineProperty(exports, "__esModule", { value: true });
+      exports.LspFormatAdapter = void 0;
+      var LspFormatAdapter = class {
+        constructor(lsp) {
+          this.lsp = lsp;
+        }
+        async convertL2ToL3(uri, l2Text) {
+          return this.convert(uri, l2Text, "L3");
+        }
+        async convertL3ToL2(uri, l3Text) {
+          return this.convert(uri, l3Text, "L2");
+        }
+        async convert(uri, text, targetFormat) {
+          const result = await this.lsp.sendRequest("changedown/convertFormat", {
+            uri,
+            text,
+            targetFormat
+          });
+          return result.convertedText;
+        }
+      };
+      exports.LspFormatAdapter = LspFormatAdapter;
+    }
+  });
+
+  // ../core/dist/host/adapters/local-parse-adapter.js
+  var require_local_parse_adapter = __commonJS({
+    "../core/dist/host/adapters/local-parse-adapter.js"(exports) {
+      "use strict";
+      Object.defineProperty(exports, "__esModule", { value: true });
+      exports.LocalParseAdapter = void 0;
+      var format_aware_parse_js_1 = require_format_aware_parse();
+      var LocalParseAdapter = class {
+        // parseForFormat auto-detects L2/L3 from text content, so the format hint is unused.
+        parse(_uri, text, _format) {
+          return (0, format_aware_parse_js_1.parseForFormat)(text).getChanges();
+        }
+      };
+      exports.LocalParseAdapter = LocalParseAdapter;
+    }
+  });
+
+  // ../core/dist/host/adapters/local-format-adapter.js
+  var require_local_format_adapter = __commonJS({
+    "../core/dist/host/adapters/local-format-adapter.js"(exports) {
+      "use strict";
+      Object.defineProperty(exports, "__esModule", { value: true });
+      exports.LocalFormatAdapter = void 0;
+      var l2_to_l3_js_1 = require_l2_to_l3();
+      var l3_to_l2_js_1 = require_l3_to_l2();
+      var LocalFormatAdapter = class {
+        async convertL2ToL3(_uri, l2Text) {
+          return (0, l2_to_l3_js_1.convertL2ToL3)(l2Text);
+        }
+        async convertL3ToL2(_uri, l3Text) {
+          return (0, l3_to_l2_js_1.convertL3ToL2)(l3Text);
+        }
+      };
+      exports.LocalFormatAdapter = LocalFormatAdapter;
+    }
+  });
+
+  // ../core/dist/host/index.js
+  var require_host = __commonJS({
+    "../core/dist/host/index.js"(exports) {
+      "use strict";
+      Object.defineProperty(exports, "__esModule", { value: true });
+      exports.PendingEditManager = exports.LocalFormatAdapter = exports.LocalParseAdapter = exports.LspFormatAdapter = exports.VIEW_PRESETS = exports.NULL_LSP_CONNECTION = exports.projectionToViewMode = exports.VIEW_MODE_PRESETS = exports.ProjectionService = exports.FormatService = exports.LSP_METHOD = exports.UriKeyedStore = exports.BaseController = exports.UriSet = exports.UriMap = exports.normalizeUri = exports.transformRange = exports.applyPlan = exports.buildOverviewRulerPlan = exports.buildDecorationPlan = exports.getCharLevelRanges = exports.createEmptyPlan = exports.revealDelimiters = exports.hideDelimiters = exports.isOffsetInRange = exports.offsetToLine = exports.computeLineStarts = exports.AuthorColorMap = exports.isTypeVisibleInMode = exports.VIEW_MODE_VISIBILITY = exports.AUTHOR_PALETTE = exports.OVERVIEW_RULER_COLORS = exports.DECORATION_STYLES = exports.CoherenceService = exports.ReviewService = exports.NavigationService = exports.TrackingService = exports.DecorationScheduler = exports.DocumentStateManager = exports.rangeToOffsetBatch = exports.rangeToOffset = exports.offsetToRange = exports.EventEmitter = void 0;
+      var types_js_1 = require_types3();
+      Object.defineProperty(exports, "EventEmitter", { enumerable: true, get: function() {
+        return types_js_1.EventEmitter;
+      } });
+      var edit_convert_js_1 = require_edit_convert();
+      Object.defineProperty(exports, "offsetToRange", { enumerable: true, get: function() {
+        return edit_convert_js_1.offsetToRange;
+      } });
+      Object.defineProperty(exports, "rangeToOffset", { enumerable: true, get: function() {
+        return edit_convert_js_1.rangeToOffset;
+      } });
+      Object.defineProperty(exports, "rangeToOffsetBatch", { enumerable: true, get: function() {
+        return edit_convert_js_1.rangeToOffsetBatch;
+      } });
+      var document_state_manager_js_1 = require_document_state_manager();
+      Object.defineProperty(exports, "DocumentStateManager", { enumerable: true, get: function() {
+        return document_state_manager_js_1.DocumentStateManager;
+      } });
+      var decoration_scheduler_js_1 = require_decoration_scheduler();
+      Object.defineProperty(exports, "DecorationScheduler", { enumerable: true, get: function() {
+        return decoration_scheduler_js_1.DecorationScheduler;
+      } });
+      var tracking_service_js_1 = require_tracking_service();
+      Object.defineProperty(exports, "TrackingService", { enumerable: true, get: function() {
+        return tracking_service_js_1.TrackingService;
+      } });
+      var navigation_service_js_1 = require_navigation_service();
+      Object.defineProperty(exports, "NavigationService", { enumerable: true, get: function() {
+        return navigation_service_js_1.NavigationService;
+      } });
+      var review_service_js_1 = require_review_service();
+      Object.defineProperty(exports, "ReviewService", { enumerable: true, get: function() {
+        return review_service_js_1.ReviewService;
+      } });
+      var coherence_service_js_1 = require_coherence_service();
+      Object.defineProperty(exports, "CoherenceService", { enumerable: true, get: function() {
+        return coherence_service_js_1.CoherenceService;
+      } });
+      var index_js_1 = require_decorations();
+      Object.defineProperty(exports, "DECORATION_STYLES", { enumerable: true, get: function() {
+        return index_js_1.DECORATION_STYLES;
+      } });
+      Object.defineProperty(exports, "OVERVIEW_RULER_COLORS", { enumerable: true, get: function() {
+        return index_js_1.OVERVIEW_RULER_COLORS;
+      } });
+      Object.defineProperty(exports, "AUTHOR_PALETTE", { enumerable: true, get: function() {
+        return index_js_1.AUTHOR_PALETTE;
+      } });
+      Object.defineProperty(exports, "VIEW_MODE_VISIBILITY", { enumerable: true, get: function() {
+        return index_js_1.VIEW_MODE_VISIBILITY;
+      } });
+      Object.defineProperty(exports, "isTypeVisibleInMode", { enumerable: true, get: function() {
+        return index_js_1.isTypeVisibleInMode;
+      } });
+      Object.defineProperty(exports, "AuthorColorMap", { enumerable: true, get: function() {
+        return index_js_1.AuthorColorMap;
+      } });
+      Object.defineProperty(exports, "computeLineStarts", { enumerable: true, get: function() {
+        return index_js_1.computeLineStarts;
+      } });
+      Object.defineProperty(exports, "offsetToLine", { enumerable: true, get: function() {
+        return index_js_1.offsetToLine;
+      } });
+      Object.defineProperty(exports, "isOffsetInRange", { enumerable: true, get: function() {
+        return index_js_1.isOffsetInRange;
+      } });
+      Object.defineProperty(exports, "hideDelimiters", { enumerable: true, get: function() {
+        return index_js_1.hideDelimiters;
+      } });
+      Object.defineProperty(exports, "revealDelimiters", { enumerable: true, get: function() {
+        return index_js_1.revealDelimiters;
+      } });
+      Object.defineProperty(exports, "createEmptyPlan", { enumerable: true, get: function() {
+        return index_js_1.createEmptyPlan;
+      } });
+      Object.defineProperty(exports, "getCharLevelRanges", { enumerable: true, get: function() {
+        return index_js_1.getCharLevelRanges;
+      } });
+      Object.defineProperty(exports, "buildDecorationPlan", { enumerable: true, get: function() {
+        return index_js_1.buildDecorationPlan;
+      } });
+      Object.defineProperty(exports, "buildOverviewRulerPlan", { enumerable: true, get: function() {
+        return index_js_1.buildOverviewRulerPlan;
+      } });
+      Object.defineProperty(exports, "applyPlan", { enumerable: true, get: function() {
+        return index_js_1.applyPlan;
+      } });
+      var range_transform_js_1 = require_range_transform();
+      Object.defineProperty(exports, "transformRange", { enumerable: true, get: function() {
+        return range_transform_js_1.transformRange;
+      } });
+      var uri_js_1 = require_uri();
+      Object.defineProperty(exports, "normalizeUri", { enumerable: true, get: function() {
+        return uri_js_1.normalizeUri;
+      } });
+      Object.defineProperty(exports, "UriMap", { enumerable: true, get: function() {
+        return uri_js_1.UriMap;
+      } });
+      Object.defineProperty(exports, "UriSet", { enumerable: true, get: function() {
+        return uri_js_1.UriSet;
+      } });
+      var base_controller_js_1 = require_base_controller();
+      Object.defineProperty(exports, "BaseController", { enumerable: true, get: function() {
+        return base_controller_js_1.BaseController;
+      } });
+      var uri_keyed_store_js_1 = require_uri_keyed_store();
+      Object.defineProperty(exports, "UriKeyedStore", { enumerable: true, get: function() {
+        return uri_keyed_store_js_1.UriKeyedStore;
+      } });
+      var lsp_methods_js_1 = require_lsp_methods();
+      Object.defineProperty(exports, "LSP_METHOD", { enumerable: true, get: function() {
+        return lsp_methods_js_1.LSP_METHOD;
+      } });
+      var format_service_js_1 = require_format_service();
+      Object.defineProperty(exports, "FormatService", { enumerable: true, get: function() {
+        return format_service_js_1.FormatService;
+      } });
+      var projection_service_js_1 = require_projection_service();
+      Object.defineProperty(exports, "ProjectionService", { enumerable: true, get: function() {
+        return projection_service_js_1.ProjectionService;
+      } });
+      var types_js_2 = require_types3();
+      Object.defineProperty(exports, "VIEW_MODE_PRESETS", { enumerable: true, get: function() {
+        return types_js_2.VIEW_MODE_PRESETS;
+      } });
+      Object.defineProperty(exports, "projectionToViewMode", { enumerable: true, get: function() {
+        return types_js_2.projectionToViewMode;
+      } });
+      Object.defineProperty(exports, "NULL_LSP_CONNECTION", { enumerable: true, get: function() {
+        return types_js_2.NULL_LSP_CONNECTION;
+      } });
+      var types_js_3 = require_types3();
+      Object.defineProperty(exports, "VIEW_PRESETS", { enumerable: true, get: function() {
+        return types_js_3.VIEW_PRESETS;
+      } });
+      var lsp_format_adapter_js_1 = require_lsp_format_adapter();
+      Object.defineProperty(exports, "LspFormatAdapter", { enumerable: true, get: function() {
+        return lsp_format_adapter_js_1.LspFormatAdapter;
+      } });
+      var local_parse_adapter_js_1 = require_local_parse_adapter();
+      Object.defineProperty(exports, "LocalParseAdapter", { enumerable: true, get: function() {
+        return local_parse_adapter_js_1.LocalParseAdapter;
+      } });
+      var local_format_adapter_js_1 = require_local_format_adapter();
+      Object.defineProperty(exports, "LocalFormatAdapter", { enumerable: true, get: function() {
+        return local_format_adapter_js_1.LocalFormatAdapter;
+      } });
+      var pending_edit_manager_js_1 = require_pending_edit_manager();
+      Object.defineProperty(exports, "PendingEditManager", { enumerable: true, get: function() {
+        return pending_edit_manager_js_1.PendingEditManager;
       } });
     }
   });
@@ -20168,7 +23174,7 @@ This change's visible effect was absorbed by a later edit. The change is preserv
           return lenses;
         const mode = codeLensMode ?? "cursor";
         const resolved = changes.filter((c) => !(0, core_1.isGhostNode)(c));
-        const actionable = resolved.filter((c) => !c.settled && c.status === core_1.ChangeStatus.Proposed && !c.consumedBy);
+        const actionable = resolved.filter((c) => !c.decided && c.status === core_1.ChangeStatus.Proposed && !c.consumedBy);
         if (actionable.length === 0)
           return lenses;
         if (mode === "always") {
@@ -20314,17 +23320,18 @@ This change's visible effect was absorbed by a later edit. The change is preserv
       exports.sendCoherenceStatus = sendCoherenceStatus;
       exports.sendChangeCount = sendChangeCount;
       var core_1 = require_dist();
+      var host_1 = require_host();
       function sendDecorationData(connection, uri, changes, documentVersion, autoFoldLines) {
         const filtered = changes.filter((c) => !(0, core_1.isGhostNode)(c));
         const params = { uri, changes: filtered, documentVersion };
         if (autoFoldLines?.length) {
           params.autoFoldLines = autoFoldLines;
         }
-        connection.sendNotification("changedown/decorationData", params);
+        connection.sendNotification(host_1.LSP_METHOD.DECORATION_DATA, params);
       }
       function sendCoherenceStatus(connection, uri, coherenceRate, unresolvedCount, threshold) {
         const params = { uri, coherenceRate, unresolvedCount, threshold };
-        connection.sendNotification("changedown/coherenceStatus", params);
+        connection.sendNotification(host_1.LSP_METHOD.COHERENCE_STATUS, params);
       }
       function sendChangeCount(connection, uri, changes) {
         const counts = {
@@ -20355,10 +23362,10 @@ This change's visible effect was absorbed by a later edit. The change is preserv
           }
         }
         const params = { uri, counts };
-        connection.sendNotification("changedown/changeCount", params);
+        connection.sendNotification(host_1.LSP_METHOD.CHANGE_COUNT, params);
         if (counts.total === 0) {
           const resolvedParams = { uri };
-          connection.sendNotification("changedown/allChangesResolved", resolvedParams);
+          connection.sendNotification(host_1.LSP_METHOD.ALL_CHANGES_RESOLVED, resolvedParams);
         }
       }
     }
@@ -20370,6 +23377,7 @@ This change's visible effect was absorbed by a later edit. The change is preserv
       "use strict";
       Object.defineProperty(exports, "__esModule", { value: true });
       exports.sendPendingEditFlushed = sendPendingEditFlushed;
+      var host_1 = require_host();
       function sendPendingEditFlushed(connection, uri, markupRange, markupNewText, footnoteRange, footnoteNewText) {
         const params = {
           uri,
@@ -20378,7 +23386,7 @@ This change's visible effect was absorbed by a later edit. The change is preserv
             { range: footnoteRange, newText: footnoteNewText }
           ]
         };
-        connection.sendNotification("changedown/pendingEditFlushed", params);
+        connection.sendNotification(host_1.LSP_METHOD.PENDING_EDIT_FLUSHED, params);
       }
     }
   });
@@ -20389,12 +23397,13 @@ This change's visible effect was absorbed by a later edit. The change is preserv
       "use strict";
       Object.defineProperty(exports, "__esModule", { value: true });
       exports.sendViewModeChanged = sendViewModeChanged;
+      var host_1 = require_host();
       function sendViewModeChanged(connection, uri, viewMode) {
         const params = {
           textDocument: { uri },
           viewMode
         };
-        connection.sendNotification("changedown/viewModeChanged", params);
+        connection.sendNotification(host_1.LSP_METHOD.VIEW_MODE_CHANGED, params);
       }
     }
   });
@@ -20406,6 +23415,7 @@ This change's visible effect was absorbed by a later edit. The change is preserv
       Object.defineProperty(exports, "__esModule", { value: true });
       exports.resolveTracking = resolveTracking;
       exports.sendDocumentState = sendDocumentState;
+      var host_1 = require_host();
       function resolveTracking(docText, projectTrackingDefault) {
         const headerMatch = docText.match(/^<!--\s*changedown\.com\/v1:\s*(tracked|untracked)\s*-->/m);
         if (headerMatch) {
@@ -20425,7 +23435,7 @@ This change's visible effect was absorbed by a later edit. The change is preserv
           tracking,
           viewMode
         };
-        connection.sendNotification("changedown/documentState", params);
+        connection.sendNotification(host_1.LSP_METHOD.DOCUMENT_STATE, params);
       }
     }
   });
@@ -20937,7 +23947,7 @@ This change's visible effect was absorbed by a later edit. The change is preserv
           for (const change of changes) {
             if (change.type !== core_1.ChangeType.Deletion)
               continue;
-            if (change.settled)
+            if (change.decided)
               continue;
             const startLine = offsetToLine(text, change.range.start);
             const endLine = offsetToLine(text, change.range.end);
@@ -21029,265 +24039,6 @@ This change's visible effect was absorbed by a later edit. The change is preserv
     }
   });
 
-  // dist/pending-edit-manager.js
-  var require_pending_edit_manager = __commonJS({
-    "dist/pending-edit-manager.js"(exports) {
-      "use strict";
-      Object.defineProperty(exports, "__esModule", { value: true });
-      exports.PendingEditManager = void 0;
-      var core_1 = require_dist();
-      var PendingEditManager = class {
-        constructor(onCrystallize, onOverlayChange) {
-          this.onCrystallize = onCrystallize;
-          this.onOverlayChange = onOverlayChange;
-          this.states = /* @__PURE__ */ new Map();
-          this.pendingEchos = /* @__PURE__ */ new Set();
-          this.safetyNetInterval = null;
-          this._pauseThresholdMs = 2e3;
-          this._author = "@unknown";
-        }
-        // ── Public API ─────────────────────────────────────────────────────
-        /**
-         * Process an edit event. Returns false if the edit was an echo from
-         * our own crystallize (feedback loop guard).
-         */
-        handleChange(uri, type, offset, text, deletedText, documentText) {
-          if (this.pendingEchos.has(uri)) {
-            this.pendingEchos.delete(uri);
-            return false;
-          }
-          let event;
-          switch (type) {
-            case "insertion":
-              event = { type: "insertion", offset, text };
-              break;
-            case "deletion":
-              event = { type: "deletion", offset, deletedText };
-              break;
-            case "substitution":
-              event = { type: "substitution", offset, oldText: deletedText, newText: text };
-              break;
-          }
-          const uriState = this.getUriState(uri);
-          uriState.lastDocumentText = documentText;
-          const ctx = this.buildContext(uri, uriState, documentText);
-          const { newState, effects } = (0, core_1.processEvent)(uriState.boundary, event, ctx);
-          uriState.boundary = newState;
-          this.executeEffects(uri, effects);
-          if (uriState.boundary.pending) {
-            this.ensureSafetyNet();
-          }
-          return true;
-        }
-        /**
-         * Process a cursor move event.
-         */
-        handleCursorMove(uri, offset, documentText) {
-          const uriState = this.states.get(uri);
-          if (!uriState?.boundary.pending)
-            return;
-          const event = { type: "cursorMove", offset };
-          const ctx = this.buildContext(uri, uriState, documentText);
-          const { newState, effects } = (0, core_1.processEvent)(uriState.boundary, event, ctx);
-          uriState.boundary = newState;
-          this.executeEffects(uri, effects);
-        }
-        /**
-         * Force flush a document's pending buffer.
-         */
-        flush(uri, documentText) {
-          const uriState = this.states.get(uri);
-          if (!uriState?.boundary.pending)
-            return;
-          const event = { type: "flush" };
-          const text = documentText ?? uriState.lastDocumentText;
-          const ctx = this.buildContext(uri, uriState, text);
-          const { newState, effects } = (0, core_1.processEvent)(uriState.boundary, event, ctx);
-          uriState.boundary = newState;
-          this.executeEffects(uri, effects);
-        }
-        /**
-         * Flush all documents with pending buffers.
-         */
-        flushAll() {
-          for (const uri of this.states.keys()) {
-            this.flush(uri);
-          }
-        }
-        /**
-         * Check if a document has a pending edit buffer.
-         */
-        hasPendingEdit(uri) {
-          return this.states.get(uri)?.boundary.pending !== null && this.states.get(uri)?.boundary.pending !== void 0;
-        }
-        /**
-         * Clean up state for a closed document.
-         */
-        removeDocument(uri) {
-          this.states.delete(uri);
-          this.pendingEchos.delete(uri);
-          if (!this.anyPending()) {
-            this.stopSafetyNet();
-          }
-        }
-        /**
-         * Mark that we expect an echo didChange from our own crystallize edit.
-         */
-        expectEcho(uri) {
-          this.pendingEchos.add(uri);
-        }
-        /**
-         * Consume a pending echo without processing it as a real edit.
-         * Used when a full-doc sync arrives (no range) — the echo is expected
-         * but handleChange is never called, so we must clear it explicitly.
-         */
-        consumeEcho(uri) {
-          this.pendingEchos.delete(uri);
-        }
-        /**
-         * Configure pause sensitivity.
-         * Formula: 500 * 16^(1 - sensitivity). sensitivity <= 0 means disabled.
-         */
-        setPauseThreshold(sensitivity) {
-          this._pauseThresholdMs = sensitivity <= 0 ? Infinity : 500 * Math.pow(16, 1 - sensitivity);
-          const newMs = this._pauseThresholdMs === Infinity ? 0 : this._pauseThresholdMs;
-          for (const uriState of this.states.values()) {
-            uriState.boundary = {
-              ...uriState.boundary,
-              config: { ...uriState.boundary.config, pauseThresholdMs: newMs }
-            };
-          }
-        }
-        /**
-         * Set the author identity for footnote metadata.
-         */
-        setAuthor(author) {
-          this._author = author;
-        }
-        /**
-         * Initialize the scId counter from existing document content.
-         * Call on document open with the max cn-N found in the document.
-         */
-        initScIdCounter(uri, maxId) {
-          const uriState = this.getUriState(uri);
-          uriState.scIdCounter = maxId;
-        }
-        /**
-         * Clean up all state and stop timers.
-         */
-        dispose() {
-          this.stopSafetyNet();
-          this.states.clear();
-          this.pendingEchos.clear();
-        }
-        // ── Internals ──────────────────────────────────────────────────────
-        getUriState(uri) {
-          let uriState = this.states.get(uri);
-          if (!uriState) {
-            uriState = {
-              boundary: {
-                pending: null,
-                isComposing: false,
-                config: {
-                  ...core_1.DEFAULT_EDIT_BOUNDARY_CONFIG,
-                  pauseThresholdMs: this._pauseThresholdMs === Infinity ? 0 : this._pauseThresholdMs
-                }
-              },
-              scIdCounter: 0
-            };
-            this.states.set(uri, uriState);
-          }
-          return uriState;
-        }
-        buildContext(uri, uriState, documentText) {
-          return {
-            now: Date.now(),
-            allocateScId: () => {
-              uriState.scIdCounter++;
-              return `cn-${uriState.scIdCounter}`;
-            },
-            author: this._author,
-            documentText,
-            documentFormat: "l2"
-          };
-        }
-        /**
-         * Interpret effects from the core state machine.
-         */
-        executeEffects(uri, effects) {
-          for (const effect of effects) {
-            switch (effect.type) {
-              case "crystallize":
-                if ("edits" in effect) {
-                  const fullEffect = effect;
-                  if (fullEffect.edits.format === "l2" || fullEffect.edits.format === "l3") {
-                    this.pendingEchos.add(uri);
-                    this.onCrystallize({ uri, edits: fullEffect.edits });
-                  }
-                }
-                break;
-              case "mergeAdjacent":
-                break;
-              case "updatePendingOverlay": {
-                const overlay = effect.overlay;
-                if (overlay) {
-                  const pending = this.states.get(uri)?.boundary.pending;
-                  this.onOverlayChange(uri, {
-                    range: { start: overlay.anchorOffset, end: overlay.anchorOffset + overlay.currentLength },
-                    text: overlay.currentText,
-                    type: "insertion",
-                    scId: pending?.scId
-                  });
-                } else {
-                  this.onOverlayChange(uri, null);
-                }
-                break;
-              }
-            }
-          }
-        }
-        // ── Safety net timer ───────────────────────────────────────────────
-        ensureSafetyNet() {
-          if (this.safetyNetInterval)
-            return;
-          const threshold = this._pauseThresholdMs === Infinity ? 0 : this._pauseThresholdMs;
-          if (threshold <= 0)
-            return;
-          const checkMs = Math.min(5e3, threshold);
-          this.safetyNetInterval = setInterval(() => {
-            const now = Date.now();
-            let anyPending = false;
-            for (const [uri, uriState] of this.states) {
-              if (uriState.boundary.pending) {
-                anyPending = true;
-                if (uriState.boundary.config.pauseThresholdMs > 0 && now - uriState.boundary.pending.lastEditTime > uriState.boundary.config.pauseThresholdMs) {
-                  this.flush(uri);
-                }
-              }
-            }
-            if (!anyPending) {
-              this.stopSafetyNet();
-            }
-          }, checkMs);
-        }
-        stopSafetyNet() {
-          if (this.safetyNetInterval) {
-            clearInterval(this.safetyNetInterval);
-            this.safetyNetInterval = null;
-          }
-        }
-        anyPending() {
-          for (const uriState of this.states.values()) {
-            if (uriState.boundary.pending)
-              return true;
-          }
-          return false;
-        }
-      };
-      exports.PendingEditManager = PendingEditManager;
-    }
-  });
-
   // dist/document-state.js
   var require_document_state2 = __commonJS({
     "dist/document-state.js"(exports) {
@@ -21304,9 +24055,7 @@ This change's visible effect was absorbed by a later edit. The change is preserv
           viewMode: "review",
           cursorState: null,
           decorationTimeout: null,
-          isPromoting: false,
           isBatchEditing: false,
-          suppressRepromotion: false,
           autoFoldSent: false
         };
       }
@@ -21323,6 +24072,7 @@ This change's visible effect was absorbed by a later edit. The change is preserv
       var vscode_languageserver_textdocument_1 = (init_main2(), __toCommonJS(main_exports2));
       var core_1 = require_dist();
       var core_2 = require_dist();
+      var host_1 = require_host();
       var hover_1 = require_hover();
       var code_lens_1 = require_code_lens();
       var decoration_data_1 = require_decoration_data();
@@ -21335,7 +24085,7 @@ This change's visible effect was absorbed by a later edit. The change is preserv
       var document_links_1 = require_document_links();
       var folding_ranges_1 = require_folding_ranges();
       var definition_1 = require_definition();
-      var pending_edit_manager_1 = require_pending_edit_manager();
+      var host_2 = require_host();
       var converters_1 = require_converters();
       var document_state_2 = require_document_state2();
       function isChangedownInitOptions(value) {
@@ -21348,8 +24098,6 @@ This change's visible effect was absorbed by a later edit. The change is preserv
           return false;
         if ("settlement" in obj && typeof obj.settlement !== "object")
           return false;
-        if ("promotion" in obj && obj.promotion !== "auto" && obj.promotion !== "never")
-          return false;
         return true;
       }
       var DECORATION_NOTIFY_DEBOUNCE_MS = 60;
@@ -21361,22 +24109,25 @@ This change's visible effect was absorbed by a later edit. The change is preserv
           this.coherenceThreshold = core_2.DEFAULT_CONFIG.coherence.threshold;
           this.lastCoherenceStatus = /* @__PURE__ */ new Map();
           this.pendingWriteBack = /* @__PURE__ */ new Set();
-          this.pendingCrystallizeEcho = /* @__PURE__ */ new Set();
           this.codeLensMode = "cursor";
-          this.promotionPolicy = "auto";
           this._gitGetWorkspaceRoot = async () => void 0;
           this._gitGetPreviousVersion = async () => void 0;
           this.options = options ?? {};
           this.connection = connection;
           this.documents = new vscode_languageserver_1.TextDocuments(vscode_languageserver_textdocument_1.TextDocument);
           this.workspace = new core_1.Workspace();
-          this.pendingEditManager = new pending_edit_manager_1.PendingEditManager((edit) => this.handleCrystallizedEdit(edit), (uri, overlay) => {
+          this.pendingEditManager = new host_2.PendingEditManager((edit) => this.handleCrystallizedEdit(edit), (uri, overlay) => {
             const state = this.docStates.get(uri);
             if (state) {
               state.overlay = overlay;
               this.scheduleDecorationResend(uri);
             }
           });
+          const serverLocalAdapter = {
+            convertL2ToL3: async (_uri, text) => (0, core_1.convertL2ToL3)(text),
+            convertL3ToL2: async (_uri, text) => (0, core_1.convertL3ToL2)(text)
+          };
+          this.formatService = new host_1.FormatService(serverLocalAdapter);
           this.setupHandlers();
         }
         /**
@@ -21389,9 +24140,6 @@ This change's visible effect was absorbed by a later edit. The change is preserv
           this.connection.onExit(this.handleExit.bind(this));
           this.documents.onDidOpen(async (event) => {
             const uri = event.document.uri;
-            const state = this.docStates.get(uri);
-            if (state)
-              state.suppressRepromotion = false;
             const text = event.document.getText();
             const languageId = event.document.languageId;
             await this.handleDocumentOpen(uri, text, languageId);
@@ -21420,32 +24168,40 @@ This change's visible effect was absorbed by a later edit. The change is preserv
           this.connection.onDocumentLinks(this.handleDocumentLinks.bind(this));
           this.connection.onFoldingRanges(this.handleFoldingRanges.bind(this));
           this.connection.onDefinition(this.handleDefinition.bind(this));
-          this.connection.onRequest("changedown/annotate", this.handleAnnotate.bind(this));
-          this.connection.onRequest("changedown/getChanges", this.handleGetChanges.bind(this));
-          this.connection.onRequest("changedown/getProjectConfig", this.handleGetProjectConfig.bind(this));
-          this.connection.onRequest("changedown/reviewChange", this.handleReviewChange.bind(this));
-          this.connection.onRequest("changedown/replyToThread", this.handleReplyToThread.bind(this));
-          this.connection.onRequest("changedown/amendChange", this.handleAmendChange.bind(this));
-          this.connection.onRequest("changedown/supersedeChange", this.handleSupersedeChange.bind(this));
-          this.connection.onRequest("changedown/resolveThread", this.handleResolveThread.bind(this));
-          this.connection.onRequest("changedown/unresolveThread", this.handleUnresolveThread.bind(this));
-          this.connection.onRequest("changedown/compactChange", this.handleCompactChange.bind(this));
-          this.connection.onRequest("changedown/compactChanges", this.handleCompactChanges.bind(this));
-          this.connection.onRequest("changedown/reviewAll", this.handleReviewAll.bind(this));
-          this.connection.onNotification("changedown/batchEditStart", (params) => {
+          this.connection.onRequest(host_1.LSP_METHOD.ANNOTATE, this.handleAnnotate.bind(this));
+          this.connection.onRequest(host_1.LSP_METHOD.GET_CHANGES, this.handleGetChanges.bind(this));
+          this.connection.onRequest(host_1.LSP_METHOD.GET_PROJECT_CONFIG, this.handleGetProjectConfig.bind(this));
+          this.connection.onRequest(host_1.LSP_METHOD.REVIEW_CHANGE, this.handleReviewChange.bind(this));
+          this.connection.onRequest(host_1.LSP_METHOD.REPLY_TO_THREAD, this.handleReplyToThread.bind(this));
+          this.connection.onRequest(host_1.LSP_METHOD.AMEND_CHANGE, this.handleAmendChange.bind(this));
+          this.connection.onRequest(host_1.LSP_METHOD.SUPERSEDE_CHANGE, this.handleSupersedeChange.bind(this));
+          this.connection.onRequest(host_1.LSP_METHOD.RESOLVE_THREAD, this.handleResolveThread.bind(this));
+          this.connection.onRequest(host_1.LSP_METHOD.UNRESOLVE_THREAD, this.handleUnresolveThread.bind(this));
+          this.connection.onRequest(host_1.LSP_METHOD.COMPACT_CHANGE, this.handleCompactChange.bind(this));
+          this.connection.onRequest(host_1.LSP_METHOD.COMPACT_CHANGES, this.handleCompactChanges.bind(this));
+          this.connection.onRequest(host_1.LSP_METHOD.REVIEW_ALL, this.handleReviewAll.bind(this));
+          this.connection.onRequest(host_1.LSP_METHOD.CONVERT_FORMAT, this.handleConvertFormat.bind(this));
+          this.connection.onNotification(host_1.LSP_METHOD.BATCH_EDIT_START, (params) => {
             this.handleBatchEditStart(params.uri);
           });
-          this.connection.onNotification("changedown/batchEditEnd", (params) => {
+          this.connection.onNotification(host_1.LSP_METHOD.BATCH_EDIT_END, (params) => {
             this.handleBatchEditEnd(params.uri);
           });
-          this.connection.onNotification("changedown/flushPending", (params) => {
+          this.connection.onNotification(host_1.LSP_METHOD.FLUSH_PENDING, (params) => {
             try {
               this.pendingEditManager.flush(params.textDocument.uri);
             } catch (err) {
-              this.connection.console.error(`changedown/flushPending handler error: ${err}`);
+              this.connection.console.error(`${host_1.LSP_METHOD.FLUSH_PENDING} handler error: ${err}`);
             }
           });
-          this.connection.onNotification("changedown/setDocumentState", (params) => {
+          this.connection.onNotification(host_1.LSP_METHOD.UNDO_REDO, (params) => {
+            try {
+              this.pendingEditManager.abandon(params.textDocument.uri);
+            } catch (err) {
+              this.connection.console.error(`${host_1.LSP_METHOD.UNDO_REDO} handler error: ${err}`);
+            }
+          });
+          this.connection.onNotification(host_1.LSP_METHOD.SET_DOCUMENT_STATE, (params) => {
             try {
               const uri = params.textDocument.uri;
               if (params.tracking !== void 0) {
@@ -21455,18 +24211,18 @@ This change's visible effect was absorbed by a later edit. The change is preserv
                 }
               }
             } catch (err) {
-              this.connection.console.error(`changedown/setDocumentState handler error: ${err}`);
+              this.connection.console.error(`${host_1.LSP_METHOD.SET_DOCUMENT_STATE} handler error: ${err}`);
             }
           });
-          this.connection.onNotification("changedown/updateSettings", (params) => {
+          this.connection.onNotification(host_1.LSP_METHOD.UPDATE_SETTINGS, (params) => {
             try {
               const identity = (params.reviewerIdentity ?? "").trim();
               this.reviewerIdentity = identity || void 0;
             } catch (err) {
-              this.connection.console.error(`changedown/updateSettings handler error: ${err}`);
+              this.connection.console.error(`${host_1.LSP_METHOD.UPDATE_SETTINGS} handler error: ${err}`);
             }
           });
-          this.connection.onNotification("changedown/pendingOverlay", (params) => {
+          this.connection.onNotification(host_1.LSP_METHOD.PENDING_OVERLAY, (params) => {
             try {
               const { uri, overlay } = params;
               const state = this.docStates.get(uri);
@@ -21474,15 +24230,15 @@ This change's visible effect was absorbed by a later edit. The change is preserv
                 state.overlay = overlay;
               this.scheduleDecorationResend(uri);
             } catch (err) {
-              this.connection.console.error(`changedown/pendingOverlay handler error: ${err}`);
+              this.connection.console.error(`${host_1.LSP_METHOD.PENDING_OVERLAY} handler error: ${err}`);
             }
           });
-          this.connection.onNotification("changedown/setViewMode", (params) => {
+          this.connection.onNotification(host_1.LSP_METHOD.SET_VIEW_MODE, (params) => {
             try {
               const uri = params.textDocument.uri;
               const viewMode = params.viewMode;
-              if (!core_1.VIEW_NAMES.includes(viewMode)) {
-                this.connection.console.warn(`changedown/setViewMode: ignoring unknown viewMode "${viewMode}" for ${uri}`);
+              if (!core_1.VIEW_MODES.includes(viewMode)) {
+                this.connection.console.warn(`${host_1.LSP_METHOD.SET_VIEW_MODE}: ignoring unknown viewMode "${viewMode}" for ${uri}`);
                 return;
               }
               const state = this.docStates.get(uri);
@@ -21506,28 +24262,10 @@ This change's visible effect was absorbed by a later edit. The change is preserv
                 });
               }, 50);
             } catch (err) {
-              this.connection.console.error(`changedown/setViewMode handler error: ${err}`);
+              this.connection.console.error(`${host_1.LSP_METHOD.SET_VIEW_MODE} handler error: ${err}`);
             }
           });
-          this.connection.onNotification("changedown/cursorPosition", (params) => {
-            try {
-              const uri = params.textDocument.uri;
-              const state = this.docStates.get(uri);
-              if (state) {
-                state.cursorState = {
-                  line: params.line,
-                  changeId: params.changeId
-                };
-              }
-              this.connection.sendRequest(vscode_languageserver_1.CodeLensRefreshRequest.type).catch(() => {
-              });
-              this.connection.sendRequest(vscode_languageserver_1.FoldingRangeRefreshRequest.type).catch(() => {
-              });
-            } catch (err) {
-              this.connection.console.error(`changedown/cursorPosition handler error: ${err}`);
-            }
-          });
-          this.connection.onNotification("changedown/setCodeLensMode", (params) => {
+          this.connection.onNotification(host_1.LSP_METHOD.SET_CODELENS_MODE, (params) => {
             try {
               const mode = params.mode;
               if (mode === "cursor" || mode === "always" || mode === "off") {
@@ -21535,13 +24273,13 @@ This change's visible effect was absorbed by a later edit. The change is preserv
                 this.connection.sendRequest(vscode_languageserver_1.CodeLensRefreshRequest.type).catch(() => {
                 });
               } else {
-                this.connection.console.warn(`changedown/setCodeLensMode: ignoring unknown mode "${mode}"`);
+                this.connection.console.warn(`${host_1.LSP_METHOD.SET_CODELENS_MODE}: ignoring unknown mode "${mode}"`);
               }
             } catch (err) {
-              this.connection.console.error(`changedown/setCodeLensMode handler error: ${err}`);
+              this.connection.console.error(`${host_1.LSP_METHOD.SET_CODELENS_MODE} handler error: ${err}`);
             }
           });
-          this.connection.onNotification("changedown/cursorMove", (params) => {
+          this.connection.onNotification(host_1.LSP_METHOD.CURSOR_MOVE, (params) => {
             try {
               const uri = params.textDocument.uri;
               const state = this.docStates.get(uri);
@@ -21561,11 +24299,28 @@ This change's visible effect was absorbed by a later edit. The change is preserv
                 }
               }
             } catch (err) {
-              this.connection.console.error(`changedown/cursorMove handler error: ${err}`);
+              this.connection.console.error(`${host_1.LSP_METHOD.CURSOR_MOVE} handler error: ${err}`);
+            }
+          });
+          this.connection.onNotification(host_1.LSP_METHOD.MOVE_METADATA, (params) => {
+            try {
+              const uri = params.textDocument?.uri ?? params.uri;
+              if (!uri)
+                return;
+              const state = this.docStates.get(uri);
+              if (state) {
+                state.pendingMove = {
+                  cutText: params.cutText,
+                  cutOffset: params.cutOffset ?? 0,
+                  timestamp: params.timestamp ?? Date.now()
+                };
+              }
+            } catch (err) {
+              this.connection.console.error(`${host_1.LSP_METHOD.MOVE_METADATA} handler error: ${err}`);
             }
           });
           this.documents.listen(this.connection);
-          this.connection.onNotification("textDocument/didChange", (params) => {
+          this.connection.onNotification(host_1.LSP_METHOD.DID_CHANGE, (params) => {
             try {
               const uri = params.textDocument.uri;
               if (!this.isTrackingEnabled(uri)) {
@@ -21633,9 +24388,6 @@ This change's visible effect was absorbed by a later edit. The change is preserv
           if (isChangedownInitOptions(raw)) {
             const identity = (raw.reviewerIdentity || raw.author || "").trim();
             this.reviewerIdentity = identity || void 0;
-            if (raw.promotion === "never") {
-              this.promotionPolicy = "never";
-            }
             if (raw.settlement) {
               this.projectConfig = {
                 ...this.projectConfig ?? core_2.DEFAULT_CONFIG,
@@ -21716,6 +24468,7 @@ This change's visible effect was absorbed by a later edit. The change is preserv
             this.semanticTokenRefreshTimeout = null;
           }
           this.pendingEditManager.dispose();
+          this.formatService.dispose();
         }
         /**
          * Handle LSP exit notification
@@ -21931,59 +24684,9 @@ This change's visible effect was absorbed by a later edit. The change is preserv
           const state = this.docStates.get(uri);
           const maxId = (0, core_1.scanMaxCnId)(text);
           this.pendingEditManager.initScIdCounter(uri, maxId);
-          const isL3 = this.workspace.isFootnoteNative(text);
-          if (!isL3 && this.promotionPolicy !== "never") {
-            const l2Doc = this.workspace.parse(text, languageId);
-            const l2Changes = l2Doc.getChanges();
-            if (l2Changes.length > 0) {
-              try {
-                const l3Text = await (0, core_1.convertL2ToL3)(text);
-                this.parseAndCacheDocument(uri, l3Text, languageId);
-                const l3Changes = this.getMergedChanges(uri);
-                const autoFoldLines2 = !state.autoFoldSent ? (0, folding_ranges_1.computeAutoFoldLines)(l3Text) : void 0;
-                (0, decoration_data_1.sendDecorationData)(this.connection, uri, l3Changes, state.version, autoFoldLines2 ?? void 0);
-                if (autoFoldLines2)
-                  state.autoFoldSent = true;
-                (0, decoration_data_1.sendChangeCount)(this.connection, uri, l3Changes);
-                this.connection.sendNotification("changedown/promotionStarting", { uri });
-                state.isPromoting = true;
-                const applied = await this.connection.workspace.applyEdit({
-                  label: "Promote to L3",
-                  edit: {
-                    changes: {
-                      [uri]: [{
-                        range: {
-                          start: { line: 0, character: 0 },
-                          end: (() => {
-                            const lines = text.split("\n");
-                            return { line: lines.length - 1, character: lines[lines.length - 1].length };
-                          })()
-                        },
-                        newText: l3Text
-                      }]
-                    }
-                  }
-                });
-                if (!applied.applied) {
-                  state.isPromoting = false;
-                  this.parseAndCacheDocument(uri, text, languageId);
-                  const fallbackChanges = this.getMergedChanges(uri);
-                  (0, decoration_data_1.sendDecorationData)(this.connection, uri, fallbackChanges, state.version);
-                  (0, decoration_data_1.sendChangeCount)(this.connection, uri, fallbackChanges);
-                  this.connection.console?.error(`[promoteToL3] workspace/applyEdit rejected for ${uri}`);
-                }
-                this.connection.sendNotification("changedown/promotionComplete", { uri });
-                this.broadcastDocumentState(uri);
-                return;
-              } catch (err) {
-                state.isPromoting = false;
-                this.connection.console?.error(`[promoteToL3] conversion error for ${uri}: ${err}`);
-              }
-            }
-          }
           this.parseAndCacheDocument(uri, text, languageId);
           const changes = this.getMergedChanges(uri);
-          const isL3ForFold = this.workspace.isFootnoteNative(text);
+          const isL3ForFold = this.formatService.getDetectedFormat(uri, text) === "L3";
           const viewModeForFold = state.viewMode;
           const autoFoldLines = isL3ForFold && !state.autoFoldSent && (viewModeForFold === "review" || viewModeForFold === "changes") ? (0, folding_ranges_1.computeAutoFoldLines)(text) : void 0;
           (0, decoration_data_1.sendDecorationData)(this.connection, uri, changes, state.version, autoFoldLines ?? void 0);
@@ -21992,31 +24695,15 @@ This change's visible effect was absorbed by a later edit. The change is preserv
           (0, decoration_data_1.sendChangeCount)(this.connection, uri, changes);
           this.broadcastDocumentState(uri);
         }
-        async isDiskTextEqualForUri(uri, text) {
-          if (!this.options.readFileByUri)
-            return false;
-          try {
-            const diskText = await this.options.readFileByUri(uri);
-            return diskText === text;
-          } catch {
-            return false;
-          }
-        }
         /**
          * Handle document change event.
          * Re-parse the document; debounce decoration/changeCount notifications.
-         * Suppresses re-parse for promotion echoes and batch edits.
-         * Auto-detects L2 documents with changes and re-promotes.
+         * Suppresses re-parse for batch edits.
          */
         async handleDocumentChange(uri, text, languageId) {
           if (uri.startsWith("comment://"))
             return;
           const state = this.ensureDocState(uri, text, languageId);
-          if (state.isPromoting) {
-            state.isPromoting = false;
-            state.text = text;
-            return;
-          }
           this.pendingWriteBack.delete(uri);
           if (state.isBatchEditing) {
             const previousText2 = state.text;
@@ -22028,23 +24715,6 @@ This change's visible effect was absorbed by a later edit. The change is preserv
               this.broadcastDocumentState(uri);
             }
             return;
-          }
-          const isCrystallizeEcho = this.pendingCrystallizeEcho.delete(uri);
-          const isL3 = this.workspace.isFootnoteNative(text);
-          if (!isL3 && !isCrystallizeEcho && this.promotionPolicy !== "never") {
-            const doc = this.workspace.parse(text, languageId);
-            const changes = doc.getChanges();
-            if (changes.length > 0) {
-              if (!state.suppressRepromotion) {
-                const diskMatches = await this.isDiskTextEqualForUri(uri, text);
-                if (diskMatches) {
-                  state.suppressRepromotion = true;
-                } else {
-                  await this.handleDocumentOpen(uri, text, languageId);
-                  return;
-                }
-              }
-            }
           }
           const previousText = state.text;
           this.parseAndCacheDocument(uri, text, languageId);
@@ -22084,7 +24754,6 @@ This change's visible effect was absorbed by a later edit. The change is preserv
           const { edits } = edit;
           const { markupEdit, footnoteEdit } = edits;
           this.pendingEditManager.expectEcho(edit.uri);
-          this.pendingCrystallizeEcho.add(edit.uri);
           if (markupEdit) {
             const markupRange = (0, converters_1.offsetRangeToLspRange)(text, markupEdit.offset, markupEdit.offset + markupEdit.length);
             const textAfterMarkup = text.substring(0, markupEdit.offset) + markupEdit.newText + text.substring(markupEdit.offset + markupEdit.length);
@@ -22335,7 +25004,7 @@ This change's visible effect was absorbed by a later edit. The change is preserv
          * Defaults to 'review' if no mode has been explicitly set.
          *
          * @param uri Document URI
-         * @returns The active ViewName for this document
+         * @returns The active ViewMode for this document
          */
         getViewMode(uri) {
           return this.docStates.get(uri)?.viewMode ?? "review";
@@ -22382,6 +25051,29 @@ This change's visible effect was absorbed by a later edit. The change is preserv
         applyCoreTextEdit(text, edit) {
           return text.slice(0, edit.offset) + edit.newText + text.slice(edit.offset + edit.length);
         }
+        // ─── Format conversion ─────────────────────────────────────────────────────
+        /**
+         * changedown/convertFormat
+         * Convert document text between L2 and L3 formats.
+         */
+        async handleConvertFormat(params) {
+          const { uri, text, targetFormat } = params;
+          const result = targetFormat === "L3" ? await this.formatService.promoteToL3(uri, text) : await this.formatService.demoteToL2(uri, text);
+          const parseResult = (0, core_1.parseForFormat)(result.convertedText);
+          const view = {
+            name: "convert",
+            projection: "current",
+            display: { delimiters: "hide", authorColors: "auto" }
+          };
+          const decorationPlan = (0, host_1.buildDecorationPlan)(parseResult.getChanges(), result.convertedText, view, targetFormat, 0);
+          return {
+            convertedText: result.convertedText,
+            newFormat: targetFormat,
+            edits: [],
+            // TODO: compute structural diff for incremental apply
+            decorationPlan
+          };
+        }
         // ─── Phase 2: Lifecycle operation handlers (2A–2G) ─────────────────────────
         /**
          * 2A: changedown/getProjectConfig
@@ -22411,15 +25103,15 @@ This change's visible effect was absorbed by a later edit. The change is preserv
             if (result.result.status_updated) {
               const settlement = this.projectConfig?.settlement ?? core_2.DEFAULT_CONFIG.settlement;
               if (settlement.auto_on_approve && params.decision === "approve") {
-                const { settledContent, settledIds } = (0, core_1.settleAcceptedChangesOnly)(finalContent);
-                if (settledIds.length > 0) {
-                  finalContent = settledContent;
+                const { currentContent, appliedIds } = (0, core_1.applyAcceptedChanges)(finalContent);
+                if (appliedIds.length > 0) {
+                  finalContent = currentContent;
                 }
               }
               if (settlement.auto_on_reject && params.decision === "reject") {
-                const { settledContent, settledIds } = (0, core_1.settleRejectedChangesOnly)(finalContent);
-                if (settledIds.length > 0) {
-                  finalContent = settledContent;
+                const { currentContent, appliedIds } = (0, core_1.applyRejectedChanges)(finalContent);
+                if (appliedIds.length > 0) {
+                  finalContent = currentContent;
                 }
               }
             }
@@ -22630,7 +25322,7 @@ This change's visible effect was absorbed by a later edit. The change is preserv
             const docText = this.getDocumentText(params.uri);
             if (!docText)
               return { error: "Document not found" };
-            const l3 = (0, core_1.isL3Format)(docText);
+            const l3 = params.format === "L3" || params.format === void 0 && this.formatService.getDetectedFormat(params.uri, docText) === "L3";
             const compactFn = l3 ? core_1.compact : core_1.compactL2;
             const result = await compactFn(docText, {
               targets: params.targets,
@@ -22703,15 +25395,15 @@ This change's visible effect was absorbed by a later edit. The change is preserv
             if (reviewedCount > 0) {
               const settlement = this.projectConfig?.settlement ?? core_2.DEFAULT_CONFIG.settlement;
               if (settlement.auto_on_approve && params.decision === "approve") {
-                const { settledContent, settledIds } = (0, core_1.settleAcceptedChangesOnly)(fileContent);
-                if (settledIds.length > 0) {
-                  fileContent = settledContent;
+                const { currentContent, appliedIds } = (0, core_1.applyAcceptedChanges)(fileContent);
+                if (appliedIds.length > 0) {
+                  fileContent = currentContent;
                 }
               }
               if (settlement.auto_on_reject && params.decision === "reject") {
-                const { settledContent, settledIds } = (0, core_1.settleRejectedChangesOnly)(fileContent);
-                if (settledIds.length > 0) {
-                  fileContent = settledContent;
+                const { currentContent, appliedIds } = (0, core_1.applyRejectedChanges)(fileContent);
+                if (appliedIds.length > 0) {
+                  fileContent = currentContent;
                 }
               }
             }

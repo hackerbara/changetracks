@@ -7,7 +7,7 @@
 
 import { SemanticTokens, SemanticTokensLegend } from 'vscode-languageserver/node';
 import { ChangeNode, ChangeType, ChangeStatus, isGhostNode } from '@changedown/core';
-import type { ViewName } from '@changedown/core';
+import type { ViewMode } from '@changedown/core';
 
 /**
  * Token types for CriticMarkup syntax highlighting
@@ -195,7 +195,7 @@ function getMetadataModifiers(change: ChangeNode, authorMap: Map<string, number>
  * @param viewMode The active view mode
  * @returns true if tokens for this change type should be emitted
  */
-function shouldEmitTokensForView(changeType: ChangeType, viewMode: ViewName): boolean {
+function shouldEmitTokensForView(changeType: ChangeType, viewMode: ViewMode): boolean {
   switch (viewMode) {
     case 'review':
       // All tokens visible
@@ -235,7 +235,7 @@ function shouldEmitTokensForView(changeType: ChangeType, viewMode: ViewName): bo
  * @param viewMode Optional view mode for token filtering (defaults to 'review' — all tokens)
  * @returns SemanticTokens with encoded data array
  */
-export function buildSemanticTokens(changes: ChangeNode[], text: string, viewMode: ViewName = 'review'): SemanticTokens {
+export function buildSemanticTokens(changes: ChangeNode[], text: string, viewMode: ViewMode = 'review'): SemanticTokens {
   const resolved = changes.filter(c => !isGhostNode(c));
   const data: number[] = [];
   let previousPosition: Position = { line: 0, character: 0 };

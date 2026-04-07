@@ -11,10 +11,10 @@
  *   - propose-change.ts:1085 (classic mode)
  *
  * contains `if (compactViewResolved === 'review' || ... === 'changes')`,
- * which treats review identically to changes. It calls computeCommittedView()
- * and re-records hashes with `line: cl.committedLineNum`.
+ * which treats review identically to changes. It calls computeDecidedView()
+ * and re-records hashes with `line: cl.decidedLineNum`.
  *
- * When the file has single-line pending insertions, computeCommittedView()
+ * When the file has single-line pending insertions, computeDecidedView()
  * COLLAPSES them (skips lines where pending insertion resolves to empty).
  * This produces committed line numbers that differ from raw line numbers:
  *
@@ -28,7 +28,7 @@
  *
  * FIX LOCATION:
  *   When compactViewResolved === 'review', re-record with RAW line numbers
- *   (i + 1) instead of committed line numbers (cl.committedLineNum).
+ *   (i + 1) instead of decided line numbers (cl.decidedLineNum).
  *   The review case should NOT share the committed-view re-recording path.
  *   It should use the same pattern as the raw/default else-branch at
  *   propose-change.ts:1107-1113.
@@ -280,7 +280,7 @@ describe('BUG: review view re-recording uses committed line numbers (compact mod
   it('second highlight fails after first edit re-records with committed line numbers', async () => {
     // Setup: file with a pending insertion (line 2) that gets collapsed in committed view.
     // Review view shows raw lines: 1=Title, 2={++pending++}, 3=FirstSection, 4=SecondSection
-    // After first edit at line 3, re-recording uses computeCommittedView which collapses line 2:
+    // After first edit at line 3, re-recording uses computeDecidedView which collapses line 2:
     //   Committed: 1=Title, 2=FirstSection(edited), 3=SecondSection
     // Re-recorded hashes have line=3 for SecondSection, but agent has line=4 (raw).
     const fileContent = [
@@ -392,7 +392,7 @@ describe('BUG: review view re-recording uses committed line numbers (classic mod
     expect(result1.isError).toBeUndefined();
 
     // After first edit, re-recording at line 1085 enters the
-    // `viewResolved === 'review'` branch, calls computeCommittedView(),
+    // `viewResolved === 'review'` branch, calls computeDecidedView(),
     // and stores committed line numbers. The two pending insertions on
     // lines 2-3 are collapsed, so "## Second Heading" is committed line 3,
     // not raw line 5 as the agent expects.

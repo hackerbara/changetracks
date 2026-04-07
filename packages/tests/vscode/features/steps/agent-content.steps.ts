@@ -365,7 +365,7 @@ When('I re-parse the document text', function (this: ChangeDownWorld) {
 Then('{int} inline changes remain', function (this: ChangeDownWorld, expected: number) {
     assert.ok(this.parseResult, 'No parse result');
     const changes = this.parseResult.getChanges();
-    const inlineChanges = changes.filter(c => !c.settled);
+    const inlineChanges = changes.filter(c => !c.decided);
     assert.strictEqual(
         inlineChanges.length,
         expected,
@@ -376,7 +376,7 @@ Then('{int} inline changes remain', function (this: ChangeDownWorld, expected: n
 Then('{int} settled changes exist', function (this: ChangeDownWorld, expected: number) {
     assert.ok(this.parseResult, 'No parse result');
     const changes = this.parseResult.getChanges();
-    const settled = changes.filter(c => c.settled);
+    const settled = changes.filter(c => c.decided);
     assert.strictEqual(
         settled.length,
         expected,
@@ -393,7 +393,7 @@ Then('the settled change has status {string}', function (this: ChangeDownWorld, 
     };
     const expected = STATUS_MAP[statusName.toLowerCase()];
     assert.ok(expected !== undefined, `Unknown status "${statusName}"`);
-    const settled = this.parseResult.getChanges().filter(c => c.settled);
+    const settled = this.parseResult.getChanges().filter(c => c.decided);
     assert.ok(settled.length > 0, 'No settled changes found');
     assert.strictEqual(settled[0].status, expected, `Settled change: expected status "${statusName}", got "${settled[0].status}"`);
 });
