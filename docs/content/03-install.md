@@ -1,18 +1,21 @@
 <!-- changedown.com/v1: untracked -->
+
 # Install
 
 ## Paste this first (any agent)
 
 Copy everything in the box below into your coding agent. It should **ask you what you use** before installing anything — then follow only the sections that match.
 
-```
+```text
 You are helping me install Changedown (markdown track changes with CriticMarkup).
 
 First, ask me to confirm my environments:
+
 - Editors: e.g. VS Code, Cursor, JetBrains, Neovim, other, or none (agents only).
 - AI / agent surfaces: e.g. Claude Code, OpenCode, Cursor’s agent, a generic MCP client (Claude Desktop, another IDE), or none.
 
 Rules:
+
 - If I use Claude Code, follow the page section: run `/plugin marketplace add hackerbara/changedown` first, then `/plugin install changedown@hackerbara`. Do not add a separate MCP server for Claude Code unless I explicitly want a duplicate or custom setup — the plugin already bundles MCP.
 - If I use OpenCode, install the Changedown OpenCode plugin (npm package in opencode.json). Do not add a separate MCP entry for the same project unless I already have one and know why — the plugin wires the Changedown MCP server for me.
 - If I use an editor with a Changedown extension (VS Code marketplace: changedown.changedown-vscode), install that for the human editing experience. Cursor and other VS Code–compatible editors use the same marketplace entry where available.
@@ -27,12 +30,12 @@ Work through the page sections in a sensible order for my answers; skip what doe
 
 ## Plugins vs standalone MCP
 
-| You install | What you get | Also install MCP separately? |
-|-------------|----------------|-----------------------------|
-| **Changedown plugin for Claude Code** | MCP tools, hooks, and skill as shipped by the plugin | **No** — duplicate MCP is unnecessary unless you have a special case. |
-| **`@changedown/opencode-plugin` in OpenCode** | Plugin hooks plus the Changedown MCP server wired in OpenCode | **No** for normal use — the plugin registers MCP. |
-| **VS Code / Cursor extension** | Editor UI, LSP client to **`@changedown/lsp-server`** | **No MCP in the editor** for the same job — agents use MCP or plugins separately. |
-| **Neither plugin — only an MCP-capable app** | — | **Yes** — use the **Standalone MCP** section. |
+| Install target | What you get | Add MCP separately? |
+| --- | --- | --- |
+| **Claude Code plugin** | MCP tools, hooks, and skill as shipped by the plugin | **No** — duplicate MCP is unnecessary unless you have a special case. |
+| **`@changedown/opencode-plugin` (OpenCode)** | Plugin hooks plus the Changedown MCP server wired in OpenCode | **No** for normal use — the plugin registers MCP. |
+| **VS Code / Cursor extension** | Editor UI; LSP talks to **`@changedown/lsp-server`** | **No** — the editor does not use MCP for this; agents use MCP or plugins separately. |
+| **MCP-only host (no plugin)** | — | **Yes** — use **Standalone MCP** below. |
 
 ---
 
@@ -45,8 +48,6 @@ npx changedown init
 ```
 
 This creates `.changedown/config.toml`, examples, and gitignore updates. It does **not** install editors, plugins, or MCP — those are global or per-tool steps above.
-
----
 
 ## VS Code family (VS Code, Cursor, and compatible editors)
 
@@ -62,25 +63,18 @@ code --install-extension changedown.changedown-vscode
 
 You get tracking mode, smart view, accept/reject, comments, review panel, and the language server driving the Markdown workflow. **Cursor** and other editors that use the Open VSX / VS Code marketplace can install the same listing when it is available there.
 
----
-
 ## Claude Code
 
 Install the **Changedown plugin** — it includes MCP, hooks, and the Changedown skill; **you do not need a separate MCP install** for Claude Code for the default setup.
 
 In Claude Code, **register the marketplace first**, then **install the plugin** (order matters):
 
-```
+```text
 /plugin marketplace add hackerbara/changedown
-```
-
-```
 /plugin install changedown@hackerbara
 ```
 
 Restart Claude Code if it asks you to, then run **`npx changedown init`** in each repo you work in (see **Project setup**).
-
----
 
 ## OpenCode
 
@@ -99,8 +93,6 @@ OpenCode loads npm plugins per [OpenCode’s plugin docs](https://open-code.ai/e
 Some OpenCode UIs only show MCP entries that appear in the static config file. If **Changedown** does not appear under MCP until you add it, the plugin README in the repo describes merging an explicit `mcp.changedown` entry — follow that if your OpenCode version needs it.
 
 Then run **`npx changedown init`** in each repo (see **Project setup**).
-
----
 
 ## Standalone MCP (generic host)
 
@@ -129,8 +121,6 @@ If the client supports MCP **roots**, the server uses them for paths. Otherwise 
 
 **Tools** (seven): `read_tracked_file`, `propose_change`, `review_changes`, `amend_change`, `list_changes`, `supersede_change`, `resolve_thread`.
 
----
-
 ## Developing Changedown from a git clone
 
 This path is for **contributors** and people running unreleased bits — not for normal npm/marketplace installs.
@@ -140,8 +130,6 @@ This path is for **contributors** and people running unreleased bits — not for
 3. Optional full dev install: `node scripts/install.mjs` — installs the local VSIX, global CLI from the repo, Cursor MCP pointing at **built files under the clone**, Claude plugin registration, hooks, and skills. Details live in `scripts/install.mjs` and the repo docs.
 
 End users should prefer marketplace, `npx changedown init`, plugins, or standalone MCP — not this flow.
-
----
 
 ## Core library and LSP
 

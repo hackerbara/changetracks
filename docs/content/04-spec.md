@@ -1,13 +1,13 @@
-<!-- changedown.com/v1: untracked -->
-# The ChangeDown Format
-
+<!-- Changedown.com/v1: untracked -->
+# The Changedown Format
+{--The intro paragraph here.--}[^cn-17.1]
 Changes happen in tools — editors, agents, import pipelines. The record of *why* a change was made lives somewhere else: a PR comment, a Slack thread, a review UI. When the file moves to a new repository, a new team, or a new decade, the context doesn't follow. The change and its reasoning are separated at birth.
 
-ChangeDown puts the reason next to the change, in the file itself.
+Changedown puts the reason next to the change, in the file itself.
 
-The inline syntax is [CriticMarkup](https://github.com/CriticMarkup/CriticMarkup-toolkit), created by Gabe Weatherhead and Erik Hess in 2013 — a plain-text vocabulary for editorial markup. ChangeDown extends CriticMarkup with identity, deliberation, and content-addressed anchoring, using standard markdown footnotes as the container. The result is a file that carries its own editorial history: who proposed what, why, what the pushback was, and what happened next. No external database. No proprietary format. Any text editor can read it.
+The inline syntax is [CriticMarkup](https://github.com/CriticMarkup/CriticMarkup-toolkit), created by Gabe Weatherhead and Erik Hess in 2013 — a plain-text vocabulary for editorial markup. Changedown extends CriticMarkup with identity, deliberation, and content-addressed anchoring, using standard markdown footnotes as the container. The result is a file that carries its own editorial history: who proposed what, why, what the pushback was, and what happened next. No external database. No proprietary format. Any text editor can read it.
 
-The format is a universal interchange. Any system that produces changes to a markdown file — a human typing, an AI agent calling MCP tools, a DOCX import pipeline, a CRDT sync layer — can emit well-formed ChangeDown and enter the same deliberation record. The format specifies what crosses the boundary between transient editing and durable record — the point where activity becomes a well-formed footnote with identity, anchoring, and provenance. What crosses that boundary is the format's concern. What happens upstream is not.
+The format is a universal interchange. Any system that produces changes to a markdown file — a human typing, an AI agent calling MCP tools, a DOCX import pipeline, a CRDT sync layer — can emit well-formed Changedown and enter the same deliberation record. The format specifies what crosses the boundary between transient editing and durable record — the point where activity becomes a well-formed footnote with identity, anchoring, and provenance. What crosses that boundary is the format's concern. What happens upstream is not.
 
 The format has two serializations of the same artifact. **L2** is the on-disk representation: inline CriticMarkup in the body, footnote references linking to metadata blocks. Human-readable without tooling. **L3** is the computational projection: clean body text with no delimiters, footnotes enriched with content-addressed anchors. L3 is the layer that enables MCP-equipped agents to work effectively — content-addressed coordinates give agents stable references for sequential edits, batch operations, and parallel multi-agent work without coordinate invalidation between calls. L2 → L3 → L2 is lossless and deterministic.
 
@@ -15,7 +15,7 @@ The format has two serializations of the same artifact. **L2** is the on-disk re
 
 ## A Change, Built in Layers
 
-A change in ChangeDown starts simple and gains structure as needed. The three levels are concentric — each adds a container around the previous one. A reader encountering the format for the first time sees the simplest possible version. A tool producing changes emits the richest.
+A change in Changedown starts simple and gains structure as needed. The three levels are concentric — each adds a container around the previous one. A reader encountering the format for the first time sees the simplest possible version. A tool producing changes emits the richest.
 
 ### Level 0 — Bare Markup
 
@@ -31,7 +31,7 @@ CriticMarkup defines five inline constructs:
 
 Any markdown file containing these constructs is a valid CriticMarkup document. This is Level 0 — the substrate. No attribution, no IDs, just the change:
 
-```changedown
+```Changedown
 The API should use {~~REST~>GraphQL~~} for the public interface.
 ```
 
@@ -39,7 +39,7 @@ The API should use {~~REST~>GraphQL~~} for the public interface.
 
 Attach a comment with no whitespace after the closing delimiter, and metadata travels with the change:
 
-```changedown
+```Changedown
 The API should use {~~REST~>GraphQL~~}{>>@alice | 2024-01-15 | sub | proposed<<} for the public interface.
 ```
 
@@ -49,7 +49,7 @@ The comment carries pipe-separated fields: `@author`, date, type, status. Same `
 
 Add a footnote reference on the change and a footnote definition block, and the change gains a full deliberation record:
 
-```changedown
+```Changedown
 The API should use {~~REST~>GraphQL~~}[^cn-1] for the public interface.
 
 [^cn-1]: @alice | 2024-01-15 | sub | proposed
@@ -109,14 +109,14 @@ This version focuses on stable core semantics: inline changes, identity, footnot
 A footnote with only a header line and no body is valid — minimal metadata, no discussion. Definitions appear in `cn-N` order.
 
 ### Grouped Changes
-
+{--The intro paragraph here.--}[^cn-17.1]
 Multi-change operations use dotted IDs under a shared parent: `cn-17.1`, `cn-17.2`. The parent is the logical operation; children are its components. One level of nesting only — `cn-17.1.1` is never valid.
 
 The parent footnote `cn-17` carries the `move` (or other compound) type and the group-level status. It has no inline CriticMarkup in the body — it is a metadata-only footnote. Its children (`cn-17.1`, `cn-17.2`, etc.) carry the individual edit-ops and inline markup. When the parent is accepted, all children with `proposed` status are accepted. When a child is individually rejected, that child is carved out but the parent remains proposed until explicitly decided.
 
 Example of a grouped move operation:
 
-```changedown
+```Changedown
 {--The intro paragraph here.--}[^cn-17.1]
 
 ...
@@ -278,7 +278,7 @@ The substitution from the opening section — `REST` → `GraphQL` — through i
 
 **1. Propose.** Alice creates the change. The file now contains:
 
-```changedown
+```Changedown
 The API should use {~~REST~>GraphQL~~}[^cn-1] for the public interface.
 
 [^cn-1]: @alice | 2024-01-15 | sub | proposed
@@ -296,7 +296,7 @@ The API should use {~~REST~>GraphQL~~}[^cn-1] for the public interface.
 
 **3. Accept.** Eve and Bob approve. The status changes:
 
-```changedown
+```Changedown
 [^cn-1]: @alice | 2024-01-15 | sub | accepted
     4:e2 should use {~~REST~>GraphQL~~} for the public
     approved: @eve 2024-01-20
@@ -312,7 +312,7 @@ The body now reads `GraphQL` as clean text. The edit-op line records the origina
 
 **4. Compact.** Later, the team compacts decided footnotes. cn-1 is removed, a compaction boundary is inserted, and VCS preserves the full thread in history:
 
-```changedown
+```Changedown
 The API should use GraphQL for the public interface.
 
 [^cn-2]: compaction-boundary
@@ -342,7 +342,7 @@ The anchor system works across these projections — an edit-op written against 
 
 ### LINE:HASH
 
-A content-addressed coordinate, inspired by Bölük's line-hash addressing (["The Harness Problem,"](https://blog.can.ac/2026/02/12/the-harness-problem/) 2026). Bölük's insight: content-addressed lines eliminate the mechanical failures that plague text-matching approaches to agent editing. ChangeDown extends the concept — the hash serves as a **freshness indicator** per line. When the hash matches, the line content hasn't changed and the coordinate is trustworthy. When it doesn't, the system knows to relocate rather than silently operating on stale data.
+A content-addressed coordinate, inspired by Bölük's line-hash addressing (["The Harness Problem,"](https://blog.can.ac/2026/02/12/the-harness-problem/) 2026). Bölük's insight: content-addressed lines eliminate the mechanical failures that plague text-matching approaches to agent editing. Changedown extends the concept — the hash serves as a **freshness indicator** per line. When the hash matches, the line content hasn't changed and the coordinate is trustworthy. When it doesn't, the system knows to relocate rather than silently operating on stale data.
 
 The hash is computed as:
 
@@ -363,13 +363,13 @@ Step 2 makes the hash **view-independent**: the same line produces the same hash
 
 The edit-op line embeds the CriticMarkup operation within surrounding body text, creating an unambiguous anchor within the target line:
 
-```changedown
+```Changedown
     4:e2 should use {~~REST~>GraphQL~~} for the public
 ```
 
 `should use ` is the context before. `{~~REST~>GraphQL~~}` is the operation. ` for the public` is the context after. The combined string appears exactly once on line 4 — any parser can recover the operation's exact column position.
 
-This is a simplified, line-scoped variant of the W3C Web Annotation Data Model's TextQuoteSelector (`{prefix, exact, suffix}` for robust anchoring in dynamic documents). ChangeDown scopes the anchor to a single line because files have VCS history as the authoritative recovery path — full-document anchoring is over-engineered for this use case.
+This is a simplified, line-scoped variant of the W3C Web Annotation Data Model's TextQuoteSelector (`{prefix, exact, suffix}` for robust anchoring in dynamic documents). Changedown scopes the anchor to a single line because files have VCS history as the authoritative recovery path — full-document anchoring is over-engineered for this use case.
 
 For deletions (where the deleted text is absent from the body), the edit-op embeds the deletion operation in context: `contextBefore{--text--}contextAfter`. The surrounding context locates where the deletion occurred.
 
@@ -551,15 +551,15 @@ The format's design stance is **forum, not panopticon**: accountability with age
 ### File Header
 
 ```
-<!-- changedown.com/v1: tracked -->
+<!-- Changedown.com/v1: tracked -->
 ```
 
 First line of the file, or first line after YAML frontmatter. Tools auto-insert on first tracked edit. Supports `untracked` to explicitly opt out.
 
 **Precedence** (highest wins):
 
-1. **File header** — `<!-- changedown.com/v1: tracked|untracked -->` in the file itself
-2. **Project config** — `.changedown/config.toml`
+1. **File header** — `<!-- Changedown.com/v1: tracked|untracked -->` in the file itself
+2. **Project config** — `.Changedown/config.toml`
 3. **Global default** — `tracked` for files matching include globs, `untracked` otherwise
 
 ### Timestamps
@@ -586,8 +586,8 @@ The format is designed to work within language-native comments (`#`, `//`, `--`,
 
 A concise L2 snapshot: decided changes remain verifiable via edit-op records, while one proposed change keeps deliberation open inline.
 
-```changedown
-<!-- changedown.com/v1: tracked -->
+```Changedown
+<!-- Changedown.com/v1: tracked -->
 # API Design Document
 
 The API should use GraphQL for the public interface
@@ -630,7 +630,7 @@ The proposed highlight (`cn-3`) keeps deliberation open with a blocking issue an
 
 ## References
 
-- **CriticMarkup.** Gabe Weatherhead and Erik Hess (2013). [CriticMarkup-toolkit](https://github.com/CriticMarkup/CriticMarkup-toolkit). The inline change syntax that ChangeDown extends.
+- **CriticMarkup.** Gabe Weatherhead and Erik Hess (2013). [CriticMarkup-toolkit](https://github.com/CriticMarkup/CriticMarkup-toolkit). The inline change syntax that Changedown extends.
 
 - **The Harness Problem.** Can Bölük (2026). ["I Improved 15 LLMs at Coding in One Afternoon."](https://blog.can.ac/2026/02/12/the-harness-problem/) Content-addressed line hashing as the inspiration for LINE:HASH coordinates.
 
