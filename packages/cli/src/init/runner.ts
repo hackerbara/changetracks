@@ -270,7 +270,7 @@ async function runInteractive(opts: InteractiveOptions): Promise<void> {
 
   // ── Step 7: Advanced settings ────────────────────────────────────────
   let protocolMode: 'classic' | 'compact' = 'classic';
-  let defaultView: 'review' | 'changes' | 'settled' = 'review';
+  let defaultView: 'working' | 'simple' | 'decided' = 'working';
   let autoSettleApprove = true;
   let autoSettleReject = true;
 
@@ -295,11 +295,11 @@ async function runInteractive(opts: InteractiveOptions): Promise<void> {
     const viewResult = await clack.select({
       message: 'Default view — what agents see when reading files',
       options: [
-        { value: 'review' as const, label: 'Review', hint: 'full markup with inline annotations (recommended)' },
-        { value: 'changes' as const, label: 'Changes', hint: 'clean prose with P/A awareness flags' },
-        { value: 'settled' as const, label: 'Settled', hint: 'final text with all changes applied' },
+        { value: 'working' as const, label: 'Working', hint: 'full markup with inline annotations (recommended)' },
+        { value: 'simple' as const, label: 'Simple', hint: 'clean prose with P/A awareness flags' },
+        { value: 'decided' as const, label: 'Decided', hint: 'decided text with only decided changes applied' },
       ],
-      initialValue: 'review' as const,
+      initialValue: 'working' as const,
     });
     if (clack.isCancel(viewResult)) { clack.cancel('Setup cancelled.'); exit(0); return; }
     defaultView = viewResult;
@@ -360,11 +360,11 @@ async function runInteractive(opts: InteractiveOptions): Promise<void> {
   const protocolDesc = protocolMode === 'classic'
     ? 'Classic (old_text/new_text)'
     : 'Compact (at+op)';
-  const viewDesc = defaultView === 'review'
-    ? 'Review (full markup)'
-    : defaultView === 'changes'
-      ? 'Changes (clean prose + flags)'
-      : 'Settled (final text)';
+  const viewDesc = defaultView === 'working'
+    ? 'Working (full markup)'
+    : defaultView === 'simple'
+      ? 'Simple (clean prose + flags)'
+      : 'Final (final text)';
   const settleDesc = autoSettleApprove && autoSettleReject
     ? 'on approve + reject'
     : autoSettleApprove

@@ -22,6 +22,7 @@ export type { PendingEdit } from './pending.js';
 export { loadConfig, DEFAULT_CONFIG } from './config.js';
 export type { ChangeDownConfig } from './config.js';
 export { isFileInScope, isFileExcludedFromHooks } from './scope.js';
+export { expandTrackingAbsolutePattern } from './config.js';
 
 // HookInput type (used by adapter tests)
 export type { HookInput } from './adapters/shared.js';

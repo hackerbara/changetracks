@@ -657,19 +657,25 @@ describe('contextual edit-op end-to-end round-trip', () => {
     expect(ct1!.anchored).toBe(true);
     expect(ct2!.anchored).toBe(true);
 
-    // Both must resolve to different positions on line 3
-    expect(ct1!.range.start).not.toBe(ct2!.range.start);
-
     // cn-1 (insertion of "o"): spans 1 character
     expect(ct1!.range.end - ct1!.range.start).toBe(1);
     expect(ct1!.modifiedText).toBe('o');
 
-    // cn-2 (deletion of "O"): zero-width
-    expect(ct2!.range.start).toBe(ct2!.range.end);
+    // cn-2 (deletion of "O"): after Plan 1 Task 2 bug 5 fix, range covers the
+    // full contextual anchor span (contextBefore + contextAfter) — here bodyMatch
+    // is "overview" (contextBefore="o", contextAfter="verview"). deletionSeamOffset
+    // records the seam within the span (= "o".length = 1).
+    expect(ct2!.range.end).toBeGreaterThan(ct2!.range.start);
     expect(ct2!.originalText).toBe('O');
+    expect(ct2!.deletionSeamOffset).toBe(1);
 
-    // cn-1 insertion position < cn-2 deletion position
-    expect(ct1!.range.start).toBeLessThan(ct2!.range.start);
+    // The effective deletion seam sits to the right of the insertion anchor.
+    // Both anchors start at the same byte (col 9 of line 3, where "overview"
+    // begins in the body) because the insertion matched "o" and the deletion's
+    // contextual anchor spans "overview"; they are logically distinct positions
+    // because the seam is at rangeStart + deletionSeamOffset for the deletion.
+    const cn2Seam = ct2!.range.start + ct2!.deletionSeamOffset!;
+    expect(ct1!.range.start).toBeLessThan(cn2Seam);
   });
 
   it('substitution round-trip — resolves to correct range', async () => {

@@ -11,7 +11,7 @@ describe('code lenses with unanchored changes', () => {
       range: { start: 0, end: 0 }, contentRange: { start: 0, end: 0 },
       level: 2, anchored: false, settled: false,
     }];
-    const result = createCodeLenses(changes, text, 'review', 'always');
+    const result = createCodeLenses(changes, text, 'working', 'always');
     // Should have no per-change lenses (unanchored filtered out)
     const perChangeLenses = result.filter(l =>
       l.command?.command === 'changedown.acceptChange' ||
@@ -27,7 +27,7 @@ describe('code lenses with unanchored changes', () => {
       range: { start: 0, end: 0 }, contentRange: { start: 0, end: 0 },
       level: 2, anchored: false, settled: false,
     }];
-    const result = createCodeLenses(changes, text, 'review', 'always', undefined, 50);
+    const result = createCodeLenses(changes, text, 'working', 'always', undefined, 50);
     const docLens = result.find(l =>
       l.command?.command === 'changedown.inspectUnresolved'
     );
@@ -35,14 +35,14 @@ describe('code lenses with unanchored changes', () => {
     expect(docLens!.command!.title).toContain('unresolved');
   });
 
-  it('shows document-level lens in settled view mode', () => {
+  it('shows document-level lens in final view mode', () => {
     const text = 'Hello world\n';
     const changes: ChangeNode[] = [{
       id: 'cn-1', type: ChangeType.Insertion, status: ChangeStatus.Proposed,
       range: { start: 0, end: 0 }, contentRange: { start: 0, end: 0 },
       level: 2, anchored: false, settled: false,
     }];
-    const result = createCodeLenses(changes, text, 'settled', 'always', undefined, 50);
+    const result = createCodeLenses(changes, text, 'final', 'always', undefined, 50);
     const docLens = result.find(l =>
       l.command?.command === 'changedown.inspectUnresolved'
     );
@@ -56,7 +56,7 @@ describe('code lenses with unanchored changes', () => {
       range: { start: 0, end: 0 }, contentRange: { start: 0, end: 0 },
       level: 2, anchored: false, settled: false,
     }];
-    const result = createCodeLenses(changes, text, 'review', 'off', undefined, 50);
+    const result = createCodeLenses(changes, text, 'working', 'off', undefined, 50);
     expect(result).toHaveLength(0);
   });
 });

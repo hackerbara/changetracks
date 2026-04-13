@@ -1,6 +1,7 @@
 import { parseForFormat } from '../format-aware-parse.js';
 import { nodeStatus, type ChangeNode } from '../model/types.js';
-import type { DeliberationHeader, ViewMode } from './three-zone-types.js';
+import type { DeliberationHeader, LineFlag } from './three-zone-types.js';
+import type { BuiltinView } from '../host/types.js';
 
 const REF_EXTRACT_RE = /\[\^(cn-\d+(?:\.\d+)?)\]/g;
 
@@ -8,7 +9,7 @@ export interface BuildHeaderOptions {
   filePath: string;
   trackingStatus: 'tracked' | 'untracked';
   protocolMode: string;
-  defaultView: ViewMode;
+  defaultView: BuiltinView;
   viewPolicy: string;
   changes: ChangeNode[];
   lineRange?: { start: number; end: number; total: number };
@@ -82,7 +83,43 @@ export function findFootnoteSectionRange(changes: ChangeNode[]): [number, number
  *
  * Uses the parser (not string matching) so it ignores false positives like
  * `{++` inside code blocks or JSON strings that have no matching `++}`.
+ *
+ * NOTE: The returned set indexes by raw line number (0-based). Projection-based
+ * views (simple, decided) use this with the approximation `continuations.has(rawLineNum - 1)`,
+ * which is conservative: it may produce false positives (flagging projection rows
+ * whose underlying raw line was part of a multi-line construct that is no longer
+ * multi-line after projection) but no false negatives. Strictly correct pagination
+ * for projection views would require re-computing continuations in the projection
+ * space. Track as a follow-up if a Tier 2 test surfaces a pagination split inside
+ * a projection-level construct.
  */
+/**
+ * Compute P/A flags for a line from the footnote IDs it references.
+ * P (proposed) takes priority over A (accepted); rejected-only lines get no flags.
+ * Shared by the working and simple view builders.
+ */
+export function computePAFlags(
+  refIds: Set<string> | undefined,
+  footnoteMap: Map<string, ChangeNode>,
+): LineFlag[] {
+  if (!refIds) return [];
+
+  let hasProposed = false;
+  let hasAccepted = false;
+
+  for (const id of refIds) {
+    const node = footnoteMap.get(id);
+    if (!node) continue;
+    const status = nodeStatus(node);
+    if (status === 'proposed') hasProposed = true;
+    if (status === 'accepted') hasAccepted = true;
+  }
+
+  if (hasProposed) return ['P'];
+  if (hasAccepted) return ['A'];
+  return [];
+}
+
 export function computeContinuationLines(content: string, preParsed?: ChangeNode[]): Set<number> {
   const changes = preParsed ?? parseForFormat(content).getChanges();
   if (changes.length === 0) return new Set();

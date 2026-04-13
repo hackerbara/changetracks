@@ -170,37 +170,21 @@ function buildFullDetailEntry(
 ): ChangeFullDetail {
   const ctx = buildContextEntry(change, fileContent, lines, summary, contextN);
 
-  let footnoteAuthor = '';
-  let footnoteDate = '';
-  let reasoning: string | null = null;
-  let discussionCount = 0;
-  const approvals: string[] = [];
-  const rejections: string[] = [];
-  const requestChanges: string[] = [];
-
-  const block = findFootnoteBlock(lines, change.id);
-  if (block) {
-    const header = parseFootnoteHeader(lines[block.headerLine]);
-    if (header) {
-      footnoteAuthor = header.author;
-      footnoteDate = header.date;
-    }
-    const meta = change.metadata;
-    if (meta?.discussion?.length) {
-      discussionCount = meta.discussion.length;
-      reasoning = meta.discussion[0].text ?? null;
-    }
-    meta?.approvals?.forEach((a) => approvals.push(a.author));
-    meta?.rejections?.forEach((a) => rejections.push(a.author));
-    meta?.requestChanges?.forEach((a) => requestChanges.push(a.author));
-  }
+  const meta = change.metadata;
+  const footnoteAuthor = meta?.author ?? '';
+  const footnoteDate = meta?.date ?? '';
+  const discussionCount = meta?.discussion?.length ?? 0;
+  const reasoning: string | null = meta?.discussion?.[0]?.text ?? null;
+  const approvals: string[] = (meta?.approvals ?? []).map((a) => a.author);
+  const rejections: string[] = (meta?.rejections ?? []).map((a) => a.author);
+  const requestChanges: string[] = (meta?.requestChanges ?? []).map((a) => a.author);
 
   const participantsSet = new Set<string>();
-  if (change.metadata?.author) participantsSet.add(change.metadata.author);
-  change.metadata?.discussion?.forEach((d) => participantsSet.add(d.author));
-  change.metadata?.approvals?.forEach((a) => participantsSet.add(a.author));
-  change.metadata?.rejections?.forEach((a) => participantsSet.add(a.author));
-  change.metadata?.requestChanges?.forEach((a) => participantsSet.add(a.author));
+  if (meta?.author) participantsSet.add(meta.author);
+  meta?.discussion?.forEach((d) => participantsSet.add(d.author));
+  meta?.approvals?.forEach((a) => participantsSet.add(a.author));
+  meta?.rejections?.forEach((a) => participantsSet.add(a.author));
+  meta?.requestChanges?.forEach((a) => participantsSet.add(a.author));
 
   const changeId = change.id;
   const dotIndex = changeId.lastIndexOf('.');
@@ -318,7 +302,7 @@ export async function handleListChanges(
           }
           continue;
         }
-        const summary = buildSummaryEntry(change, fileContent, lines);
+        const summary = buildSummaryEntry(change, fileContent);
         results.push(buildDetailForLevel(detail, change, fileContent, lines, doc, summary, contextN));
       }
 
@@ -338,7 +322,7 @@ export async function handleListChanges(
     const entries: Array<ChangeSummary | ChangeContext | ChangeFullDetail> = [];
 
     for (const change of allChanges) {
-      const summary = buildSummaryEntry(change, fileContent, lines);
+      const summary = buildSummaryEntry(change, fileContent);
       entries.push(buildDetailForLevel(detail, change, fileContent, lines, doc, summary, contextN));
     }
 
@@ -366,23 +350,11 @@ export async function handleListChanges(
 function buildSummaryEntry(
   change: ChangeNode,
   fileContent: string,
-  lines: string[],
 ): ChangeSummary {
   const typeStr = TYPE_MAP[change.type];
   const lineNumber = offsetToLineNumber(fileContent, change.range.start);
-  let author = '';
-  let status = change.status.toLowerCase();
-
-  if (change.id) {
-    const block = findFootnoteBlock(lines, change.id);
-    if (block) {
-      const header = parseFootnoteHeader(block.headerContent);
-      if (header) {
-        author = header.author;
-        status = header.status;
-      }
-    }
-  }
+  const author = change.metadata?.author ?? '';
+  const status = change.metadata?.status ?? change.status.toLowerCase();
 
   return {
     change_id: change.id,

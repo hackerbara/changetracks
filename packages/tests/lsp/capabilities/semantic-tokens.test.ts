@@ -60,14 +60,14 @@ describe('Semantic Tokens', () => {
         expect(Array.isArray(result.data)).toBeTruthy();
 
         // LSP format: [deltaLine, deltaStartChar, length, tokenType, tokenModifiers]
-        // For insertion with Proposed status:
+        // For insertion with Proposed status (plan-based: fullRange is used, not contentRange):
         //   tokenType=0 (changedown-insertion)
         //   tokenModifiers = modification(1) | proposed(4) = 5
         const data = result.data;
         expect(data).toHaveLength(5);
         expect(data[0]).toBe(0); // deltaLine (first token, line 0)
-        expect(data[1]).toBe(3); // deltaStartChar (start at char 3)
-        expect(data[2]).toBe(8); // length (11-3=8)
+        expect(data[1]).toBe(0); // deltaStartChar (fullRange.start=0, not contentRange.start=3)
+        expect(data[2]).toBe(14); // length (fullRange: 14-0=14, not contentRange: 11-3=8)
         expect(data[3]).toBe(0); // tokenType (changedown-insertion=0)
         expect(data[4]).toBe(5); // tokenModifiers (modification=1 | proposed=4 = 5)
       });
@@ -237,17 +237,17 @@ describe('Semantic Tokens', () => {
         const data = result.data;
         expect(data).toHaveLength(10);
 
-        // First token: insertion with proposed status
+        // First token: insertion with proposed status (plan uses fullRange, not contentRange)
         //   tokenModifiers = modification(1) | proposed(4) = 5
         expect(data[0]).toBe(0); // deltaLine
-        expect(data[1]).toBe(3); // deltaStartChar
+        expect(data[1]).toBe(0); // deltaStartChar (fullRange.start=0, not contentRange.start=3)
         expect(data[3]).toBe(0); // tokenType (changedown-insertion)
         expect(data[4]).toBe(5); // tokenModifiers (modification=1 | proposed=4 = 5)
 
         // Second token: deletion (delta from first token) with proposed status
         //   tokenModifiers = deprecated(2) | proposed(4) = 6
         // deltaLine should still be 0 (same line)
-        // deltaStartChar should be relative to previous token
+        // deltaStartChar should be relative to previous token (15-0=15)
         expect(data[5]).toBe(0); // deltaLine
         expect(data[8]).toBe(1); // tokenType (changedown-deletion)
         expect(data[9]).toBe(6); // tokenModifiers (deprecated=2 | proposed=4 = 6)
@@ -275,7 +275,9 @@ describe('Semantic Tokens', () => {
         ];
 
         const result = buildSemanticTokens(changes, multilineText);
-        expect(result.data.length >= 10).toBeTruthy();
+        // Insertion (no delimiters, range==contentRange) produces one token.
+        // Deletion without originalText and without inlineDelimiters produces no token.
+        expect(result.data.length >= 5).toBeTruthy();
       });
     });
 
@@ -326,14 +328,14 @@ describe('Semantic Tokens', () => {
         const result = buildSemanticTokens(changes, testText);
         const data = result.data;
 
-        // First token: absolute position
+        // First token: absolute position (plan uses fullRange, not contentRange)
         expect(data[0]).toBe(0); // deltaLine (line 0)
-        expect(data[1]).toBe(3); // deltaStartChar (char 3)
+        expect(data[1]).toBe(0); // deltaStartChar (fullRange.start=0, not contentRange.start=3)
 
         // Second token: delta from first
         expect(data[5]).toBe(0); // deltaLine (still line 0)
-        // deltaStartChar should be relative: (13 - 3) = 10
-        expect(data[6]).toBe(10); // deltaStartChar (relative to previous)
+        // deltaStartChar should be relative: fullRange2.start(10) - fullRange1.start(0) = 10
+        expect(data[6]).toBe(10); // deltaStartChar (relative to previous, same as before)
       });
 
       it('should handle token modifiers as bit flags', () => {
@@ -750,7 +752,7 @@ describe('Semantic Tokens', () => {
     });
 
     describe('consumed op modifier', () => {
-      it('should apply deprecated modifier to consumed op tokens', () => {
+      it('should produce no semantic tokens for consumed insertion ops (routed to consumedRanges)', () => {
         const changes: ChangeNode[] = [{
           id: 'cn-3',
           type: ChangeType.Insertion,
@@ -761,14 +763,13 @@ describe('Semantic Tokens', () => {
           consumedBy: 'cn-5',
         }];
 
-        const result = buildSemanticTokens(changes, testText, 'review');
-        expect(result.data.length).toBeGreaterThan(0);
-        // deprecated is bit 1 (value 2) in TOKEN_MODIFIERS
-        const modifierBits = result.data[4]; // 5th element is modifiers
-        expect(modifierBits & 2).toBe(2); // deprecated bit set
+        // Consumed changes are routed to plan.consumedRanges (editor decorations),
+        // not semantic tokens. plan-builder returns early for consumedBy nodes.
+        const result = buildSemanticTokens(changes, testText, 'working');
+        expect(result.data.length).toBe(0);
       });
 
-      it('should apply deprecated modifier to consumed deletion tokens', () => {
+      it('should produce no semantic tokens for consumed deletion ops (routed to consumedRanges)', () => {
         const changes: ChangeNode[] = [{
           id: 'cn-4',
           type: ChangeType.Deletion,
@@ -779,11 +780,10 @@ describe('Semantic Tokens', () => {
           consumedBy: 'cn-6',
         }];
 
-        const result = buildSemanticTokens(changes, testText, 'review');
-        expect(result.data.length).toBeGreaterThan(0);
-        const modifierBits = result.data[4];
-        // Deletion already has deprecated(2); consumedBy should also set it (idempotent)
-        expect(modifierBits & 2).toBe(2);
+        // Consumed changes are routed to plan.consumedRanges (editor decorations),
+        // not semantic tokens. plan-builder returns early for consumedBy nodes.
+        const result = buildSemanticTokens(changes, testText, 'working');
+        expect(result.data.length).toBe(0);
       });
 
       it('should not apply deprecated modifier when consumedBy is absent', () => {
@@ -796,7 +796,7 @@ describe('Semantic Tokens', () => {
           level: 0, anchored: false,
         }];
 
-        const result = buildSemanticTokens(changes, testText, 'review');
+        const result = buildSemanticTokens(changes, testText, 'working');
         expect(result.data.length).toBeGreaterThan(0);
         const modifierBits = result.data[4];
         // modification(1) | proposed(4) = 5, no deprecated bit

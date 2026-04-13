@@ -131,7 +131,7 @@ describe('handleGetChange', () => {
     expect(data.inline.context_before).toEqual(['Line one.']);
     expect(data.inline.context_after[0]).toBe('Line three.');
     expect(data.inline.context_after.length).toBeGreaterThanOrEqual(1);
-    expect(data.footnote.author).toBe('alice');
+    expect(data.footnote.author).toBe('@alice');
     expect(data.footnote.date).toBe(TODAY);
     expect(data.footnote.reasoning).toBe('Better wording');
     expect(data.footnote.discussion_count).toBe(1);
@@ -321,7 +321,7 @@ describe('handleGetChange', () => {
 
     expect(result.isError).toBeUndefined();
     const data = JSON.parse(result.content[0].text);
-    expect(data.footnote.author).toBe('ai:claude-opus-4.6');
+    expect(data.footnote.author).toBe('@ai:claude-opus-4.6');
     expect(data.footnote.date).toBe('2026-02-10');
     expect(data.footnote.reasoning).toContain('Align with ADR');
     expect(data.footnote.discussion_count).toBe(3);

@@ -1,11 +1,12 @@
 import * as vscode from 'vscode';
 import { ChangeNode, ChangeStatus } from '@changedown/core';
-import { EventEmitter, type Event } from '@changedown/core/host';
+import { EventEmitter, type Event, type View } from '@changedown/core/host';
 import { coreRangeToVscode, positionToOffset } from './converters';
 import { typeLabel, typeLabelCapitalized } from './visual-semantics';
 
 export interface ChangeCommentsContext {
     onDidChangeChanges(listener: () => void): vscode.Disposable;
+    onDidChangeView(listener: () => void): vscode.Disposable;
     getChangesForDocument(doc: vscode.TextDocument): ChangeNode[];
 }
 
@@ -36,7 +37,7 @@ export class ChangeComments implements vscode.Disposable {
   constructor(
     private controller: ChangeCommentsContext,
     private getDocument: () => vscode.TextDocument | undefined,
-    private getViewMode?: () => string | undefined
+    private getView?: () => View | undefined
   ) {
     this.commentController = vscode.comments.createCommentController(
       'changedown',
@@ -58,6 +59,11 @@ export class ChangeComments implements vscode.Disposable {
     // Refresh threads when changes update (debounced to avoid renderer CPU spikes)
     this.disposables.push(
       controller.onDidChangeChanges(() => this.scheduleRefreshThreads())
+    );
+
+    // Refresh immediately when view projection changes (command/keybinding switches view)
+    this.disposables.push(
+      controller.onDidChangeView(() => this.refreshThreads())
     );
 
     // Refresh when active editor changes (immediate so threads show when switching tabs)
@@ -256,9 +262,12 @@ export class ChangeComments implements vscode.Disposable {
     const doc = this.getDocument();
     if (!doc) return;
 
-    // Hide all threads in Final/Original clean preview modes
-    const viewMode = this.getViewMode?.();
-    if (viewMode === 'settled' || viewMode === 'raw') {
+    // Hide threads in decided/original projections where thread anchors don't
+    // correspond to visible text positions. Keep threads in bytes projection
+    // ('none') — bytes view shows raw CriticMarkup at source offsets, and
+    // comment threads anchor to source-offset ranges, so they render correctly.
+    const view = this.getView?.();
+    if (view && (view.projection === 'decided' || view.projection === 'original')) {
       // Dispose all threads for clean preview.
       // collapseThread() first so expandedThreadCount is decremented and the
       // CommentThreadGuard is not left active after the view-mode switch.

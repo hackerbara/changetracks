@@ -654,7 +654,7 @@ Then(
 // =============================================================================
 
 Given('the default view is {string}', function (this: ChangeDownWorld, view: string) {
-  this.hooksConfig.policy.default_view = view as 'review' | 'changes' | 'settled';
+  this.hooksConfig.policy.default_view = view as 'working' | 'simple' | 'final';
 });
 
 Given('a strict mode config', async function (this: ChangeDownWorld) {

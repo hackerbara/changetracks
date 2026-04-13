@@ -137,6 +137,52 @@ export function relocateHashRef(
   return { relocated: true, newLine };
 }
 
+// ─── relocateHashRefMulti ────────────────────────────────────────────────────
+
+export interface HashStrategy {
+  name: string;
+  fn: (idx: number, line: string) => string;
+}
+
+/**
+ * Projection-aware relocation. Tries each strategy in order; returns
+ * the first unique match. If multiple strategies produce unique matches
+ * at different lines, returns null (ambiguous). Keeps the existing
+ * single-strategy `relocateHashRef` unchanged for backward compat.
+ */
+export function relocateHashRefMulti(
+  ref: { line: number; hash: string },
+  fileLines: string[],
+  strategies: HashStrategy[],
+): { newLine: number; strategy: string } | null {
+  const results: Array<{ newLine: number; strategy: string }> = [];
+  const targetHash = ref.hash.toLowerCase();
+
+  for (const strategy of strategies) {
+    let uniqueIdx = -1;
+    let ambiguous = false;
+    for (let i = 0; i < fileLines.length; i++) {
+      const h = strategy.fn(i, fileLines[i]).toLowerCase();
+      if (h === targetHash) {
+        if (uniqueIdx !== -1) { ambiguous = true; break; }
+        uniqueIdx = i;
+      }
+    }
+    if (!ambiguous && uniqueIdx !== -1) {
+      results.push({ newLine: uniqueIdx + 1, strategy: strategy.name });
+    }
+  }
+
+  if (results.length === 0) return null;
+  // First strategy with a unique match wins, unless a later strategy found
+  // a unique match at a different line (cross-strategy ambiguity).
+  const first = results[0];
+  for (let i = 1; i < results.length; i++) {
+    if (results[i].newLine !== first.newLine) return null;
+  }
+  return first;
+}
+
 // ─── stripBoundaryEcho ───────────────────────────────────────────────────────
 
 /**

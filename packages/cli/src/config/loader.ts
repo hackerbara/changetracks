@@ -6,9 +6,11 @@
 import { parse } from 'smol-toml';
 import picomatch from 'picomatch';
 import * as fs from 'node:fs/promises';
+import * as os from 'node:os';
 import * as path from 'node:path';
 import type { ChangeDownConfig, PolicyMode } from './index.js';
 import { DEFAULT_CONFIG } from './index.js';
+import { resolveView } from '../view-alias.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -77,6 +79,8 @@ export function parseConfigToml(raw: string): ChangeDownConfig {
     tracking: {
       include: asStringArray(tracking?.['include']) ?? DEFAULT_CONFIG.tracking.include,
       exclude: asStringArray(tracking?.['exclude']) ?? DEFAULT_CONFIG.tracking.exclude,
+      include_absolute: asStringArray(tracking?.['include_absolute'])
+        ?? DEFAULT_CONFIG.tracking.include_absolute,
       default: tracking?.['default'] === 'tracked' || tracking?.['default'] === 'untracked'
         ? tracking['default']
         : DEFAULT_CONFIG.tracking.default,
@@ -169,9 +173,14 @@ export function parseConfigToml(raw: string): ChangeDownConfig {
       creation_tracking: policy?.['creation_tracking'] === 'none' || policy?.['creation_tracking'] === 'footnote' || policy?.['creation_tracking'] === 'inline'
         ? policy['creation_tracking']
         : DEFAULT_CONFIG.policy.creation_tracking,
-      default_view: policy?.['default_view'] === 'review' || policy?.['default_view'] === 'changes' || policy?.['default_view'] === 'settled'
-        ? policy['default_view']
-        : DEFAULT_CONFIG.policy.default_view,
+      default_view: (() => {
+        const raw = policy?.['default_view'];
+        if (raw === undefined) return DEFAULT_CONFIG.policy.default_view;
+        const resolved = resolveView(String(raw));
+        if (resolved !== null) return resolved;
+        console.warn(`[changedown] Unknown default_view value: "${raw}". Falling back to "${DEFAULT_CONFIG.policy.default_view}".`);
+        return DEFAULT_CONFIG.policy.default_view;
+      })(),
       view_policy: policy?.['view_policy'] === 'suggest' || policy?.['view_policy'] === 'require'
         ? policy['view_policy']
         : DEFAULT_CONFIG.policy.view_policy,
@@ -193,7 +202,7 @@ export function parseConfigToml(raw: string): ChangeDownConfig {
     response: {
       affected_lines: typeof response?.['affected_lines'] === 'boolean'
         ? response['affected_lines']
-        : true,
+        : false,
     },
   };
 }
@@ -299,27 +308,65 @@ export function resolveProtocolMode(
 // ---------------------------------------------------------------------------
 
 /**
+ * Expands `$HOME`, `${HOME}`, and leading `~/` / `~` in an absolute-scope glob pattern.
+ */
+export function expandTrackingAbsolutePattern(pattern: string): string {
+  const home = os.homedir();
+  let p = pattern.split('${HOME}').join(home).replace(/\$HOME\b/g, home);
+  if (p === '~' || p.startsWith('~/')) {
+    p = p === '~' ? home : path.join(home, p.slice(2));
+  }
+  return p.split(path.sep).join('/');
+}
+
+/**
  * Checks whether a file path is in tracking scope based on include/exclude
  * glob patterns. The file path is resolved relative to `projectDir`.
  *
  * A file is in scope when it matches at least one include pattern AND does
  * not match any exclude pattern.
+ *
+ * If `tracking.include_absolute` is non-empty, paths that fail the relative
+ * rules are tested again: the normalized absolute path (POSIX slashes) is
+ * matched against those patterns, and `tracking.exclude` is applied to the
+ * same absolute string.
  */
 export function isFileInScope(
   filePath: string,
   config: ChangeDownConfig,
   projectDir: string,
 ): boolean {
-  let relative: string;
-  if (path.isAbsolute(filePath)) {
-    relative = path.relative(projectDir, filePath);
-  } else {
-    relative = filePath;
-  }
-  relative = relative.split(path.sep).join('/');
+  const absPath = path.isAbsolute(filePath)
+    ? path.normalize(filePath)
+    : path.resolve(projectDir, filePath);
+  const absSlash = absPath.split(path.sep).join('/');
+
+  const relative = path.relative(projectDir, absPath).split(path.sep).join('/');
 
   const matchesInclude = picomatch(config.tracking.include);
   const matchesExclude = picomatch(config.tracking.exclude);
 
-  return matchesInclude(relative) && !matchesExclude(relative);
+  if (matchesInclude(relative) && !matchesExclude(relative)) {
+    return true;
+  }
+
+  const absolutePatterns = config.tracking.include_absolute ?? [];
+  if (absolutePatterns.length === 0) {
+    return false;
+  }
+
+  const matchesExcludeAbs = picomatch(config.tracking.exclude, { dot: true });
+  if (matchesExcludeAbs(absSlash)) {
+    return false;
+  }
+
+  for (const rawPattern of absolutePatterns) {
+    const expanded = expandTrackingAbsolutePattern(rawPattern);
+    const matcher = picomatch(expanded, { dot: true });
+    if (matcher(absSlash)) {
+      return true;
+    }
+  }
+
+  return false;
 }

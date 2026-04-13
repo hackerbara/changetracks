@@ -36,7 +36,7 @@ Given(
         this.fixtureFile = fixture;
         this.instance = await launchVSCode(fixture);
         this.page = this.instance.page;
-        this.currentViewMode = 'all-markup';
+        this.currentView = 'working';
     }
 );
 
@@ -50,7 +50,7 @@ Given(
         this.fixtureFile = fixture;
         this.instance = await launchVSCode(fixture, { theme: 'light' });
         this.page = this.instance.page;
-        this.currentViewMode = 'all-markup';
+        this.currentView = 'working';
     }
 );
 

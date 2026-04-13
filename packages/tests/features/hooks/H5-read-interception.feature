@@ -13,12 +13,12 @@ Feature: H5 - Read Interception
     When I format a read redirect for "docs/readme.md"
     Then the redirect contains "read_tracked_file"
     And the redirect contains 'file="docs/readme.md"'
-    And the redirect contains 'view="review"'
+    And the redirect contains 'view="working"'
 
   Scenario: Read redirect uses configured default_view
-    Given the default view is "changes"
+    Given the default view is "simple"
     When I format a read redirect for "docs/readme.md"
-    Then the redirect contains 'view="changes"'
+    Then the redirect contains 'view="simple"'
 
   Scenario: Read redirect mentions tracked files are blocked
     When I format a read redirect for "docs/readme.md"

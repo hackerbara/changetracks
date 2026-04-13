@@ -1,14 +1,15 @@
 import * as path from 'node:path';
 import { realpathSync } from 'node:fs';
 import { scanMaxCnId } from '@changedown/core';
-import type { ViewMode } from '@changedown/core';
+import type { SessionHashes } from '@changedown/core';
+import type { BuiltinView } from '@changedown/core/host';
 
-export type { ViewMode };
-/** @deprecated Use ViewMode instead */
-export type ViewName = ViewMode;
+export type { BuiltinView };
+/** @deprecated Use BuiltinView directly */
+export type ViewName = BuiltinView;
 
 export interface FileRecord {
-  lastReadView: ViewMode;
+  lastReadView: BuiltinView;
   contentFingerprint: string;
   recordedAt: number;
 }
@@ -22,6 +23,18 @@ export interface ActiveGroup {
   childIds: string[];
   files: Set<string>;
 }
+
+/**
+ * Per-view primary hash field. Used by resolveHash to pick which field
+ * matches the agent's margin-displayed hash.
+ */
+const primaryHashForView: Record<BuiltinView, keyof Pick<SessionHashes, 'raw' | 'committed' | 'currentView'>> = {
+  working:  'raw',
+  simple:   'currentView',
+  decided:  'committed',
+  original: 'raw',
+  raw:      'raw',
+};
 
 /**
  * Session state manager that tracks per-file ID counters for generating
@@ -61,7 +74,7 @@ export class SessionState {
   private counters: Map<string, number> = new Map();
   private globalMaxId: number = 0;
   private activeGroup: ActiveGroup | null = null;
-  private fileHashesByView: Map<string, Map<ViewMode, Array<{ line: number; raw: string; current: string; committed?: string; currentView?: string; rawLineNum?: number }>>> = new Map();
+  private fileHashesByView: Map<string, Map<BuiltinView, Array<{ line: number; raw: string; committed?: string; currentView?: string; rawLineNum?: number }>>> = new Map();
   private fileRecords: Map<string, FileRecord> = new Map();
   private guideShownForMode: 'classic' | 'compact' | null = null;
   private guideSuppressed = true;
@@ -193,9 +206,9 @@ export class SessionState {
    * Called by `read_tracked_file` after computing hashline output.
    * Overwrites the recorded hashes for the last-read view of the file.
    */
-  recordFileHashes(filePath: string, hashes: Array<{ line: number; raw: string; current: string; committed?: string; currentView?: string; rawLineNum?: number }>): void {
+  recordFileHashes(filePath: string, hashes: Array<{ line: number; raw: string; committed?: string; currentView?: string; rawLineNum?: number }>): void {
     filePath = this.normalizePath(filePath);
-    const view = this.getLastReadView(filePath) ?? 'raw';
+    const view = this.getLastReadView(filePath) ?? 'working';
     if (!this.fileHashesByView.has(filePath)) {
       this.fileHashesByView.set(filePath, new Map());
     }
@@ -210,7 +223,7 @@ export class SessionState {
    * (i.e. whatever view was most recently passed to `recordAfterRead`). Falls
    * back to `'raw'` if no view has been recorded for the file yet.
    */
-  getRecordedHashes(filePath: string, view?: ViewMode): Array<{ line: number; raw: string; current: string; committed?: string; currentView?: string; rawLineNum?: number }> | undefined {
+  getRecordedHashes(filePath: string, view?: BuiltinView): Array<{ line: number; raw: string; committed?: string; currentView?: string; rawLineNum?: number }> | undefined {
     filePath = this.normalizePath(filePath);
     const viewTables = this.fileHashesByView.get(filePath);
     if (!viewTables) return undefined;
@@ -224,8 +237,8 @@ export class SessionState {
    */
   recordAfterRead(
     filePath: string,
-    view: ViewMode,
-    hashes: Array<{ line: number; raw: string; current: string; committed?: string; currentView?: string; rawLineNum?: number }>,
+    view: BuiltinView,
+    hashes: Array<{ line: number; raw: string; committed?: string; currentView?: string; rawLineNum?: number }>,
     rawContent: string,
   ): void {
     filePath = this.normalizePath(filePath);
@@ -258,7 +271,7 @@ export class SessionState {
   rerecordAfterWrite(
     filePath: string,
     newContent: string,
-    hashes: Array<{ line: number; raw: string; current: string; committed?: string; currentView?: string; rawLineNum?: number }>,
+    hashes: Array<{ line: number; raw: string; committed?: string; currentView?: string; rawLineNum?: number }>,
   ): void {
     filePath = this.normalizePath(filePath);
     const existingRecord = this.fileRecords.get(filePath);
@@ -266,8 +279,8 @@ export class SessionState {
     // Clear ALL view tables (content changed)
     this.fileHashesByView.delete(filePath);
     // Store new hashes under lastReadView
-    const view = existingRecord?.lastReadView ?? 'review';
-    const viewTables = new Map<ViewMode, typeof hashes>();
+    const view = existingRecord?.lastReadView ?? 'working';
+    const viewTables = new Map<BuiltinView, typeof hashes>();
     viewTables.set(view, hashes);
     this.fileHashesByView.set(filePath, viewTables);
     this.fileRecords.set(filePath, {
@@ -281,7 +294,7 @@ export class SessionState {
    * Returns the view name from the last read_tracked_file call for this file,
    * or undefined if the file has not been read in this session.
    */
-  getLastReadView(filePath: string): ViewMode | undefined {
+  getLastReadView(filePath: string): BuiltinView | undefined {
     filePath = this.normalizePath(filePath);
     return this.fileRecords.get(filePath)?.lastReadView;
   }
@@ -299,9 +312,10 @@ export class SessionState {
 
   /**
    * Resolves the correct hash for a given line based on the lastReadView.
-   * - review/changes: returns committed hash (the coordinate space agents write against)
-   * - settled: returns currentView hash
-   * - raw: returns raw hash
+   * - working: returns raw hash (display↔hash alignment)
+   * - simple: returns currentView hash (current projection coordinate space)
+   * - decided: returns committed hash
+   * - raw/original: returns raw hash
    *
    * When `suppliedHash` is provided, returns a discriminated union:
    *   - `{ match: true, rawLineNum, view }` if the supplied hash matches the expected hash
@@ -317,26 +331,13 @@ export class SessionState {
     line: number,
     suppliedHash?: string,
   ):
-    | { match: true; rawLineNum: number; view: ViewMode }
-    | { match: false; expectedHash: string; view: ViewMode }
+    | { match: true; rawLineNum: number; view: BuiltinView }
+    | { match: false; expectedHash: string; view: BuiltinView }
     | undefined {
     filePath = this.normalizePath(filePath);
     const viewTables = this.fileHashesByView.get(filePath);
     const lastView = this.getLastReadView(filePath);
     if (!viewTables || viewTables.size === 0 || !lastView) return undefined;
-
-    // Helper to get expected hash for a view
-    const expectedHashForView = (view: ViewMode, entry: { raw: string; current: string; committed?: string; currentView?: string }): string => {
-      switch (view) {
-        case 'review':
-        case 'changes':
-          return entry.committed ?? entry.raw;
-        case 'settled':
-          return entry.currentView ?? entry.current;
-        case 'raw':
-          return entry.raw;
-      }
-    };
 
     if (suppliedHash === undefined) {
       // Backward-compatible: no hash supplied, use lastReadView
@@ -347,28 +348,48 @@ export class SessionState {
       return { match: true, rawLineNum: entry.rawLineNum ?? entry.line, view: lastView };
     }
 
-    // Try all stored views to find a match
-    let foundLineInAnyView = false;
-    for (const [view, hashes] of viewTables) {
-      const entry = hashes.find((h) => h.line === line);
-      if (!entry) continue;
-      foundLineInAnyView = true;
-      const expected = expectedHashForView(view, entry);
-      if (suppliedHash === expected) {
-        return { match: true, rawLineNum: entry.rawLineNum ?? entry.line, view };
+    const HASH_FIELDS: Array<'raw' | 'committed' | 'currentView'> = ['raw', 'committed', 'currentView'];
+
+    // Stage 1: exact match at supplied line — primary field first, then same-line fallbacks
+    {
+      const primary = primaryHashForView[lastView];
+      const hashes = viewTables.get(lastView);
+      if (hashes) {
+        const entry = hashes.find((h) => h.line === line);
+        if (entry) {
+          // Try primary field
+          if (suppliedHash === entry[primary]) {
+            return { match: true, rawLineNum: entry.rawLineNum ?? entry.line, view: lastView };
+          }
+          // Same-line cross-field fallback (other fields at the same line)
+          for (const field of HASH_FIELDS) {
+            if (field === primary) continue;
+            const value: string | undefined = entry[field];
+            if (value !== undefined && suppliedHash === value) {
+              return { match: true, rawLineNum: entry.rawLineNum ?? entry.line, view: lastView };
+            }
+          }
+        }
       }
     }
 
-    // Content-addressed scan: find this hash at ANY line, not just the expected one.
+    // Stage 2: content-addressed scan — primary field only (no cross-field) to avoid ambiguity.
     // Only triggered when the line was recorded in at least one view (hash mismatch due to shift),
     // not when the line number was never valid.
     // Mirrors relocateHashRef's uniqueness guarantee — only returns if exactly one entry matches.
+    let foundLineInAnyView = false;
+    for (const [view, hashes] of viewTables) {
+      const entry = hashes.find((h) => h.line === line);
+      if (entry) { foundLineInAnyView = true; break; }
+    }
+
     if (foundLineInAnyView) {
       for (const [view, hashes] of viewTables) {
+        const viewPrimary = primaryHashForView[view];
         let uniqueMatch: (typeof hashes)[0] | undefined;
         let ambiguous = false;
         for (const entry of hashes) {
-          if (suppliedHash === expectedHashForView(view, entry)) {
+          if (suppliedHash === entry[viewPrimary]) {
             if (uniqueMatch) { ambiguous = true; break; }
             uniqueMatch = entry;
           }
@@ -384,7 +405,7 @@ export class SessionState {
     if (lastHashes) {
       const entry = lastHashes.find((h) => h.line === line);
       if (entry) {
-        return { match: false, expectedHash: expectedHashForView(lastView, entry), view: lastView };
+        return { match: false, expectedHash: entry[primaryHashForView[lastView]] ?? entry.raw, view: lastView };
       }
     }
 

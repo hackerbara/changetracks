@@ -15,7 +15,7 @@ export interface AffectedLineEntry {
  * the agent was working in (settled or changes view).
  */
 export interface ViewProjection {
-  view: 'settled' | 'changes';
+  view: 'decided' | 'simple';
   /** Map from raw 1-indexed line number to view-space line info */
   rawToView: Map<number, { viewLine: number; viewHash: string; viewContent: string }>;
 }

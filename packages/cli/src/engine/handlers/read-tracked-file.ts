@@ -8,17 +8,18 @@ import {
   buildViewDocument,
   formatPlainText,
   computeContinuationLines,
-  type ThreeZoneViewMode,
   type ThreeZoneDocument,
   type ThreeZoneLine,
 } from '@changedown/core';
+import type { BuiltinView } from '@changedown/core/host';
+import { resolveView, CANONICAL_VIEWS } from '../../view-alias.js';
 import { errorResult } from '../shared/error-result.js';
 import { optionalStrArg } from '../args.js';
 import { ConfigResolver } from '../config-resolver.js';
 import { resolveProtocolMode } from '../config.js';
 import type { ChangeDownConfig } from '../../config/index.js';
 import { resolveTrackingStatus } from '../scope.js';
-import { SessionState, type ViewMode } from '../state.js';
+import { SessionState } from '../state.js';
 import { composeGuide } from '../guide-composer.js';
 
 /** Default number of lines returned when no limit is specified. */
@@ -33,7 +34,7 @@ const MAX_LIMIT = 2000;
 export const readTrackedFileTool = {
   name: 'read_tracked_file',
   description:
-    'Read a tracked file with deliberation-aware projection. Default view (review) shows inline metadata annotations at point of contact with a deliberation summary header. Use view=changes for committed text with P/A flags, view=settled for clean text, view=raw for literal file bytes.',
+    'Read a tracked file with deliberation-aware projection. Default view (working) shows inline metadata annotations at point of contact with a deliberation summary header. Use view=simple for text with P/A flags, view=decided for clean decided text, view=raw for literal file bytes.',
   inputSchema: {
     type: 'object' as const,
     properties: {
@@ -51,11 +52,10 @@ export const readTrackedFileTool = {
       },
       view: {
         type: 'string',
-        enum: ['meta', 'review', 'all', 'content', 'raw', 'full', 'settled', 'final', 'committed', 'changes', 'simple'],
+        enum: ['working', 'simple', 'decided', 'raw'],
         description:
-          'Primary views: review (default, agent-optimized with inline annotations), changes (committed text with P/A flags), ' +
-          'settled (clean text with all changes applied), raw (literal file bytes). ' +
-          'Aliases: meta=review, committed=changes, content=raw, all=review, simple=changes, final=settled.',
+          'working (default, agent-optimized with inline annotations), simple (current projection with P/A flags), ' +
+          'decided (clean text with only decided changes applied), raw (literal file bytes).',
       },
       include_meta: {
         type: 'boolean',
@@ -105,38 +105,6 @@ function formatChangeLevelsLine(content: string): string | null {
   if (changes.length === 0) return null;
   const parts = changes.map((c) => `${c.id}=${c.level}`);
   return `## change levels: ${parts.join(', ')}`;
-}
-
-/**
- * Normalize v1 view name aliases to internal view names.
- *
- * V1 user-facing names:  review, changes, settled, raw
- * Popular editor aliases: all, simple, final
- * Internal names:        meta, committed, settled, content
- */
-function normalizeView(view: string): string {
-  switch (view) {
-    case 'review': case 'all': return 'meta';
-    case 'changes': case 'simple': return 'committed';
-    case 'final': return 'settled';
-    case 'raw': case 'full': return 'content';
-    default: return view;
-  }
-}
-
-/**
- * Reverse mapping from internal view name to canonical user-facing view name.
- * Used when recording session state so that downstream consumers always see
- * the four canonical names: review, changes, settled, raw.
- */
-function toCanonicalView(internalView: string): ViewMode {
-  switch (internalView) {
-    case 'meta': return 'review';
-    case 'committed': return 'changes';
-    case 'settled': return 'settled';
-    case 'content': case 'full': return 'raw';
-    default: return 'review';
-  }
 }
 
 /**
@@ -233,18 +201,14 @@ export async function handleReadTrackedFile(
     const requestedLimit = args.limit as number | undefined;
     const requestedView = optionalStrArg(args, 'view', 'view');
 
-    // Validate view parameter before proceeding
-    const VALID_VIEWS = new Set([
-      'meta', 'content', 'full', 'raw', 'settled', 'committed',
-      'review', 'changes', 'all', 'simple', 'final',
-    ]);
-    if (requestedView !== undefined && !VALID_VIEWS.has(requestedView)) {
+    // Resolve view to canonical name (or null for unknown)
+    const resolved = requestedView !== undefined ? resolveView(requestedView) : null;
+    if (requestedView !== undefined && resolved === null) {
       return errorResult(
-        `Invalid view: '${requestedView}'. Valid views: review, changes, settled, raw (aliases: meta=review, committed=changes, content=raw, all=review, simple=changes, final=settled).`,
+        `Unknown view '${requestedView}'. Valid views: ${CANONICAL_VIEWS.join(', ')}`,
       );
     }
 
-    // Normalize aliases to internal view names, applying view policy
     const includeMeta = args.include_meta === true;
     const includeGuide = args.include_guide === true;
 
@@ -253,16 +217,17 @@ export async function handleReadTrackedFile(
     const { config, projectDir } = await resolver.forFile(filePath);
 
     // 2b. Apply view policy: determine effective view from config defaults + agent request
-    const defaultView = normalizeView(config.policy.default_view ?? 'review');
+    const defaultView = resolveView(config.policy.default_view ?? 'working') ?? 'working';
     const viewPolicy = config.policy.view_policy ?? 'suggest';
-    let effectiveView: string;
+    let canonicalView: BuiltinView;
 
     if (requestedView === undefined) {
       // No view specified by agent → use project default
-      effectiveView = defaultView;
+      canonicalView = defaultView;
     } else {
-      effectiveView = normalizeView(requestedView);
-      if (viewPolicy === 'require' && effectiveView !== defaultView) {
+      // resolved is non-null here — the early return above guarantees it
+      canonicalView = resolved!;
+      if (viewPolicy === 'require' && canonicalView !== defaultView) {
         return errorResult(
           `This project requires view "${config.policy.default_view}" (view_policy = "require"). ` +
           `Requested view "${requestedView}" is not allowed. ` +
@@ -284,37 +249,35 @@ export async function handleReadTrackedFile(
     const trackingStatus = await resolveTrackingStatus(filePath, config, projectDir);
 
     // 5b. When hashline is disabled, return full-file content with line numbers only (no hashes).
-    // Meta view uses the unified pipeline (which computes hashes internally).
+    // Working view uses the unified pipeline (which computes hashes internally).
     const displayPath = path.relative(projectDir, filePath);
     if (!config.hashline.enabled) {
-      // Committed view requires hashline for coordinate-based addressing
-      if (effectiveView === 'committed') {
+      // Simple view requires hashline for coordinate-based addressing
+      if (canonicalView === 'simple') {
         return errorResult(
-          'Committed view requires hashline mode. Enable hashline in .changedown/config.toml: [hashline] enabled = true'
+          'Simple view requires hashline mode. Enable hashline in .changedown/config.toml: [hashline] enabled = true'
         );
       }
 
-      // Meta mode: use the unified three-zone pipeline (computes hashes internally)
-      if (effectiveView === 'meta') {
-        const canonicalView = toCanonicalView(effectiveView) as ThreeZoneViewMode;
+      // Working mode: use the unified three-zone pipeline (computes hashes internally)
+      if (canonicalView === 'working') {
         const protocolMode = resolveProtocolMode(config.protocol.mode);
         const doc = buildViewDocument(fileContent, canonicalView, {
           filePath: displayPath,
           trackingStatus: trackingStatus.status,
           protocolMode,
-          defaultView: 'review',
+          defaultView: 'working',
           viewPolicy: config.policy.view_policy ?? 'suggest',
         });
 
         const sessionHashes = doc.lines.map(l => ({
           line: l.margin.lineNumber,
-          raw: l.sessionHashes?.raw ?? l.margin.hash,
-          current: l.sessionHashes?.current ?? l.margin.hash,
-          committed: l.sessionHashes?.committed,
-          currentView: l.sessionHashes?.currentView,
-          rawLineNum: l.sessionHashes?.rawLineNum ?? l.rawLineNumber,
+          raw: l.sessionHashes.raw,
+          committed: l.sessionHashes.committed,
+          currentView: l.sessionHashes.currentView,
+          rawLineNum: l.rawLineNumber,
         }));
-        state.recordAfterRead(filePath, toCanonicalView(effectiveView), sessionHashes, fileContent);
+        state.recordAfterRead(filePath, canonicalView, sessionHashes, fileContent);
 
         const totalLines = doc.lines.length;
         const { effectiveStart, effectiveEnd } = computeEffectiveRange(offset, requestedLimit, totalLines);
@@ -363,7 +326,7 @@ export async function handleReadTrackedFile(
         );
       }
       const contentToShow =
-        effectiveView === 'settled' ? computeCurrentText(fileContent) : fileContent;
+        canonicalView === 'decided' ? computeCurrentText(fileContent) : fileContent;
       const allContentLines = contentToShow.split('\n');
       const totalContentLines = allContentLines.length;
 
@@ -374,7 +337,7 @@ export async function handleReadTrackedFile(
 
       const lineNumbered = formatLineNumberedContent(slicedLines, effStart);
       const output = `${headerWithoutHashlineTip}\n\n${lineNumbered}`;
-      state.recordAfterRead(filePath, toCanonicalView(effectiveView), [], fileContent);
+      state.recordAfterRead(filePath, canonicalView, [], fileContent);
       const guide = maybeComposeGuide(state, config, includeGuide);
       const content: Array<{ type: 'text'; text: string }> = [{ type: 'text', text: output }];
       const truncation = buildTruncationMessage(effStart, adjustedEnd, totalContentLines);
@@ -386,24 +349,22 @@ export async function handleReadTrackedFile(
     }
 
     // 6. Build ThreeZoneDocument via the unified pipeline
-    const canonicalView = toCanonicalView(effectiveView) as ThreeZoneViewMode;
     const protocolMode = resolveProtocolMode(config.protocol.mode);
     const doc = buildViewDocument(fileContent, canonicalView, {
       filePath: displayPath,
       trackingStatus: trackingStatus.status,
       protocolMode,
-      defaultView: 'review',
+      defaultView: 'working',
       viewPolicy: config.policy.view_policy ?? 'suggest',
     });
 
     // 7. Extract session hashes from the IR for staleness detection
     const sessionHashes = doc.lines.map(l => ({
       line: l.margin.lineNumber,
-      raw: l.sessionHashes?.raw ?? l.margin.hash,
-      current: l.sessionHashes?.current ?? l.margin.hash,
-      committed: l.sessionHashes?.committed,
-      currentView: l.sessionHashes?.currentView,
-      rawLineNum: l.sessionHashes?.rawLineNum ?? l.rawLineNumber,
+      raw: l.sessionHashes.raw,
+      committed: l.sessionHashes.committed,
+      currentView: l.sessionHashes.currentView,
+      rawLineNum: l.rawLineNumber,
     }));
     state.recordAfterRead(filePath, canonicalView, sessionHashes, fileContent);
 

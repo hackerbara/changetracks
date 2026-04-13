@@ -71,7 +71,7 @@ describe('headingIdPlugin — slug generation', () => {
 
   it('CriticMarkup in heading: insertion markup stripped from slug', () => {
     const renderer = createPreviewRenderer();
-    const { html } = renderer.render('## Updated {++title++}', VIEW_PRESETS.review);
+    const { html } = renderer.render('## Updated {++title++}', VIEW_PRESETS.working);
     // The changedown plugin rewrites {++title++} to HTML spans before heading-id
     // processes it, so the slug should strip the HTML and produce 'updated-title'
     expect(html).toContain('id="updated-title"');
@@ -80,16 +80,16 @@ describe('headingIdPlugin — slug generation', () => {
 });
 
 describe('headingIdPlugin — integration: all view modes', () => {
-  it('review mode: heading gets id attribute', () => {
+  it('working mode: heading gets id attribute', () => {
     const renderer = createPreviewRenderer();
-    const { html } = renderer.render('## Design', VIEW_PRESETS.review);
+    const { html } = renderer.render('## Design', VIEW_PRESETS.working);
     expect(html).toContain('id="design"');
     renderer.dispose();
   });
 
-  it('settled mode: heading gets id attribute (plain MarkdownIt path)', () => {
+  it('decided mode: heading gets id attribute (plain MarkdownIt path)', () => {
     const renderer = createPreviewRenderer();
-    const { html } = renderer.render('## Design', VIEW_PRESETS.final);
+    const { html } = renderer.render('## Design', VIEW_PRESETS.decided);
     expect(html).toContain('id="design"');
     renderer.dispose();
   });

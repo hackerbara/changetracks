@@ -114,9 +114,11 @@ describe('Bug 4: review --settle flag', () => {
     expect(result.success).toBe(true);
     // With auto_on_approve = true and --settle, the markup should be removed
     const content = await fs.readFile(filePath, 'utf-8');
-    // The settled result should have the accepted text without CriticMarkup
+    // The settled result should have the accepted text without inline CriticMarkup anchor.
+    // (The L3 audit trail in the footnote block may still record {~~quick~>slow~~}
+    // as historical provenance — that is correct and expected.)
     expect(content).toContain('slow');
-    expect(content).not.toContain('{~~');
+    expect(content).not.toContain('{~~quick~>slow~~}[^cn-1]');
   });
 });
 

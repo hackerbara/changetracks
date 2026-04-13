@@ -157,9 +157,9 @@ describe('First-contact guide in read_tracked_file', () => {
   });
 
   describe('view descriptions', () => {
-    it('review default mentions review view', async () => {
+    it('working default mentions working view', async () => {
       const ctx = new ScenarioContext({
-        policy: { mode: 'safety-net', creation_tracking: 'footnote', default_view: 'review', view_policy: 'suggest' },
+        policy: { mode: 'safety-net', creation_tracking: 'footnote', default_view: 'working', view_policy: 'suggest' },
       }, { showGuide: true });
       await ctx.setup();
       const filePath = await ctx.createFile('doc.md',
@@ -167,22 +167,22 @@ describe('First-contact guide in read_tracked_file', () => {
       const result = await ctx.read(filePath);
       expect(result.content.length).toBe(2);
       const guideText = result.content[0].text;
-      expect(guideText).toContain('review view');
+      expect(guideText).toContain('working view');
       await ctx.teardown();
     });
 
-    it('changes default mentions changes view', async () => {
+    it('simple default mentions simple view', async () => {
       const ctx = new ScenarioContext({
         hashline: { enabled: true, auto_remap: false },
-        policy: { mode: 'safety-net', creation_tracking: 'footnote', default_view: 'changes', view_policy: 'suggest' },
+        policy: { mode: 'safety-net', creation_tracking: 'footnote', default_view: 'simple', view_policy: 'suggest' },
       }, { showGuide: true });
       await ctx.setup();
       const filePath = await ctx.createFile('doc.md',
         '<!-- changedown.com/v1: tracked -->\n# Test\nSome content.\n');
-      const result = await ctx.read(filePath, { view: 'changes' });
+      const result = await ctx.read(filePath, { view: 'simple' });
       expect(result.content.length).toBe(2);
       const guideText = result.content[0].text;
-      expect(guideText).toContain('changes view');
+      expect(guideText).toContain('simple view');
       await ctx.teardown();
     });
   });

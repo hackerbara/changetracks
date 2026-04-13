@@ -8,6 +8,7 @@ export {
   findConfigFile,
   resolveProjectDir,
   isFileInScope,
+  expandTrackingAbsolutePattern,
   resolveProtocolMode,
   derivePolicyMode,
   asStringArray,

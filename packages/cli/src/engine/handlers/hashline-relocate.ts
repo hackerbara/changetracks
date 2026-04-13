@@ -3,6 +3,10 @@ import {
   HashlineMismatchError,
   computeLineHash,
   relocateHashRef,
+  relocateHashRefMulti,
+  parseForFormat,
+  buildSessionHashes,
+  type HashStrategy,
 } from '@changedown/core';
 
 /** Re-exported so tests can use the same hash function as relocation (avoids duplicate module instances). */
@@ -69,6 +73,30 @@ export function validateOrRelocate(
   }
 }
 
+// ── Multi-strategy relocation ──────────────────────────────────────────
+
+/**
+ * Multi-strategy file-based relocation. Tries raw, committed, and
+ * currentView hash strategies in that order. Returns the first unique
+ * match across all three projections.
+ */
+export function tryRelocateMulti(
+  ref: { line: number; hash: string },
+  content: string,
+): { newLine: number; strategy: string } | null {
+  const fileLines = content.split('\n');
+  const changes = parseForFormat(content).getChanges();
+  const { byRawLine } = buildSessionHashes(content, changes);
+
+  const strategies: HashStrategy[] = [
+    { name: 'raw',         fn: (i, line) => computeLineHash(i, line, fileLines) },
+    { name: 'committed',   fn: (i, _)    => byRawLine.get(i + 1)?.committed ?? '' },
+    { name: 'currentView', fn: (i, _)    => byRawLine.get(i + 1)?.currentView ?? '' },
+  ];
+
+  return relocateHashRefMulti(ref, fileLines, strategies);
+}
+
 // ── Auto-remap support ─────────────────────────────────────────────────
 
 export interface AutoRemapResult {
@@ -101,7 +129,14 @@ export function validateOrAutoRemap(
     return { line: ref.line };
   } catch (err: unknown) {
     // Attempt relocation on any validation error (mismatch or out-of-range)
-    const relocated = tryRelocate(ref, fileLines);
+    let relocated = tryRelocate(ref, fileLines);
+    if (!relocated) {
+      // Fallback: try projection-aware relocation across raw/committed/currentView
+      const relocatedMulti = tryRelocateMulti(ref, fileLines.join('\n'));
+      if (relocatedMulti) {
+        relocated = { newLine: relocatedMulti.newLine };
+      }
+    }
     if (relocated) {
       relocations.push({ param: paramName, from: ref.line, to: relocated.newLine });
       if (autoRemap) {
@@ -140,7 +175,7 @@ export function validateOrAutoRemap(
         'For multiple edits, use propose_change with a changes array or propose_batch',
         'to apply all changes atomically against the same file state.',
         '',
-        `  read_tracked_file(file: "<path>", view: "review")`,
+        `  read_tracked_file(file: "<path>", view: "working")`,
         '',
         `Quick-fix: ${ref.line}:${ref.hash} → ${ref.line}:${actualHash}`,
       ].join('\n');

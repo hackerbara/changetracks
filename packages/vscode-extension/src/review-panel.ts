@@ -10,7 +10,7 @@
 
 import * as vscode from 'vscode';
 import { ChangeNode, ChangeType, isGhostNode, nodeStatus } from '@changedown/core';
-import { ViewMode } from './view-mode';
+import type { BuiltinView } from '@changedown/core/host';
 import { typeLabel } from './visual-semantics';
 import { resolveAuthorIdentity } from './author-identity';
 
@@ -22,7 +22,7 @@ const REFRESH_DEBOUNCE_MS = 80;
 
 export interface ReviewPanelState {
     trackingEnabled: boolean;
-    viewMode: ViewMode;
+    view: BuiltinView;
     changes: ChangeCardData[];
     hasActiveMarkdownEditor: boolean;
     activeFilter: 'all' | 'proposed' | 'accepted' | 'rejected' | 'consumed';
@@ -57,15 +57,16 @@ export interface StateDiff {
     removed: string[];
     updated: Array<{ card: ChangeCardData; html: string }>;
     trackingEnabled?: boolean;
-    viewMode?: ViewMode;
+    view?: BuiltinView;
 }
 
 export interface ReviewPanelContext {
     getChanges(): ChangeNode[];
     getDocumentText(): string;
     trackingMode: boolean;
-    viewMode: ViewMode;
+    view: BuiltinView;
     onDidChangeChanges(listener: (uris: vscode.Uri[]) => void): vscode.Disposable;
+    onDidChangeView(listener: () => void): vscode.Disposable;
 }
 
 // ── Color class mapping ──────────────────────────────────────────────────────
@@ -259,6 +260,7 @@ export class ReviewPanelProvider implements vscode.WebviewViewProvider, vscode.D
     constructor(private ctx: ReviewPanelContext) {
         this.disposables.push(
             ctx.onDidChangeChanges(() => this.scheduleRefresh()),
+            ctx.onDidChangeView(() => this.scheduleRefresh()),
             vscode.window.onDidChangeActiveTextEditor(() => this.scheduleRefresh()),
         );
     }
@@ -314,15 +316,14 @@ export class ReviewPanelProvider implements vscode.WebviewViewProvider, vscode.D
         }, REFRESH_DEBOUNCE_MS);
     }
 
-    private handleMessage(msg: { command: string; value?: string; mode?: string; id?: string; filter?: string; grouping?: string; sorting?: string }): void {
+    private handleMessage(msg: { command: string; value?: string; view?: string; id?: string; filter?: string; grouping?: string; sorting?: string }): void {
         switch (msg.command) {
             case 'toggleTracking':
                 vscode.commands.executeCommand('changedown.toggleTracking');
                 this.scheduleRefresh();
                 break;
             case 'setViewMode':
-                vscode.commands.executeCommand('changedown.setViewMode', msg.mode ?? msg.value);
-                this.scheduleRefresh();
+                vscode.commands.executeCommand('changedown.setViewMode', msg.view ?? msg.value);
                 break;
             case 'prevChange':
                 vscode.commands.executeCommand('changedown.previousChange');
@@ -422,7 +423,7 @@ export class ReviewPanelProvider implements vscode.WebviewViewProvider, vscode.D
 
         return {
             trackingEnabled: this.ctx.trackingMode,
-            viewMode: this.ctx.viewMode,
+            view: this.ctx.view,
             changes: cards,
             hasActiveMarkdownEditor: hasActiveMarkdownEditor ?? false,
             activeFilter: this.activeFilter,
@@ -473,19 +474,19 @@ export class ReviewPanelProvider implements vscode.WebviewViewProvider, vscode.D
                 // The caller checks for this via the trackingEnabled/viewMode fields being set
                 // along with no card diffs — we use a different approach: force full rebuild
                 trackingEnabled: newState.trackingEnabled !== oldState.trackingEnabled ? newState.trackingEnabled : undefined,
-                viewMode: newState.viewMode !== oldState.viewMode ? newState.viewMode : undefined,
+                view: newState.view !== oldState.view ? newState.view : undefined,
             };
         }
 
         return {
             hasChanges: added.length > 0 || removed.length > 0 || updated.length > 0
                 || newState.trackingEnabled !== oldState.trackingEnabled
-                || newState.viewMode !== oldState.viewMode,
+                || newState.view !== oldState.view,
             added,
             removed,
             updated,
             trackingEnabled: newState.trackingEnabled !== oldState.trackingEnabled ? newState.trackingEnabled : undefined,
-            viewMode: newState.viewMode !== oldState.viewMode ? newState.viewMode : undefined,
+            view: newState.view !== oldState.view ? newState.view : undefined,
         };
     }
 
@@ -503,7 +504,7 @@ export class ReviewPanelProvider implements vscode.WebviewViewProvider, vscode.D
             // fall through to full rebuild. Detect by: card diffs are empty but hasChanges is true
             // and it's not just a tracking/viewMode toggle.
             const hasCardDiffs = diff.added.length > 0 || diff.removed.length > 0 || diff.updated.length > 0;
-            const hasMetaOnly = diff.trackingEnabled !== undefined || diff.viewMode !== undefined;
+            const hasMetaOnly = diff.trackingEnabled !== undefined || diff.view !== undefined;
 
             if (hasCardDiffs || hasMetaOnly) {
                 // Try incremental update
@@ -521,7 +522,7 @@ export class ReviewPanelProvider implements vscode.WebviewViewProvider, vscode.D
                             html: u.html,
                         })),
                         trackingEnabled: diff.trackingEnabled,
-                        viewMode: diff.viewMode,
+                        view: diff.view,
                     },
                 });
                 this.lastState = newState;
@@ -620,7 +621,7 @@ export function buildCardHtml(c: ChangeCardData): string {
 /** Exported for testing. */
 export function generateReviewHtml(state: ReviewPanelState, nonce: string): string {
     const {
-        trackingEnabled, viewMode, changes, hasActiveMarkdownEditor,
+        trackingEnabled, view, changes, hasActiveMarkdownEditor,
         activeFilter, activeGrouping, activeSorting,
     } = state;
 
@@ -1238,10 +1239,10 @@ export function generateReviewHtml(state: ReviewPanelState, nonce: string): stri
             </button>
             <div class="zone-label">Views</div>
             <div class="vm-grid">
-                <button class="vm-btn ${viewMode === 'review' ? 'vm-active' : ''}" data-mode="review" title="Show all markup">All Markup</button>
-                <button class="vm-btn ${viewMode === 'changes' ? 'vm-active' : ''}" data-mode="changes" title="Hide delimiters">Simple</button>
-                <button class="vm-btn ${viewMode === 'settled' ? 'vm-active' : ''}" data-mode="settled" title="Show final document">Final</button>
-                <button class="vm-btn ${viewMode === 'raw' ? 'vm-active' : ''}" data-mode="raw" title="Show original document">Original</button>
+                <button class="vm-btn ${view === 'working' ? 'vm-active' : ''}" data-view-name="working" title="Show full editorial annotation">Working</button>
+                <button class="vm-btn ${view === 'simple' ? 'vm-active' : ''}" data-view-name="simple" title="Show committed text">Simple</button>
+                <button class="vm-btn ${view === 'decided' ? 'vm-active' : ''}" data-view-name="decided" title="Show decided text">Decided</button>
+                <button class="vm-btn ${view === 'original' ? 'vm-active' : ''}" data-view-name="original" title="Show original text">Original</button>
             </div>
         </div>
 
@@ -1314,10 +1315,10 @@ export function generateReviewHtml(state: ReviewPanelState, nonce: string): stri
         });
 
         // Configure zone: view mode buttons
-        document.querySelectorAll('.vm-btn[data-mode]').forEach(btn => {
+        document.querySelectorAll('.vm-btn[data-view-name]').forEach(btn => {
             btn.addEventListener('click', () => {
-                const mode = btn.getAttribute('data-mode');
-                if (mode) send('setViewMode', { mode });
+                const view = btn.getAttribute('data-view-name');
+                if (view) send('setViewMode', { view });
             });
         });
 
@@ -1532,11 +1533,11 @@ export function generateReviewHtml(state: ReviewPanelState, nonce: string): stri
                     }
                 }
 
-                // Update view mode buttons if viewMode changed
-                if (message.diff.viewMode) {
+                // Update view mode buttons if view changed
+                if (message.diff.view) {
                     document.querySelectorAll('.vm-btn').forEach(btn => {
-                        const mode = btn.getAttribute('data-mode');
-                        if (mode === message.diff.viewMode) {
+                        const view = btn.getAttribute('data-view-name');
+                        if (view === message.diff.view) {
                             btn.classList.add('vm-active');
                         } else {
                             btn.classList.remove('vm-active');

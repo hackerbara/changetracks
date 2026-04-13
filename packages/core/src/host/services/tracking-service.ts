@@ -1,9 +1,9 @@
 import { PendingEditManager, type CrystallizedEdit } from '../pending-edit-manager.js';
-import { EventEmitter, type Event, type Disposable, type PendingOverlay } from '../types.js';
+import { EventEmitter, type Event, type Disposable, type PendingOverlay, type Format } from '../types.js';
 
 export interface TrackingServiceConfig {
   pauseThresholdMs?: number;
-  defaultFormat?: 'L2' | 'L3';
+  defaultFormat?: Format;
 }
 
 export class TrackingService implements Disposable {

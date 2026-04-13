@@ -24,7 +24,7 @@
  */
 
 import { tryFindUniqueMatch, type UniqueMatch } from '../file-ops.js';
-import { parseContextualEditOp } from '../parser/footnote-native-parser.js';
+import { parseContextualEditOp } from '../parser/contextual-edit-op.js';
 import { computeLineHash } from '../hashline.js';
 import { buildContextualL3EditOp } from './footnote-generator.js';
 import { buildLineStarts, offsetToLineNumber } from './l2-to-l3.js';

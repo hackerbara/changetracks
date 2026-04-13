@@ -1,95 +1,23 @@
 import * as vscode from 'vscode';
-import { type ViewMode, VIEW_MODES } from '../view-mode';
 import { toResolvedUri } from '../resolved-content-provider';
 import { annotateFromGit } from '../annotate-command';
 import { positionToOffset } from '../converters';
-import { isSupported } from '../managers/shared';
 import { toggleTracking } from '../features/tracking-toggle';
 import type { BaseController, BuiltinView } from '@changedown/core/host';
 import { LSP_METHOD, VIEW_PRESETS } from '@changedown/core/host';
 import type { VsCodeLspAdapter } from '../adapters';
-import type { ProjectedViewAdapter } from '../projected-view-adapter';
-import type { DecorationManager } from '../managers/decoration-manager';
 import type { NavigationCommands } from './navigation-commands';
 import type { ReviewCommands } from './review-commands';
 import type { MoveTracker } from '../features/move-tracker';
 
-const VIEW_MODE_TO_BUILTIN: Record<ViewMode, BuiltinView> = {
-    review: 'review',
-    changes: 'simple',
-    settled: 'final',
-    raw: 'raw',
-};
-
 export interface ChangeCommandsContext {
     expandThreadForChangeId(changeId: string): void;
-}
-
-/**
- * Apply view-mode change: handle buffer swap transitions for projected modes
- * (settled/raw), update controller, force decoration recreate, re-render all
- * visible editors, and update context key. Plain helper — NOT a delegation
- * method on ctx.
- */
-async function applyViewMode(
-    controller: BaseController,
-    lsp: VsCodeLspAdapter,
-    projectedView: ProjectedViewAdapter,
-    decorations: DecorationManager,
-    mode: ViewMode,
-): Promise<void> {
-    const builtinView = VIEW_MODE_TO_BUILTIN[mode];
-    const targetPreset = VIEW_PRESETS[builtinView];
-    const editor = vscode.window.activeTextEditor;
-
-    const wasProjected = controller.projection !== 'current';
-    const willProject = targetPreset.projection !== 'current';
-
-    // Handle buffer swap transitions for projected view
-    if (editor && isSupported(editor.document)) {
-        if (wasProjected && !willProject) {
-            // Leaving projected view → restore original buffer
-            await projectedView.exit(editor);
-        } else if (!wasProjected && willProject) {
-            // Entering projected view → clear stale decorations, swap buffer
-            decorations.clearDecorations(editor);
-            await projectedView.enter(editor, mode as 'settled' | 'raw');
-        } else if (wasProjected && willProject && controller.projection !== targetPreset.projection) {
-            // Switching between projected modes → exit then enter
-            await projectedView.exit(editor);
-            decorations.clearDecorations(editor);
-            await projectedView.enter(editor, mode as 'settled' | 'raw');
-        }
-    }
-
-    controller.setView(VIEW_MODE_TO_BUILTIN[mode]);
-
-    // Send viewMode for other visible supported URIs — LSP filters semantic tokens per-URI.
-    const activeUri = vscode.window.activeTextEditor?.document.uri.toString();
-    for (const visible of vscode.window.visibleTextEditors) {
-        if (!isSupported(visible.document)) continue;
-        const vUri = visible.document.uri.toString();
-        if (vUri !== activeUri) {
-            lsp.sendViewMode(vUri, mode);
-        }
-    }
-
-    decorations.forceHiddenRecreate();
-    // Invalidate non-active editors so they re-render with the correct View from getView()
-    for (const visible of vscode.window.visibleTextEditors) {
-        if (!isSupported(visible.document)) continue;
-        if (visible.document.uri.toString() === activeUri) continue;
-        controller.invalidateRendering(visible.document.uri.toString());
-    }
-    vscode.commands.executeCommand('setContext', 'changedown:viewMode', controller.getView()?.name ?? 'review');
 }
 
 export function registerChangeCommands(
     context: vscode.ExtensionContext,
     controller: BaseController,
     lsp: VsCodeLspAdapter,
-    projectedView: ProjectedViewAdapter,
-    decorations: DecorationManager,
     navigationCommands: NavigationCommands,
     reviewCommands: ReviewCommands,
     changeComments: ChangeCommandsContext,
@@ -125,13 +53,15 @@ export function registerChangeCommands(
             await reviewCommands.addComment();
         }),
         vscode.commands.registerCommand('changedown.toggleView', async () => {
-            const order: ViewMode[] = ['review', 'changes', 'settled', 'raw'];
-            const idx = order.indexOf(controller.viewMode);
-            await applyViewMode(controller, lsp, projectedView, decorations, order[(idx + 1) % order.length]);
+            const order: BuiltinView[] = ['working', 'simple', 'decided', 'original'];
+            const current = controller.getView().name as BuiltinView;
+            const idx = order.indexOf(current);
+            const next = order[(idx + 1) % order.length];
+            controller.setView(next);
         }),
         vscode.commands.registerCommand('changedown.setViewMode', async (mode: string) => {
-            if ((VIEW_MODES as readonly string[]).includes(mode)) {
-                await applyViewMode(controller, lsp, projectedView, decorations, mode as ViewMode);
+            if (mode in VIEW_PRESETS) {
+                controller.setView(mode as BuiltinView);
             }
         }),
         vscode.commands.registerCommand('changedown.annotateFromGit', async () => {

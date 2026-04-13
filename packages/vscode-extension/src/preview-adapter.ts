@@ -1,19 +1,22 @@
 import * as vscode from 'vscode';
-import { VIEW_PRESETS, type DocumentSnapshot, type PreviewPort, type View } from '@changedown/core/host';
+import { VIEW_PRESETS, type BuiltinView, type DocumentSnapshot, type PreviewPort, type View } from '@changedown/core/host';
 import type { PluginConfig } from '@changedown/preview';
 
 /**
  * VS Code adapter for the PreviewPort interface.
  *
- * Stores the latest DocumentSnapshot and exposes a getPluginConfig()
- * callback that the changedownPlugin reads on every markdown-it render pass.
- * Triggers markdown.preview.refresh when the active view changes.
+ * Stores the latest DocumentSnapshot and exposes getPluginConfig() which
+ * the changedownPlugin reads on every markdown-it render pass. Fires
+ * markdown.preview.refresh ONLY when the PluginConfig actually changes
+ * — diffing the raw display fields would cause spurious refreshes on
+ * toggles that don't affect preview output (e.g. delimiters).
  */
 export class VsCodePreviewAdapter implements PreviewPort {
     private currentSnapshot: DocumentSnapshot | null = null;
+    private lastPluginConfigKey: string = '';
 
     private effectiveView(): View {
-        return this.currentSnapshot?.view ?? VIEW_PRESETS.review;
+        return this.currentSnapshot?.view ?? VIEW_PRESETS.working;
     }
 
     getPluginConfig(): PluginConfig {
@@ -27,25 +30,39 @@ export class VsCodePreviewAdapter implements PreviewPort {
             authorColors: view.display.authorColors ?? 'auto',
             isDarkTheme: vscode.window.activeColorTheme?.kind === 2
                 || vscode.window.activeColorTheme?.kind === 3,
-            viewMode: view.name as any,
+            viewName: view.name as BuiltinView,
         };
     }
 
-    update(snapshot: DocumentSnapshot): void {
-        const prevView = this.effectiveView();
-        this.currentSnapshot = snapshot;
-        const newView = this.effectiveView();
+    /**
+     * Stable serialization of PluginConfig for diffing. Excludes isDarkTheme
+     * because theme changes are driven by VS Code events separately.
+     */
+    private pluginConfigKey(): string {
+        const cfg = this.getPluginConfig();
+        return JSON.stringify({
+            showFootnotes: cfg.showFootnotes,
+            authorColors: cfg.authorColors,
+            viewName: cfg.viewName,
+        });
+    }
 
-        if (prevView.name !== newView.name || prevView.display.footnotes !== newView.display.footnotes) {
+    update(snapshot: DocumentSnapshot): void {
+        this.currentSnapshot = snapshot;
+        const newKey = this.pluginConfigKey();
+        if (newKey !== this.lastPluginConfigKey) {
+            this.lastPluginConfigKey = newKey;
             vscode.commands.executeCommand('markdown.preview.refresh');
         }
     }
 
     clear(): void {
         this.currentSnapshot = null;
+        this.lastPluginConfigKey = '';
     }
 
     dispose(): void {
         this.currentSnapshot = null;
+        this.lastPluginConfigKey = '';
     }
 }

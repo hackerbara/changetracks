@@ -1,7 +1,7 @@
 /**
  * Step definitions for O5 (Read tracked file views) feature file.
  *
- * Covers: meta view, content view, full view, settled view, committed view,
+ * Covers: meta view, content view, full view, final view, committed view,
  * line range slicing, and include_meta flag.
  */
 import { Given, When, Then } from '@cucumber/cucumber';
@@ -192,7 +192,7 @@ Then(
   function (this: ChangeDownWorld, expected: string) {
     assert.ok(this.lastResult, 'No MCP result available');
     const text = this.ctx.resultText(this.lastResult);
-    assert.ok(text.includes(expected), `Expected "${expected}" in settled view`);
+    assert.ok(text.includes(expected), `Expected "${expected}" in final view`);
   },
 );
 
@@ -200,7 +200,7 @@ Then(
   '{string} does NOT appear \\(replaced by ALPHA... wait, gamma is a different change)',
   function (this: ChangeDownWorld, _text: string) {
     // This step's phrasing acknowledges a correction in the feature file itself.
-    // The settled view shows accept-all, so gamma IS replaced by GAMMA.
+    // The final view shows accept-all, so gamma IS replaced by GAMMA.
     // Assertion handled by the next step.
   },
 );
@@ -210,14 +210,14 @@ Then(
   function (this: ChangeDownWorld, expected: string) {
     assert.ok(this.lastResult, 'No MCP result available');
     const text = this.ctx.resultText(this.lastResult);
-    // In settled view, accept-all mode: both pending and accepted are applied.
-    // The feature file expected "gamma" to appear (reverted), but settled view
+    // In final view, accept-all mode: both pending and accepted are applied.
+    // The feature file expected "gamma" to appear (reverted), but final view
     // applies all changes. This step is a documentation mismatch in the original
     // feature file. The test file (O5) verifies GAMMA appears, not gamma.
     // We follow the test file behavior.
     assert.ok(
       text.includes('GAMMA') || text.includes(expected),
-      `Expected either "GAMMA" or "${expected}" in settled view`,
+      `Expected either "GAMMA" or "${expected}" in final view`,
     );
   },
 );

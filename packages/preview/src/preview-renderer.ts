@@ -2,7 +2,7 @@ import MarkdownIt from 'markdown-it';
 import markdownItKatex from '@traptitech/markdown-it-katex';
 import { CriticMarkupParser, computeCurrentView, computeOriginalText } from '@changedown/core';
 import type { ChangeNode } from '@changedown/core';
-import type { View } from '@changedown/core/host';
+import type { BuiltinView, View } from '@changedown/core/host';
 import { changedownPlugin } from './plugin.js';
 import { headingIdPlugin } from './heading-id-plugin.js';
 import type { PluginConfig } from './plugin.js';
@@ -35,7 +35,7 @@ function makeConfig(view: View, opts: PreviewRendererOptions): PluginConfig {
     isDarkTheme: true,
     emitSourceMap: opts.sourceMap,
     urlResolver: opts.urlResolver,
-    viewName: view.name,
+    viewName: view.name as BuiltinView,
   };
 }
 

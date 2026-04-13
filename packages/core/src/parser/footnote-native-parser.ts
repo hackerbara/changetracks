@@ -4,96 +4,16 @@ import { parseOp } from '../op-parser.js';
 import { parseTimestamp } from '../timestamp.js';
 import { computeLineHash } from '../hashline.js';
 import { relocateHashRef } from '../hashline-cleanup.js';
-import { FOOTNOTE_DEF_START, FOOTNOTE_L3_EDIT_OP, FOOTNOTE_THREAD_REPLY, splitBodyAndFootnotes, CTX_RE, unescapeCtxString } from '../footnote-patterns.js';
-import { parseFootnoteHeader } from '../footnote-utils.js';
+import { FOOTNOTE_DEF_START, FOOTNOTE_L3_EDIT_OP, splitBodyAndFootnotes, CTX_RE, unescapeCtxString, IMAGE_DIMENSIONS_RE } from '../footnote-patterns.js';
+import { parseFootnoteBlock } from './footnote-block-parser.js';
+import type { Footnote as TypedFootnote } from '../model/footnote.js';
 import { tryFindUniqueMatch, type UniqueMatch } from '../file-ops.js';
 import { defaultNormalizer } from '../text-normalizer.js';
 import { resolveReplayFromParsedFootnotes, type ReplayFootnote } from '../operations/scrub.js';
 import { lineOffset } from '../comment-syntax.js';
+import { parseContextualEditOp } from './contextual-edit-op.js';
 
-// CriticMarkup opener → closer mapping
-const CM_OPENERS: Record<string, string> = {
-  '{++': '++}',
-  '{--': '--}',
-  '{~~': '~~}',
-  '{==': '==}',
-  '{>>': '<<}',  // optional closer for comments
-};
-
-/**
- * Detect and extract contextual edit-op format.
- *
- * Contextual format: `Protocol {++o++}verview` — surrounding text provides
- * the body-match anchor. This differs from the old "self-anchoring" format
- * where the op string starts directly with a CriticMarkup delimiter.
- *
- * Returns null if the opString is NOT contextual (i.e. starts directly with
- * a CriticMarkup opener with no non-whitespace prefix text).
- *
- * Returns `{ contextBefore, opString, contextAfter }` where `opString` is the
- * extracted CriticMarkup portion (suitable for passing to `parseOp`).
- */
-export function parseContextualEditOp(
-  opString: string,
-): { contextBefore: string; opString: string; contextAfter: string } | null {
-  // Find the first CriticMarkup opener in the string
-  let opStart = -1;
-  let opener = '';
-  for (const o of Object.keys(CM_OPENERS)) {
-    const idx = opString.indexOf(o);
-    if (idx !== -1 && (opStart === -1 || idx < opStart)) {
-      opStart = idx;
-      opener = o;
-    }
-  }
-
-  if (opStart === -1) return null; // No CriticMarkup op found at all
-
-  const contextBefore = opString.slice(0, opStart);
-
-  // Find the matching closer
-  const expectedCloser = CM_OPENERS[opener];
-  let opEnd = -1;
-
-  if (opener === '{~~') {
-    // Substitution: use the *last* ~~} so newText may contain a ~~} substring
-    // before the true closer (indexOf would truncate early).
-    const searchFrom = opStart + opener.length;
-    const closerIdx = opString.lastIndexOf('~~}');
-    opEnd = closerIdx >= searchFrom ? closerIdx + 3 : -1;
-  } else if (opener === '{>>') {
-    // Comment: closer is optional
-    const searchFrom = opStart + opener.length;
-    const closerIdx = opString.indexOf('<<}', searchFrom);
-    if (closerIdx !== -1) {
-      opEnd = closerIdx + 3;
-    } else {
-      // No closer — op extends to end of string
-      opEnd = opString.length;
-    }
-  } else {
-    const searchFrom = opStart + opener.length;
-    const closerIdx = opString.indexOf(expectedCloser, searchFrom);
-    opEnd = closerIdx !== -1 ? closerIdx + expectedCloser.length : -1;
-  }
-
-  if (opEnd === -1) return null; // Closer not found — malformed op, don't parse contextually
-
-  const extractedOp = opString.slice(opStart, opEnd);
-  const contextAfter = opString.slice(opEnd);
-
-  // Contextual if EITHER contextBefore OR contextAfter has non-whitespace text.
-  // A change at column 0 produces "{++c++}onversational" (empty before, trailing after).
-  // A change at end of line produces "context{++c++}" (leading before, empty after).
-  // No non-whitespace context on either side — not a contextual op.
-  if (contextBefore.trim() === '' && contextAfter.trim() === '') return null;
-  // Guard: old @ctx: format "{--text--} @ctx:..." is NOT contextual — it's legacy metadata.
-  if (contextBefore.trim() === '' && contextAfter.trimStart().startsWith('@ctx:')) return null;
-  // Guard: reasoning suffix "{==text==}{>>comment" is NOT contextual — {>> is reasoning.
-  if (contextBefore.trim() === '' && contextAfter.trimStart().startsWith('{>>')) return null;
-
-  return { contextBefore, opString: extractedOp, contextAfter };
-}
+export { parseContextualEditOp };
 
 /** Extract deletion context from the portion of opString after the CriticMarkup closer. */
 function parseDeletionContext(opString: string): { before: string; after: string } | null {
@@ -106,11 +26,7 @@ function parseDeletionContext(opString: string): { before: string; after: string
   return { before: unescapeCtxString(match[1]), after: unescapeCtxString(match[2]) };
 }
 
-// Approval metadata lines (indented)
-const APPROVED_RE = /^ {4}approved:\s+(\S+)\s+(\S+)\s+"([^"]*)"/;
-const REJECTED_META_RE = /^ {4}rejected:\s+(\S+)\s+(\S+)\s+"([^"]*)"/;
-
-interface ParsedFootnote {
+export interface ParsedFootnote {
   id: string;
   author: string;
   date: string;
@@ -119,7 +35,13 @@ interface ParsedFootnote {
   lineNumber?: number;
   hash?: string;
   opString?: string;
-  discussionText?: string;
+  /** Contextual embedding, pre-parsed by parseFootnoteBlock. When set,
+   *  resolveChanges skips the redundant parseContextualEditOp call. */
+  contextBefore?: string;
+  contextAfter?: string;
+  /** Scratch storage for unmatched continuation lines during parsing.
+   *  Fed into parseFootnoteBlock (Task 5) which classifies them structurally. */
+  unknownBodyLines?: string[];
   approvals?: Array<{ author: string; date: string; reason: string }>;
   rejections?: Array<{ author: string; date: string; reason: string }>;
   /** 0-indexed line in the raw text where this footnote header starts */
@@ -263,117 +185,66 @@ export class FootnoteNativeParser {
     return new VirtualDocument(changes, coherenceRate, [], resolvedText);
   }
 
+  /**
+   * Test-only hook: run just the footnote-scanning phase and return the raw
+   * ParsedFootnote structs before change resolution.  Used by
+   * parser-bug-fixes.test.ts to assert on `unknownBodyLines` directly.
+   *
+   * @internal Do NOT call from production code.
+   */
+  _testScanFootnotes(text: string): ParsedFootnote[] {
+    return this.parseFootnotes(text.split('\n'));
+  }
+
   private parseFootnotes(lines: string[]): ParsedFootnote[] {
-    const entries: ParsedFootnote[] = [];
-    let current: ParsedFootnote | null = null;
+    const { footnoteLines } = splitBodyAndFootnotes(lines);
+    // startLineOffset: the 0-indexed position of footnoteLines[0] in the original `lines` array.
+    // This is used by parseFootnoteBlock to populate Footnote.sourceRange for accurate
+    // footnoteLineRange values in ChangeNode enrichment.
+    const startLineOffset = lines.length - footnoteLines.length;
+    const typed = parseFootnoteBlock(footnoteLines, startLineOffset);
+    return typed.map(f => this.typedToLegacy(f));
+  }
 
-    for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
-      const line = lines[lineIdx];
-
-      if (FOOTNOTE_DEF_START.test(line)) {
-        if (current) {
-          // Close the previous footnote — its last line is the line before this one
-          current.endLine = lineIdx - 1;
-          entries.push(current);
-        }
-        // Extract ID from [^cn-N]: prefix
-        const idMatch = line.match(/^\[\^(cn-[\w.]+)\]:/);
-        const header = parseFootnoteHeader(line);
-        if (idMatch && header) {
-          current = {
-            id: idMatch[1],
-            author: '@' + header.author,
-            date: header.date,
-            type: header.type,
-            status: header.status,
-            startLine: lineIdx,
-            replyCount: 0,
-          };
-        } else {
-          current = null;
-        }
-        continue;
-      }
-
-      if (!current) continue;
-
-      // Try to match a LINE:HASH {op} body line
-      const opMatch = line.match(FOOTNOTE_L3_EDIT_OP);
-      if (opMatch && current.opString === undefined) {
-        current.lineNumber = parseInt(opMatch[1], 10);
-        current.hash = opMatch[2].toLowerCase();
-        current.opString = opMatch[3];
-        continue;
-      }
-
-      // Count thread reply lines
-      if (FOOTNOTE_THREAD_REPLY.test(line)) {
-        current.replyCount = (current.replyCount ?? 0) + 1;
-        continue;
-      }
-
-      // Try to match approved: metadata
-      const approvedMatch = line.match(APPROVED_RE);
-      if (approvedMatch) {
-        if (!current.approvals) current.approvals = [];
-        current.approvals.push({
-          author: approvedMatch[1],
-          date: approvedMatch[2],
-          reason: approvedMatch[3],
-        });
-        continue;
-      }
-
-      // Try to match rejected: metadata
-      const rejectedMatch = line.match(REJECTED_META_RE);
-      if (rejectedMatch) {
-        if (!current.rejections) current.rejections = [];
-        current.rejections.push({
-          author: rejectedMatch[1],
-          date: rejectedMatch[2],
-          reason: rejectedMatch[3],
-        });
-        continue;
-      }
-
-      // Try to match image metadata key-value lines: `    key: value`
-      const imageMeta = line.match(/^\s+([\w-]+):\s*(.*)/);
-      if (imageMeta) {
-        const key = imageMeta[1];
-        const value = imageMeta[2].trim();
-        if (key === 'image-dimensions') {
-          const dimMatch = value.match(/^([\d.]+)in\s*x\s*([\d.]+)in$/);
-          if (dimMatch) {
-            current.imageDimensions = {
-              widthIn: parseFloat(dimMatch[1]),
-              heightIn: parseFloat(dimMatch[2]),
-            };
-          }
-        } else if (key.startsWith('image-') || key === 'merge-detected') {
-          if (!current.imageMetadata) current.imageMetadata = {};
-          current.imageMetadata[key] = value;
-        } else if (key.startsWith('equation-')) {
-          if (!current.equationMetadata) current.equationMetadata = {};
-          current.equationMetadata[key] = value;
-        }
-        continue;
-      }
-
-      // Fallback: unmatched continuation line — store as discussion text (all change types)
-      const trimmed = line.trim();
-      if (trimmed && !current.discussionText) {
-        current.discussionText = trimmed;
-      }
+  /** Adapter: typed Footnote (new) → ParsedFootnote (legacy resolver input). */
+  private typedToLegacy(f: TypedFootnote): ParsedFootnote {
+    let imageDimensions: { widthIn: number; heightIn: number } | undefined;
+    const dimRaw = f.imageMetadata?.['image-dimensions'];
+    if (dimRaw) {
+      const m = dimRaw.match(IMAGE_DIMENSIONS_RE);
+      if (m) imageDimensions = { widthIn: parseFloat(m[1]), heightIn: parseFloat(m[2]) };
     }
-
-    if (current) {
-      // Close the last footnote — trim trailing blank lines for accurate endLine
-      let end = lines.length - 1;
-      while (end > (current.startLine ?? 0) && lines[end].trim() === '') end--;
-      current.endLine = end;
-      entries.push(current);
-    }
-    return entries;
+    const contextBefore = f.editOp?.resolutionPath === 'context' ? f.editOp.contextBefore : undefined;
+    const contextAfter = f.editOp?.resolutionPath === 'context' ? f.editOp.contextAfter : undefined;
+    return {
+      id: f.id,
+      author: f.header.author,
+      date: f.header.date,
+      type: f.header.type,
+      status: f.header.status,
+      startLine: f.sourceRange.startLine,
+      endLine: f.sourceRange.endLine,
+      lineNumber: f.editOp?.lineNumber,
+      hash: f.editOp?.hash,
+      opString: f.editOp
+        ? (f.editOp.resolutionPath === 'context'
+          ? `${f.editOp.contextBefore ?? ''}${f.editOp.op}${f.editOp.contextAfter ?? ''}`
+          : f.editOp.op)
+        : undefined,
+      contextBefore,
+      contextAfter,
+      replyCount: f.discussion.length,
+      approvals: f.approvals.length > 0
+        ? f.approvals.map(a => ({ author: a.author, date: a.date, reason: a.reason ?? '' }))
+        : undefined,
+      rejections: f.rejections.length > 0
+        ? f.rejections.map(a => ({ author: a.author, date: a.date, reason: a.reason ?? '' }))
+        : undefined,
+      imageDimensions,
+      imageMetadata: f.imageMetadata ? { ...f.imageMetadata } : undefined,
+      equationMetadata: f.equationMetadata ? { ...f.equationMetadata } : undefined,
+      unknownBodyLines: f.bodyLines.filter(l => l.kind === 'unknown').map(l => (l as { raw: string }).raw.trim()),
+    };
   }
 
   private resolveChanges(
@@ -401,8 +272,17 @@ export class FootnoteNativeParser {
       let ctxResult: ReturnType<typeof parseContextualEditOp> = null;
       if (fn.opString) {
         try {
-          ctxResult = parseContextualEditOp(fn.opString);
-          parsedOp = parseOp(ctxResult ? ctxResult.opString : fn.opString);
+          if (fn.contextBefore !== undefined || fn.contextAfter !== undefined) {
+            // Context already parsed by parseFootnoteBlock — reuse to avoid redundant re-parse.
+            const before = fn.contextBefore ?? '';
+            const after = fn.contextAfter ?? '';
+            const criticMarkupOp = fn.opString.slice(before.length, fn.opString.length - after.length);
+            ctxResult = { contextBefore: before, contextAfter: after, opString: criticMarkupOp };
+            parsedOp = parseOp(criticMarkupOp);
+          } else {
+            ctxResult = parseContextualEditOp(fn.opString);
+            parsedOp = parseOp(ctxResult ? ctxResult.opString : fn.opString);
+          }
         } catch {
           // Malformed op — skip this footnote
           continue;
@@ -410,7 +290,7 @@ export class FootnoteNativeParser {
       }
 
       // Resolve range in body text
-      const { range, originalText, modifiedText, comment, anchored, resolutionPath } = this.resolveRangeAndContent(
+      const rangeResult = this.resolveRangeAndContent(
         fn,
         parsedOp,
         ctxResult,
@@ -419,6 +299,7 @@ export class FootnoteNativeParser {
         bodyLines,
         lineOffsets,
       );
+      const { range, originalText, modifiedText, comment, anchored, resolutionPath } = rangeResult;
 
       // Build the ChangeNode
       const node: ChangeNode = {
@@ -458,6 +339,9 @@ export class FootnoteNativeParser {
       if (resolutionPath !== undefined) {
         node.resolutionPath = resolutionPath;
       }
+      if (rangeResult.deletionSeamOffset !== undefined) {
+        node.deletionSeamOffset = rangeResult.deletionSeamOffset;
+      }
 
       // Approvals
       if (fn.approvals && fn.approvals.length > 0) {
@@ -491,7 +375,13 @@ export class FootnoteNativeParser {
    *
    * For L3:
    * - Insertion: search for newText on the target line via findUniqueMatch; range covers the matched text
-   * - Deletion: zero-width range at the anchor point; uses @ctx: field for precise positioning
+   * - Deletion: range covers the full contextual anchor span (contextBefore + contextAfter).
+   *   `deletionSeamOffset` gives the byte offset within this span where the deletion occurred
+   *   (equals contextBefore.length). The spec's Contextual Uniqueness Guarantee ensures this
+   *   span appears exactly once on the target line (04-spec.md §"Contextual Embedding").
+   *   Zero-width ranges appear only as the {0,0} anchored:false sentinel (Invariant A).
+   *   This is deliberate — do NOT revert to zero-width seam without understanding
+   *   the plan builder's ghost-text injection and accept-change.ts's seam-based removal.
    * - Substitution: search for newText (proposed/accepted) or oldText (rejected) on target line
    * - Highlight: search for the highlighted text on the target line
    * - Comment: fall back to line start (no text to anchor to)
@@ -529,6 +419,7 @@ export class FootnoteNativeParser {
     comment?: string;
     anchored?: boolean;  // false = could not resolve position deterministically (Invariant A)
     resolutionPath?: 'hash' | 'context' | 'rejected';
+    deletionSeamOffset?: number;  // byte offset within range to the deletion seam
   } {
     // Resolve the effective line number — verify hash and relocate if needed
     let effectiveLineNumber = fn.lineNumber;
@@ -568,7 +459,7 @@ export class FootnoteNativeParser {
     if (!parsedOp) {
       // No op string — settled/ghost footnote. No deterministic position can be resolved.
       // Mark anchored:false so consumers can filter these ghost nodes (Invariant A).
-      return { range: fallbackRange, anchored: false, comment: fn.discussionText, resolutionPath: 'rejected' };
+      return { range: fallbackRange, anchored: false, comment: fn.unknownBodyLines?.[0], resolutionPath: 'rejected' };
     }
 
     // Unified matching: find search text on the target line via findUniqueMatch
@@ -618,33 +509,55 @@ export class FootnoteNativeParser {
         const matchStart = lineOffset + bodyMatchResult.index;
         const opStart = matchStart + contextBefore.length;
 
-        // Compute op body-side length
-        let opBodyLength: number;
+        // Compute the range based on change type. For deletions, the matched span
+        // IS the contextual anchor (contextBefore + contextAfter from the body).
+        // See 04-spec.md §"Contextual Embedding" / §"Contextual Uniqueness Guarantee".
+        let rangeStart: number;
+        let rangeEnd: number;
+        let deletionSeamOffset: number | undefined;
+
         switch (changeType) {
-          case ChangeType.Insertion:
-            opBodyLength = status === ChangeStatus.Rejected ? 0 : parsedOp.newText.length;
+          case ChangeType.Insertion: {
+            rangeStart = opStart;
+            rangeEnd = opStart + (status === ChangeStatus.Rejected ? 0 : parsedOp.newText.length);
             break;
-          case ChangeType.Deletion:
-            opBodyLength = 0;
+          }
+          case ChangeType.Deletion: {
+            // The spec's Contextual Uniqueness Guarantee ensures contextBefore + contextAfter
+            // appears exactly once on the target line. The matched span IS the anchor —
+            // preserve it as a non-zero range. Zero-width ranges exist only as the {0,0}
+            // anchored:false sentinel (Invariant A). deletionSeamOffset records where the
+            // deleted text used to live within this anchor span so the plan builder and
+            // accept-change logic can find the exact removal point without re-scanning.
+            // See: website-v2/public/content/04-spec.md §"Contextual Embedding".
+            rangeStart = matchStart;
+            rangeEnd = matchStart + bodyMatch.length;
+            deletionSeamOffset = contextBefore.length;
             break;
-          case ChangeType.Substitution:
-            opBodyLength = status === ChangeStatus.Rejected
+          }
+          case ChangeType.Substitution: {
+            rangeStart = opStart;
+            rangeEnd = opStart + (status === ChangeStatus.Rejected
               ? parsedOp.oldText.length
-              : parsedOp.newText.length;
+              : parsedOp.newText.length);
             break;
-          case ChangeType.Highlight:
-            opBodyLength = parsedOp.oldText.length;
+          }
+          case ChangeType.Highlight: {
+            rangeStart = opStart;
+            rangeEnd = opStart + parsedOp.oldText.length;
             break;
+          }
           default:
-            opBodyLength = 0;
+            rangeStart = opStart;
+            rangeEnd = opStart;
         }
 
-        const range: OffsetRange = { start: opStart, end: opStart + opBodyLength };
         return {
-          range,
+          range: { start: rangeStart, end: rangeEnd },
           originalText: parsedOp.oldText || undefined,
           modifiedText: parsedOp.newText || undefined,
           comment: parsedOp.reasoning ?? undefined,
+          deletionSeamOffset,
           // When the hash also matched, label as 'hash' (same semantics as the
           // old resolve() Phase A: hash gate passed, context match pinpointed position).
           // When only context matched (hash mismatch or relocation), label as 'context'.
@@ -692,18 +605,28 @@ export class FootnoteNativeParser {
           if (joined.length > 0) {
             const match = findOnLine(joined);
             if (match) {
-              const delPoint = lineOffset + match.index + ctx.before.length;
               return {
-                range: { start: delPoint, end: delPoint },
+                range: {
+                  start: lineOffset + match.index,
+                  end: lineOffset + match.index + joined.length,
+                },
                 originalText: text,
+                deletionSeamOffset: ctx.before.length,
                 resolutionPath: hashMatched ? 'hash' : undefined,
               };
             }
           }
         }
-        // No @ctx or context match failed — line-start fallback is acceptable for del
-        // (Invariant B: this degradation is explicitly sanctioned, unlike ins/sub/highlight)
-        return { range: fallbackRange, originalText: text, resolutionPath: hashMatched ? 'hash' : undefined };
+        // No @ctx or context match failed — degrade to full-line range.
+        // Per spec: the only zero-width range is the {0,0} sentinel for anchored:false.
+        // A degraded-but-anchored deletion gets the whole target line; deletionSeamOffset
+        // stays undefined so the plan builder renders ghost text at range.start.
+        const lineEnd = lineOffset + lineContent.length;
+        return {
+          range: { start: lineOffset, end: lineEnd },
+          originalText: text,
+          resolutionPath: hashMatched ? 'hash' : undefined,
+        };
       }
 
       case ChangeType.Substitution: {
@@ -758,7 +681,7 @@ export class FootnoteNativeParser {
         // Comments have no text to anchor to — line-start is the correct and only option.
         // (spec §11 summary table: comment always anchored at line-start)
         // When parsedOp.reasoning is empty, fall back to discussion text from the footnote body.
-        const comment = (parsedOp.reasoning || undefined) ?? (parsedOp.oldText || fn.discussionText);
+        const comment = (parsedOp.reasoning || undefined) ?? (parsedOp.oldText || fn.unknownBodyLines?.[0]);
         return { range: fallbackRange, comment, resolutionPath: hashMatched ? 'hash' : undefined };
       }
 

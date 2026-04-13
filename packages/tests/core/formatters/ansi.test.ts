@@ -10,7 +10,7 @@ describe('formatAnsi', () => {
     filePath: 'test.md',
     trackingStatus: 'tracked' as const,
     protocolMode: 'classic',
-    defaultView: 'review' as const,
+    defaultView: 'working' as const,
     viewPolicy: 'suggest',
     counts: { proposed: 1, accepted: 0, rejected: 0 },
     authors: ['@alice'],
@@ -19,7 +19,7 @@ describe('formatAnsi', () => {
 
   it('does NOT show hashlines to humans', () => {
     const doc: ThreeZoneDocument = {
-      view: 'review',
+      view: 'working',
       header: baseHeader,
       lines: [{
         margin: { lineNumber: 1, hash: 'a3', flags: ['P'] },
@@ -36,7 +36,7 @@ describe('formatAnsi', () => {
 
   it('shows colored gutter for P flag', () => {
     const doc: ThreeZoneDocument = {
-      view: 'review',
+      view: 'working',
       header: baseHeader,
       lines: [{
         margin: { lineNumber: 1, hash: 'a3', flags: ['P'] },
@@ -51,7 +51,7 @@ describe('formatAnsi', () => {
 
   it('colors insertion spans green', () => {
     const doc: ThreeZoneDocument = {
-      view: 'review',
+      view: 'working',
       header: baseHeader,
       lines: [{
         margin: { lineNumber: 1, hash: 'a3', flags: [] },
@@ -71,7 +71,7 @@ describe('formatAnsi', () => {
 
   it('colors deletion spans red with strikethrough', () => {
     const doc: ThreeZoneDocument = {
-      view: 'review',
+      view: 'working',
       header: baseHeader,
       lines: [{
         margin: { lineNumber: 1, hash: 'a3', flags: [] },
@@ -87,7 +87,7 @@ describe('formatAnsi', () => {
 
   it('hides delimiters by default (visual cues mode)', () => {
     const doc: ThreeZoneDocument = {
-      view: 'review',
+      view: 'working',
       header: baseHeader,
       lines: [{
         margin: { lineNumber: 1, hash: 'a3', flags: [] },
@@ -112,7 +112,7 @@ describe('formatAnsi', () => {
 
   it('shows delimiters when showMarkup=true', () => {
     const doc: ThreeZoneDocument = {
-      view: 'review',
+      view: 'working',
       header: baseHeader,
       lines: [{
         margin: { lineNumber: 1, hash: 'a3', flags: [] },
@@ -135,7 +135,7 @@ describe('formatAnsi', () => {
 
   it('dims metadata in Zone 3', () => {
     const doc: ThreeZoneDocument = {
-      view: 'review',
+      view: 'working',
       header: baseHeader,
       lines: [{
         margin: { lineNumber: 1, hash: 'a3', flags: [] },
@@ -152,7 +152,7 @@ describe('formatAnsi', () => {
 
   it('shows green gutter for A flag', () => {
     const doc: ThreeZoneDocument = {
-      view: 'review',
+      view: 'working',
       header: baseHeader,
       lines: [{
         margin: { lineNumber: 1, hash: 'a3', flags: ['A'] },
@@ -167,7 +167,7 @@ describe('formatAnsi', () => {
 
   it('shows dim gutter for clean lines (no flags)', () => {
     const doc: ThreeZoneDocument = {
-      view: 'review',
+      view: 'working',
       header: baseHeader,
       lines: [{
         margin: { lineNumber: 1, hash: 'a3', flags: [] },
@@ -183,7 +183,7 @@ describe('formatAnsi', () => {
 
   it('renders sub_old with red strikethrough and sub_new with green', () => {
     const doc: ThreeZoneDocument = {
-      view: 'review',
+      view: 'working',
       header: baseHeader,
       lines: [{
         margin: { lineNumber: 1, hash: 'a3', flags: [] },
@@ -206,7 +206,7 @@ describe('formatAnsi', () => {
 
   it('renders highlight with yellow background', () => {
     const doc: ThreeZoneDocument = {
-      view: 'review',
+      view: 'working',
       header: baseHeader,
       lines: [{
         margin: { lineNumber: 1, hash: 'a3', flags: [] },
@@ -221,7 +221,7 @@ describe('formatAnsi', () => {
 
   it('renders comment as dim italic', () => {
     const doc: ThreeZoneDocument = {
-      view: 'review',
+      view: 'working',
       header: baseHeader,
       lines: [{
         margin: { lineNumber: 1, hash: 'a3', flags: [] },
@@ -237,7 +237,7 @@ describe('formatAnsi', () => {
 
   it('hides anchor spans (agent-facing only)', () => {
     const doc: ThreeZoneDocument = {
-      view: 'review',
+      view: 'working',
       header: baseHeader,
       lines: [{
         margin: { lineNumber: 1, hash: 'a3', flags: [] },
@@ -258,7 +258,7 @@ describe('formatAnsi', () => {
 
   it('renders header with file path and counts', () => {
     const doc: ThreeZoneDocument = {
-      view: 'review',
+      view: 'working',
       header: {
         ...baseHeader,
         counts: { proposed: 2, accepted: 1, rejected: 0 },
@@ -279,7 +279,7 @@ describe('formatAnsi', () => {
 
   it('renders metadata with singular reply count', () => {
     const doc: ThreeZoneDocument = {
-      view: 'review',
+      view: 'working',
       header: baseHeader,
       lines: [{
         margin: { lineNumber: 1, hash: 'a3', flags: [] },
@@ -296,7 +296,7 @@ describe('formatAnsi', () => {
 
   it('renders sub_arrow as dim arrow symbol', () => {
     const doc: ThreeZoneDocument = {
-      view: 'review',
+      view: 'working',
       header: baseHeader,
       lines: [{
         margin: { lineNumber: 1, hash: 'a3', flags: [] },
@@ -317,7 +317,7 @@ describe('formatAnsi', () => {
 
   it('pads line numbers to consistent width', () => {
     const doc: ThreeZoneDocument = {
-      view: 'review',
+      view: 'working',
       header: baseHeader,
       lines: [
         {

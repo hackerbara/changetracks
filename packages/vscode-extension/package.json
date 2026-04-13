@@ -662,17 +662,19 @@
                 },
                 "changedown.defaultViewMode": {
                     "type": "string",
-                    "default": "all-markup",
+                    "default": "working",
                     "enum": [
+                        "working",
                         "all-markup",
                         "simple",
-                        "final",
+                        "decided",
                         "original"
                     ],
                     "enumDescriptions": [
+                        "Show full editorial annotation (canonical name for all-markup)",
                         "Show all CriticMarkup (insertions, deletions, substitutions visible)",
-                        "Show simplified markup (clean text with change indicators)",
-                        "Show final text (all changes accepted)",
+                        "Show committed text with change indicators",
+                        "Show decided text (accepted changes applied, proposals reverted)",
                         "Show original text (all changes rejected)"
                     ],
                     "description": "Default view mode when opening markdown files."

@@ -1,9 +1,10 @@
 // packages/core/src/host/types.ts
 import type { ChangeNode, PendingOverlay, ChangeStatus, Projection } from '../model/types.js';
+import type { Document, Format, L2Document, L3Document } from '../model/document.js';
+export type { Format };
 import type { DecorationPlan } from './decorations/types.js';
 import type { SupersedeResult } from '../operations/supersede.js';
 export type { ChangeNode, PendingOverlay, SupersedeResult, Projection };
-import type { ViewMode } from '../renderers/three-zone-types.js';
 
 // ── Event System ───────────────────────────────────────────
 
@@ -76,10 +77,6 @@ export interface ApplyEditResult {
   version: number;
 }
 
-// ── View Mode ──────────────────────────────────────────────
-
-export type { ViewMode } from '../renderers/three-zone-types.js';
-
 // ── Document State ─────────────────────────────────────────
 // Pure data bag. No behavior, no platform deps.
 
@@ -89,15 +86,22 @@ export interface DocumentState {
   text: string;
   cachedChanges: ChangeNode[];
   cacheVersion: number;
-  format: 'L2' | 'L3';
+  format: Format;
 
   // Cursor
   cursorOffset?: number;
+
+  /**
+   * Typed document produced by the most recent parse.
+   * Populated by BaseController.localParseAndCache. Plan 4 will consume this
+   * for footnote block location.
+   */
+  document?: Document;
 }
 
 // ── Document Snapshot ──────────────────────────────────────
 // Pushed to DecorationPort and PreviewPort. Contains document data only.
-// Host adds rendering context (showDelimiters, cursor, theme)
+// Host adds rendering context (view, cursor, theme)
 // when processing the snapshot.
 
 export interface DocumentSnapshot {
@@ -105,9 +109,19 @@ export interface DocumentSnapshot {
   sourceVersion: number;
   text: string;
   changes: ChangeNode[];
-  format: 'L2' | 'L3';
+  format: Format;
   view: View;
   cursorOffset?: number;
+  /**
+   * The typed document produced by the last successful parse or conversion.
+   * Optional because early renders before the first parse may not have it.
+   * Populated by BaseController.localParseAndCache and copied onto the
+   * snapshot by pushSnapshot.
+   *
+   * Future optimization: the plan builder can read
+   * document.footnotes[0]?.sourceRange.startLine instead of scanning text.
+   */
+  document?: Document;
 }
 
 // ── Status Info ────────────────────────────────────────────
@@ -141,7 +155,7 @@ export interface TypedLspConnection extends LspConnection {
 
   // Editor state
   sendCursorMove(uri: string, offset: number): void;
-  sendViewMode(uri: string, viewMode: ViewMode): void;
+  sendViewMode(uri: string, viewName: BuiltinView): void;
   sendFlushPending(uri: string): void;
 
   // Tracking
@@ -159,12 +173,12 @@ export interface TypedLspConnection extends LspConnection {
 
   // Format conversion
   /** Request format conversion from LSP server. */
-  convertFormat(uri: string, text: string, targetFormat: 'L2' | 'L3'): Promise<{ convertedText: string; newFormat: 'L2' | 'L3' }>;
+  convertFormat(uri: string, text: string, targetFormat: Format): Promise<{ convertedText: string; newFormat: Format }>;
 
   // Inbound notifications
   onDecorationData(handler: (data: { uri: string; changes: ChangeNode[]; documentVersion: number; autoFoldLines?: number[] }) => void): Disposable;
   onPendingEditFlushed(handler: (data: { uri: string; edits: RangeEdit[] }) => void): Disposable;
-  onDocumentState(handler: (data: { uri: string; tracking: { enabled: boolean; source: string }; viewMode: ViewMode }) => void): Disposable;
+  onDocumentState(handler: (data: { uri: string; tracking: { enabled: boolean; source: string }; view: BuiltinView }) => void): Disposable;
   onOverlayUpdate(handler: (data: { uri: string; overlay: PendingOverlay | null }) => void): Disposable;
 }
 
@@ -207,6 +221,52 @@ export interface EditorHost {
   applyEdits?(uri: string, edits: RangeEdit[]): Promise<ApplyEditResult>;
   showOverlay?(uri: string, overlay: PendingOverlay): void;
   clearOverlay?(uri: string): void;
+
+  /**
+   * Replace the entire document buffer with new text.
+   *
+   * The host is responsible for:
+   *  1. Performing the replace atomically on its editing surface
+   *     (VS Code: workspace.applyEdit with full-document range).
+   *  2. Registering the echo so the incoming onDidChangeContent event is
+   *     marked isEcho=true (preventing BaseController from re-processing
+   *     the swap as a user edit).
+   *  3. Updating any internal shadow or cache of the document text.
+   *
+   * Returns ApplyEditResult. On success: { applied: true, text: newText,
+   * version: postSwapVersion }. On failure: { applied: false, text: '',
+   * version: 0 } — BaseController treats this as failure and triggers
+   * rollback of its in-flight convertFormat.
+   *
+   * ── Echo contract ────────────────────────────────────────────────────
+   * The host guarantees exact-match echo delivery: exactly ONE subsequent
+   * `onDidChangeContent` event will fire for this URI as a result of the
+   * replace, AND the host will ensure that event has `isEcho = true`. The
+   * mechanism is identity-based (URI-flag), not content-based: BaseController
+   * does not diff the echoed text against newText. It trusts the host to
+   * suppress the next change event for uri regardless of what the underlying
+   * editor may have normalized in the content (e.g., line endings, trailing
+   * whitespace). If the echoed content differs from newText (because the
+   * editor normalized it), BaseController's state will still reflect the
+   * newText value it wrote — divergence resolves on the next user edit.
+   *
+   * Concurrent replaceDocument calls on the same URI are not supported.
+   * BaseController's _convertingUris guard ensures at most one format
+   * conversion is in flight per URI; hosts should not be called with
+   * overlapping replaces from the controller.
+   *
+   * Optional capability. Hosts that cannot perform buffer-level writes
+   * (e.g., a read-only viewer) can omit this method; consumers of
+   * BaseController.convertFormat must then avoid setting defaultFormat
+   * to a value that would trigger conversion.
+   */
+  replaceDocument?(
+    uri: string,
+    newText: string,
+    metadata:
+      | { reason: 'format-conversion'; from: Format; to: Format }
+      | { reason: 'external' },
+  ): Promise<ApplyEditResult>;
 }
 
 // ── Rendering Ports (controller → platform) ──────────────────
@@ -228,7 +288,7 @@ export interface PreviewPort extends Disposable {
 
 /** Selects which projection to compute. */
 export interface ProjectionSelector {
-  readonly format: 'L2' | 'L3';
+  readonly format: Format;
   readonly projection: Projection;
   readonly compacted?: boolean;
 }
@@ -261,7 +321,7 @@ export interface View {
 }
 
 /** The five canonical view preset names. */
-export type BuiltinView = 'review' | 'simple' | 'final' | 'original' | 'raw';
+export type BuiltinView = 'working' | 'simple' | 'decided' | 'original' | 'raw';
 
 /** Input to a projection computation. */
 export interface ProjectionSource {
@@ -269,7 +329,7 @@ export interface ProjectionSource {
   readonly text: string;
   readonly changes: readonly ChangeNode[];
   readonly sourceVersion: number;
-  readonly sourceFormat: 'L2' | 'L3';
+  readonly sourceFormat: Format;
 }
 
 /** Output of a projection computation. */
@@ -290,8 +350,8 @@ export interface ProjectionRequest {
 
 /** Canonical view presets. Hosts can construct arbitrary View objects beyond these. */
 export const VIEW_PRESETS: Record<BuiltinView, View> = {
-  review: {
-    name: 'review',
+  working: {
+    name: 'working',
     projection: 'current',
     display: {
       insertions: 'inline',
@@ -322,8 +382,8 @@ export const VIEW_PRESETS: Record<BuiltinView, View> = {
       cursorReveal: false,
     },
   },
-  final: {
-    name: 'final',
+  decided: {
+    name: 'decided',
     projection: 'decided',
     display: {
       insertions: 'inline',
@@ -372,23 +432,6 @@ export const VIEW_PRESETS: Record<BuiltinView, View> = {
   },
 };
 
-/** @deprecated Use VIEW_PRESETS instead. */
-export const VIEW_MODE_PRESETS: Record<ViewMode, { projection: Projection; display: Partial<DisplayOptions> }> = {
-  review: { projection: 'current', display: { insertions: 'inline', deletions: 'inline', substitutions: 'inline', delimiters: 'show' } },
-  changes: { projection: 'current', display: { insertions: 'inline', deletions: 'inline', substitutions: 'inline', delimiters: 'hide' } },
-  settled: { projection: 'decided', display: {} },
-  raw: { projection: 'original', display: {} },
-};
-
-/** @deprecated No longer needed — pass View directly. */
-export function projectionToViewMode(projection: Projection): ViewMode {
-  switch (projection) {
-    case 'decided': return 'settled';
-    case 'original': return 'raw';
-    default: return 'review';
-  }
-}
-
 /** No-op LspConnection stub for standalone mode. */
 export const NULL_LSP_CONNECTION: LspConnection = {
   sendRequest: () => Promise.resolve({} as never),
@@ -418,15 +461,25 @@ export interface OperationResult {
 
 // ─── Port Interfaces ──────────────────────────────────────────────
 
-/** Pluggable format conversion. LspFormatAdapter (v1) proxies to LSP. */
+/**
+ * Pluggable format conversion. Takes and returns typed Documents.
+ *
+ * Two concrete implementations ship:
+ * - LspFormatAdapter: serializes input at the wire boundary, sends via
+ *   `changedown/convertFormat` LSP request, parses the response back.
+ * - LocalFormatAdapter: calls core conversion functions directly.
+ *
+ * The wire format stays string-based (LSP protocol unchanged in Plan 2);
+ * only the adapter's internal shape is typed.
+ */
 export interface FormatAdapter {
-  convertL2ToL3(uri: string, l2Text: string): Promise<string>;
-  convertL3ToL2(uri: string, l3Text: string): Promise<string>;
+  promote(doc: L2Document): Promise<L3Document>;
+  demote(doc: L3Document): Promise<L2Document>;
 }
 
 /** Pluggable parse delegation. Default: call core parseForFormat directly. */
 export interface ParseAdapter {
-  parse(uri: string, text: string, format: 'L2' | 'L3'): ChangeNode[];
+  parse(uri: string, text: string, format: Format): ChangeNode[];
 }
 
 export interface SettlementConfig {

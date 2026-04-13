@@ -1,8 +1,8 @@
 import * as vscode from 'vscode';
 import { execFile as execFileCb } from 'child_process';
 import { promisify } from 'util';
-import { getGitRepository } from './git-integration';
-import type { Repository } from './git-integration';
+import { getGitRepository, getGitApi } from './git-integration';
+import type { Repository, GitAPI } from './git-integration';
 
 const execFile = promisify(execFileCb);
 
@@ -50,6 +50,15 @@ export class GitGutterManager implements vscode.Disposable {
   /** Whether we've shown the one-time warning notification */
   private warningShown = false;
 
+  /**
+   * Files whose sync was deferred because git wasn't ready yet.
+   * Drained when git transitions to 'initialized' state.
+   */
+  private pendingGitReadySync: Set<string> | null = null;
+
+  /** Whether we've already logged the "git not ready" message this startup window */
+  private gitNotReadyLogged = false;
+
   constructor(
     private outputChannel: vscode.OutputChannel
   ) {}
@@ -59,19 +68,66 @@ export class GitGutterManager implements vscode.Disposable {
    * Subscribes to git state changes for flag recovery.
    */
   start(): void {
+    const gitApi = getGitApi();
+    if (gitApi) {
+      this.wireGitApi(gitApi);
+    } else {
+      // The vscode.git extension is not yet active. Watch for it to activate,
+      // then wire up once it's available.
+      this.disposables.push(
+        vscode.extensions.onDidChange(() => {
+          const api = getGitApi();
+          if (api) {
+            this.wireGitApi(api);
+          }
+        })
+      );
+    }
+  }
+
+  private gitApiWired = false;
+  private wireGitApi(gitApi: GitAPI): void {
+    if (this.gitApiWired) return;
+    this.gitApiWired = true;
+
+    if (gitApi.state === 'initialized') {
+      // Already ready — drain any pending syncs immediately and wire repos.
+      this.onGitReady();
+      this.subscribeToRepoChanges();
+    } else {
+      // Git API obtained but repos not yet populated — wait for initialized state.
+      this.disposables.push(
+        gitApi.onDidChangeState((newState) => {
+          if (newState === 'initialized') {
+            this.onGitReady();
+            this.subscribeToRepoChanges();
+          }
+        })
+      );
+    }
+  }
+
+  private onGitReady(): void {
+    this.outputChannel.appendLine('[gutter] git extension initialized — draining pending syncs');
+    const pending = this.pendingGitReadySync;
+    this.pendingGitReadySync = null;
+    this.gitNotReadyLogged = false; // reset for next session
+    if (pending && pending.size > 0) {
+      this.syncFlags(pending);
+    }
+  }
+
+  private subscribeToRepoChanges(): void {
     const folders = vscode.workspace.workspaceFolders;
     if (!folders?.length) return;
 
-    // Subscribe to state changes for each workspace folder's git repo
     for (const folder of folders) {
       const repo = getGitRepository(folder.uri);
       if (!repo) continue;
 
       const repoKey = repo.rootUri.toString();
-      // Cache initial HEAD per repo
       this.lastHeadByRepo.set(repoKey, repo.state.HEAD?.commit);
 
-      // Re-apply flags ONLY when HEAD actually changes (not on every 3s git status poll)
       this.disposables.push(
         repo.state.onDidChange(() => {
           const currentHead = repo.state.HEAD?.commit;
@@ -82,7 +138,6 @@ export class GitGutterManager implements vscode.Disposable {
         })
       );
 
-      // Also re-apply after explicit checkout (belt + suspenders)
       if (repo.onDidCheckout) {
         this.disposables.push(
           repo.onDidCheckout(() => this.reapplyFlags())
@@ -162,9 +217,17 @@ export class GitGutterManager implements vscode.Disposable {
     if (toFlagUris.length > 0) {
       const byRepo = this.groupByRepo(toFlagUris);
       if (byRepo.size === 0) {
-        this.outputChannel.appendLine(`[gutter] groupByRepo returned empty for ${toFlagUris.length} URIs — git extension may not be active yet`);
-        // Retry after a delay to give the git extension time to activate
-        setTimeout(() => this.syncFlags(filesWithChanges), 3000);
+        // Git repos not yet populated — park this sync and drain when git is ready.
+        if (!this.gitNotReadyLogged) {
+          this.gitNotReadyLogged = true;
+          this.outputChannel.appendLine(`[gutter] git repos not ready yet — deferring sync for ${toFlagUris.length} URI(s)`);
+        }
+        // Merge into the pending set so onGitReady drains it.
+        if (!this.pendingGitReadySync) {
+          this.pendingGitReadySync = new Set(filesWithChanges);
+        } else {
+          for (const u of filesWithChanges) this.pendingGitReadySync.add(u);
+        }
         return;
       }
       for (const [repo, entries] of byRepo) {

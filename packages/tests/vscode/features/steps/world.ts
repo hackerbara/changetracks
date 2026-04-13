@@ -4,6 +4,7 @@ import { execSync } from 'child_process';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
+import type { BuiltinView } from '@changedown/core/host';
 
 export interface VSCodeInstance {
     app: ElectronApplication;
@@ -24,7 +25,7 @@ export class ChangeDownWorld extends World {
 
     // shared state
     fixtureFile?: string;
-    currentViewMode?: string;
+    currentView?: BuiltinView;
     documentText?: string;
     lastCommandResult?: unknown;
     lastBulkOperation?: boolean;

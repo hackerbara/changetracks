@@ -8,41 +8,10 @@
  * This is the regression guard for Task 7: code-actions Path B elimination.
  */
 
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { ChangedownServer, CodeActionKind } from '@changedown/lsp-server/internals';
 import { initHashline } from '@changedown/core';
-
-function createMockConnection() {
-  const handlers: Record<string, Function> = {};
-  const notifications: Array<{ method: string; params: any }> = [];
-  return {
-    onInitialize: (handler: any) => { handlers.initialize = handler; },
-    onInitialized: (handler: any) => { handlers.initialized = handler; },
-    onShutdown: (handler: any) => { handlers.shutdown = handler; },
-    onExit: (handler: any) => { handlers.exit = handler; },
-    onDidOpenTextDocument: (handler: any) => { handlers.didOpen = handler; },
-    onDidChangeTextDocument: (handler: any) => { handlers.didChange = handler; },
-    onDidCloseTextDocument: (handler: any) => { handlers.didClose = handler; },
-    onWillSaveTextDocument: (handler: any) => { handlers.willSave = handler; },
-    onWillSaveTextDocumentWaitUntil: (handler: any) => { handlers.willSaveWaitUntil = handler; },
-    onDidSaveTextDocument: (handler: any) => { handlers.didSave = handler; },
-    onHover: (handler: any) => { handlers.hover = handler; },
-    onCodeLens: (handler: any) => { handlers.codeLens = handler; },
-    onFoldingRanges: (handler: any) => { handlers.foldingRanges = handler; },
-    onCodeAction: (handler: any) => { handlers.codeAction = handler; },
-    onDocumentLinks: (handler: any) => { handlers.documentLinks = handler; },
-    onRequest: (method: string, handler: any) => { handlers[`request:${method}`] = handler; },
-    onNotification: (method: string, handler: any) => { handlers[`notification:${method}`] = handler; },
-    sendDiagnostics: (params: any) => { notifications.push({ method: 'textDocument/publishDiagnostics', params }); },
-    sendNotification: (method: string, params: any) => { notifications.push({ method, params }); },
-    console: { error: () => {}, warn: () => {}, info: () => {}, log: () => {} },
-    workspace: { applyEdit: vi.fn().mockResolvedValue({ applied: true }) },
-    languages: { semanticTokens: { on: (handler: any) => { handlers.semanticTokens = handler; } } },
-    listen: () => {},
-    _handlers: handlers,
-    _notifications: notifications,
-  } as any;
-}
+import { createMockConnection } from './mock-connection.js';
 
 describe('code-actions route through commands (not raw TextEdits)', () => {
   it('L2 inline: code action for accept produces a command, not raw TextEdits', async () => {

@@ -81,11 +81,11 @@ Feature: PNL3 — Review panel deep coverage
   # ── View mode from panel ─────────────────────────────────────
 
   Scenario: PNL3-11 View mode buttons reflect current mode on open
-    Then the active view mode is "review"
+    Then the active view mode is "working"
 
   Scenario: PNL3-12 View mode switch from panel updates decorations
-    When I switch to the "changes" view mode from the panel
-    Then the active view mode is "changes"
+    When I switch to the "simple" view mode from the panel
+    Then the active view mode is "simple"
 
   # ── Tracking toggle from panel ───────────────────────────────
 

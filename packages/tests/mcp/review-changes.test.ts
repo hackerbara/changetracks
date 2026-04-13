@@ -115,7 +115,8 @@ describe('handleReviewChanges', () => {
 
     const modified = await fs.readFile(filePath, 'utf-8');
     expect(modified).toContain('slow red');
-    expect(modified).not.toContain('{~~'); // Markup removed
+    // L3 audit trail stores {~~...~~} in footnote edit-op line; check inline anchor form is absent from body
+    expect(modified).not.toContain('{~~quick brown~>slow red~~}[^cn-1]'); // Inline markup removed from body
     // BUG-001 fix: Footnote definition preserved after settlement
     expect(modified).toContain('[^cn-1]:'); // Footnote kept for audit trail
     expect(modified).toContain('[^cn-1]'); // Inline ref kept

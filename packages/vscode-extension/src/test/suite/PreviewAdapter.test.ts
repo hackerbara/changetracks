@@ -8,10 +8,10 @@ suite('VsCodePreviewAdapter', () => {
     }
 
     function makeSnapshot(projection: 'current' | 'decided' | 'original' = 'current', delimiters: 'show' | 'hide' = 'show'): DocumentSnapshot {
-        const viewName: 'review' | 'simple' | 'final' | 'original' =
-            projection === 'decided' ? 'final'
+        const viewName: 'working' | 'simple' | 'decided' | 'original' =
+            projection === 'decided' ? 'decided'
             : projection === 'original' ? 'original'
-            : delimiters === 'show' ? 'review'
+            : delimiters === 'show' ? 'working'
             : 'simple';
         const view: View = {
             ...VIEW_PRESETS[viewName],
@@ -28,34 +28,34 @@ suite('VsCodePreviewAdapter', () => {
         };
     }
 
-    test('getPluginConfig returns review mode by default', () => {
+    test('getPluginConfig returns working mode by default', () => {
         const adapter = makeAdapter();
         const config = adapter.getPluginConfig();
-        assert.strictEqual(config.viewMode, 'review');
+        assert.strictEqual(config.viewName, 'working');
         assert.strictEqual(config.showFootnotes, true);
     });
 
-    test('getPluginConfig reflects updated viewMode', () => {
+    test('getPluginConfig reflects updated viewName', () => {
         const adapter = makeAdapter();
-        // 'current' projection with delimiters shown → review
+        // 'current' projection with delimiters shown → working
         adapter.update(makeSnapshot('current', 'show'));
         const config = adapter.getPluginConfig();
-        assert.strictEqual(config.viewMode, 'review');
+        assert.strictEqual(config.viewName, 'working');
         assert.strictEqual(config.showFootnotes, true);
     });
 
-    test('effectiveViewMode: review + delimiters=hide → simple', () => {
+    test('effectiveViewName: working + delimiters=hide → simple', () => {
         const adapter = makeAdapter();
         adapter.update(makeSnapshot('current', 'hide'));
         const config = adapter.getPluginConfig();
-        assert.strictEqual(config.viewMode, 'simple');
+        assert.strictEqual(config.viewName, 'simple');
     });
 
-    test('effectiveViewMode: decided projection → final', () => {
+    test('effectiveViewName: decided projection → decided', () => {
         const adapter = makeAdapter();
         adapter.update(makeSnapshot('decided', 'hide'));
         const config = adapter.getPluginConfig();
-        assert.strictEqual(config.viewMode, 'final');
+        assert.strictEqual(config.viewName, 'decided');
     });
 
     test('clear resets to default config', () => {
@@ -63,6 +63,6 @@ suite('VsCodePreviewAdapter', () => {
         adapter.update(makeSnapshot('decided'));
         adapter.clear();
         const config = adapter.getPluginConfig();
-        assert.strictEqual(config.viewMode, 'review');
+        assert.strictEqual(config.viewName, 'working');
     });
 });

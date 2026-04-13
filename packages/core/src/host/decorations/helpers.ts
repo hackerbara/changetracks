@@ -54,44 +54,61 @@ export function revealDelimiters(
 }
 
 export function injectGhostDelimiters(
-  fullRange: OffsetRange,
+  _fullRange: OffsetRange,
   contentRange: OffsetRange,
   ghostDelimiters: OffsetDecoration[],
   openDelimiter: string,
   closeDelimiter: string,
 ): void {
-  if (fullRange.start < contentRange.start) {
-    ghostDelimiters.push({
-      range: { start: contentRange.start, end: contentRange.start },
-      renderBefore: { contentText: openDelimiter },
-    });
-  }
-  if (contentRange.end < fullRange.end) {
-    ghostDelimiters.push({
-      range: { start: contentRange.end, end: contentRange.end },
-      renderAfter: { contentText: closeDelimiter },
-    });
-  }
+  // Bug 4 fix: emit unconditionally. Previously this function
+  // was guarded by `fullRange.start < contentRange.start` and `contentRange.end
+  // < fullRange.end`, which silently suppressed emission for L3 documents
+  // where the parser sets contentRange = { ...range }. Callers (specifically
+  // hideOrGhostDelimiters) already gate on L3 + showGhostDelimiters, so this
+  // is the correct layer to drop the guard. _fullRange stays in the signature
+  // for caller compatibility.
+  ghostDelimiters.push({
+    range: { start: contentRange.start, end: contentRange.start },
+    renderBefore: { contentText: openDelimiter },
+  });
+  ghostDelimiters.push({
+    range: { start: contentRange.end, end: contentRange.end },
+    renderAfter: { contentText: closeDelimiter },
+  });
 }
 
 /**
- * Combined hide-or-ghost dispatcher: hides real delimiters for L2, injects
- * ghost delimiters for L3, or does nothing when L3 + ghosts disabled.
+ * Hide real delimiter bytes or inject ghost delimiters, depending on whether
+ * the change has inline delimiters. No format metadata is read — the caller
+ * derives `hasInlineDelimiters` from `range` vs `contentRange` inset.
  */
 export function hideOrGhostDelimiters(
   fullRange: OffsetRange,
   contentRange: OffsetRange,
   plan: DecorationPlan,
-  isL3Format: boolean,
+  hasInlineDelimiters: boolean,
   showGhostDelimiters: boolean,
   openDelim: string,
   closeDelim: string,
 ): void {
-  if (isL3Format && showGhostDelimiters) {
-    injectGhostDelimiters(fullRange, contentRange, plan.ghostDelimiters, openDelim, closeDelim);
-  } else if (!isL3Format) {
+  if (hasInlineDelimiters) {
     hideDelimiters(fullRange, contentRange, plan.hiddens);
+  } else if (showGhostDelimiters) {
+    injectGhostDelimiters(fullRange, contentRange, plan.ghostDelimiters, openDelim, closeDelim);
   }
+}
+
+/**
+ * Returns true when the change has real delimiter bytes in the document body
+ * (i.e. range extends beyond contentRange on either side). This is the inverse
+ * of the L3 sidecar shape where range === contentRange.
+ *
+ * Callers derive this once per change and pass the boolean to
+ * hideOrGhostDelimiters — no format metadata is read here.
+ */
+export function hasInlineDelimiters(change: ChangeNode): boolean {
+  return change.range.start < change.contentRange.start
+      || change.range.end > change.contentRange.end;
 }
 
 /** Compute character-level highlight ranges for a substitution node using diff. */

@@ -146,11 +146,11 @@ When('I toggle Smart View', { timeout: 15000 }, async function (this: ChangeDown
 
     // Update view mode tracking — Toggle Smart View cycles through all 4 modes
     const key = getInstanceKey(this);
-    const current = instanceViewMode.get(key) ?? 'review';
-    const currentIdx = VIEW_MODE_ORDER.indexOf(current as any);
+    const current = instanceViewMode.get(key) ?? 'working';
+    const currentIdx = VIEW_MODE_ORDER.indexOf(current);
     const next = VIEW_MODE_ORDER[(currentIdx + 1) % VIEW_MODE_ORDER.length];
     instanceViewMode.set(key, next);
-    this.currentViewMode = next;
+    this.currentView = next;
 });
 
 When('I position the cursor at line {int} column {int}', { timeout: 5000 }, async function (

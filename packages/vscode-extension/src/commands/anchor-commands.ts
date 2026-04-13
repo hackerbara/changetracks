@@ -68,8 +68,8 @@ export class AnchorCommands implements vscode.Disposable {
     }
 
     // Trigger format round-trip: L3 → L2 → L3 forces re-anchoring
-    const result = await this.controller.formatService.demoteToL2(uri, state.text);
-    const repaired = await this.controller.formatService.promoteToL3(uri, result.convertedText);
+    const demotedText = await this.controller.formatService.demoteText(state.text, { uri });
+    const repairedText = await this.controller.formatService.promoteText(demotedText, { uri });
 
     const editor = vscode.window.activeTextEditor;
     if (editor) {
@@ -77,7 +77,7 @@ export class AnchorCommands implements vscode.Disposable {
         editor.document.positionAt(0),
         editor.document.positionAt(editor.document.getText().length)
       );
-      await editor.edit(b => b.replace(fullRange, repaired.convertedText));
+      await editor.edit(b => b.replace(fullRange, repairedText));
     }
 
     vscode.window.showInformationMessage('Anchors re-resolved via format round-trip.');

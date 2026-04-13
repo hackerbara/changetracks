@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { ChangedownServer, PreviousVersionResult } from '@changedown/lsp-server/internals';
 import type { WorkspaceEdit } from '@changedown/lsp-server/internals';
+import { createMockConnection } from './mock-connection.js';
 
 /**
  * Tests for the changedown/annotate custom request handler.
@@ -11,57 +12,6 @@ import type { WorkspaceEdit } from '@changedown/lsp-server/internals';
  *
  * Git functions are mocked — no real git repos needed.
  */
-
-// ---------------------------------------------------------------------------
-// Mock helpers
-// ---------------------------------------------------------------------------
-
-/** Captured onRequest handlers, keyed by method name. */
-interface RequestHandlers {
-  [method: string]: (params: any) => any;
-}
-
-/**
- * Create a mock LSP connection that captures onRequest registrations.
- */
-function createMockConnection(): any {
-  const handlers: any = {};
-  const requestHandlers: RequestHandlers = {};
-  const notifications: Array<{ method: string; params: any }> = [];
-
-  return {
-    onInitialize: (handler: any) => { handlers.initialize = handler; },
-    onInitialized: (handler: any) => { handlers.initialized = handler; },
-    onShutdown: (handler: any) => { handlers.shutdown = handler; },
-    onExit: (handler: any) => { handlers.exit = handler; },
-    onDidOpenTextDocument: (handler: any) => { handlers.didOpen = handler; },
-    onDidChangeTextDocument: (handler: any) => { handlers.didChange = handler; },
-    onDidCloseTextDocument: (handler: any) => { handlers.didClose = handler; },
-    onWillSaveTextDocument: (handler: any) => { handlers.willSave = handler; },
-    onWillSaveTextDocumentWaitUntil: (handler: any) => { handlers.willSaveWaitUntil = handler; },
-    onDidSaveTextDocument: (handler: any) => { handlers.didSave = handler; },
-    onHover: (handler: any) => { handlers.hover = handler; },
-    onCodeLens: (handler: any) => { handlers.codeLens = handler; },
-    onFoldingRanges: (handler: any) => { handlers.foldingRanges = handler; },
-    onCodeAction: (handler: any) => { handlers.codeAction = handler; },
-    onDocumentLinks: (handler: any) => { handlers.documentLinks = handler; },
-    onRequest: (method: string, handler: any) => { requestHandlers[method] = handler; },
-    onNotification: (method: string, handler: any) => { handlers['notification:' + method] = handler; },
-    sendDiagnostics: (params: any) => { notifications.push({ method: 'textDocument/publishDiagnostics', params }); },
-    sendNotification: (method: string, params: any) => {
-      notifications.push({ method, params });
-    },
-    languages: {
-      semanticTokens: {
-        on: (handler: any) => { handlers.semanticTokens = handler; }
-      }
-    },
-    listen: () => {},
-    _handlers: handlers,
-    _requestHandlers: requestHandlers,
-    _notifications: notifications,
-  };
-}
 
 /**
  * Stub git functions on the server for testing.

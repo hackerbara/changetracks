@@ -5,6 +5,7 @@ var DEFAULT_CONFIG = {
   tracking: {
     include: ["**/*.md"],
     exclude: ["node_modules/**", "dist/**"],
+    include_absolute: [],
     default: "tracked",
     auto_header: true
   },
@@ -29,7 +30,7 @@ var DEFAULT_CONFIG = {
   policy: {
     mode: "safety-net",
     creation_tracking: "footnote",
-    default_view: "review",
+    default_view: "working",
     view_policy: "suggest"
   }
 };
@@ -346,6 +347,7 @@ var FOOTNOTE_DEF_STRICT = new RegExp(`^\\[\\^(${FOOTNOTE_ID_PATTERN})\\]:\\s+(?:
 var FOOTNOTE_DEF_STATUS = new RegExp(`^\\[\\^(${FOOTNOTE_ID_PATTERN})\\]:\\s+(?:@\\S+\\s+\\|\\s+)?\\S+\\s+\\|\\s+\\S+\\s+\\|\\s+(\\S+)`);
 var FOOTNOTE_DEF_STATUS_VALUE = new RegExp(`^\\[\\^${FOOTNOTE_ID_PATTERN}\\]:\\s.*\\|\\s*(proposed|accepted|rejected)`);
 var FOOTNOTE_L3_EDIT_OP = /^ {4}(\d+):([0-9a-fA-F]{2,}) (.*)/;
+var IMAGE_DIMENSIONS_RE = /^([\d.]+)in\s*x\s*([\d.]+)in$/;
 var CTX_RE = /@ctx:"((?:[^"\\]|\\.)*)"\|\|"((?:[^"\\]|\\.)*)"/;
 function unescapeCtxString(s) {
   return s.replace(/\\"/g, '"').replace(/\\\\/g, "\\");
@@ -506,7 +508,7 @@ function applyImageExtraMetadata(def, metadata) {
     return;
   const dimStr = def.extraMetadata["image-dimensions"];
   if (dimStr) {
-    const dimMatch = dimStr.match(/^([\d.]+)in\s*x\s*([\d.]+)in$/);
+    const dimMatch = dimStr.match(IMAGE_DIMENSIONS_RE);
     if (dimMatch) {
       metadata.imageDimensions = {
         widthIn: parseFloat(dimMatch[1]),
@@ -1365,6 +1367,261 @@ function relocateHashRef(ref, fileLines, computeHash) {
   return { relocated: true, newLine };
 }
 
+// ../../packages/core/dist-esm/parser/contextual-edit-op.js
+var CM_OPENERS = {
+  "{++": "++}",
+  "{--": "--}",
+  "{~~": "~~}",
+  "{==": "==}",
+  "{>>": "<<}"
+  // optional closer for comments
+};
+function parseContextualEditOp(opString) {
+  let opStart = -1;
+  let opener = "";
+  for (const o of Object.keys(CM_OPENERS)) {
+    const idx = opString.indexOf(o);
+    if (idx !== -1 && (opStart === -1 || idx < opStart)) {
+      opStart = idx;
+      opener = o;
+    }
+  }
+  if (opStart === -1)
+    return null;
+  const contextBefore = opString.slice(0, opStart);
+  const expectedCloser = CM_OPENERS[opener];
+  let opEnd = -1;
+  if (opener === "{~~") {
+    const searchFrom = opStart + opener.length;
+    const closerIdx = opString.lastIndexOf("~~}");
+    opEnd = closerIdx >= searchFrom ? closerIdx + 3 : -1;
+  } else if (opener === "{>>") {
+    const searchFrom = opStart + opener.length;
+    const closerIdx = opString.indexOf("<<}", searchFrom);
+    if (closerIdx !== -1) {
+      opEnd = closerIdx + 3;
+    } else {
+      opEnd = opString.length;
+    }
+  } else {
+    const searchFrom = opStart + opener.length;
+    const closerIdx = opString.indexOf(expectedCloser, searchFrom);
+    opEnd = closerIdx !== -1 ? closerIdx + expectedCloser.length : -1;
+  }
+  if (opEnd === -1)
+    return null;
+  const extractedOp = opString.slice(opStart, opEnd);
+  const contextAfter = opString.slice(opEnd);
+  if (contextBefore.trim() === "" && contextAfter.trim() === "")
+    return null;
+  if (contextBefore.trim() === "" && contextAfter.trimStart().startsWith("@ctx:"))
+    return null;
+  if (contextBefore.trim() === "" && contextAfter.trimStart().startsWith("{>>"))
+    return null;
+  return { contextBefore, opString: extractedOp, contextAfter };
+}
+
+// ../../packages/core/dist-esm/parser/footnote-block-parser.js
+var APPROVED_RE = /^ {4}approved:\s+(\S+)\s+(\S+)(?:\s+"([^"]*)")?/;
+var REJECTED_RE = /^ {4}rejected:\s+(\S+)\s+(\S+)(?:\s+"([^"]*)")?/;
+function parseApprovalLine(match) {
+  return {
+    author: match[1],
+    date: match[2],
+    timestamp: parseTimestamp(match[2]),
+    reason: match[3] || void 0
+  };
+}
+var REASON_RE = /^ {4}reason:\s+(.*)$/;
+var CONTEXT_RE = /^ {4}context:\s+(.*)$/;
+var RESOLVED_RE = /^ {4}resolved:\s+(\S+)\s+(\S+)(?:\s+"([^"]*)")?/;
+var OPEN_RE = /^ {4}open(?:\s+--\s+(.*))?$/;
+var IMAGE_META_RE = /^ {4}(image-[\w-]+):\s*(.*)$/;
+var EQUATION_META_RE = /^ {4}(equation-[\w-]+):\s*(.*)$/;
+function parseFootnoteBlock(lines, startLineOffset = 0) {
+  const footnotes = [];
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+    if (!FOOTNOTE_DEF_START.test(line)) {
+      i++;
+      continue;
+    }
+    const idMatch = line.match(/^\[\^(cn-[\w.]+)\]:/);
+    const headerRaw = parseFootnoteHeader(line);
+    if (!idMatch || !headerRaw) {
+      i++;
+      continue;
+    }
+    const id = idMatch[1];
+    const header = {
+      author: "@" + headerRaw.author,
+      date: headerRaw.date,
+      type: headerRaw.type,
+      status: headerRaw.status
+    };
+    const startLine = i;
+    i++;
+    const bodyLines = [];
+    let editOp = null;
+    let reason;
+    let context;
+    const discussion = [];
+    const approvals = [];
+    const rejections = [];
+    let resolution = null;
+    let imageMetadata;
+    let equationMetadata;
+    while (i < lines.length) {
+      const body = lines[i];
+      if (FOOTNOTE_DEF_START.test(body))
+        break;
+      if (body.length > 0 && body.trim() !== "" && !body.startsWith("    "))
+        break;
+      if (body === "" || body.trim() === "") {
+        bodyLines.push({ kind: "blank", raw: "" });
+        i++;
+        continue;
+      }
+      const opMatch = body.match(FOOTNOTE_L3_EDIT_OP);
+      if (opMatch && !editOp) {
+        const lineNumber = parseInt(opMatch[1], 10);
+        const hash = opMatch[2].toLowerCase();
+        const opString = opMatch[3];
+        let op = opString;
+        let contextBefore;
+        let contextAfter;
+        try {
+          const ctx = parseContextualEditOp(opString);
+          if (ctx) {
+            op = ctx.opString;
+            contextBefore = ctx.contextBefore;
+            contextAfter = ctx.contextAfter;
+          }
+        } catch {
+        }
+        if (contextBefore !== void 0 && contextAfter !== void 0) {
+          editOp = { resolutionPath: "context", lineNumber, hash, op, contextBefore, contextAfter };
+        } else {
+          editOp = { resolutionPath: "hash", lineNumber, hash, op };
+        }
+        bodyLines.push({ kind: "edit-op", editOp, raw: body });
+        i++;
+        continue;
+      }
+      const reasonMatch = body.match(REASON_RE);
+      if (reasonMatch) {
+        const text = reasonMatch[1];
+        if (reason === void 0)
+          reason = text;
+        bodyLines.push({ kind: "reason", text, raw: body });
+        i++;
+        continue;
+      }
+      const contextMatch = body.match(CONTEXT_RE);
+      if (contextMatch) {
+        const text = contextMatch[1];
+        if (context === void 0)
+          context = text;
+        bodyLines.push({ kind: "context", text, raw: body });
+        i++;
+        continue;
+      }
+      if (FOOTNOTE_THREAD_REPLY.test(body)) {
+        const replyMatch = body.match(/^\s+@(\S+)\s+(\S+):\s*(.*)$/);
+        if (replyMatch) {
+          const reply = {
+            author: replyMatch[1],
+            date: replyMatch[2],
+            timestamp: parseTimestamp(replyMatch[2]),
+            text: replyMatch[3],
+            depth: 0
+          };
+          discussion.push(reply);
+          bodyLines.push({ kind: "discussion", reply, raw: body });
+          i++;
+          continue;
+        }
+      }
+      const approvedMatch = body.match(APPROVED_RE);
+      if (approvedMatch) {
+        const action = parseApprovalLine(approvedMatch);
+        approvals.push(action);
+        bodyLines.push({ kind: "approval", action, raw: body });
+        i++;
+        continue;
+      }
+      const rejectedMatch = body.match(REJECTED_RE);
+      if (rejectedMatch) {
+        const action = parseApprovalLine(rejectedMatch);
+        rejections.push(action);
+        bodyLines.push({ kind: "rejection", action, raw: body });
+        i++;
+        continue;
+      }
+      const resolvedMatch = body.match(RESOLVED_RE);
+      if (resolvedMatch) {
+        const res = {
+          type: "resolved",
+          author: resolvedMatch[1],
+          date: resolvedMatch[2],
+          timestamp: parseTimestamp(resolvedMatch[2]),
+          reason: resolvedMatch[3] || void 0
+        };
+        if (!resolution)
+          resolution = res;
+        bodyLines.push({ kind: "resolution", resolution: res, raw: body });
+        i++;
+        continue;
+      }
+      const openMatch = body.match(OPEN_RE);
+      if (openMatch) {
+        const res = { type: "open", reason: openMatch[1] || void 0 };
+        if (!resolution)
+          resolution = res;
+        bodyLines.push({ kind: "resolution", resolution: res, raw: body });
+        i++;
+        continue;
+      }
+      const imgMatch = body.match(IMAGE_META_RE);
+      if (imgMatch) {
+        imageMetadata = imageMetadata ?? {};
+        imageMetadata[imgMatch[1]] = imgMatch[2].trim();
+        bodyLines.push({ kind: "image-meta", key: imgMatch[1], value: imgMatch[2].trim(), raw: body });
+        i++;
+        continue;
+      }
+      const eqMatch = body.match(EQUATION_META_RE);
+      if (eqMatch) {
+        equationMetadata = equationMetadata ?? {};
+        equationMetadata[eqMatch[1]] = eqMatch[2].trim();
+        bodyLines.push({ kind: "equation-meta", key: eqMatch[1], value: eqMatch[2].trim(), raw: body });
+        i++;
+        continue;
+      }
+      bodyLines.push({ kind: "unknown", raw: body });
+      i++;
+    }
+    const endLine = i - 1;
+    footnotes.push({
+      id,
+      header,
+      editOp,
+      bodyLines,
+      reason,
+      context,
+      discussion,
+      approvals,
+      rejections,
+      resolution,
+      imageMetadata: imageMetadata ? Object.freeze(imageMetadata) : void 0,
+      equationMetadata: equationMetadata ? Object.freeze(equationMetadata) : void 0,
+      sourceRange: { startLine: startLineOffset + startLine, endLine: startLineOffset + endLine }
+    });
+  }
+  return footnotes;
+}
+
 // ../../packages/core/dist-esm/text-normalizer.js
 function defaultNormalizer(text) {
   return text.normalize("NFKC");
@@ -1722,58 +1979,6 @@ function lineOffset(lines, lineIndex) {
 }
 
 // ../../packages/core/dist-esm/parser/footnote-native-parser.js
-var CM_OPENERS = {
-  "{++": "++}",
-  "{--": "--}",
-  "{~~": "~~}",
-  "{==": "==}",
-  "{>>": "<<}"
-  // optional closer for comments
-};
-function parseContextualEditOp(opString) {
-  let opStart = -1;
-  let opener = "";
-  for (const o of Object.keys(CM_OPENERS)) {
-    const idx = opString.indexOf(o);
-    if (idx !== -1 && (opStart === -1 || idx < opStart)) {
-      opStart = idx;
-      opener = o;
-    }
-  }
-  if (opStart === -1)
-    return null;
-  const contextBefore = opString.slice(0, opStart);
-  const expectedCloser = CM_OPENERS[opener];
-  let opEnd = -1;
-  if (opener === "{~~") {
-    const searchFrom = opStart + opener.length;
-    const closerIdx = opString.lastIndexOf("~~}");
-    opEnd = closerIdx >= searchFrom ? closerIdx + 3 : -1;
-  } else if (opener === "{>>") {
-    const searchFrom = opStart + opener.length;
-    const closerIdx = opString.indexOf("<<}", searchFrom);
-    if (closerIdx !== -1) {
-      opEnd = closerIdx + 3;
-    } else {
-      opEnd = opString.length;
-    }
-  } else {
-    const searchFrom = opStart + opener.length;
-    const closerIdx = opString.indexOf(expectedCloser, searchFrom);
-    opEnd = closerIdx !== -1 ? closerIdx + expectedCloser.length : -1;
-  }
-  if (opEnd === -1)
-    return null;
-  const extractedOp = opString.slice(opStart, opEnd);
-  const contextAfter = opString.slice(opEnd);
-  if (contextBefore.trim() === "" && contextAfter.trim() === "")
-    return null;
-  if (contextBefore.trim() === "" && contextAfter.trimStart().startsWith("@ctx:"))
-    return null;
-  if (contextBefore.trim() === "" && contextAfter.trimStart().startsWith("{>>"))
-    return null;
-  return { contextBefore, opString: extractedOp, contextAfter };
-}
 function parseDeletionContext(opString) {
   const closerIdx = opString.indexOf("--}");
   if (closerIdx < 0)
@@ -1784,8 +1989,6 @@ function parseDeletionContext(opString) {
     return null;
   return { before: unescapeCtxString(match[1]), after: unescapeCtxString(match[2]) };
 }
-var APPROVED_RE = /^ {4}approved:\s+(\S+)\s+(\S+)\s+"([^"]*)"/;
-var REJECTED_META_RE = /^ {4}rejected:\s+(\S+)\s+(\S+)\s+"([^"]*)"/;
 var FootnoteNativeParser = class {
   parse(text) {
     const lines = text.split("\n");
@@ -1883,104 +2086,54 @@ var FootnoteNativeParser = class {
     }
     return new VirtualDocument(changes, coherenceRate, [], resolvedText);
   }
+  /**
+   * Test-only hook: run just the footnote-scanning phase and return the raw
+   * ParsedFootnote structs before change resolution.  Used by
+   * parser-bug-fixes.test.ts to assert on `unknownBodyLines` directly.
+   *
+   * @internal Do NOT call from production code.
+   */
+  _testScanFootnotes(text) {
+    return this.parseFootnotes(text.split("\n"));
+  }
   parseFootnotes(lines) {
-    const entries = [];
-    let current = null;
-    for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
-      const line = lines[lineIdx];
-      if (FOOTNOTE_DEF_START.test(line)) {
-        if (current) {
-          current.endLine = lineIdx - 1;
-          entries.push(current);
-        }
-        const idMatch = line.match(/^\[\^(cn-[\w.]+)\]:/);
-        const header = parseFootnoteHeader(line);
-        if (idMatch && header) {
-          current = {
-            id: idMatch[1],
-            author: "@" + header.author,
-            date: header.date,
-            type: header.type,
-            status: header.status,
-            startLine: lineIdx,
-            replyCount: 0
-          };
-        } else {
-          current = null;
-        }
-        continue;
-      }
-      if (!current)
-        continue;
-      const opMatch = line.match(FOOTNOTE_L3_EDIT_OP);
-      if (opMatch && current.opString === void 0) {
-        current.lineNumber = parseInt(opMatch[1], 10);
-        current.hash = opMatch[2].toLowerCase();
-        current.opString = opMatch[3];
-        continue;
-      }
-      if (FOOTNOTE_THREAD_REPLY.test(line)) {
-        current.replyCount = (current.replyCount ?? 0) + 1;
-        continue;
-      }
-      const approvedMatch = line.match(APPROVED_RE);
-      if (approvedMatch) {
-        if (!current.approvals)
-          current.approvals = [];
-        current.approvals.push({
-          author: approvedMatch[1],
-          date: approvedMatch[2],
-          reason: approvedMatch[3]
-        });
-        continue;
-      }
-      const rejectedMatch = line.match(REJECTED_META_RE);
-      if (rejectedMatch) {
-        if (!current.rejections)
-          current.rejections = [];
-        current.rejections.push({
-          author: rejectedMatch[1],
-          date: rejectedMatch[2],
-          reason: rejectedMatch[3]
-        });
-        continue;
-      }
-      const imageMeta = line.match(/^\s+([\w-]+):\s*(.*)/);
-      if (imageMeta) {
-        const key = imageMeta[1];
-        const value = imageMeta[2].trim();
-        if (key === "image-dimensions") {
-          const dimMatch = value.match(/^([\d.]+)in\s*x\s*([\d.]+)in$/);
-          if (dimMatch) {
-            current.imageDimensions = {
-              widthIn: parseFloat(dimMatch[1]),
-              heightIn: parseFloat(dimMatch[2])
-            };
-          }
-        } else if (key.startsWith("image-") || key === "merge-detected") {
-          if (!current.imageMetadata)
-            current.imageMetadata = {};
-          current.imageMetadata[key] = value;
-        } else if (key.startsWith("equation-")) {
-          if (!current.equationMetadata)
-            current.equationMetadata = {};
-          current.equationMetadata[key] = value;
-        }
-        continue;
-      }
-      const trimmed = line.trim();
-      if (trimmed && !current.discussionText) {
-        current.discussionText = trimmed;
-      }
+    const { footnoteLines } = splitBodyAndFootnotes(lines);
+    const startLineOffset = lines.length - footnoteLines.length;
+    const typed = parseFootnoteBlock(footnoteLines, startLineOffset);
+    return typed.map((f) => this.typedToLegacy(f));
+  }
+  /** Adapter: typed Footnote (new) → ParsedFootnote (legacy resolver input). */
+  typedToLegacy(f) {
+    let imageDimensions;
+    const dimRaw = f.imageMetadata?.["image-dimensions"];
+    if (dimRaw) {
+      const m = dimRaw.match(IMAGE_DIMENSIONS_RE);
+      if (m)
+        imageDimensions = { widthIn: parseFloat(m[1]), heightIn: parseFloat(m[2]) };
     }
-    if (current) {
-      let end = lines.length - 1;
-      while (end > (current.startLine ?? 0) && lines[end].trim() === "")
-        end--;
-      current.endLine = end;
-      entries.push(current);
-    }
-    return entries;
+    const contextBefore = f.editOp?.resolutionPath === "context" ? f.editOp.contextBefore : void 0;
+    const contextAfter = f.editOp?.resolutionPath === "context" ? f.editOp.contextAfter : void 0;
+    return {
+      id: f.id,
+      author: f.header.author,
+      date: f.header.date,
+      type: f.header.type,
+      status: f.header.status,
+      startLine: f.sourceRange.startLine,
+      endLine: f.sourceRange.endLine,
+      lineNumber: f.editOp?.lineNumber,
+      hash: f.editOp?.hash,
+      opString: f.editOp ? f.editOp.resolutionPath === "context" ? `${f.editOp.contextBefore ?? ""}${f.editOp.op}${f.editOp.contextAfter ?? ""}` : f.editOp.op : void 0,
+      contextBefore,
+      contextAfter,
+      replyCount: f.discussion.length,
+      approvals: f.approvals.length > 0 ? f.approvals.map((a) => ({ author: a.author, date: a.date, reason: a.reason ?? "" })) : void 0,
+      rejections: f.rejections.length > 0 ? f.rejections.map((a) => ({ author: a.author, date: a.date, reason: a.reason ?? "" })) : void 0,
+      imageDimensions,
+      imageMetadata: f.imageMetadata ? { ...f.imageMetadata } : void 0,
+      equationMetadata: f.equationMetadata ? { ...f.equationMetadata } : void 0,
+      unknownBodyLines: f.bodyLines.filter((l) => l.kind === "unknown").map((l) => l.raw.trim())
+    };
   }
   resolveChanges(footnotes, bodyLines) {
     const changes = [];
@@ -1997,13 +2150,22 @@ var FootnoteNativeParser = class {
       let ctxResult = null;
       if (fn.opString) {
         try {
-          ctxResult = parseContextualEditOp(fn.opString);
-          parsedOp = parseOp(ctxResult ? ctxResult.opString : fn.opString);
+          if (fn.contextBefore !== void 0 || fn.contextAfter !== void 0) {
+            const before = fn.contextBefore ?? "";
+            const after = fn.contextAfter ?? "";
+            const criticMarkupOp = fn.opString.slice(before.length, fn.opString.length - after.length);
+            ctxResult = { contextBefore: before, contextAfter: after, opString: criticMarkupOp };
+            parsedOp = parseOp(criticMarkupOp);
+          } else {
+            ctxResult = parseContextualEditOp(fn.opString);
+            parsedOp = parseOp(ctxResult ? ctxResult.opString : fn.opString);
+          }
         } catch {
           continue;
         }
       }
-      const { range, originalText, modifiedText, comment, anchored, resolutionPath } = this.resolveRangeAndContent(fn, parsedOp, ctxResult, changeType, status, bodyLines, lineOffsets);
+      const rangeResult = this.resolveRangeAndContent(fn, parsedOp, ctxResult, changeType, status, bodyLines, lineOffsets);
+      const { range, originalText, modifiedText, comment, anchored, resolutionPath } = rangeResult;
       const node = {
         id: fn.id,
         type: changeType,
@@ -2041,6 +2203,9 @@ var FootnoteNativeParser = class {
       if (resolutionPath !== void 0) {
         node.resolutionPath = resolutionPath;
       }
+      if (rangeResult.deletionSeamOffset !== void 0) {
+        node.deletionSeamOffset = rangeResult.deletionSeamOffset;
+      }
       if (fn.approvals && fn.approvals.length > 0) {
         node.metadata.approvals = fn.approvals.map((a) => ({
           author: a.author,
@@ -2067,7 +2232,13 @@ var FootnoteNativeParser = class {
    *
    * For L3:
    * - Insertion: search for newText on the target line via findUniqueMatch; range covers the matched text
-   * - Deletion: zero-width range at the anchor point; uses @ctx: field for precise positioning
+   * - Deletion: range covers the full contextual anchor span (contextBefore + contextAfter).
+   *   `deletionSeamOffset` gives the byte offset within this span where the deletion occurred
+   *   (equals contextBefore.length). The spec's Contextual Uniqueness Guarantee ensures this
+   *   span appears exactly once on the target line (04-spec.md §"Contextual Embedding").
+   *   Zero-width ranges appear only as the {0,0} anchored:false sentinel (Invariant A).
+   *   This is deliberate — do NOT revert to zero-width seam without understanding
+   *   the plan builder's ghost-text injection and accept-change.ts's seam-based removal.
    * - Substitution: search for newText (proposed/accepted) or oldText (rejected) on target line
    * - Highlight: search for the highlighted text on the target line
    * - Comment: fall back to line start (no text to anchor to)
@@ -2113,7 +2284,7 @@ var FootnoteNativeParser = class {
     const lineContent = lineIdx >= 0 && lineIdx < bodyLines.length ? bodyLines[lineIdx] : "";
     const fallbackRange = { start: lineOffset2, end: lineOffset2 };
     if (!parsedOp) {
-      return { range: fallbackRange, anchored: false, comment: fn.discussionText, resolutionPath: "rejected" };
+      return { range: fallbackRange, anchored: false, comment: fn.unknownBodyLines?.[0], resolutionPath: "rejected" };
     }
     const findOnLine = (searchText) => {
       if (!searchText || !lineContent)
@@ -2151,29 +2322,41 @@ var FootnoteNativeParser = class {
       if (bodyMatchResult) {
         const matchStart = lineOffset2 + bodyMatchResult.index;
         const opStart = matchStart + contextBefore.length;
-        let opBodyLength;
+        let rangeStart;
+        let rangeEnd;
+        let deletionSeamOffset;
         switch (changeType) {
-          case ChangeType.Insertion:
-            opBodyLength = status === ChangeStatus.Rejected ? 0 : parsedOp.newText.length;
+          case ChangeType.Insertion: {
+            rangeStart = opStart;
+            rangeEnd = opStart + (status === ChangeStatus.Rejected ? 0 : parsedOp.newText.length);
             break;
-          case ChangeType.Deletion:
-            opBodyLength = 0;
+          }
+          case ChangeType.Deletion: {
+            rangeStart = matchStart;
+            rangeEnd = matchStart + bodyMatch.length;
+            deletionSeamOffset = contextBefore.length;
             break;
-          case ChangeType.Substitution:
-            opBodyLength = status === ChangeStatus.Rejected ? parsedOp.oldText.length : parsedOp.newText.length;
+          }
+          case ChangeType.Substitution: {
+            rangeStart = opStart;
+            rangeEnd = opStart + (status === ChangeStatus.Rejected ? parsedOp.oldText.length : parsedOp.newText.length);
             break;
-          case ChangeType.Highlight:
-            opBodyLength = parsedOp.oldText.length;
+          }
+          case ChangeType.Highlight: {
+            rangeStart = opStart;
+            rangeEnd = opStart + parsedOp.oldText.length;
             break;
+          }
           default:
-            opBodyLength = 0;
+            rangeStart = opStart;
+            rangeEnd = opStart;
         }
-        const range = { start: opStart, end: opStart + opBodyLength };
         return {
-          range,
+          range: { start: rangeStart, end: rangeEnd },
           originalText: parsedOp.oldText || void 0,
           modifiedText: parsedOp.newText || void 0,
           comment: parsedOp.reasoning ?? void 0,
+          deletionSeamOffset,
           // When the hash also matched, label as 'hash' (same semantics as the
           // old resolve() Phase A: hash gate passed, context match pinpointed position).
           // When only context matched (hash mismatch or relocation), label as 'context'.
@@ -2205,16 +2388,24 @@ var FootnoteNativeParser = class {
           if (joined.length > 0) {
             const match = findOnLine(joined);
             if (match) {
-              const delPoint = lineOffset2 + match.index + ctx.before.length;
               return {
-                range: { start: delPoint, end: delPoint },
+                range: {
+                  start: lineOffset2 + match.index,
+                  end: lineOffset2 + match.index + joined.length
+                },
                 originalText: text,
+                deletionSeamOffset: ctx.before.length,
                 resolutionPath: hashMatched ? "hash" : void 0
               };
             }
           }
         }
-        return { range: fallbackRange, originalText: text, resolutionPath: hashMatched ? "hash" : void 0 };
+        const lineEnd = lineOffset2 + lineContent.length;
+        return {
+          range: { start: lineOffset2, end: lineEnd },
+          originalText: text,
+          resolutionPath: hashMatched ? "hash" : void 0
+        };
       }
       case ChangeType.Substitution: {
         const oldText = parsedOp.oldText;
@@ -2247,7 +2438,7 @@ var FootnoteNativeParser = class {
         return { range, comment, resolutionPath: hashMatched ? "hash" : void 0 };
       }
       case ChangeType.Comment: {
-        const comment = (parsedOp.reasoning || void 0) ?? (parsedOp.oldText || fn.discussionText);
+        const comment = (parsedOp.reasoning || void 0) ?? (parsedOp.oldText || fn.unknownBodyLines?.[0]);
         return { range: fallbackRange, comment, resolutionPath: hashMatched ? "hash" : void 0 };
       }
       default:
@@ -3447,6 +3638,106 @@ function parse(toml, { maxDepth = 1e3, integersAsBigInt } = {}) {
 // ../../packages/cli/dist/config/loader.js
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
+
+// ../../packages/core/dist-esm/host/uri.js
+var UriMap = class {
+  constructor() {
+    this.map = /* @__PURE__ */ new Map();
+  }
+  set(uri, value) {
+    this.map.set(uri, value);
+  }
+  get(uri) {
+    return this.map.get(uri);
+  }
+  has(uri) {
+    return this.map.has(uri);
+  }
+  delete(uri) {
+    return this.map.delete(uri);
+  }
+  get size() {
+    return this.map.size;
+  }
+  clear() {
+    this.map.clear();
+  }
+  keys() {
+    return this.map.keys();
+  }
+  values() {
+    return this.map.values();
+  }
+  entries() {
+    return this.map.entries();
+  }
+  forEach(fn) {
+    this.map.forEach(fn);
+  }
+};
+
+// ../../packages/core/dist-esm/host/decoration-scheduler.js
+var DecorationScheduler = class _DecorationScheduler {
+  constructor(performUpdate) {
+    this.performUpdate = performUpdate;
+    this.timers = new UriMap();
+  }
+  schedule(uri) {
+    const key = uri;
+    const existing = this.timers.get(key);
+    if (existing !== void 0)
+      clearTimeout(existing);
+    this.timers.set(key, setTimeout(() => {
+      this.timers.delete(key);
+      this.performUpdate(uri);
+    }, _DecorationScheduler.DEBOUNCE_MS));
+  }
+  updateNow(uri) {
+    const key = uri;
+    const existing = this.timers.get(key);
+    if (existing !== void 0) {
+      clearTimeout(existing);
+      this.timers.delete(key);
+    }
+    this.performUpdate(uri);
+  }
+  dispose() {
+    for (const timer of this.timers.values())
+      clearTimeout(timer);
+    this.timers.clear();
+  }
+};
+DecorationScheduler.DEBOUNCE_MS = 50;
+
+// ../../packages/core/dist-esm/host/view-helpers.js
+var VIEW_KNOWN_NAMES = /* @__PURE__ */ new Map([
+  // Canonical (identity)
+  ["working", "working"],
+  ["simple", "simple"],
+  ["decided", "decided"],
+  ["original", "original"],
+  ["raw", "raw"],
+  // Legacy config compat (silent normalization)
+  ["review", "working"],
+  ["bytes", "raw"],
+  ["changes", "simple"],
+  ["final", "decided"],
+  ["settled", "decided"],
+  // Legacy MCP aliases
+  ["full", "raw"],
+  ["all", "working"],
+  ["content", "raw"],
+  ["meta", "working"],
+  ["committed", "simple"],
+  // VS Code settings compat
+  ["all-markup", "working"],
+  ["markup", "working"]
+]);
+function resolveView(input) {
+  return VIEW_KNOWN_NAMES.get(input) ?? null;
+}
+
+// ../../packages/cli/dist/config/loader.js
 function asStringArray(value) {
   if (!Array.isArray(value))
     return void 0;
@@ -3487,6 +3778,7 @@ function parseConfigToml(raw) {
     tracking: {
       include: asStringArray(tracking?.["include"]) ?? DEFAULT_CONFIG2.tracking.include,
       exclude: asStringArray(tracking?.["exclude"]) ?? DEFAULT_CONFIG2.tracking.exclude,
+      include_absolute: asStringArray(tracking?.["include_absolute"]) ?? DEFAULT_CONFIG2.tracking.include_absolute,
       default: tracking?.["default"] === "tracked" || tracking?.["default"] === "untracked" ? tracking["default"] : DEFAULT_CONFIG2.tracking.default,
       auto_header: typeof tracking?.["auto_header"] === "boolean" ? tracking["auto_header"] : DEFAULT_CONFIG2.tracking.auto_header
     },
@@ -3530,7 +3822,16 @@ function parseConfigToml(raw) {
     policy: {
       mode: policy?.["mode"] === "strict" || policy?.["mode"] === "safety-net" || policy?.["mode"] === "permissive" ? policy["mode"] : derivePolicyMode(hooks?.["enforcement"]),
       creation_tracking: policy?.["creation_tracking"] === "none" || policy?.["creation_tracking"] === "footnote" || policy?.["creation_tracking"] === "inline" ? policy["creation_tracking"] : DEFAULT_CONFIG2.policy.creation_tracking,
-      default_view: policy?.["default_view"] === "review" || policy?.["default_view"] === "changes" || policy?.["default_view"] === "settled" ? policy["default_view"] : DEFAULT_CONFIG2.policy.default_view,
+      default_view: (() => {
+        const raw2 = policy?.["default_view"];
+        if (raw2 === void 0)
+          return DEFAULT_CONFIG2.policy.default_view;
+        const resolved = resolveView(String(raw2));
+        if (resolved !== null)
+          return resolved;
+        console.warn(`[changedown] Unknown default_view value: "${raw2}". Falling back to "${DEFAULT_CONFIG2.policy.default_view}".`);
+        return DEFAULT_CONFIG2.policy.default_view;
+      })(),
       view_policy: policy?.["view_policy"] === "suggest" || policy?.["view_policy"] === "require" ? policy["view_policy"] : DEFAULT_CONFIG2.policy.view_policy
     },
     protocol: {
@@ -3540,7 +3841,7 @@ function parseConfigToml(raw) {
       batch_reasoning: protocol?.["batch_reasoning"] === "optional" || protocol?.["batch_reasoning"] === "required" ? protocol["batch_reasoning"] : DEFAULT_CONFIG2.protocol.batch_reasoning
     },
     response: {
-      affected_lines: typeof response?.["affected_lines"] === "boolean" ? response["affected_lines"] : true
+      affected_lines: typeof response?.["affected_lines"] === "boolean" ? response["affected_lines"] : false
     }
   };
 }

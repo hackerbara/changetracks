@@ -7,7 +7,8 @@
 
 import { describe, it, expect } from 'vitest';
 import { ChangedownServer } from '@changedown/lsp-server/internals';
-import type { Connection, TextEdit } from '@changedown/lsp-server/internals';
+import type { TextEdit } from '@changedown/lsp-server/internals';
+import { createMockConnection } from './mock-connection.js';
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
 
@@ -57,50 +58,11 @@ More text.
     resolved: @bob 2026-03-02
 `;
 
-// ─── Mock Connection ──────────────────────────────────────────────────────────
-
-function createMockConnection(): Connection {
-  const handlers: any = {};
-  const notifications: Array<{ method: string; params: any }> = [];
-
-  return {
-    onInitialize: (handler: any) => { handlers.initialize = handler; },
-    onInitialized: (handler: any) => { handlers.initialized = handler; },
-    onShutdown: (handler: any) => { handlers.shutdown = handler; },
-    onExit: (handler: any) => { handlers.exit = handler; },
-    onDidOpenTextDocument: (handler: any) => { handlers.didOpen = handler; },
-    onDidChangeTextDocument: (handler: any) => { handlers.didChange = handler; },
-    onDidCloseTextDocument: (handler: any) => { handlers.didClose = handler; },
-    onWillSaveTextDocument: (handler: any) => { handlers.willSave = handler; },
-    onWillSaveTextDocumentWaitUntil: (handler: any) => { handlers.willSaveWaitUntil = handler; },
-    onDidSaveTextDocument: (handler: any) => { handlers.didSave = handler; },
-    onHover: (handler: any) => { handlers.hover = handler; },
-    onCodeLens: (handler: any) => { handlers.codeLens = handler; },
-    onFoldingRanges: (handler: any) => { handlers.foldingRanges = handler; },
-    onCodeAction: (handler: any) => { handlers.codeAction = handler; },
-    onDocumentLinks: (handler: any) => { handlers.documentLinks = handler; },
-    onRequest: (method: string, handler: any) => { handlers[`request:${method}`] = handler; },
-    onNotification: (method: string, handler: any) => { handlers[`notification:${method}`] = handler; },
-    sendDiagnostics: (params: any) => { notifications.push({ method: 'textDocument/publishDiagnostics', params }); },
-    sendNotification: (method: string, params: any) => {
-      notifications.push({ method, params });
-    },
-    languages: {
-      semanticTokens: {
-        on: (handler: any) => { handlers.semanticTokens = handler; },
-      },
-    },
-    listen: () => {},
-    _handlers: handlers,
-    _notifications: notifications,
-  } as any;
-}
-
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function setupServer(): { server: ChangedownServer; conn: Connection } {
+function setupServer(): { server: ChangedownServer; conn: ReturnType<typeof createMockConnection> } {
   const conn = createMockConnection();
-  const server = new ChangedownServer(conn);
+  const server = new ChangedownServer(conn as any);
   return { server, conn };
 }
 
@@ -343,7 +305,7 @@ describe('Phase 2: Lifecycle LSP Requests', () => {
       expect('edit' in result).toBe(true);
       expect('newChangeId' in result).toBe(true);
       const typed = result as { edit: TextEdit; newChangeId: string };
-      expect(typed.newChangeId).toMatch(/^ct-/);
+      expect(typed.newChangeId).toMatch(/^cn-/);
       expect(typed.edit.newText).toContain('| rejected');
       expect(typed.edit.newText).toContain('supersedes:');
       expect(typed.edit.newText).toContain('superseded-by:');

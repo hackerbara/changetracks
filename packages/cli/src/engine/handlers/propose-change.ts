@@ -14,6 +14,8 @@ import {
   applyAcceptedChanges,
   applyRejectedChanges,
   reviewerType,
+  splitBodyAndFootnotes,
+  FOOTNOTE_L3_EDIT_OP,
 } from '@changedown/core';
 import { validateOrAutoRemap, type RelocationEntry, type AutoRemapResult } from './hashline-relocate.js';
 import { HashlineMismatchError } from '@changedown/core';
@@ -25,7 +27,7 @@ import { strArg, optionalStrArg } from '../args.js';
 import { applyProposeChange, contentZoneText, extractLineRange, findUniqueMatch, resolveOverlapWithAuthor, stripRefsFromContent } from '../file-ops.js';
 import { toRelativePath } from '../path-utils.js';
 import { resolveTrackingStatus } from '../scope.js';
-import { SessionState, type ViewMode } from '../state.js';
+import { SessionState, type BuiltinView } from '../state.js';
 import { parseOp, nowTimestamp } from '@changedown/core';
 import { resolveProtocolMode } from '../config.js';
 import { rerecordState } from '../state-utils.js';
@@ -613,7 +615,7 @@ export async function handleProposeChange(
     // resolveHash() detects the view the agent used (committed/settled/raw)
     // and translates view-space coordinates to raw-space coordinates in one
     // call, eliminating separate hasCommittedHashes / hasSettledHashes branches.
-    let viewResolved: ViewMode | undefined;
+    let viewResolved: BuiltinView | undefined;
 
     if (hasHashlineParams(args)) {
       if (startLine !== undefined && startHash !== undefined) {
@@ -675,7 +677,7 @@ export async function handleProposeChange(
     const isHashlineMode = useLineRange || useAfterLine;
 
     let modifiedText: string;
-    let changeType: 'ins' | 'del' | 'sub';
+    let changeType: 'ins' | 'del' | 'sub' | 'highlight' | 'comment';
     let affectedLines: AffectedLineEntry[] | undefined;
     let stalenessWarning: string | undefined;
     const supersededIds: string[] = [];
@@ -1268,13 +1270,13 @@ async function handleCompactProposeChange(
     for (const sl of viewResult.currentView.lines) {
       rawToViewMap.set(sl.rawLineNum, { viewLine: sl.currentLineNum, viewHash: sl.hash, viewContent: sl.text });
     }
-    viewProjection = { view: 'settled', rawToView: rawToViewMap };
+    viewProjection = { view: 'decided', rawToView: rawToViewMap };
   } else if (viewResult?.decidedView) {
     const rawToViewMap = new Map<number, { viewLine: number; viewHash: string; viewContent: string }>();
     for (const cl of viewResult.decidedView.lines) {
       rawToViewMap.set(cl.rawLineNum, { viewLine: cl.decidedLineNum, viewHash: cl.hash, viewContent: cl.text });
     }
-    viewProjection = { view: 'changes', rawToView: rawToViewMap };
+    viewProjection = { view: 'simple', rawToView: rawToViewMap };
   }
 
   // Build response

@@ -14,7 +14,7 @@ Feature: LV7 — View mode surface visibility
       [^cn-2]: @alice | 2026-03-09 | deletion | proposed
       [^cn-3]: @alice | 2026-03-09 | substitution | proposed
       """
-    And view mode is "review"
+    And view mode is "working"
     When I build comment threads
     Then 3 threads exist with gutter presence
 
@@ -27,7 +27,7 @@ Feature: LV7 — View mode surface visibility
       [^cn-2]: @alice | 2026-03-09 | deletion | proposed
       [^cn-3]: @alice | 2026-03-09 | substitution | proposed
       """
-    And view mode is "changes"
+    And view mode is "simple"
     When I build comment threads
     Then 3 threads exist with gutter presence
 
@@ -40,7 +40,7 @@ Feature: LV7 — View mode surface visibility
       [^cn-2]: @alice | 2026-03-09 | deletion | proposed
       [^cn-3]: @alice | 2026-03-09 | substitution | proposed
       """
-    And view mode is "settled"
+    And view mode is "final"
     When I build comment threads
     Then no threads are visible
 

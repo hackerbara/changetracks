@@ -27,7 +27,7 @@ describe("parseEventsFromLines", () => {
   it("groups tool_use events with their enclosing step", () => {
     const lines = [
       STEP_START("step1"),
-      TOOL_USE("changedown_read_tracked_file", { file: "adr.md", view: "review" }, "# ADR content..."),
+      TOOL_USE("changedown_read_tracked_file", { file: "adr.md", view: "working" }, "# ADR content..."),
       STEP_FINISH("step1", { input: 100, output: 200, reasoning: 0, cache: { read: 5000 } }),
     ];
 
@@ -36,7 +36,7 @@ describe("parseEventsFromLines", () => {
     expect(steps[0].apiTokens).toEqual({ input: 100, output: 200, reasoning: 0, cacheRead: 5000 });
     expect(steps[0].toolCalls).toHaveLength(1);
     expect(steps[0].toolCalls[0].tool).toBe("changedown_read_tracked_file");
-    expect(steps[0].toolCalls[0].rawInput).toEqual({ file: "adr.md", view: "review" });
+    expect(steps[0].toolCalls[0].rawInput).toEqual({ file: "adr.md", view: "working" });
     expect(steps[0].toolCalls[0].rawOutput).toBe("# ADR content...");
   });
 

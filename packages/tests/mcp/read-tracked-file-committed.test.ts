@@ -92,9 +92,10 @@ describe('read_tracked_file committed view', () => {
     );
 
     const text = result.content[0].text;
-    // Proposed insertion should be reverted (removed), line should have P flag
-    // Unified format: "N:HH P| content {>>cn-N<<}"
-    expect(text).toMatch(/P\| Before  after/);
+    // Simple view (committed→simple alias): shows current projection — proposed insertion
+    // is visible in the text, with P flag and bracket-format metadata.
+    // Unified format: "N:HH P| content [cn-N @author type status: reason]"
+    expect(text).toMatch(/P\| Before added text after \[cn-1 @alice ins proposed\]/);
   });
 
   it('shows A flag for accepted changes', async () => {
@@ -198,7 +199,7 @@ describe('read_tracked_file committed view', () => {
     );
 
     expect(result.isError).toBe(true);
-    expect(result.content[0].text).toContain('Committed view requires hashline mode');
+    expect(result.content[0].text).toContain('Simple view requires hashline mode');
   });
 
   it('shows clean summary for file without CriticMarkup', async () => {

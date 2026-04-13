@@ -815,7 +815,7 @@ describe('compact error handling', () => {
     await fs.writeFile(filePath, 'modified content');
 
     // Use an insertion (empty oldText) so Stage 3.5a is skipped.
-    // The original hash won't be found in the modified file's committed/settled view,
+    // The original hash won't be found in the modified file's committed/final view,
     // so Stage 3.5b also fails and the error is returned.
     const result = await handleProposeChange(
       { file: filePath, at: `1:${originalHash}`, op: '{++new stuff++}' },

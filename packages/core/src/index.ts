@@ -7,7 +7,7 @@ export {
 } from './config/index.js';
 export { reviewerType, canAccept, canWithdraw, type ParticipantType } from './config/review-permissions.js';
 export { parseTimestamp, nowTimestamp, compareTimestamps, formatTimestamp, type Timestamp } from './timestamp.js';
-export { ChangeType, ChangeStatus, changeTypeToAbbrev, OffsetRange, ChangeNode, InlineMetadata, TextEdit, PendingOverlay, Approval, Revision, DiscussionComment, Resolution, isGhostNode, consumptionLabel, nodeStatus, UnresolvedDiagnostic } from './model/types.js';
+export { ChangeType, ChangeStatus, changeTypeToAbbrev, changeTypeToShortCode, OffsetRange, ChangeNode, InlineMetadata, TextEdit, PendingOverlay, Approval, Revision, DiscussionComment, Resolution, isGhostNode, consumptionLabel, nodeStatus, UnresolvedDiagnostic } from './model/types.js';
 export { VirtualDocument } from './model/document.js';
 export { TokenType } from './parser/tokens.js';
 export { CriticMarkupParser, type ParseOptions } from './parser/parser.js';
@@ -46,7 +46,8 @@ export { defaultNormalizer, normalizedIndexOf, collapseWhitespace, buildWhitespa
 export { computeCurrentReplace, computeCurrentText, computeOriginalText, applyAcceptedChanges, applyRejectedChanges, computeCurrentView, type CurrentTextOptions, type CurrentLine, type CurrentViewResult } from './operations/current-text.js';
 export { initHashline, ensureHashlineReady, computeLineHash, formatHashLines, parseLineRef, validateLineRef, HashlineMismatchError } from './hashline.js';
 export { currentLine, computeCurrentLineHash, formatTrackedHashLines, formatTrackedHeader } from './hashline-tracked.js';
-export { stripHashlinePrefixes, detectNoOp, relocateHashRef, stripBoundaryEcho } from './hashline-cleanup.js';
+export { stripHashlinePrefixes, detectNoOp, relocateHashRef, relocateHashRefMulti, stripBoundaryEcho } from './hashline-cleanup.js';
+export type { HashStrategy } from './hashline-cleanup.js';
 export { findFootnoteBlockStart } from './footnote-utils.js';
 /** @deprecated Use parseForFormat() from format-aware-parse.js instead */
 export { parseFootnotes, type FootnoteInfo } from './footnote-parser.js';
@@ -77,7 +78,7 @@ export {
   checkCriticMarkupOverlap, guardOverlap, stripRefsFromContent,
   findAllProposedOverlaps, resolveOverlapWithAuthor,
   contentZoneText,
-  type UniqueMatch, type ProposeChangeParams, type ProposeChangeResult,
+  type UniqueMatch, type ProposeChangeParams, type ProposeChangeKind, type ProposeChangeResult,
   type CriticMarkupOverlap, type LineRangeResult,
   type ApplySingleOperationParams, type ApplySingleOperationResult,
   type CommittedMapResult, type MarkupRange,
@@ -100,17 +101,13 @@ export {
 export {
   type ThreeZoneDocument, type ThreeZoneLine, type ContentSpan,
   type LineMetadata, type DeliberationHeader, type LineFlag,
-  type ViewMode as ThreeZoneViewMode,
-  type ViewMode,
-  VIEW_MODE_ALIASES, VIEW_MODE_LABELS, VIEW_MODES,
-  resolveViewMode, nextViewMode,
 } from './renderers/three-zone-types.js';
 export { formatDocument, formatPlainText, formatAnsi, formatHtml, type ThreeZoneFormatOptions, type AnsiFormatOptions, type HtmlFormatOptions } from './renderers/formatters/index.js';
 export {
-  buildViewDocument, buildReviewDocument, buildChangesDocument,
-  buildCurrentDocument, buildRawDocument,
-  type ViewOptions, type ReviewBuildOptions, type ChangesViewOptions,
-  type CurrentViewOptions, type RawViewOptions,
+  buildViewDocument, buildReviewDocument, buildSimpleDocument,
+  buildDecidedDocument, buildRawDocument,
+  type ViewOptions, type ReviewBuildOptions, type SimpleBuildOptions,
+  type DecidedBuildOptions, type RawViewOptions,
 } from './renderers/view-builders/index.js';
 export { buildDeliberationHeader, buildLineRefMap, findFootnoteSectionRange, computeContinuationLines } from './renderers/view-builder-utils.js';
 export {
@@ -128,4 +125,22 @@ export { classifySignal } from './edit-boundary/index.js';
 export { processEvent } from './edit-boundary/index.js';
 export type { ProcessEventContext, ProcessEventResult } from './edit-boundary/index.js';
 export { parseForFormat, stripFootnoteBlocks } from './format-aware-parse.js';
+export { buildSessionHashes } from './renderers/view-builders/session-hashes.js';
+export type { SessionHashes, SessionHashesResult } from './renderers/view-builders/session-hashes.js';
 export type { CoherenceStatusParams, DecorationDataParams, ChangeCountParams, AllChangesResolvedParams, DiagnosticData } from './lsp-protocol-types.js';
+
+// Typed document model.
+// Note: FootnoteHeader is re-exported as TypedFootnoteHeader to avoid a name
+// collision with the different FootnoteHeader shape in ./footnote-utils.js
+// (which is the pre-Task-5 parsed header). The typed model's version is the
+// new canonical one for Plans 2-6.
+export type {
+  Footnote,
+  FootnoteLine,
+  FootnoteHeader as TypedFootnoteHeader,
+  EditOp,
+  DiscussionReply,
+  ReviewAction,
+} from './model/footnote.js';
+export type { L2Document, L3Document, Document } from './model/document.js';
+export { parseL2, parseL3, serializeL2, serializeL3 } from './operations/parse-document.js';

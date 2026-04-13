@@ -1,17 +1,17 @@
 /**
- * Bug reproduction: review-view re-recording uses committed line numbers
+ * Bug reproduction: working-view re-recording uses committed line numbers
  * instead of raw line numbers, breaking chained edits.
  *
  * ROOT CAUSE (confirmed by test failures):
  *
- * The review view shows RAW line numbers and RAW hashes to the agent.
+ * The working view shows RAW line numbers and RAW hashes to the agent.
  * After a successful propose_change, the re-recording path at:
  *
  *   - propose-change.ts:1578 (compact mode)
  *   - propose-change.ts:1085 (classic mode)
  *
- * contains `if (compactViewResolved === 'review' || ... === 'changes')`,
- * which treats review identically to changes. It calls computeDecidedView()
+ * contains `if (compactViewResolved === 'working' || ... === 'simple')`,
+ * which treats working identically to simple. It calls computeDecidedView()
  * and re-records hashes with `line: cl.decidedLineNum`.
  *
  * When the file has single-line pending insertions, computeDecidedView()
@@ -27,9 +27,9 @@
  * line 4 maps to a different raw line), causing a hash mismatch error.
  *
  * FIX LOCATION:
- *   When compactViewResolved === 'review', re-record with RAW line numbers
+ *   When compactViewResolved === 'working', re-record with RAW line numbers
  *   (i + 1) instead of decided line numbers (cl.decidedLineNum).
- *   The review case should NOT share the committed-view re-recording path.
+ *   The working case should NOT share the committed-view re-recording path.
  *   It should use the same pattern as the raw/default else-branch at
  *   propose-change.ts:1107-1113.
  *
@@ -68,7 +68,7 @@ const compactConfig: ChangeDownConfig = {
   matching: { mode: 'normalized' },
   hashline: { enabled: true, auto_remap: false },
   settlement: { auto_on_approve: false, auto_on_reject: false },
-  policy: { mode: 'safety-net', creation_tracking: 'footnote', default_view: 'review', view_policy: 'suggest' },
+  policy: { mode: 'safety-net', creation_tracking: 'footnote', default_view: 'working', view_policy: 'suggest' },
   protocol: { mode: 'compact', level: 2, reasoning: 'optional', batch_reasoning: 'optional' },
 };
 
@@ -79,16 +79,16 @@ const classicConfig: ChangeDownConfig = {
   matching: { mode: 'normalized' },
   hashline: { enabled: true, auto_remap: false },
   settlement: { auto_on_approve: false, auto_on_reject: false },
-  policy: { mode: 'safety-net', creation_tracking: 'footnote', default_view: 'review', view_policy: 'suggest' },
+  policy: { mode: 'safety-net', creation_tracking: 'footnote', default_view: 'working', view_policy: 'suggest' },
   protocol: { mode: 'classic', level: 2, reasoning: 'optional', batch_reasoning: 'optional' },
 };
 
 
 // ═══════════════════════════════════════════════════════════════════════════
-// PASSING BASELINE: single review read → propose_change (no re-recording)
+// PASSING BASELINE: single working read → propose_change (no re-recording)
 // ═══════════════════════════════════════════════════════════════════════════
 
-describe('baseline: single review read → propose_change works correctly', () => {
+describe('baseline: single working read → propose_change works correctly', () => {
   let tmpDir: string;
   let state: SessionState;
   let resolver: ConfigResolver;
@@ -122,9 +122,9 @@ describe('baseline: single review read → propose_change works correctly', () =
     const filePath = path.join(tmpDir, 'doc.md');
     await fs.writeFile(filePath, fileContent);
 
-    // Read review view → raw line numbers + raw hashes
+    // Read working view → raw line numbers + raw hashes
     const readResult = await handleReadTrackedFile(
-      { file: filePath, view: 'review' }, resolver, state,
+      { file: filePath, view: 'working' }, resolver, state,
     );
     expect(readResult.isError).toBeUndefined();
 
@@ -173,7 +173,7 @@ describe('baseline: single review read → propose_change works correctly', () =
     await fs.writeFile(filePath, fileContent);
 
     const readResult = await handleReadTrackedFile(
-      { file: filePath, view: 'review' }, classicResolver, state,
+      { file: filePath, view: 'working' }, classicResolver, state,
     );
     expect(readResult.isError).toBeUndefined();
 
@@ -198,10 +198,10 @@ describe('baseline: single review read → propose_change works correctly', () =
 
 
 // ═══════════════════════════════════════════════════════════════════════════
-// PASSING BASELINE: changes view coordinate translation works for single edits
+// PASSING BASELINE: simple view coordinate translation works for single edits
 // ═══════════════════════════════════════════════════════════════════════════
 
-describe('baseline: changes view → propose_change with collapsed pending insertions', () => {
+describe('baseline: simple view → propose_change with collapsed pending insertions', () => {
   let tmpDir: string;
   let state: SessionState;
   let resolver: ConfigResolver;
@@ -218,7 +218,7 @@ describe('baseline: changes view → propose_change with collapsed pending inser
     await fs.rm(tmpDir, { recursive: true, force: true });
   });
 
-  it('highlight maps committed line 2 → raw line 5 when 3 insertions collapsed', async () => {
+  it('highlight maps current line 5 → raw line 5 when 3 pending insertions included in simple view', async () => {
     const fileContent = [
       '# Title',
       '{++First pending insertion line++}[^cn-1]',
@@ -236,7 +236,7 @@ describe('baseline: changes view → propose_change with collapsed pending inser
     await fs.writeFile(filePath, fileContent);
 
     const readResult = await handleReadTrackedFile(
-      { file: filePath, view: 'changes' }, resolver, state,
+      { file: filePath, view: 'simple' }, resolver, state,
     );
     expect(readResult.isError).toBeUndefined();
 
@@ -244,7 +244,7 @@ describe('baseline: changes view → propose_change with collapsed pending inser
       .find(l => l.includes('## Target Heading'));
     expect(headingLine).toBeDefined();
     const { lineNum, hash } = extractCoordinate(headingLine!);
-    expect(lineNum).toBe(2); // committed line 2 (3 insertions collapsed)
+    expect(lineNum).toBe(5); // current line 5 (pending insertions included in accept-all simple view)
 
     const result = await handleProposeChange(
       { file: filePath, at: `${lineNum}:${hash}`, op: '{==## Target Heading==}{>>important section', author: 'ai:test-agent' },
@@ -257,10 +257,10 @@ describe('baseline: changes view → propose_change with collapsed pending inser
 
 
 // ═══════════════════════════════════════════════════════════════════════════
-// BUG REPRODUCTION: chained edits from review view break after re-recording
+// BUG REPRODUCTION: chained edits from working view break after re-recording
 // ═══════════════════════════════════════════════════════════════════════════
 
-describe('BUG: review view re-recording uses committed line numbers (compact mode)', () => {
+describe('BUG: working view re-recording uses committed line numbers (compact mode)', () => {
   let tmpDir: string;
   let state: SessionState;
   let resolver: ConfigResolver;
@@ -279,7 +279,7 @@ describe('BUG: review view re-recording uses committed line numbers (compact mod
 
   it('second highlight fails after first edit re-records with committed line numbers', async () => {
     // Setup: file with a pending insertion (line 2) that gets collapsed in committed view.
-    // Review view shows raw lines: 1=Title, 2={++pending++}, 3=FirstSection, 4=SecondSection
+    // Working view shows raw lines: 1=Title, 2={++pending++}, 3=FirstSection, 4=SecondSection
     // After first edit at line 3, re-recording uses computeDecidedView which collapses line 2:
     //   Committed: 1=Title, 2=FirstSection(edited), 3=SecondSection
     // Re-recorded hashes have line=3 for SecondSection, but agent has line=4 (raw).
@@ -295,9 +295,9 @@ describe('BUG: review view re-recording uses committed line numbers (compact mod
     const filePath = path.join(tmpDir, 'chained.md');
     await fs.writeFile(filePath, fileContent);
 
-    // 1. Read review view
+    // 1. Read working view
     const readResult = await handleReadTrackedFile(
-      { file: filePath, view: 'review' }, resolver, state,
+      { file: filePath, view: 'working' }, resolver, state,
     );
     expect(readResult.isError).toBeUndefined();
 
@@ -315,7 +315,7 @@ describe('BUG: review view re-recording uses committed line numbers (compact mod
     );
     expect(result1.isError).toBeUndefined();
 
-    // 4. Second edit: uses raw line 4 from original review read.
+    // 4. Second edit: uses raw line 4 from original working read.
     //    After re-recording, hashes are stored with committed line numbers.
     //    Committed line 4 maps to a DIFFERENT raw line than the agent intended.
     const result2 = await handleProposeChange(
@@ -323,7 +323,7 @@ describe('BUG: review view re-recording uses committed line numbers (compact mod
       resolver, state,
     );
 
-    // BUG: result2.isError is true — "Hash mismatch at line 4 (review view)"
+    // BUG: result2.isError is true — "Hash mismatch at line 4 (working view)"
     // because re-recorded hashes use committed line numbers, not raw.
     expect(result2.isError).toBeUndefined();
 
@@ -334,7 +334,7 @@ describe('BUG: review view re-recording uses committed line numbers (compact mod
 });
 
 
-describe('BUG: review view re-recording uses committed line numbers (classic mode)', () => {
+describe('BUG: working view re-recording uses committed line numbers (classic mode)', () => {
   let tmpDir: string;
   let state: SessionState;
   let classicResolver: ConfigResolver;
@@ -369,9 +369,9 @@ describe('BUG: review view re-recording uses committed line numbers (classic mod
     const filePath = path.join(tmpDir, 'rerecord.md');
     await fs.writeFile(filePath, fileContent);
 
-    // 1. Read review view — raw line numbers
+    // 1. Read working view — raw line numbers
     const readResult = await handleReadTrackedFile(
-      { file: filePath, view: 'review' }, classicResolver, state,
+      { file: filePath, view: 'working' }, classicResolver, state,
     );
     expect(readResult.isError).toBeUndefined();
 
@@ -392,12 +392,12 @@ describe('BUG: review view re-recording uses committed line numbers (classic mod
     expect(result1.isError).toBeUndefined();
 
     // After first edit, re-recording at line 1085 enters the
-    // `viewResolved === 'review'` branch, calls computeDecidedView(),
+    // `viewResolved === 'working'` branch, calls computeDecidedView(),
     // and stores committed line numbers. The two pending insertions on
     // lines 2-3 are collapsed, so "## Second Heading" is committed line 3,
     // not raw line 5 as the agent expects.
 
-    // 3. Second edit using old review coordinates
+    // 3. Second edit using old working coordinates
     const result2 = await handleProposeChange(
       {
         file: filePath, old_text: '## Second Heading', new_text: '## Second Heading (edited)',
@@ -408,7 +408,7 @@ describe('BUG: review view re-recording uses committed line numbers (classic mod
 
     // BUG: result2.isError is true — "Hash mismatch at line 5"
     // because re-recorded hashes have line=3 for "## Second Heading"
-    // (committed), but the agent sent line=5 (raw from review view).
+    // (committed), but the agent sent line=5 (raw from working view).
     expect(result2.isError).toBeUndefined();
 
     const modified = await fs.readFile(filePath, 'utf-8');
@@ -416,9 +416,9 @@ describe('BUG: review view re-recording uses committed line numbers (classic mod
     expect(modified).toContain('{~~## Second Heading~>## Second Heading (edited)~~}');
   });
 
-  it('changes view chained edits work correctly (control group)', async () => {
-    // Control: the same scenario using changes view should work because
-    // changes view already uses committed line numbers, so re-recording
+  it('simple view chained edits work correctly (control group)', async () => {
+    // Control: the same scenario using simple view should work because
+    // simple view already uses committed line numbers, so re-recording
     // with committed numbers is consistent.
     const fileContent = [
       '# Title',
@@ -433,9 +433,9 @@ describe('BUG: review view re-recording uses committed line numbers (classic mod
     const filePath = path.join(tmpDir, 'control.md');
     await fs.writeFile(filePath, fileContent);
 
-    // Read changes view
+    // Read simple view
     const readResult = await handleReadTrackedFile(
-      { file: filePath, view: 'changes' }, compactResolver, state,
+      { file: filePath, view: 'simple' }, compactResolver, state,
     );
     expect(readResult.isError).toBeUndefined();
 
@@ -450,7 +450,7 @@ describe('BUG: review view re-recording uses committed line numbers (classic mod
     );
     expect(result1.isError).toBeUndefined();
 
-    // Second edit — changes view re-recording is consistent
+    // Second edit — simple view re-recording is consistent
     const result2 = await handleProposeChange(
       { file: filePath, at: `${second.lineNum}:${second.hash}`, op: '{==## Second Target==}{>>two', author: 'ai:test-agent' },
       compactResolver, state,

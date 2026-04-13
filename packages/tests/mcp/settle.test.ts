@@ -1,13 +1,21 @@
 import { describe, it, expect } from 'vitest';
 import { applyAcceptedChanges } from '@changedown/mcp/internals';
 
+// Helper: extract body (content before the first blank-line-separated footnote block)
+function bodyOf(content: string): string {
+  const parts = content.split(/\n\n(?=\[\^)/);
+  return parts[0];
+}
+
 describe('applyAcceptedChanges', () => {
   it('settles single accepted insertion to clean text and returns its id', () => {
     const input =
       'Hello {++beautiful ++}[^cn-1]world\n\n[^cn-1]: @alice | 2026-02-11 | insertion | accepted';
     const { currentContent, appliedIds } = applyAcceptedChanges(input);
     // Layer 1 settlement: removes inline markup, keeps footnote ref and definition
-    expect(currentContent).toBe('Hello beautiful [^cn-1]world\n\n[^cn-1]: @alice | 2026-02-11 | insertion | accepted');
+    // Body assertions only — footnotes may contain edit-op lines
+    expect(bodyOf(currentContent)).toBe('Hello beautiful [^cn-1]world');
+    expect(currentContent).toContain('[^cn-1]: @alice | 2026-02-11 | insertion | accepted');
     expect(appliedIds).toEqual(['cn-1']);
   });
 
@@ -16,7 +24,8 @@ describe('applyAcceptedChanges', () => {
       'Hello {--ugly --}[^cn-1]world\n\n[^cn-1]: @alice | 2026-02-11 | deletion | accepted';
     const { currentContent, appliedIds } = applyAcceptedChanges(input);
     // Deletion: text removed, footnote ref stays in its position, definition kept
-    expect(currentContent).toBe('Hello [^cn-1]world\n\n[^cn-1]: @alice | 2026-02-11 | deletion | accepted');
+    expect(bodyOf(currentContent)).toBe('Hello [^cn-1]world');
+    expect(currentContent).toContain('[^cn-1]: @alice | 2026-02-11 | deletion | accepted');
     expect(appliedIds).toEqual(['cn-1']);
   });
 
@@ -25,7 +34,8 @@ describe('applyAcceptedChanges', () => {
       'Hello {~~old~>new~~}[^cn-1] world\n\n[^cn-1]: @alice | 2026-02-11 | sub | accepted';
     const { currentContent, appliedIds } = applyAcceptedChanges(input);
     // Substitution: new text kept with footnote ref and definition
-    expect(currentContent).toBe('Hello new[^cn-1] world\n\n[^cn-1]: @alice | 2026-02-11 | sub | accepted');
+    expect(bodyOf(currentContent)).toBe('Hello new[^cn-1] world');
+    expect(currentContent).toContain('[^cn-1]: @alice | 2026-02-11 | sub | accepted');
     expect(appliedIds).toEqual(['cn-1']);
   });
 
@@ -71,8 +81,10 @@ describe('applyAcceptedChanges', () => {
       'X {++y++}[^cn-1] Z\n\n[^cn-1]: @a | 2026-02-11 | ins | accepted\n    reason: ok';
     const { currentContent } = applyAcceptedChanges(input);
     // BUG-001 fix: Layer 1 settlement preserves footnote ref and definition
-    expect(currentContent).toBe('X y[^cn-1] Z\n\n[^cn-1]: @a | 2026-02-11 | ins | accepted\n    reason: ok');
-    expect(currentContent).toContain('[^cn-1]:'); // Footnote definition preserved
+    // Body assertions only — footnotes may contain edit-op lines after the header
+    expect(bodyOf(currentContent)).toBe('X y[^cn-1] Z');
+    expect(currentContent).toContain('[^cn-1]: @a | 2026-02-11 | ins | accepted'); // Footnote definition preserved
+    expect(currentContent).toContain('reason: ok'); // Reason preserved
     expect(currentContent).toContain('[^cn-1] Z'); // Inline ref preserved
   });
 
@@ -96,7 +108,8 @@ describe('applyAcceptedChanges', () => {
       'Text {++added++}[^cn-1] more\n\n[^cn-1]: @a | 2026-02-11 | ins | accepted';
     const { currentContent } = applyAcceptedChanges(input);
     // BUG-001 fix: Inline refs preserved for audit trail
-    expect(currentContent).toBe('Text added[^cn-1] more\n\n[^cn-1]: @a | 2026-02-11 | ins | accepted');
+    expect(bodyOf(currentContent)).toBe('Text added[^cn-1] more');
+    expect(currentContent).toContain('[^cn-1]: @a | 2026-02-11 | ins | accepted');
     expect(currentContent).toContain('[^cn-1]'); // Ref preserved
   });
 
@@ -109,7 +122,9 @@ describe('applyAcceptedChanges', () => {
     const { currentContent, appliedIds } = applyAcceptedChanges(input);
     expect(appliedIds).toEqual(['cn-1']);
     // Multi-line content kept with footnote ref and definition
-    expect(currentContent).toBe('Line1 Line2\nLine3[^cn-1] Line4\n\n[^cn-1]: @a | 2026-02-11 | ins | accepted');
+    // Body assertions only — footnotes may contain edit-op lines
+    expect(bodyOf(currentContent)).toBe('Line1 Line2\nLine3[^cn-1] Line4');
+    expect(currentContent).toContain('[^cn-1]: @a | 2026-02-11 | ins | accepted');
   });
 
   it('accepted substitution whose new text contains CriticMarkup-like characters settles correctly', () => {
@@ -118,7 +133,8 @@ describe('applyAcceptedChanges', () => {
     const { currentContent, appliedIds } = applyAcceptedChanges(input);
     expect(appliedIds).toEqual(['cn-1']);
     expect(currentContent).toContain('new { brace [^cn-1]'); // Text with ref
-    expect(currentContent).not.toContain('{~~'); // Markup removed
+    // Markup removed from body (edit-op lines in footnotes may contain original markup)
+    expect(bodyOf(currentContent)).not.toContain('{~~');
     expect(currentContent).toContain('[^cn-1]:'); // Footnote preserved
   });
 
@@ -132,8 +148,9 @@ describe('applyAcceptedChanges', () => {
 
     const cycle1 = applyAcceptedChanges(cycle1Input);
     expect(cycle1.currentContent).toContain('256-bit ECDSA');
-    // Count occurrences of '256-bit ECDSA' — should be exactly 1
-    const matches1 = cycle1.currentContent.match(/256-bit ECDSA/g);
+    // Count occurrences of '256-bit ECDSA' in body only — edit-op lines in footnotes
+    // may contain the original markup with the old text, but body should have exactly 1
+    const matches1 = bodyOf(cycle1.currentContent).match(/256-bit ECDSA/g);
     expect(matches1?.length).toBe(1);
 
     // Cycle 2: another edit on the settled text
@@ -146,10 +163,10 @@ describe('applyAcceptedChanges', () => {
     ) + '\n[^cn-2]: @ai:test | 2026-02-27 | sub | accepted';
 
     const cycle2 = applyAcceptedChanges(cycle2Input);
-    // Should contain the new text exactly once, no duplication
-    const matches2 = cycle2.currentContent.match(/256-bit ECDSA/g);
+    // Should contain the new text exactly once in body, no duplication
+    const matches2 = bodyOf(cycle2.currentContent).match(/256-bit ECDSA/g);
     expect(matches2?.length).toBe(1);
     expect(cycle2.currentContent).toContain('256-bit ECDSA key derivation');
-    expect(cycle2.currentContent).not.toContain('256-bit ECDSA256-bit ECDSA');
+    expect(bodyOf(cycle2.currentContent)).not.toContain('256-bit ECDSA256-bit ECDSA');
   });
 });

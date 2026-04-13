@@ -124,4 +124,21 @@ describe('isFileInScope — integration with loadConfig', () => {
     expect(isFileInScope(path.join(tmpDir, 'docs', 'archive', 'old.md'), config, tmpDir)).toBe(false);
     expect(isFileInScope(path.join(tmpDir, 'readme.md'), config, tmpDir)).toBe(false);
   });
+
+  it('loads include_absolute from TOML for out-of-project paths', async () => {
+    const home = os.homedir();
+    const homeSlash = home.split(path.sep).join('/');
+    await fs.writeFile(
+      path.join(tmpDir, '.changedown', 'config.toml'),
+      `[tracking]
+include = ["**/*.md"]
+exclude = ["node_modules/**", "dist/**"]
+include_absolute = ["${homeSlash}/.claude/plans/**/*.md"]
+`,
+      'utf-8',
+    );
+    const config = await loadConfig(tmpDir);
+    const planPath = path.join(home, '.claude', 'plans', 'from-toml.md');
+    expect(isFileInScope(planPath, config, tmpDir)).toBe(true);
+  });
 });

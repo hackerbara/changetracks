@@ -1,14 +1,14 @@
-import { computeLineHash } from '../../hashline.js';
-import { computeCurrentLineHash, currentLine } from '../../hashline-tracked.js';
+import { buildSessionHashes } from './session-hashes.js';
 import { parseForFormat } from '../../format-aware-parse.js';
 import { buildDeliberationHeader, findFootnoteSectionRange, computeContinuationLines } from '../view-builder-utils.js';
-import type { ThreeZoneDocument, ThreeZoneLine, ViewMode } from '../three-zone-types.js';
+import type { ThreeZoneDocument, ThreeZoneLine } from '../three-zone-types.js';
+import type { BuiltinView } from '../../host/types.js';
 
 export interface RawViewOptions {
   filePath: string;
   trackingStatus: 'tracked' | 'untracked';
   protocolMode: string;
-  defaultView: ViewMode;
+  defaultView: BuiltinView;
   viewPolicy: string;
 }
 
@@ -17,26 +17,29 @@ export function buildRawDocument(
   options: RawViewOptions,
 ): ThreeZoneDocument {
   const changes = parseForFormat(rawContent).getChanges();
+  const sessionHashesResult = buildSessionHashes(rawContent, changes);
+
   const rawLines = rawContent.split('\n');
-  const allCurrent = rawLines.map(l => currentLine(l));
 
   const continuations = computeContinuationLines(rawContent, changes);
 
   const lines: ThreeZoneLine[] = rawLines.map((text, i) => {
-    const rawHash = computeLineHash(i, text, rawLines);
+    const lineNum = i + 1;
+    const sh = sessionHashesResult.byRawLine.get(lineNum)!;
     return {
       margin: {
-        lineNumber: i + 1,
-        hash: rawHash,
+        lineNumber: lineNum,
+        hash: sh.raw,
         flags: [],
       },
       content: [{ type: 'plain' as const, text }],
       metadata: [],
-      rawLineNumber: i + 1,
+      rawLineNumber: lineNum,
       continuesChange: continuations.has(i) || undefined,
       sessionHashes: {
-        raw: rawHash,
-        current: computeCurrentLineHash(i + 1, text, allCurrent),
+        raw: sh.raw,
+        committed: sh.committed,
+        currentView: sh.currentView,
       },
     };
   });

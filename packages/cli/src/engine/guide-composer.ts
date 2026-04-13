@@ -95,26 +95,26 @@ function composeAuthorSection(config: ChangeDownConfig): string {
 }
 
 function composeViewSection(config: ChangeDownConfig): string {
-  const defaultView = config.policy.default_view ?? 'review';
+  const defaultView = config.policy.default_view ?? 'working';
 
   switch (defaultView) {
-    case 'review':
+    case 'working':
       return (
-        "**You're seeing**: review view — full deliberation context. CriticMarkup shows proposals " +
+        "**You're seeing**: working view — full deliberation context. CriticMarkup shows proposals " +
         'inline, [cn-N] anchors link to end-of-line metadata.\n' +
-        'Other views: `changes` (clean prose + P/A flags), `settled` (accept-all preview).'
+        'Other views: `simple` (clean prose + P/A flags), `decided` (decided-changes-only preview).'
       );
-    case 'changes':
+    case 'simple':
       return (
-        "**You're seeing**: changes view — committed text with P/A flags in the margin. " +
+        "**You're seeing**: simple view — current projection text with P/A flags in the margin. " +
         'Proposals are summarized, not shown inline.\n' +
-        'Other views: `review` (full deliberation context), `settled` (accept-all preview).'
+        'Other views: `working` (full deliberation context), `decided` (decided-changes-only preview).'
       );
-    case 'settled':
+    case 'decided':
       return (
-        "**You're seeing**: settled view — the document as if all proposals were accepted. " +
+        "**You're seeing**: decided view — the document with only decided changes applied. " +
         'Proposed deletions are not visible.\n' +
-        'Other views: `review` (full deliberation context), `changes` (committed text + P/A flags).'
+        'Other views: `working` (full deliberation context), `simple` (current text + P/A flags).'
       );
     default:
       return `**Current view**: ${defaultView}.`;

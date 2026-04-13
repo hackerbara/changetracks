@@ -34,10 +34,15 @@ export declare function loadConfig(projectDir: string): Promise<ChangeDownConfig
  */
 export declare function resolveProtocolMode(configMode: 'classic' | 'compact'): 'classic' | 'compact';
 /**
+ * Expands `$HOME`, `${HOME}`, and leading `~/` / `~` in an absolute-scope glob pattern.
+ */
+export declare function expandTrackingAbsolutePattern(pattern: string): string;
+/**
  * Checks whether a file path is in tracking scope based on include/exclude
  * glob patterns. The file path is resolved relative to `projectDir`.
  *
  * A file is in scope when it matches at least one include pattern AND does
- * not match any exclude pattern.
+ * not match any exclude pattern, OR when `tracking.include_absolute` matches
+ * the normalized absolute path and exclude does not.
  */
 export declare function isFileInScope(filePath: string, config: ChangeDownConfig, projectDir: string): boolean;

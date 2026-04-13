@@ -9,9 +9,9 @@ import type { ThreeZoneDocument, ThreeZoneLine, DeliberationHeader, LineMetadata
  *   - Lines: `LINENUM:HASH FLAG| content {>>metadata<<}`
  *
  * Metadata density varies by view:
- *   - review: full (changeId, author, reason, reply count)
- *   - changes: ID only
- *   - settled: none
+ *   - working: full (changeId, author, reason, reply count)
+ *   - simple: [cn-ID @author type status: reason | @author: turn]
+ *   - decided: none
  */
 export function formatPlainText(doc: ThreeZoneDocument): string {
   const parts: string[] = [];
@@ -67,15 +67,31 @@ function formatLine(line: ThreeZoneLine, padWidth: number, view: string): string
   return meta ? `${margin} ${content} ${meta}` : `${margin} ${content}`;
 }
 
+function ensureAt(author: string | undefined, fallback = ''): string {
+  if (!author) return fallback;
+  return author.startsWith('@') ? author : `@${author}`;
+}
+
 function formatMetadata(metadata: LineMetadata[], view: string): string {
   if (metadata.length === 0) return '';
 
   return metadata.map(m => {
-    if (view === 'changes') {
-      // Changes view: ID only
-      return `{>>${m.changeId}<<}`;
+    if (view === 'simple') {
+      // [cn-ID @author type status: reason | @author: turn]
+      const author = ensureAt(m.author);
+      let block = `[${m.changeId}`;
+      if (author) block += ` ${author}`;
+      if (m.type) block += ` ${m.type}`;
+      if (m.status) block += ` ${m.status}`;
+      if (m.reason) block += `: ${m.reason}`;
+      if (m.latestThreadTurn) {
+        const turnAuthor = ensureAt(m.latestThreadTurn.author, '@?');
+        block += ` | ${turnAuthor}: ${m.latestThreadTurn.text}`;
+      }
+      block += ']';
+      return block;
     }
-    // Review view: full metadata
+    // Working view: full metadata
     let block = `{>>${m.changeId}`;
     if (m.author) block += ` ${m.author}:`;
     if (m.reason) block += ` ${m.reason}`;

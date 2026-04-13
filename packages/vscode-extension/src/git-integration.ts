@@ -12,7 +12,9 @@ interface GitExtension {
     getAPI(version: 1): GitAPI;
 }
 
-interface GitAPI {
+export interface GitAPI {
+    state: 'uninitialized' | 'initialized';
+    onDidChangeState: vscode.Event<'uninitialized' | 'initialized'>;
     getRepository(uri: vscode.Uri): Repository | null;
 }
 
@@ -124,4 +126,17 @@ export function getGitRepository(uri: vscode.Uri): Repository | null {
 
 function getRepository(uri: vscode.Uri): Repository | null {
     return getGitRepository(uri);
+}
+
+/**
+ * Return the cached GitAPI instance, or null if the git extension is not yet active.
+ * Callers can subscribe to `gitApi.onDidChangeState` to know when repositories are ready.
+ */
+export function getGitApi(): GitAPI | null {
+    if (!cachedGitApi) {
+        const gitExtension = vscode.extensions.getExtension<GitExtension>('vscode.git');
+        if (!gitExtension?.isActive) return null;
+        cachedGitApi = gitExtension.exports.getAPI(1);
+    }
+    return cachedGitApi;
 }

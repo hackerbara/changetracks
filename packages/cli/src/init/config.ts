@@ -14,7 +14,7 @@ export interface InitConfigOptions {
   trackingExclude?: string[];
   authorEnforcement?: 'optional' | 'required';
   policyMode?: 'safety-net' | 'strict' | 'permissive';
-  policyDefaultView?: 'review' | 'changes' | 'settled';
+  policyDefaultView?: 'working' | 'simple' | 'decided' | 'original' | 'raw';
   protocolMode?: 'classic' | 'compact';
   protocolReasoning?: 'optional' | 'required';
   autoSettleOnApprove?: boolean;
@@ -36,7 +36,7 @@ export function generateDefaultConfig(options: InitConfigOptions): string {
   const settleApprove = options.autoSettleOnApprove ?? true;
   const settleReject = options.autoSettleOnReject ?? true;
   const policyMode = options.policyMode ?? 'safety-net';
-  const defaultView = options.policyDefaultView ?? 'review';
+  const defaultView = options.policyDefaultView ?? 'working';
   const protocolMode = options.protocolMode ?? 'classic';
   const reasoning = options.protocolReasoning ?? 'optional';
 

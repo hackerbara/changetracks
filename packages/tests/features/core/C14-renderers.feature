@@ -3,7 +3,7 @@ Feature: Renderers
   CriticMarkup content is rendered through several views:
     - ANSI smart view: delimiters hidden, content colored, metadata projected, footnotes elided
     - ANSI markup view: full delimiters with colors
-    - ANSI settled view: clean text, all changes applied
+    - ANSI final view: clean text, all changes applied
     - Meta view: three-zone format (margin, content, metadata), deliberation header
 
   # ── ANSI smart view (default) ─────────────────────────────────────
@@ -163,11 +163,11 @@ Feature: Renderers
     When I render with ANSI in "markup" view
     Then the raw ANSI output contains yellow escape code
 
-  # ── ANSI settled view ─────────────────────────────────────────────
+  # ── ANSI final view ───────────────────────────────────────────────
 
-  Scenario: Settled view produces clean text with all changes applied
+  Scenario: Final view produces clean text with all changes applied
     Given a CriticMarkup text "Hello {++world++} {--old--} {~~before~>after~~}."
-    When I render with ANSI in "settled" view
+    When I render with ANSI in "final" view
     Then the stripped ANSI output is "Hello world  after."
 
   # ── ANSI Unicode strikethrough fallback ───────────────────────────

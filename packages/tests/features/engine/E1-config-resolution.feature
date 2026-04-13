@@ -137,5 +137,5 @@ Feature: E1 - Config Resolution
       mode = "strict"
       """
     When I load config from the project directory
-    Then the config policy.default_view is "review"
+    Then the config policy.default_view is "working"
     And the config policy.view_policy is "suggest"

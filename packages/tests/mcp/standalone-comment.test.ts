@@ -38,7 +38,7 @@ const compactConfig: ChangeDownConfig = {
   matching: { mode: 'normalized' },
   hashline: { enabled: true, auto_remap: false },
   settlement: { auto_on_approve: false, auto_on_reject: false },
-  policy: { mode: 'safety-net', creation_tracking: 'footnote', default_view: 'review', view_policy: 'suggest' },
+  policy: { mode: 'safety-net', creation_tracking: 'footnote', default_view: 'working', view_policy: 'suggest' },
   protocol: { mode: 'compact', level: 2, reasoning: 'optional', batch_reasoning: 'optional' },
 };
 
@@ -73,7 +73,7 @@ describe('standalone comment via propose_change (compact mode)', () => {
 
     // Read the file to get coordinates
     const readResult = await handleReadTrackedFile(
-      { file: filePath, view: 'review' }, resolver, state,
+      { file: filePath, view: 'working' }, resolver, state,
     );
     expect(readResult.isError).toBeUndefined();
 
@@ -118,7 +118,7 @@ describe('standalone comment via propose_change (compact mode)', () => {
     await fs.writeFile(filePath, fileContent);
 
     const readResult = await handleReadTrackedFile(
-      { file: filePath, view: 'review' }, resolver, state,
+      { file: filePath, view: 'working' }, resolver, state,
     );
     expect(readResult.isError).toBeUndefined();
 
@@ -150,7 +150,7 @@ describe('standalone comment via propose_change (compact mode)', () => {
     await fs.writeFile(filePath, fileContent);
 
     const readResult = await handleReadTrackedFile(
-      { file: filePath, view: 'review' }, resolver, state,
+      { file: filePath, view: 'working' }, resolver, state,
     );
     expect(readResult.isError).toBeUndefined();
 
@@ -188,7 +188,7 @@ describe('standalone comment via propose_change (compact mode)', () => {
     await fs.writeFile(filePath, fileContent);
 
     const readResult = await handleReadTrackedFile(
-      { file: filePath, view: 'review' }, resolver, state,
+      { file: filePath, view: 'working' }, resolver, state,
     );
     expect(readResult.isError).toBeUndefined();
 
@@ -228,7 +228,7 @@ describe('standalone comment via propose_change (compact mode)', () => {
     await fs.writeFile(filePath, fileContent);
 
     const readResult = await handleReadTrackedFile(
-      { file: filePath, view: 'review' }, resolver, state,
+      { file: filePath, view: 'working' }, resolver, state,
     );
     expect(readResult.isError).toBeUndefined();
 
@@ -290,7 +290,7 @@ describe('standalone comment via propose_change (compact mode)', () => {
       await fs.writeFile(filePath, fileContent);
 
       const readResult = await handleReadTrackedFile(
-        { file: filePath, view: 'review' }, level1Resolver, state,
+        { file: filePath, view: 'working' }, level1Resolver, state,
       );
       expect(readResult.isError).toBeUndefined();
 

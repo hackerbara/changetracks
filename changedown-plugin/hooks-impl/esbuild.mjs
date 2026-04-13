@@ -8,6 +8,8 @@ await esbuild.build({
     'src/pre-tool-use.ts',
     'src/post-tool-use.ts',
     'src/stop.ts',
+    'src/shared.ts',
+    'src/internals.ts',
     'src/adapters/cursor/pre-tool-use.ts',
     'src/adapters/cursor/before-mcp-execution.ts',
     'src/adapters/cursor/before-read-file.ts',

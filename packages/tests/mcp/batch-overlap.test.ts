@@ -18,7 +18,7 @@ describe('Batch overlap detection', () => {
     const filePath = await ctx.createFile('doc.md',
       '<!-- changedown.com/v1: tracked -->\n# Test\nThe API uses REST for external requests from clients.\n');
 
-    await ctx.read(filePath, { view: 'review' });
+    await ctx.read(filePath, { view: 'working' });
 
     const result = await ctx.propose(filePath, {
       reason: 'batch overlap test',
@@ -36,7 +36,7 @@ describe('Batch overlap detection', () => {
     const filePath = await ctx.createFile('doc.md',
       '<!-- changedown.com/v1: tracked -->\n# Test\nThe API uses REST for external requests from clients.\n');
 
-    await ctx.read(filePath, { view: 'review' });
+    await ctx.read(filePath, { view: 'working' });
 
     const result = await ctx.propose(filePath, {
       reason: 'batch non-overlap test',
@@ -53,7 +53,7 @@ describe('Batch overlap detection', () => {
     const filePath = await ctx.createFile('doc.md',
       '<!-- changedown.com/v1: tracked -->\n# Test\nLine one here.\nLine two here.\n');
 
-    await ctx.read(filePath, { view: 'review' });
+    await ctx.read(filePath, { view: 'working' });
 
     const result = await ctx.propose(filePath, {
       reason: 'batch different lines test',
@@ -70,7 +70,7 @@ describe('Batch overlap detection', () => {
     const filePath = await ctx.createFile('doc.md',
       '<!-- changedown.com/v1: tracked -->\n# Test\nThe quick brown fox jumps over the lazy dog.\n');
 
-    await ctx.read(filePath, { view: 'review' });
+    await ctx.read(filePath, { view: 'working' });
 
     const result = await ctx.propose(filePath, {
       reason: 'subset overlap test',
@@ -88,7 +88,7 @@ describe('Batch overlap detection', () => {
     const filePath = await ctx.createFile('doc.md',
       '<!-- changedown.com/v1: tracked -->\n# Test\nfoo bar baz qux.\n');
 
-    await ctx.read(filePath, { view: 'review' });
+    await ctx.read(filePath, { view: 'working' });
 
     // 'bar baz' and 'baz qux' overlap at 'baz'
     const result = await ctx.propose(filePath, {

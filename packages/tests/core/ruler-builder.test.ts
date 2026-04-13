@@ -16,15 +16,15 @@ describe('buildOverviewRulerPlan', () => {
       makeChange(ChangeType.Deletion, 15, 25),
       makeChange(ChangeType.Substitution, 30, 40),
     ];
-    const plan = buildOverviewRulerPlan(changes, VIEW_PRESETS.review);
+    const plan = buildOverviewRulerPlan(changes, VIEW_PRESETS.working);
     expect(plan.insertions).toHaveLength(1);
     expect(plan.deletions).toHaveLength(1);
     expect(plan.substitutions).toHaveLength(1);
   });
 
-  it('returns empty for final (settled) view', () => {
+  it('returns empty for decided (settled) view', () => {
     const changes = [makeChange(ChangeType.Insertion, 0, 10)];
-    const plan = buildOverviewRulerPlan(changes, VIEW_PRESETS.final);
+    const plan = buildOverviewRulerPlan(changes, VIEW_PRESETS.decided);
     expect(plan.insertions).toHaveLength(0);
   });
 
@@ -36,7 +36,7 @@ describe('buildOverviewRulerPlan', () => {
 
   it('skips decided changes', () => {
     const changes = [makeChange(ChangeType.Insertion, 0, 10, true)];
-    const plan = buildOverviewRulerPlan(changes, VIEW_PRESETS.review);
+    const plan = buildOverviewRulerPlan(changes, VIEW_PRESETS.working);
     expect(plan.insertions).toHaveLength(0);
   });
 
@@ -45,7 +45,7 @@ describe('buildOverviewRulerPlan', () => {
       ...makeChange(ChangeType.Insertion, 0, 10),
       moveRole: 'from' as const,
     }];
-    const plan = buildOverviewRulerPlan(changes as any, VIEW_PRESETS.review);
+    const plan = buildOverviewRulerPlan(changes as any, VIEW_PRESETS.working);
     expect(plan.deletions).toHaveLength(1);
     expect(plan.insertions).toHaveLength(0);
   });

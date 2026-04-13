@@ -22,6 +22,27 @@ export function changeTypeToAbbrev(type: ChangeType): string {
   }
 }
 
+/**
+ * Maps a ChangeType enum value to the 2/3-char IR short code used in
+ * LineMetadata.type. Single source of truth — callers should not maintain
+ * their own switch.
+ *
+ * Note: this differs from {@link changeTypeToAbbrev} only for `Highlight`
+ * (`'hl'` here vs `'hig'` there); the footnote abbreviation format is
+ * distinct from the IR short code.
+ */
+export function changeTypeToShortCode(
+  type: ChangeType,
+): 'ins' | 'del' | 'sub' | 'hl' | 'com' {
+  switch (type) {
+    case ChangeType.Insertion: return 'ins';
+    case ChangeType.Deletion: return 'del';
+    case ChangeType.Substitution: return 'sub';
+    case ChangeType.Highlight: return 'hl';
+    case ChangeType.Comment: return 'com';
+  }
+}
+
 /** Three canonical projections per ADR-B. */
 export type Projection = 'current' | 'decided' | 'original' | 'none';
 
@@ -122,6 +143,28 @@ export interface ChangeNode {
   consumptionType?: 'full' | 'partial';
   /** Updated LINE:HASH edit-op line computed by the scrub replay. */
   freshAnchor?: string;
+  /**
+   * For deletions whose contextual resolution succeeded at sub-line precision:
+   * the byte offset within `range` where the deleted text used to live
+   * (equals `contextBefore.length`). The plan builder reads this to inject
+   * ghost deleted text at the exact seam within the contextual anchor span.
+   *
+   * ANCHOR SEMANTICS: after the bug 5 fix, `range` covers the full
+   * contextual embedding (contextBefore + deletedText + contextAfter).
+   * The `range` is NOT a removal span — the deleted bytes are absent from
+   * the body. The seam is the only point that matters for accept-change
+   * and for ghost-text injection.
+   *
+   * Not set on non-deletions. Not set when deletion resolution fell back to
+   * line granularity (the range is `{lineStart, lineEnd}` in that case).
+   * Not set when deletion resolution failed entirely (range is the `{0, 0}`
+   * sentinel with `anchored: false`).
+   *
+   * TODO(Plan 4): update operations/accept-change.ts to use
+   * `range.start + (deletionSeamOffset ?? 0)` as the zero-width insertion
+   * point for the removal, instead of using `range` as a byte-span.
+   */
+  deletionSeamOffset?: number;
   // ── L3 SDK projection fields (all optional, backward compatible) ──
   projection?: Projection;
   anchor?: { kind: 'offset'; offset: number; length: number }

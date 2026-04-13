@@ -9,25 +9,25 @@ Feature: PRV1 — Preview HTML rendering from CriticMarkup
   Scenario: Insertion replaced with <ins> tag
     Given preview source text "Hello {++world++} there"
     When I build preview replacements
-    Then the preview HTML contains "<ins class=\"cn-ins cn-proposed\" data-cn-pair=\"cn-pair-6\">world</ins>"
+    Then the preview HTML contains "<ins class=\"cn-ins cn-proposed\" data-cn-pair=\"cn-pair-6\" data-change-id=\"cn-1\">world</ins>"
     And the preview HTML does not contain "{++"
 
   Scenario: Deletion replaced with <del> tag
     Given preview source text "Hello {--world--} there"
     When I build preview replacements
-    Then the preview HTML contains "<del class=\"cn-del cn-proposed\" data-cn-pair=\"cn-pair-6\">world</del>"
+    Then the preview HTML contains "<del class=\"cn-del cn-proposed\" data-cn-pair=\"cn-pair-6\" data-change-id=\"cn-1\">world</del>"
     And the preview HTML does not contain "{--"
 
   Scenario: Substitution replaced with <del> + <ins>
     Given preview source text "Hello {~~old~>new~~} there"
     When I build preview replacements
-    Then the preview HTML contains "<del class=\"cn-sub-del cn-proposed\" data-cn-pair=\"cn-pair-6\">old</del>"
+    Then the preview HTML contains "<del class=\"cn-sub-del cn-proposed\" data-cn-pair=\"cn-pair-6\" data-change-id=\"cn-1\">old</del>"
     And the preview HTML contains "<ins class=\"cn-sub-ins cn-proposed\">new</ins>"
 
   Scenario: Highlight replaced with <mark> tag
     Given preview source text "Hello {==important==} there"
     When I build preview replacements
-    Then the preview HTML contains "<mark class=\"cn-hl\" data-cn-pair=\"cn-pair-6\">important</mark>"
+    Then the preview HTML contains "<mark class=\"cn-hl\" data-cn-pair=\"cn-pair-6\" data-change-id=\"cn-1\">important</mark>"
 
   Scenario: Comment replaced with tooltip span
     Given preview source text "Hello{>>a note<<} there"
@@ -47,8 +47,8 @@ Feature: PRV1 — Preview HTML rendering from CriticMarkup
   Scenario: Multiple changes preserve offsets
     Given preview source text "A {++B++} C {--D--} E"
     When I build preview replacements
-    Then the preview HTML contains "<ins class=\"cn-ins cn-proposed\" data-cn-pair=\"cn-pair-2\">B</ins>"
-    And the preview HTML contains "<del class=\"cn-del cn-proposed\" data-cn-pair=\"cn-pair-12\">D</del>"
+    Then the preview HTML contains "<ins class=\"cn-ins cn-proposed\" data-cn-pair=\"cn-pair-2\" data-change-id=\"cn-1\">B</ins>"
+    And the preview HTML contains "<del class=\"cn-del cn-proposed\" data-cn-pair=\"cn-pair-12\" data-change-id=\"cn-2\">D</del>"
     And the preview HTML starts with "A "
     And the preview HTML ends with " E"
 
@@ -78,7 +78,7 @@ Feature: PRV1 — Preview HTML rendering from CriticMarkup
 
       """
     When I build preview replacements
-    Then the preview HTML contains "<ins class=\"cn-ins cn-proposed\" data-cn-pair=\"cn-pair-5\">change</ins>"
+    Then the preview HTML contains "<ins class=\"cn-ins cn-proposed\" data-cn-pair=\"cn-pair-5\" data-change-id=\"cn-1\">change</ins>"
     And the preview HTML contains "{++not a change++}"
 
   Scenario: Multiple fence zones detected
@@ -428,7 +428,7 @@ Feature: PRV1 — Preview HTML rendering from CriticMarkup
     Given preview source text "Hello {++world++} there"
     And preview option metadataDetail is "summary"
     When I build preview replacements
-    Then the preview HTML contains "<ins class=\"cn-ins cn-proposed\" data-cn-pair=\"cn-pair-6\">world</ins>"
+    Then the preview HTML contains "<ins class=\"cn-ins cn-proposed\" data-cn-pair=\"cn-pair-6\" data-change-id=\"cn-1\">world</ins>"
     And the preview HTML does not contain "cn-anchor-meta"
 
   # ── metadataDetail: projected mode ──────────────────────────────────

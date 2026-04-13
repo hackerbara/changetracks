@@ -6,6 +6,8 @@
  * the CLI package.
  */
 
+import type { BuiltinView } from '../host/types.js';
+
 // ---------------------------------------------------------------------------
 // Scalar types
 // ---------------------------------------------------------------------------
@@ -35,6 +37,8 @@ export interface ChangeDownConfig {
   tracking: {
     include: string[];
     exclude: string[];
+    /** Glob patterns matched against the full absolute path (POSIX slashes). Use for files outside the project root (e.g. Claude plans under the user home). Omitted = empty. */
+    include_absolute?: string[];
     default: 'tracked' | 'untracked';
     auto_header: boolean;
   };
@@ -59,7 +63,7 @@ export interface ChangeDownConfig {
   policy: {
     mode: PolicyMode;
     creation_tracking: CreationTracking;
-    default_view?: 'review' | 'changes' | 'settled';
+    default_view?: BuiltinView;
     view_policy?: 'suggest' | 'require';
   };
   response?: { affected_lines?: boolean };
@@ -92,6 +96,7 @@ export const DEFAULT_CONFIG: ChangeDownConfig = {
   tracking: {
     include: ['**/*.md'],
     exclude: ['node_modules/**', 'dist/**'],
+    include_absolute: [],
     default: 'tracked',
     auto_header: true,
   },
@@ -116,7 +121,7 @@ export const DEFAULT_CONFIG: ChangeDownConfig = {
   policy: {
     mode: 'safety-net',
     creation_tracking: 'footnote',
-    default_view: 'review',
+    default_view: 'working',
     view_policy: 'suggest',
   },
 };

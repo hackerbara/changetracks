@@ -178,3 +178,6 @@ tests. Agents creating worktrees should run this script after `git worktree add`
 Alt+Cmd+T tracking, Alt+Cmd+Y accept, Alt+Cmd+N reject,
 Alt+Cmd+] next, Alt+Cmd+[ previous, Alt+Cmd+/ comment.
 Windows/Linux: Ctrl+Alt+ equivalents. All scoped to markdown.
+
+[^ct-1]: @unknown | 2026-04-13 | group | proposed
+[^ct-1.1]: @unknown | 2026-04-13 | sub | proposed

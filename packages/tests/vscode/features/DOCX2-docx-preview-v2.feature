@@ -112,7 +112,7 @@ Feature: DOCX2 — DOCX preview editor v2 components
   Scenario: DOCX2-15 Preview renders matching data-cn-pair on adjacent highlight and comment
     Given preview source text "{==text==}{>>note<<}"
     When I build preview replacements
-    Then the preview HTML contains "<mark class=\"cn-hl\" data-cn-pair=\"cn-pair-0\">"
+    Then the preview HTML contains "<mark class=\"cn-hl\" data-cn-pair=\"cn-pair-0\" data-change-id=\"cn-1\">"
     And the preview HTML contains "data-cn-pair=\"cn-pair-0\""
 
   Scenario: DOCX2-16 Preview renders data-cn-pair on standalone comment
@@ -127,15 +127,15 @@ Feature: DOCX2 — DOCX preview editor v2 components
 
   # ── Bidirectional sidebar linking (v3) ─────────────────────
 
-  Scenario: DOCX2-18 Preview HTML has data-view-mode attribute
+  Scenario: DOCX2-18 Preview HTML has data-view-name attribute
     Given a docx preview with body "<p>content</p>"
     When I build preview HTML with view mode "allMarkup"
-    Then the webview HTML contains "data-view-mode=\"allMarkup\""
+    Then the webview HTML contains "data-view-name=\"review\""
 
-  Scenario: DOCX2-19 Preview HTML has data-view-mode simple
+  Scenario: DOCX2-19 Preview HTML has data-view-name simple
     Given a docx preview with body "<p>content</p>"
     When I build preview HTML with view mode "simple"
-    Then the webview HTML contains "data-view-mode=\"changes\""
+    Then the webview HTML contains "data-view-name=\"simple\""
 
   Scenario: DOCX2-20 Sidebar cards have data-cn-id attribute
     Given a docx preview with body "<p>content</p>"
@@ -177,8 +177,8 @@ Feature: DOCX2 — DOCX preview editor v2 components
   Scenario: DOCX2-26 Simple mode CSS hides deletions and keeps insertions
     Given a docx preview with body "<p><ins class='cn-ins'>added</ins></p>"
     When I build preview HTML with view mode "simple"
-    Then the webview HTML contains "[data-view-mode=\"changes\"] .cn-del"
-    And the webview HTML contains "[data-view-mode=\"changes\"] .cn-ins"
+    Then the webview HTML contains "[data-view-name=\"simple\"] .cn-del"
+    And the webview HTML contains "[data-view-name=\"simple\"] .cn-ins"
     And the webview HTML contains "display: none"
     And the webview HTML contains "text-decoration: none"
 
@@ -193,7 +193,7 @@ Feature: DOCX2 — DOCX preview editor v2 components
   Scenario: DOCX2-28 Simple mode hides footnote definitions via CSS
     Given a docx preview with body "<p>content</p>"
     When I build preview HTML with view mode "simple"
-    Then the webview HTML contains "[data-view-mode=\"changes\"] .cn-footnotes"
+    Then the webview HTML contains "[data-view-name=\"simple\"] .cn-footnotes"
     And the webview HTML contains "display: none"
 
   Scenario: DOCX2-29 allMarkup mode renders footnote ref badges (provider hides via showFootnotes config)

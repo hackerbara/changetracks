@@ -24,7 +24,7 @@ export { ConfigResolver } from './config-resolver.js';
 
 // ── Session State ──
 export { SessionState } from './state.js';
-export type { ViewMode, ViewName, FileRecord, ActiveGroup } from './state.js';
+export type { BuiltinView, ViewName, FileRecord, ActiveGroup } from './state.js';
 
 // ── State Utilities ──
 export { rerecordState } from './state-utils.js';

@@ -213,11 +213,11 @@ describe('unified review_changes with responses and settle', () => {
     expect(result.isError).toBeUndefined();
 
     const modified = await fs.readFile(filePath, 'utf-8');
-    // Inline markup should be removed after settlement
-    expect(modified).not.toContain('{~~');
-    expect(modified).not.toContain('~~}');
-    expect(modified).not.toContain('{++');
-    expect(modified).not.toContain('++}');
+    // Inline markup should be removed from body after settlement.
+    // L3 audit trail stores {~~...~~} and {++...++} in footnote edit-op lines,
+    // so we check the inline anchor forms are absent rather than raw delimiters.
+    expect(modified).not.toContain('{~~tpyo~>typo~~}[^cn-1]');  // Inline sub markup removed from body
+    expect(modified).not.toContain('{++new paragraph++}[^cn-2]');  // Inline ins markup removed from body
     // Accepted text should be present
     expect(modified).toContain('typo');
     expect(modified).toContain('new paragraph');
@@ -324,9 +324,9 @@ describe('unified review_changes with responses and settle', () => {
     expect(result.isError).toBeUndefined();
 
     const modified = await fs.readFile(filePath, 'utf-8');
-    // Inline markup removed by settlement
-    expect(modified).not.toContain('{~~');
-    expect(modified).not.toContain('~~}');
+    // Inline markup removed from body after settlement.
+    // L3 audit trail stores {~~...~~} in footnote edit-op lines.
+    expect(modified).not.toContain('{~~tpyo~>typo~~}[^cn-1]');  // Inline markup removed from body
     // Settled text present
     expect(modified).toContain('typo');
     // Footnote definition preserved (Layer 1)

@@ -11,6 +11,7 @@ import {
     getEditorText,
     getStatusBarText,
 } from '../../journeys/playwrightHarness';
+import { toBuiltinView } from './view-helpers';
 
 // ── Command-mediated panel state queries ────────────────────────────
 //
@@ -421,7 +422,7 @@ When('I switch to the {string} view mode from the panel', { timeout: 10000 }, as
     assert.ok(this.page, 'Page not available');
     const clicked = await clickInReviewPanel(this.page, `.vm-btn[data-mode="${viewMode}"]`);
     assert.ok(clicked, `Failed to click view mode button for "${viewMode}"`);
-    this.currentViewMode = viewMode;
+    this.currentView = toBuiltinView(viewMode);
     await this.page.waitForTimeout(1000);
 });
 
@@ -534,10 +535,10 @@ When('I click {string} in the Changes tab', { timeout: 10000 }, async function (
     await this.page.waitForTimeout(800);
 });
 
-/** Map feature-file view mode aliases to canonical names returned by the controller. */
-const VIEW_MODE_ALIASES: Record<string, string> = {
-    'all-markup': 'review',
-    'smart': 'changes',
+/** Map feature-file view mode aliases to canonical BuiltinView names returned by the controller. */
+const VIEW_ALIASES: Record<string, string> = {
+    'all-markup': 'working',
+    'smart': 'simple',
     'clean': 'final',
 };
 
@@ -669,7 +670,7 @@ Then('the active view mode is {string}', { timeout: 15000 }, async function (
 ) {
     assert.ok(this.page, 'Page not available');
     const mode = await queryViewMode(this.page);
-    const resolved = VIEW_MODE_ALIASES[expectedMode] || expectedMode;
+    const resolved = VIEW_ALIASES[expectedMode] || expectedMode;
     assert.strictEqual(mode, resolved, `Expected active view mode "${expectedMode}" (resolved: "${resolved}"), got "${mode}"`);
 });
 

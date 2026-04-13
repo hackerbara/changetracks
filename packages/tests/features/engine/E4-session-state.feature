@@ -8,8 +8,8 @@ Feature: E4 - Session State
       # Test
       Some content here.
       """
-    When I call read_tracked_file for "doc.md" with view = "review"
-    Then the session records lastReadView "review" for "doc.md"
+    When I call read_tracked_file for "doc.md" with view = "working"
+    Then the session records lastReadView "working" for "doc.md"
 
   Scenario: Different view names are recorded correctly
     Given a tracked markdown file "doc.md" with content:
@@ -18,8 +18,8 @@ Feature: E4 - Session State
       # Test
       Some content here.
       """
-    When I call read_tracked_file for "doc.md" with view = "settled"
-    Then the session records lastReadView "settled" for "doc.md"
+    When I call read_tracked_file for "doc.md" with view = "final"
+    Then the session records lastReadView "final" for "doc.md"
 
   Scenario: Content fingerprint updated after propose write
     Given a tracked markdown file "doc.md" with content:
@@ -28,7 +28,7 @@ Feature: E4 - Session State
       # Test
       Original text here.
       """
-    When I call read_tracked_file for "doc.md" with view = "review"
+    When I call read_tracked_file for "doc.md" with view = "working"
     And I call propose_change with:
       | file       | doc.md           |
       | old_text   | Original         |
@@ -44,7 +44,7 @@ Feature: E4 - Session State
       First line.
       Second line.
       """
-    When I call read_tracked_file for "doc.md" with view = "review"
+    When I call read_tracked_file for "doc.md" with view = "working"
     And I call propose_change with:
       | file       | doc.md       |
       | old_text   | First        |
@@ -64,5 +64,5 @@ Feature: E4 - Session State
       <!-- changedown.com/v1: tracked -->
       # Test
       """
-    When I call read_tracked_file for "doc.md" with view = "review"
+    When I call read_tracked_file for "doc.md" with view = "working"
     Then the session teardown completes without error

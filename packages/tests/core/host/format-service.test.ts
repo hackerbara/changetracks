@@ -1,11 +1,20 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { FormatService } from '@changedown/core/host';
 import type { FormatAdapter } from '@changedown/core/host';
+import type { L2Document, L3Document } from '@changedown/core/host';
 
 function mockAdapter(): FormatAdapter {
   return {
-    convertL2ToL3: vi.fn(async (_uri, text) => `L3(${text})`),
-    convertL3ToL2: vi.fn(async (_uri, text) => `L2(${text})`),
+    promote: vi.fn(async (doc: L2Document): Promise<L3Document> => ({
+      format: 'L3',
+      body: doc.text,
+      footnotes: doc.footnotes,
+    })),
+    demote: vi.fn(async (doc: L3Document): Promise<L2Document> => ({
+      format: 'L2',
+      text: doc.body,
+      footnotes: doc.footnotes,
+    })),
   };
 }
 
@@ -38,23 +47,34 @@ describe('FormatService', () => {
     expect(handler).toHaveBeenCalledWith({ uri: 'file:///a.md', format: 'L3' });
   });
 
-  it('promoteToL3 delegates to adapter', async () => {
-    const result = await service.promoteToL3('file:///a.md', 'l2 text');
-    expect(adapter.convertL2ToL3).toHaveBeenCalledWith('file:///a.md', 'l2 text');
-    expect(result.convertedText).toBe('L3(l2 text)');
+  it('promote delegates to adapter', async () => {
+    const l2Doc: L2Document = { format: 'L2', text: 'l2 text', footnotes: [] };
+    const result = await service.promote(l2Doc);
+    expect(adapter.promote).toHaveBeenCalledWith(l2Doc);
+    expect(result.format).toBe('L3');
   });
 
-  it('demoteToL2 delegates to adapter', async () => {
-    const result = await service.demoteToL2('file:///a.md', 'l3 text');
-    expect(adapter.convertL3ToL2).toHaveBeenCalledWith('file:///a.md', 'l3 text');
-    expect(result.convertedText).toBe('L2(l3 text)');
+  it('demote delegates to adapter', async () => {
+    const l3Doc: L3Document = { format: 'L3', body: 'l3 text', footnotes: [] };
+    const result = await service.demote(l3Doc);
+    expect(adapter.demote).toHaveBeenCalledWith(l3Doc);
+    expect(result.format).toBe('L2');
   });
 
-  it('fires onDidCompleteTransition after promotion', async () => {
+  it('fires onDidCompleteTransition after promote with uri context', async () => {
     const handler = vi.fn();
     service.onDidCompleteTransition(handler);
-    await service.promoteToL3('file:///a.md', 'text');
+    const l2Doc: L2Document = { format: 'L2', text: 'text', footnotes: [] };
+    await service.promote(l2Doc, { uri: 'file:///a.md' });
     expect(handler).toHaveBeenCalledWith({ uri: 'file:///a.md', from: 'L2', to: 'L3' });
+  });
+
+  it('does not fire onDidCompleteTransition when no uri provided', async () => {
+    const handler = vi.fn();
+    service.onDidCompleteTransition(handler);
+    const l2Doc: L2Document = { format: 'L2', text: 'text', footnotes: [] };
+    await service.promote(l2Doc);
+    expect(handler).not.toHaveBeenCalled();
   });
 
   it('cleans up per-URI state on remove', () => {
@@ -65,10 +85,14 @@ describe('FormatService', () => {
 
   it('does not fire onDidCompleteTransition if adapter throws', async () => {
     const handler = vi.fn();
-    const failAdapter = { ...adapter, convertL2ToL3: vi.fn().mockRejectedValue(new Error('fail')) };
+    const failAdapter: FormatAdapter = {
+      ...adapter,
+      promote: vi.fn().mockRejectedValue(new Error('fail')),
+    };
     const svc = new FormatService(failAdapter);
     svc.onDidCompleteTransition(handler);
-    await expect(svc.promoteToL3('file:///a.md', 'text')).rejects.toThrow('fail');
+    const l2Doc: L2Document = { format: 'L2', text: 'text', footnotes: [] };
+    await expect(svc.promote(l2Doc, { uri: 'file:///a.md' })).rejects.toThrow('fail');
     expect(handler).not.toHaveBeenCalled();
   });
 });

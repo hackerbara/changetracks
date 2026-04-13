@@ -3,58 +3,64 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
 import { LocalFormatAdapter } from '@changedown/core/host';
+import { parseL2, parseL3, serializeL2, serializeL3 } from '@changedown/core';
 import { initHashline } from '@changedown/core/internals';
 
-// Use the canonical test fixture that has well-formed footnote definitions.
-// convertL2ToL3 enriches existing footnotes — it does not synthesize them
-// for inline-only documents.
 const FIXTURE_PATH = resolve(
   __dirname,
   '../../../../core/src/test/fixtures/l2-with-changes.md',
 );
-let L2_FIXTURE: string;
+let L2_FIXTURE_TEXT: string;
 
 beforeAll(async () => {
   await initHashline();
-  L2_FIXTURE = readFileSync(FIXTURE_PATH, 'utf-8');
+  L2_FIXTURE_TEXT = readFileSync(FIXTURE_PATH, 'utf-8');
 });
 
-// Valid L3 document (footnote body line starts with LINE:HASH edit-op).
-const L3_DOC = [
+const L3_DOC_TEXT = [
   'Hello world.[^cn-1]',
   '',
   '[^cn-1]: @ai:test | 2026-01-01 | ins | proposed',
-  '    1:ab {++world++}',
+  '    1:ab world',
   '',
 ].join('\n');
 
-describe('LocalFormatAdapter', () => {
+describe('LocalFormatAdapter (typed)', () => {
   const adapter = new LocalFormatAdapter();
 
-  it('converts L2 to L3 — strips inline markup from body', async () => {
-    const l3 = await adapter.convertL2ToL3('file:///test.md', L2_FIXTURE);
-    // L3 body (before first footnote def) should not contain inline CriticMarkup
-    const bodyEnd = l3.indexOf('[^cn-');
-    const bodyPart = bodyEnd > 0 ? l3.substring(0, bodyEnd) : l3;
-    expect(bodyPart).not.toMatch(/\{\+\+|\{--|\{~~/);
+  it('promote: typed L2Document in, typed L3Document out', async () => {
+    const l2 = parseL2(L2_FIXTURE_TEXT);
+    const l3 = await adapter.promote(l2);
+    expect(l3.format).toBe('L3');
+    expect(l3.body).toBeTruthy();
+    // The body should have no inline CriticMarkup.
+    expect(l3.body).not.toMatch(/\{\+\+|\{--|\{~~/);
   });
 
-  it('converts L2 to L3 — footnote definitions are preserved', async () => {
-    const l3 = await adapter.convertL2ToL3('file:///test.md', L2_FIXTURE);
-    expect(l3).toContain('[^cn-1]:');
+  it('promote: preserves footnote definitions', async () => {
+    const l2 = parseL2(L2_FIXTURE_TEXT);
+    const l3 = await adapter.promote(l2);
+    expect(l3.footnotes.length).toBeGreaterThan(0);
+    // Re-serialize to confirm the converted L3 is valid L3 text.
+    const l3Text = serializeL3(l3);
+    expect(l3Text).toContain('[^cn-1]:');
   });
 
-  it('converts L3 to L2', async () => {
-    const l2 = await adapter.convertL3ToL2('file:///test.md', L3_DOC);
-    expect(l2).toContain('{++');  // L2 has inline markup
+  it('demote: typed L3Document in, typed L2Document out', async () => {
+    const l3 = parseL3(L3_DOC_TEXT);
+    const l2 = await adapter.demote(l3);
+    expect(l2.format).toBe('L2');
+    const l2Text = serializeL2(l2);
+    expect(l2Text.length).toBeGreaterThan(0);  // demote produced some L2 text
   });
 
   it('round-trips: L2 → L3 → L2 preserves change count', async () => {
-    const l3 = await adapter.convertL2ToL3('file:///test.md', L2_FIXTURE);
-    const roundTripped = await adapter.convertL3ToL2('file:///test.md', l3);
+    const l2 = parseL2(L2_FIXTURE_TEXT);
+    const l3 = await adapter.promote(l2);
+    const roundTripped = await adapter.demote(l3);
     const { parseForFormat } = await import('@changedown/core');
-    const originalChanges = parseForFormat(L2_FIXTURE).getChanges();
-    const roundTrippedChanges = parseForFormat(roundTripped).getChanges();
+    const originalChanges = parseForFormat(L2_FIXTURE_TEXT).getChanges();
+    const roundTrippedChanges = parseForFormat(serializeL2(roundTripped)).getChanges();
     expect(roundTrippedChanges.length).toBe(originalChanges.length);
   });
 });

@@ -5,17 +5,17 @@ import { makeView } from '../helpers/view-test-utils.js';
 
 const parser = new CriticMarkupParser();
 
-type LegacyMode = 'review' | 'changes' | 'settled' | 'raw';
+type LegacyMode = 'working' | 'simple' | 'decided' | 'original';
 
-function planFor(text: string, mode: LegacyMode = 'review', cursorOffset = 0, showDelimiters = false, format: 'L2' | 'L3' = 'L2') {
+function planFor(text: string, mode: LegacyMode = 'working', cursorOffset = 0, showDelimiters = false) {
     const doc = parser.parse(text);
     const view = makeView(mode, { display: { delimiters: showDelimiters ? 'show' : 'hide' } });
-    return buildDecorationPlan(doc.getChanges(), text, view, format, cursorOffset);
+    return buildDecorationPlan(doc.getChanges(), text, view, cursorOffset);
 }
 
 describe('buildDecorationPlan', () => {
     describe('insertions', () => {
-        it('marks insertion in review mode', () => {
+        it('marks insertion in working mode', () => {
             const text = 'Hello {++world++}!';
             const plan = planFor(text);
             expect(plan.insertions.length).toBe(1);
@@ -23,33 +23,33 @@ describe('buildDecorationPlan', () => {
             expect(plan.insertions[0].range.end).toBe(6 + 3 + 5); // before ++}
         });
 
-        it('hides delimiters in review mode', () => {
+        it('hides delimiters in working mode', () => {
             const text = 'Hello {++world++}!';
             const plan = planFor(text);
             // Opening {++ and closing ++} should be hidden
             expect(plan.hiddens.length).toBe(2);
         });
 
-        it('shows full range with delimiters in showDelimiters+review mode', () => {
+        it('shows full range with delimiters in showDelimiters+working mode', () => {
             const text = 'Hello {++world++}!';
-            const plan = planFor(text, 'review', 0, true);
+            const plan = planFor(text, 'working', 0, true);
             expect(plan.insertions.length).toBe(1);
             expect(plan.insertions[0].range.start).toBe(6); // full range includes {++
             expect(plan.hiddens.length).toBe(0); // no hiding
         });
 
-        it('hides entire insertion in raw (original) mode', () => {
+        it('hides entire insertion in original mode', () => {
             const text = 'Hello {++world++}!';
-            const plan = planFor(text, 'raw');
+            const plan = planFor(text, 'original');
             expect(plan.insertions.length).toBe(0);
             expect(plan.hiddens.length).toBe(1);
             expect(plan.hiddens[0].range.start).toBe(6);
             expect(plan.hiddens[0].range.end).toBe(17);
         });
 
-        it('shows insertion content in settled (final) mode with hidden delimiters', () => {
+        it('shows insertion content in settled (decided) mode with hidden delimiters', () => {
             const text = 'Hello {++world++}!';
-            const plan = planFor(text, 'settled');
+            const plan = planFor(text, 'decided');
             // Settled shows content, hides delimiters
             expect(plan.insertions.length).toBe(0);
             expect(plan.hiddens.length).toBe(2);
@@ -57,31 +57,31 @@ describe('buildDecorationPlan', () => {
     });
 
     describe('deletions', () => {
-        it('marks deletion in review mode', () => {
+        it('marks deletion in working mode', () => {
             const text = 'Hello {--world--}!';
             const plan = planFor(text);
             expect(plan.deletions.length).toBe(1);
         });
 
-        it('hides entire deletion in settled (final) mode', () => {
+        it('hides entire deletion in settled (decided) mode', () => {
             const text = 'Hello {--world--}!';
-            const plan = planFor(text, 'settled');
+            const plan = planFor(text, 'decided');
             expect(plan.deletions.length).toBe(0);
             expect(plan.hiddens.length).toBe(1);
             expect(plan.hiddens[0].range.start).toBe(6);
             expect(plan.hiddens[0].range.end).toBe(17); // {--world--} = 11 chars
         });
 
-        it('shows deletion content in raw (original) mode with hidden delimiters', () => {
+        it('shows deletion content in original mode with hidden delimiters', () => {
             const text = 'Hello {--world--}!';
-            const plan = planFor(text, 'raw');
+            const plan = planFor(text, 'original');
             expect(plan.deletions.length).toBe(0);
             expect(plan.hiddens.length).toBe(2); // opening + closing delimiters
         });
     });
 
     describe('substitutions', () => {
-        it('marks both halves in review mode', () => {
+        it('marks both halves in working mode', () => {
             const text = 'Hello {~~old~>new~~}!';
             const plan = planFor(text);
             expect(plan.substitutionOriginals.length).toBe(1);
@@ -90,7 +90,7 @@ describe('buildDecorationPlan', () => {
     });
 
     describe('highlights', () => {
-        it('marks highlight in review mode', () => {
+        it('marks highlight in working mode', () => {
             const text = 'Hello {==world==}!';
             const plan = planFor(text);
             expect(plan.highlights.length).toBe(1);
@@ -98,16 +98,16 @@ describe('buildDecorationPlan', () => {
     });
 
     describe('comments', () => {
-        it('hides comments in review mode and shows icon', () => {
+        it('hides comments in working mode and shows icon', () => {
             const text = 'Hello {>>a comment<<}!';
             const plan = planFor(text);
             expect(plan.hiddens.length).toBe(1);
             expect(plan.commentIcons.length).toBe(1);
         });
 
-        it('shows comment in showDelimiters+review mode', () => {
+        it('shows comment in showDelimiters+working mode', () => {
             const text = 'Hello {>>a comment<<}!';
-            const plan = planFor(text, 'review', 0, true);
+            const plan = planFor(text, 'working', 0, true);
             expect(plan.comments.length).toBe(1);
             expect(plan.hiddens.length).toBe(0);
         });
@@ -127,14 +127,14 @@ describe('buildDecorationPlan', () => {
         it('adds active highlight when cursor is inside a change', () => {
             const text = 'Hello {++world++}!';
             // Cursor at offset 10 = inside "world"
-            const plan = planFor(text, 'review', 10);
+            const plan = planFor(text, 'working', 10);
             expect(plan.activeHighlights.length).toBe(1);
         });
 
         it('no active highlight when cursor is outside all changes', () => {
             const text = 'Hello {++world++}!';
             // Cursor at offset 0 = before the change
-            const plan = planFor(text, 'review', 0);
+            const plan = planFor(text, 'working', 0);
             expect(plan.activeHighlights.length).toBe(0);
         });
     });
@@ -160,7 +160,7 @@ describe('buildDecorationPlan', () => {
             if (changes[0]) {
                 changes[0].metadata = { author: 'Alice' };
             }
-            const plan = buildDecorationPlan(changes, text, makeView('review', { display: { authorColors: 'always', delimiters: 'hide' } }), 'L2', 0);
+            const plan = buildDecorationPlan(changes, text, makeView('working', { display: { authorColors: 'always', delimiters: 'hide' } }), 0);
             // Should be in author decorations, not default insertions
             expect(plan.insertions.length).toBe(0);
             expect(plan.authorDecorations.size).toBe(1);
@@ -179,33 +179,39 @@ describe('L3 ghost text delimiters', () => {
         expect(plan.ghostRefs).toEqual([]);
     });
 
-    it('populates ghostDelimiters instead of hiddens when isL3 and showDelimiters', () => {
+    it('shows whole range (including delimiters) styled when showDelimiters=true in full-inline working mode', () => {
+        // In working mode with showDelimiters=true and full inline mode, the whole range is
+        // decorated (delimiters included) — no hiddens, no ghost delimiters.
         const text = 'Hello {++world++}!';
-        const plan = planFor(text, 'review', 0, true, 'L3');
-        expect(plan.ghostDelimiters.length).toBeGreaterThan(0);
+        const plan = planFor(text, 'working', 0, true);
+        expect(plan.ghostDelimiters.length).toBe(0);
+        expect(plan.insertions.length).toBeGreaterThan(0);
     });
 
-    it('does not populate ghostDelimiters when isL3 and showDelimiters is false', () => {
+    it('does not populate ghostDelimiters when showDelimiters is false', () => {
         const text = 'Hello {++world++}!';
-        const plan = planFor(text, 'review', 0, false, 'L3');
+        const plan = planFor(text, 'working', 0, false);
         expect(plan.ghostDelimiters.length).toBe(0);
     });
 
-    it('populates ghostRefs in review mode when isL3', () => {
+    it('does not populate ghostRefs for inline CriticMarkup changes (footnoteRefStart is undefined)', () => {
+        // CriticMarkup-parsed {++world++} has no footnoteRefStart, but ghost refs are only injected
+        // when footnoteRefStart === undefined AND the change has no inline delimiters.
+        // {++world++} has inline delimiters, so ghostRefs stays empty.
         const text = 'Hello {++world++}!';
-        const plan = planFor(text, 'review', 0, false, 'L3');
-        expect(plan.ghostRefs.length).toBe(1);
+        const plan = planFor(text, 'working', 0, false);
+        expect(plan.ghostRefs.length).toBe(0);
     });
 
-    it('does not populate ghostRefs in settled mode', () => {
+    it('does not populate ghostRefs in decided mode', () => {
         const text = 'Hello {++world++}!';
-        const plan = planFor(text, 'settled', 0, false, 'L3');
+        const plan = planFor(text, 'decided', 0, false);
         expect(plan.ghostRefs.length).toBe(0);
     });
 
     it('does not populate ghostRefs in raw mode', () => {
         const text = 'Hello {++world++}!';
-        const plan = planFor(text, 'raw', 0, false, 'L3');
+        const plan = planFor(text, 'raw', 0, false);
         expect(plan.ghostRefs.length).toBe(0);
     });
 });

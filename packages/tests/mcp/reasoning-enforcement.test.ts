@@ -54,7 +54,7 @@ describe('proposal reasoning enforcement', () => {
         propose: { human: false, agent: true },
         review: { human: false, agent: true },
       },
-      policy: { mode: 'safety-net', creation_tracking: 'footnote', default_view: 'review', view_policy: 'suggest' },
+      policy: { mode: 'safety-net', creation_tracking: 'footnote', default_view: 'working', view_policy: 'suggest' },
       protocol: { mode: 'classic', level: 2, reasoning: 'optional', batch_reasoning: 'optional' },
     };
     resolver = await createTestResolver(tmpDir, config);

@@ -7,7 +7,7 @@
  */
 
 import { Connection } from 'vscode-languageserver';
-import type { ViewMode } from '@changedown/core';
+import type { BuiltinView } from '@changedown/core/host';
 import { LSP_METHOD } from '@changedown/core/host';
 
 /**
@@ -15,7 +15,8 @@ import { LSP_METHOD } from '@changedown/core/host';
  */
 export interface SetViewModeParams {
   textDocument: { uri: string };
-  viewMode: ViewMode;
+  // wire field name 'viewMode' preserved for backward compat
+  viewMode: BuiltinView;
 }
 
 /**
@@ -23,7 +24,8 @@ export interface SetViewModeParams {
  */
 export interface ViewModeChangedParams {
   textDocument: { uri: string };
-  viewMode: ViewMode;
+  // wire field name 'viewMode' preserved for backward compat
+  viewMode: BuiltinView;
 }
 
 /**
@@ -39,11 +41,12 @@ export interface ViewModeChangedParams {
 export function sendViewModeChanged(
   connection: Connection,
   uri: string,
-  viewMode: ViewMode
+  view: BuiltinView
 ): void {
+  // wire payload: { viewMode: view } — field name 'viewMode' preserved for backward compat
   const params: ViewModeChangedParams = {
     textDocument: { uri },
-    viewMode
+    viewMode: view
   };
   connection.sendNotification(LSP_METHOD.VIEW_MODE_CHANGED, params);
 }

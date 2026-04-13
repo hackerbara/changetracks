@@ -227,6 +227,19 @@ export function isL3Format(text: string): boolean {
   return footnoteSection.split('\n').some(line => FOOTNOTE_L3_EDIT_OP.test(line));
 }
 
+// ─── Image dimensions ────────────────────────────────────────────────────────
+
+/**
+ * Image dimensions metadata pattern.
+ * Matches e.g. "4.5in x 3in". Captures width in group 1, height in group 2.
+ *
+ * Used by footnote-native-parser.ts (typedToLegacy), parser.ts
+ * (applyImageExtraMetadata), and footnote-parser.ts (dimMatch).
+ *
+ * Non-global.
+ */
+export const IMAGE_DIMENSIONS_RE = /^([\d.]+)in\s*x\s*([\d.]+)in$/;
+
 // ─── @ctx: deletion context escaping ────────────────────────────────────────
 
 /** Regex for @ctx:"before"||"after" with escaped-aware quoting */

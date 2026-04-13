@@ -327,9 +327,9 @@ describe('read_tracked_file meta mode', () => {
     expect(text).not.toContain('[^cn-1]:');
   });
 
-  // ─── Test 9: P flag in review view hashline for proposed changes ──────
+  // ─── Test 9: P flag in working view hashline for proposed changes ──────
 
-  it('review view includes P flag in hashline for proposed changes', async () => {
+  it('working view includes P flag in hashline for proposed changes', async () => {
     const hashlineConfig: ChangeDownConfig = {
       ...config,
       hashline: { enabled: true, auto_remap: false },
@@ -348,9 +348,9 @@ describe('read_tracked_file meta mode', () => {
     expect(text).toMatch(/\d+:[0-9a-f]{2} P\|/);
   });
 
-  // ─── Test 10: A flag in review view hashline for accepted changes ─────
+  // ─── Test 10: A flag in working view hashline for accepted changes ─────
 
-  it('review view includes A flag for accepted changes', async () => {
+  it('working view includes A flag for accepted changes', async () => {
     const content = [
       '# Doc',
       '{++accepted text++}[^cn-1]',
@@ -380,7 +380,7 @@ describe('read_tracked_file meta mode', () => {
 
   // ─── Test 11: Blank flag for clean lines ──────────────────────────────
 
-  it('review view has blank flag for clean lines', async () => {
+  it('working view has blank flag for clean lines', async () => {
     const hashlineConfig: ChangeDownConfig = {
       ...config,
       hashline: { enabled: true, auto_remap: false },

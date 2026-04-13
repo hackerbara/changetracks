@@ -58,9 +58,10 @@ for cross-cutting flows (L2↔L3 lifecycle, accept/reject, edit boundary).
 - `isApplyingTrackedEdit: boolean` — re-entrancy guard during header/footnote writes
 - `unconfirmedTrackedEdit` — deferred insertion/substitution awaiting selection confirmation (50ms)
 
-**Projected View:**
-- `projectedView: ProjectedView` — buffer swap for settled/raw modes (with `.changedown-swap` crash recovery)
-- `convertingUris: Set<uri>` — suppresses tracking during L3→L2 conversion and projected view transitions
+**View State:**
+- `currentView: View` — current `View` object (name, projection, display); set via `BaseController.setView()`
+- `_userDisplay: Partial<DisplayOptions>` — user display overrides merged atop preset defaults
+- `convertingUris: Set<uri>` — suppresses tracking during L3→L2 conversion
 
 **Cursor:**
 - `lastCursorOffsets: Map<uri, number>` — direction for hidden range snap
@@ -101,15 +102,15 @@ Typical keystroke flow:
 
 ### View Mode Transitions
 
-| Mode | Projected? | Buffer | Read-only? |
-|------|-----------|--------|------------|
-| `review` | No | Original markup | No |
-| `changes` | No | Original markup (delimiters hidden via CSS) | No |
-| `settled` | Yes | `computeCurrentText()` — accepted text only | Yes |
-| `raw` | Yes | `computeOriginalText()` — original text only | Yes |
+| BuiltinView | Projection | Buffer | Behavior |
+|-------------|-----------|--------|----------|
+| `review` | `current` | Original markup | All decorations visible. |
+| `simple` | `current` | Original markup | Cursor-on-line reveals; off-line changes hidden. |
+| `final` | `decided` | Original markup | `buildDecorationPlan` hides deletions/originals; no buffer swap. |
+| `original` | `original` | Original markup | `buildDecorationPlan` hides insertions/modified; no buffer swap. |
 
-Transitions between projected ↔ non-projected require buffer swap via `ProjectedView`.
-Crash recovery: `.changedown-swap` backup on enter, cleaned up on exit.
+All views use the same buffer (original CriticMarkup). `buildDecorationPlan` handles all projections
+natively based on `view.projection`. No buffer swap, no read-only enforcement, no swap files.
 
 ### Format State Ownership
 

@@ -1,4 +1,5 @@
-import type { VirtualDocument, ViewMode } from '@changedown/core';
+import type { VirtualDocument } from '@changedown/core';
+import type { BuiltinView } from '@changedown/core/host';
 import type { CursorState } from './capabilities/code-lens';
 
 /**
@@ -25,7 +26,7 @@ export interface LspDocumentState {
   text: string;
   languageId: string;
   overlay: PendingOverlay | null;
-  viewMode: ViewMode;
+  viewMode: BuiltinView;
   cursorState: CursorState | null;
   decorationTimeout: ReturnType<typeof setTimeout> | null;
   isBatchEditing: boolean;
@@ -44,7 +45,7 @@ export function createLspDocumentState(
   return {
     version, text, languageId, parseResult,
     overlay: null,
-    viewMode: 'review',
+    viewMode: 'working',
     cursorState: null,
     decorationTimeout: null,
     isBatchEditing: false,

@@ -1,16 +1,17 @@
 /**
  * View builder index — dispatcher that routes to the correct view builder
- * based on the requested ViewMode.
+ * based on the requested BuiltinView.
  */
 
-import { buildReviewDocument, type ReviewBuildOptions } from './review.js';
-import { buildChangesDocument, type ChangesViewOptions } from './changes.js';
-import { buildCurrentDocument, type CurrentViewOptions } from './current.js';
+import { buildReviewDocument, type ReviewBuildOptions } from './working.js';
+import { buildSimpleDocument, type SimpleBuildOptions } from './simple.js';
+import { buildDecidedDocument, type DecidedBuildOptions } from './decided.js';
 import { buildRawDocument, type RawViewOptions } from './raw.js';
-import type { ThreeZoneDocument, ViewMode } from '../three-zone-types.js';
+import type { ThreeZoneDocument } from '../three-zone-types.js';
+import type { BuiltinView } from '../../host/types.js';
 
-export { buildReviewDocument, buildChangesDocument, buildCurrentDocument, buildRawDocument };
-export type { ReviewBuildOptions, ChangesViewOptions, CurrentViewOptions, RawViewOptions };
+export { buildReviewDocument, buildSimpleDocument, buildDecidedDocument, buildRawDocument };
+export type { ReviewBuildOptions, SimpleBuildOptions, DecidedBuildOptions, RawViewOptions };
 
 /**
  * Union of all view-specific option types.
@@ -19,24 +20,31 @@ export type { ReviewBuildOptions, ChangesViewOptions, CurrentViewOptions, RawVie
  * to a single shared shape. This lets callers pass one options object
  * to buildViewDocument without caring which view is selected.
  */
-export type ViewOptions = ReviewBuildOptions & ChangesViewOptions & CurrentViewOptions & RawViewOptions;
+export type ViewOptions = ReviewBuildOptions & SimpleBuildOptions & DecidedBuildOptions & RawViewOptions;
 
 /**
- * Dispatch to the correct view builder based on the view mode.
- *
- * Falls back to review view for unrecognised view modes (defensive;
- * TypeScript exhaustiveness catches this at compile time for known callers).
+ * Dispatch to the correct view builder based on the BuiltinView name.
  */
 export function buildViewDocument(
   rawContent: string,
-  view: ViewMode,
+  view: BuiltinView,
   options: ViewOptions,
 ): ThreeZoneDocument {
   switch (view) {
-    case 'review': return buildReviewDocument(rawContent, options);
-    case 'changes': return buildChangesDocument(rawContent, options);
-    case 'settled': return buildCurrentDocument(rawContent, options);
-    case 'raw': return buildRawDocument(rawContent, options);
-    default: return buildReviewDocument(rawContent, options);
+    case 'working':  return buildReviewDocument(rawContent, options);
+    case 'simple':   return buildSimpleDocument(rawContent, options);
+    case 'decided':  return buildDecidedDocument(rawContent, options);
+    case 'raw':      return buildRawDocument(rawContent, options);
+    case 'original':
+      // Host-only view; not dispatchable via buildViewDocument. Hosts call
+      // computeOriginalText directly.
+      throw new Error(
+        "View 'original' is not supported by buildViewDocument. Host-side " +
+        "consumers should call computeOriginalText directly. MCP agents " +
+        "should not receive this view name (rejected by resolveView enum)."
+      );
+    default:
+      // TypeScript exhaustiveness guard — should be unreachable.
+      throw new Error(`Unknown view: ${String(view)}`);
   }
 }

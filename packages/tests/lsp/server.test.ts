@@ -1,70 +1,27 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { ChangedownServer, TextDocumentSyncKind } from '@changedown/lsp-server/internals';
-import type { Connection, InitializeParams, InitializeResult } from '@changedown/lsp-server/internals';
+import type { InitializeParams } from '@changedown/lsp-server/internals';
 import { ChangeType } from '@changedown/core';
-
-/**
- * Create a mock connection for testing
- */
-function createMockConnection(): Connection {
-  const handlers: any = {};
-  const notifications: Array<{ method: string; params: any }> = [];
-
-  return {
-    onInitialize: (handler: any) => { handlers.initialize = handler; },
-    onInitialized: (handler: any) => { handlers.initialized = handler; },
-    onShutdown: (handler: any) => { handlers.shutdown = handler; },
-    onExit: (handler: any) => { handlers.exit = handler; },
-    onDidOpenTextDocument: (handler: any) => { handlers.didOpen = handler; },
-    onDidChangeTextDocument: (handler: any) => { handlers.didChange = handler; },
-    onDidCloseTextDocument: (handler: any) => { handlers.didClose = handler; },
-    onWillSaveTextDocument: (handler: any) => { handlers.willSave = handler; },
-    onWillSaveTextDocumentWaitUntil: (handler: any) => { handlers.willSaveWaitUntil = handler; },
-    onDidSaveTextDocument: (handler: any) => { handlers.didSave = handler; },
-    onHover: (handler: any) => { handlers.hover = handler; },
-    onCodeLens: (handler: any) => { handlers.codeLens = handler; },
-    onFoldingRanges: (handler: any) => { handlers.foldingRanges = handler; },
-    onCodeAction: (handler: any) => { handlers.codeAction = handler; },
-    onDocumentLinks: (handler: any) => { handlers.documentLinks = handler; },
-    onRequest: (method: string, handler: any) => { handlers[`request:${method}`] = handler; },
-    onNotification: (method: string, handler: any) => { handlers[`notification:${method}`] = handler; },
-    sendDiagnostics: (params: any) => { notifications.push({ method: 'textDocument/publishDiagnostics', params }); },
-    sendNotification: (method: string, params: any) => {
-      notifications.push({ method, params });
-    },
-    languages: {
-      semanticTokens: {
-        on: (handler: any) => { handlers.semanticTokens = handler; }
-      }
-    },
-    console: { log: () => {}, error: () => {}, warn: () => {}, info: () => {} },
-    client: { register: async () => {} },
-    workspace: { applyEdit: async () => ({ applied: false }) },
-    onDidChangeWatchedFiles: () => {},
-    listen: () => {},
-    _handlers: handlers, // For test access
-    _notifications: notifications, // For test access
-  } as any;
-}
+import { createMockConnection, type MockConnection } from './mock-connection.js';
 
 describe('Server', () => {
   describe('ChangedownServer constructor', () => {
     it('should create a server instance', () => {
       const mockConnection = createMockConnection();
-      const server = new ChangedownServer(mockConnection);
+      const server = new ChangedownServer(mockConnection as any);
       expect(server).toBeTruthy();
       expect(server instanceof ChangedownServer).toBeTruthy();
     });
 
     it('should initialize workspace on creation', () => {
       const mockConnection = createMockConnection();
-      const server = new ChangedownServer(mockConnection);
+      const server = new ChangedownServer(mockConnection as any);
       expect(server.workspace).toBeTruthy();
     });
 
     it('should accept ServerOptions', () => {
       const mockConnection = createMockConnection();
-      const server = new ChangedownServer(mockConnection, {
+      const server = new ChangedownServer(mockConnection as any, {
         loadConfig: () => undefined,
       });
       expect(server).toBeTruthy();
@@ -73,11 +30,11 @@ describe('Server', () => {
 
   describe('ChangedownServer', () => {
     let server: ChangedownServer;
-    let mockConnection: Connection;
+    let mockConnection: MockConnection;
 
     beforeEach(() => {
       mockConnection = createMockConnection();
-      server = new ChangedownServer(mockConnection);
+      server = new ChangedownServer(mockConnection as any);
     });
 
     it('should have a connection', () => {

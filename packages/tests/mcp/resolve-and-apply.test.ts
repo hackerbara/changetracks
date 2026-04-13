@@ -95,8 +95,8 @@ describe('resolveCoordinates — basic coordinate resolution', () => {
 
 describe('resolveCoordinates — view-aware translation', () => {
   it('translates settled-view coordinates to raw line numbers', () => {
-    // Simulate: agent read the file in 'settled' view.
-    // In settled view, line 1 maps to raw line 3 (e.g., after accepting changes shrinks line count).
+    // Simulate: agent read the file in 'decided' view.
+    // In decided view, line 1 maps to raw line 3 (e.g., after accepting changes shrinks line count).
     const rawFileLines = ['Line one', 'Line two', 'Target line', 'Line four'];
     const rawFileContent = rawFileLines.join('\n');
 
@@ -106,10 +106,10 @@ describe('resolveCoordinates — view-aware translation', () => {
     // Use the same hash as raw for simplicity — the key is the rawLineNum mapping
     const currentViewHash = rawHash;
 
-    // Build session state as if agent read in 'settled' view:
+    // Build session state as if agent read in 'decided' view:
     // current-view line 1 → rawLineNum 3
     const state = new SessionState();
-    state.recordAfterRead(FILE_PATH, 'settled', [
+    state.recordAfterRead(FILE_PATH, 'decided', [
       {
         line: 1,
         raw: rawHash,
@@ -128,7 +128,7 @@ describe('resolveCoordinates — view-aware translation', () => {
     expect(result.rawStartLine).toBe(3);
     expect(result.rawEndLine).toBe(3);
     expect(result.content).toBe('Target line');
-    expect(result.viewResolved).toBe('settled');
+    expect(result.viewResolved).toBe('decided');
   });
 
   it('passes through raw-view coordinates unchanged when hash matches', () => {
@@ -535,7 +535,7 @@ const integrationConfig: ChangeDownConfig = {
   matching: { mode: 'normalized' },
   hashline: { enabled: true, auto_remap: false },
   settlement: { auto_on_approve: true, auto_on_reject: true },
-  policy: { mode: 'safety-net', creation_tracking: 'footnote', default_view: 'review', view_policy: 'suggest' },
+  policy: { mode: 'safety-net', creation_tracking: 'footnote', default_view: 'working', view_policy: 'suggest' },
   protocol: { mode: 'compact', level: 2, reasoning: 'optional', batch_reasoning: 'optional' },
   review: { reasonRequired: { human: false, agent: false } },
   reasoning: {
@@ -544,7 +544,7 @@ const integrationConfig: ChangeDownConfig = {
   },
 };
 
-describe('settled-view batch (friction report scenario)', () => {
+describe('final-view batch (friction report scenario)', () => {
   let tmpDir: string;
   let resolver: ConfigResolver;
   let state: SessionState;
@@ -575,9 +575,9 @@ describe('settled-view batch (friction report scenario)', () => {
     );
     expect(firstResult.isError).toBeFalsy();
 
-    // Step 4: Read with settled view (agent would do this for next batch)
+    // Step 4: Read with decided view (agent would do this for next batch)
     const readResult = await handleReadTrackedFile(
-      { file: filePath, view: 'settled' },
+      { file: filePath, view: 'decided' },
       resolver, state,
     );
     expect(readResult.isError).toBeFalsy();
@@ -1209,9 +1209,9 @@ describe('Stage 3.5a — findUniqueMatch fallback', () => {
   });
 });
 
-// ── Stage 3.5b: committed/settled view hash resolution ────────────────────────
+// ── Stage 3.5b: committed/final view hash resolution ─────────────────────────
 
-describe('Stage 3.5b — committed/settled view hash resolution', () => {
+describe('Stage 3.5b — committed/final view hash resolution', () => {
   it('resolves stale insertion coordinate via committed view', () => {
     // File with a pending substitution proposal at line 3.
     // The {~~old~>new~~} CriticMarkup is on ONE raw line.
@@ -1247,7 +1247,7 @@ describe('Stage 3.5b — committed/settled view hash resolution', () => {
     expect(result.rawStartLine).toBe(4);
   });
 
-  it('resolves coordinates from settled view agent via computeCurrentView', () => {
+  it('resolves coordinates from decided view agent via computeCurrentView', () => {
     const fileLines = [
       'Line one',
       '{++Inserted line++}[^cn-1]',
@@ -1256,9 +1256,9 @@ describe('Stage 3.5b — committed/settled view hash resolution', () => {
     const fileContent = fileLines.join('\n') + '\n\n[^cn-1]: @ai:test | 2026-03-25 | ins | proposed';
 
     const state = new SessionState();
-    state.recordAfterRead(FILE_PATH, 'settled', [], 'original-content');
+    state.recordAfterRead(FILE_PATH, 'decided', [], 'original-content');
 
-    // In settled view, the insertion is accepted: "Inserted line" is at current line 2.
+    // In decided view, the insertion is accepted: "Inserted line" is at current line 2.
     // Hash of "Inserted line" in the current view context.
     const currentLines = ['Line one', 'Inserted line', 'Line two'];
     const currentHash = computeLineHash(1, 'Inserted line', currentLines);
@@ -1537,7 +1537,7 @@ describe('Chained proposal recovery — edge cases', () => {
     );
 
     // Insertion with a completely fabricated hash ('ff') that won't match any
-    // line in raw, committed, or settled view — all stages fail → hospitable error
+    // line in raw, committed, or final view — all stages fail → hospitable error
     const insResult = await handleProposeChange(
       {
         file: filePath,

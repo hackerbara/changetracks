@@ -10,7 +10,7 @@ Feature: E5 - Guide Composer
       # Test
       Some content.
       """
-    When I call read_tracked_file for "doc.md" with view = "review"
+    When I call read_tracked_file for "doc.md" with view = "working"
     Then the response has 2 content items total
     And the first content item contains "How to edit this file"
 
@@ -23,8 +23,8 @@ Feature: E5 - Guide Composer
       # Test
       Some content.
       """
-    When I call read_tracked_file for "doc.md" with view = "review"
-    And I call read_tracked_file for "doc.md" with view = "review"
+    When I call read_tracked_file for "doc.md" with view = "working"
+    And I call read_tracked_file for "doc.md" with view = "working"
     Then the response has 1 content items total
 
   Scenario: Classic mode guide includes old_text/new_text
@@ -36,7 +36,7 @@ Feature: E5 - Guide Composer
       # Test
       Some content.
       """
-    When I call read_tracked_file for "doc.md" with view = "review"
+    When I call read_tracked_file for "doc.md" with view = "working"
     Then the first content item contains "old_text"
     And the first content item contains "new_text"
 
@@ -49,7 +49,7 @@ Feature: E5 - Guide Composer
       # Test
       Some content.
       """
-    When I call read_tracked_file for "doc.md" with view = "review"
+    When I call read_tracked_file for "doc.md" with view = "working"
     Then the first content item contains "LINE:HASH"
     And the first content item contains "old~>new"
 
@@ -62,5 +62,5 @@ Feature: E5 - Guide Composer
       # Test
       Some content.
       """
-    When I call read_tracked_file for "doc.md" with view = "review"
+    When I call read_tracked_file for "doc.md" with view = "working"
     Then the first content item contains "affected_lines"

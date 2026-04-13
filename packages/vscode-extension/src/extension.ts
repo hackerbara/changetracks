@@ -22,12 +22,11 @@ import markdownItKatex = require('@traptitech/markdown-it-katex');
 import { setOutputChannel } from './output-channel';
 import { registerChangeCommands, registerScmCommands, registerCommentCommands, registerTestCommands, registerSetupCommands, type ChangeCommandsContext } from './commands';
 import { DocxEditorProvider } from './docx/docx-editor-provider';
-import { ProjectedView } from './projected-view';
 import { GitGutterManager, GUTTER_STRATEGY } from './git-gutter-manager';
 import type { GutterStrategy } from './git-gutter-manager';
-import { BaseController, LspFormatAdapter, LSP_METHOD } from '@changedown/core/host';
+import { BaseController, LspFormatAdapter, LocalParseAdapter, LSP_METHOD } from '@changedown/core/host';
+import type { BuiltinView } from '@changedown/core/host';
 import { VsCodeLspAdapter, VsCodeEditorHost } from './adapters';
-import { ProjectedViewAdapter } from './projected-view-adapter';
 import { CommentThreadGuard } from './features/comment-thread-guard';
 import { MoveTracker } from './features/move-tracker';
 import { StatusBar } from './features/status-bar';
@@ -108,24 +107,19 @@ export async function activate(context: vscode.ExtensionContext) {
     const previewAdapter = new VsCodePreviewAdapter();
     context.subscriptions.push(previewAdapter);
 
-    // Recover any orphaned swap files from a previous crash while in projected view
-    ProjectedView.recoverCrashBackups();
-
     // --- BaseController composition ---
     const lspAdapter = new VsCodeLspAdapter();
     const commentGuard = new CommentThreadGuard();
     const editorHost = new VsCodeEditorHost(lspAdapter, commentGuard);
-    const projectedViewAdapter = new ProjectedViewAdapter(lspAdapter, editorHost);
 
-    // Config — decoration style, author colors, localParseHotPath
+    // Config — decoration style, author colors
     const config0 = vscode.workspace.getConfiguration('changedown');
     const rawStyle = config0.get<string>('decorationStyle', 'foreground');
     const decorationStyle = rawStyle === 'background' ? 'background' : 'foreground';
     const rawAuthorColors = config0.get<string>('authorColors', 'auto');
     const authorColors = (rawAuthorColors === 'always' || rawAuthorColors === 'never') ? rawAuthorColors : 'auto';
-    const localParseHotPath = config0.get<boolean>('localParseHotPath', false);
 
-    const decorationManager = new DecorationManager(decorationStyle, authorColors, localParseHotPath);
+    const decorationManager = new DecorationManager(decorationStyle, authorColors);
     decorationManager.subscribeVisibilityCleanup(context.subscriptions);
 
     // Initial show delimiters + author colors applied as display overrides after setView
@@ -135,6 +129,8 @@ export async function activate(context: vscode.ExtensionContext) {
         host: editorHost,
         lsp: lspAdapter,
         decorationPort: decorationManager,
+        previewPort: previewAdapter,
+        parseAdapter: new LocalParseAdapter(),
         formatAdapter: new LspFormatAdapter(lspAdapter),
         defaultFormat: 'L3',
         defaultDisplay: { delimiters: initialShowDelimiters ? 'show' : 'hide', authorColors },
@@ -169,7 +165,24 @@ export async function activate(context: vscode.ExtensionContext) {
             },
         },
     });
-    context.subscriptions.push(commentGuard, editorHost, lspAdapter, projectedViewAdapter, baseController, decorationManager);
+    context.subscriptions.push(commentGuard, editorHost, lspAdapter, baseController, decorationManager);
+
+    context.subscriptions.push(
+        baseController.onDidConvertFormatError(({ uri, error }) => {
+            const filename = uri.split('/').pop() ?? uri;
+            const msg = error instanceof Error ? error.message : String(error);
+            vscode.window.showErrorMessage(`Format conversion failed for ${filename}: ${msg}`);
+            outputChannel.appendLine(`[convertFormat] ${uri} — ${msg}`);
+            if (error instanceof Error && error.stack) {
+                outputChannel.appendLine(error.stack);
+            }
+        }),
+    );
+    context.subscriptions.push(
+        baseController.onDidConvertFormat(({ uri, from, to }) => {
+            outputChannel.appendLine(`[convertFormat] ${uri} ${from}→${to} OK`);
+        }),
+    );
 
     // Navigation commands — depends on baseController
     const navigationCommands = new NavigationCommands(
@@ -339,8 +352,9 @@ export async function activate(context: vscode.ExtensionContext) {
             const uri = vscode.window.activeTextEditor?.document.uri.toString();
             return uri ? baseController.trackingService.isTrackingEnabled(uri) : false;
         },
-        get viewMode() { return baseController.viewMode; },
+        get view() { return baseController.getView().name as BuiltinView; },
         onDidChangeChanges: (listener) => baseController.stateManager.onDidChangeChanges(uris => listener(uris.map(u => vscode.Uri.parse(u)))),
+        onDidChangeView: (l) => baseController.onDidChangeView(() => l()),
     });
     context.subscriptions.push(
         vscode.window.registerWebviewViewProvider('changedownReview', reviewPanelProvider),
@@ -454,10 +468,11 @@ export async function activate(context: vscode.ExtensionContext) {
         changeComments = new ChangeComments(
             {
                 onDidChangeChanges: (l) => baseController.stateManager.onDidChangeChanges(() => l()),
+                onDidChangeView: (l) => baseController.onDidChangeView(() => l()),
                 getChangesForDocument: (doc) => baseController.getAuthoredChanges(doc.uri.toString()),
             },
             () => vscode.window.activeTextEditor?.document,
-            () => baseController.viewMode,
+            () => baseController.getView(),
         );
         // Wire thread expansion events to the comment guard so edits typed
         // inside comment widgets are not tracked on the source document.
@@ -491,7 +506,7 @@ export async function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(moveTracker);
 
     // Register commands
-    registerChangeCommands(context, baseController, lspAdapter, projectedViewAdapter, decorationManager, navigationCommands, reviewCommands, changeComments as ChangeCommandsContext, moveTracker);
+    registerChangeCommands(context, baseController, lspAdapter, navigationCommands, reviewCommands, changeComments as ChangeCommandsContext, moveTracker);
     registerCommentCommands(context, baseController, reviewCommands, changeComments);
     if (isDevMode) {
         registerTestCommands(context, baseController, () => client, changeComments as any);
@@ -611,7 +626,6 @@ export async function activate(context: vscode.ExtensionContext) {
     }
 
     // Initialize context keys
-    vscode.commands.executeCommand('setContext', 'changedown:viewMode', baseController.getView()?.name ?? 'review');
     vscode.commands.executeCommand('setContext', 'changedown:trackingEnabled', false);
 
     // Update trackingEnabled context key when tracking state changes for active URI

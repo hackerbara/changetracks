@@ -5,8 +5,8 @@ export { buildReplacements, findFenceZones, LineOffsetMap } from './replacements
 export type { PreviewOptions, FenceZone } from './replacements.js';
 export { containsCriticMarkup, renderFenceWithCriticMarkup, changedownPlugin } from './plugin.js';
 export type { PluginConfig } from './plugin.js';
-export { AuthorColorMap, buildDecorationPlan, VIEW_MODE_VISIBILITY, type VisibilityRule } from '@changedown/core/host';
-export type { DecorationPlan, OffsetDecoration, AuthorDecorationRole, ViewMode } from '@changedown/core/host';
+export { AuthorColorMap, buildDecorationPlan, type VisibilityRule } from '@changedown/core/host';
+export type { DecorationPlan, OffsetDecoration, AuthorDecorationRole } from '@changedown/core/host';
 export { generatePreviewCSS, generateViewModeCSS } from './generate-css.js';
 export { generateKatexCSS } from './generate-katex-css.js';
 export { createPreviewRenderer } from './preview-renderer.js';

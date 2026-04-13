@@ -48,14 +48,21 @@ describe('FootnoteNativeParser (line-hash + edit-op format)', () => {
     expect(ins!.range.end).toBeGreaterThan(ins!.range.start);
   });
 
-  it('parses deletion as zero-width range', () => {
+  it('parses deletion with contextual anchor span and deletionSeamOffset', () => {
+    // After the bug 5 fix (Plan 1 Task 2), deletion ranges cover the full
+    // contextual anchor span (contextBefore + contextAfter) rather than being
+    // zero-width. deletionSeamOffset records where the deleted text used to
+    // live within the span (= contextBefore.length).
     const doc = parser.parse(fixture);
     const changes = doc.getChanges();
     const del = changes.find(c => c.id === 'cn-2');
     expect(del).toBeDefined();
     expect(del!.type).toBe(ChangeType.Deletion);
     expect(del!.originalText).toBeDefined();
-    expect(del!.range.start).toBe(del!.range.end);
+    // Non-zero range, covering contextBefore + contextAfter
+    expect(del!.range.end).toBeGreaterThan(del!.range.start);
+    // contextBefore = "We should " → deletionSeamOffset = 10
+    expect(del!.deletionSeamOffset).toBe('We should '.length);
   });
 
   it('parses substitution with original and modified text', () => {
@@ -178,11 +185,14 @@ describe('deletion context parsing (@ctx:)', () => {
     expect(del).toBeDefined();
     expect(del!.type).toBe(ChangeType.Deletion);
     expect(del!.originalText).toBe('old ');
-    // The deletion point should be at "We should " length = 10 on line 3
+    // After bug 5 fix (Plan 1 Task 2): range covers the full contextual anchor
+    // span (contextBefore + contextAfter), not a zero-width seam.
     // Line 3 starts at offset: "# Test\n\n".length = 8
-    // So deletion should be at offset 8 + 10 = 18
-    expect(del!.range.start).toBe(18);
-    expect(del!.range.end).toBe(18); // zero-width
+    // joined = "We should " + "extend the time" = 25 chars
+    expect(del!.range.start).toBe(8);
+    expect(del!.range.end).toBe(8 + 'We should extend the time'.length);
+    // Seam offset = contextBefore.length = 10
+    expect(del!.deletionSeamOffset).toBe('We should '.length);
   });
 
   it('falls back to line start when @ctx: is missing', () => {
@@ -761,11 +771,12 @@ describe('contextual edit-op format parsing', () => {
     expect(ins!.range.end).toBe(LINE3_OFFSET + 10); // "o".length = 1
   });
 
-  it('contextual deletion resolution — zero-width range at correct position', () => {
+  it('contextual deletion resolution — range covers contextual anchor span', () => {
     // OpString: `Protocol {--O--}verview`
     // Body line: "Protocol verview and Practical Guidelines" (O was deleted → not in body)
     // contextBefore="Protocol ", contextAfter="verview"
-    // The deletion point is between "Protocol " and "verview"
+    // After Plan 1 Task 2 bug 5 fix: the range covers "Protocol verview" (the anchor span)
+    // and deletionSeamOffset = "Protocol ".length = 9.
     const l3 = [
       '# Protocol Overview and Practical Guidelines',
       '',
@@ -779,9 +790,11 @@ describe('contextual edit-op format parsing', () => {
     expect(del).toBeDefined();
     expect(del!.type).toBe(ChangeType.Deletion);
     expect(del!.originalText).toBe('O');
-    // Deletion is zero-width, positioned after "Protocol " (col 9)
-    expect(del!.range.start).toBe(del!.range.end); // zero-width
-    expect(del!.range.start).toBe(LINE3_OFFSET + 9);
+    // Non-zero range covering "Protocol verview" on line 3
+    expect(del!.range.start).toBe(LINE3_OFFSET);
+    expect(del!.range.end).toBe(LINE3_OFFSET + 'Protocol verview'.length);
+    // Seam = contextBefore.length = "Protocol ".length = 9
+    expect(del!.deletionSeamOffset).toBe('Protocol '.length);
   });
 
   it('contextual substitution resolution — range covers newText at correct position', () => {

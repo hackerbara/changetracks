@@ -13,6 +13,7 @@
 
 import type { ChangeNode } from '@changedown/core';
 import { ChangeStatus } from '@changedown/core';
+import type { View } from '@changedown/core/host';
 import { typeLabel, typeLabelCapitalized } from './visual-semantics';
 
 // ── Pure data types ──────────────────────────────────────────────────
@@ -27,10 +28,6 @@ export interface ThreadData {
     label: string;
     comments: CommentData[];
 }
-
-// ── View modes where threads are hidden (clean preview) ──────────────
-
-const THREAD_HIDDEN_VIEW_MODES = new Set(['settled', 'raw']);
 
 // ── Pure builders ────────────────────────────────────────────────────
 
@@ -109,15 +106,15 @@ export function buildCommentsForChange(change: ChangeNode): CommentData[] {
  *
  * Mirrors ChangeComments.refreshThreads() filtering logic:
  * - Skips L0 changes (no footnote metadata)
- * - Returns empty array in 'settled' or 'raw' view modes (clean preview)
+ * - Returns empty array in 'decided' or 'raw' view modes (clean preview)
  *
  * @param changes  Parsed ChangeNode array.
- * @param viewMode Optional view mode. When 'settled' or 'raw', returns
- *                 empty array (threads hidden in Final/Original preview).
+ * @param view     Optional View. When projection is 'decided' or 'original',
+ *                 returns empty array (threads hidden in Decided/Original).
+ *                 Raw ('none') keeps threads — source offsets match.
  */
-export function buildThreadDataForChanges(changes: ChangeNode[], viewMode?: string): ThreadData[] {
-    // Final and Original modes hide all lifecycle surfaces
-    if (viewMode && THREAD_HIDDEN_VIEW_MODES.has(viewMode)) {
+export function buildThreadDataForChanges(changes: ChangeNode[], view?: View): ThreadData[] {
+    if (view && (view.projection === 'decided' || view.projection === 'original')) {
         return [];
     }
 

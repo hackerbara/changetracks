@@ -819,7 +819,7 @@ describe('handleProposeChange', () => {
       ].join('\n');
       await fs.writeFile(filePath, content);
 
-      // Agent reads settled view (sees "Hello new world"), then proposes:
+      // Agent reads final view (sees "Hello new world"), then proposes:
       const result = await handleProposeChange(
         {
           file: filePath,
@@ -834,8 +834,9 @@ describe('handleProposeChange', () => {
 
       expect(result.isError).toBeUndefined();
       const fileAfter = await fs.readFile(filePath, 'utf-8');
-      // The old accepted CriticMarkup delimiters should be settled (removed)
-      expect(fileAfter).not.toContain('{~~old~>new~~}');
+      // The old accepted CriticMarkup delimiters should be settled (removed from body).
+      // L3 audit trail stores {~~...~~} in footnote edit-op line; check inline anchor form is absent.
+      expect(fileAfter).not.toContain('{~~old~>new~~}[^cn-1]');
       // New proposal should exist wrapping the settled text "new"
       expect(fileAfter).toContain('{~~new~>newer~~}');
       // The accepted footnote definition should still be present (audit trail)
@@ -853,7 +854,7 @@ describe('handleProposeChange', () => {
       ].join('\n');
       await fs.writeFile(filePath, content);
 
-      // Agent reads settled view (sees "Hello inserted world"), then proposes to change "inserted world":
+      // Agent reads final view (sees "Hello inserted world"), then proposes to change "inserted world":
       const result = await handleProposeChange(
         {
           file: filePath,
@@ -868,8 +869,9 @@ describe('handleProposeChange', () => {
 
       expect(result.isError).toBeUndefined();
       const fileAfter = await fs.readFile(filePath, 'utf-8');
-      // The old accepted insertion markup should be settled (no {++ delimiters)
-      expect(fileAfter).not.toContain('{++inserted++}');
+      // The old accepted insertion markup should be settled (inline anchor form absent from body).
+      // L3 audit trail stores {++...++} in footnote edit-op line.
+      expect(fileAfter).not.toContain('{++inserted++}[^cn-1]');
       // New proposal wrapping settled text
       expect(fileAfter).toContain('{~~inserted world~>modified world~~}');
       // The accepted footnote definition should still be present
@@ -903,8 +905,8 @@ describe('handleProposeChange', () => {
 
       expect(result.isError).toBeUndefined();
       const fileAfter = await fs.readFile(filePath, 'utf-8');
-      // Old markup settled: no CriticMarkup delimiters for cn-1
-      expect(fileAfter).not.toContain('{~~old~>new~~}');
+      // Old markup settled from body: inline anchor form absent (L3 audit trail in footnote is fine).
+      expect(fileAfter).not.toContain('{~~old~>new~~}[^cn-1]');
       // New proposal created on settled text
       expect(fileAfter).toContain('{~~new~>newer~~}');
       // The settled cn-1 ref should still be adjacent to the markup (inline anchor preserved)
@@ -941,7 +943,7 @@ describe('handleProposeChange', () => {
 
       // Record settled-view hashes so compact path can resolve coordinates.
       // Hashes must be 2-char lowercase hex (the format parseAt requires).
-      state.recordAfterRead(filePath, 'settled', [
+      state.recordAfterRead(filePath, 'decided', [
         { line: 1, raw: 'a1', current: 'a1', currentView: 'a1', rawLineNum: 1 },
         { line: 2, raw: 'b2', current: 'c3', currentView: 'd4', rawLineNum: 2 },
       ], content);
@@ -960,9 +962,11 @@ describe('handleProposeChange', () => {
 
       expect(result.isError).toBeUndefined();
       const fileAfter = await fs.readFile(filePath, 'utf-8');
-      // Old accepted insertion markup should be settled
-      expect(fileAfter).not.toContain('{++inserted++}');
-      // New proposal should exist
+      const lines = fileAfter.split('\n');
+      // First content line (after tracking header): old accepted insertion markup should be settled
+      // Note: hashline annotations in footnotes may still reference the original raw content
+      expect(lines[1]).not.toContain('{++inserted++}');
+      // New proposal should exist in the inline content
       expect(fileAfter).toContain('{~~inserted~>modified~~}');
       // Accepted footnote preserved
       expect(fileAfter).toContain('[^cn-1]: @alice');
@@ -979,7 +983,7 @@ describe('handleProposeChange', () => {
       ].join('\n');
       await fs.writeFile(filePath, content);
 
-      state.recordAfterRead(filePath, 'settled', [
+      state.recordAfterRead(filePath, 'decided', [
         { line: 1, raw: 'a1', current: 'a1', currentView: 'a1', rawLineNum: 1 },
         { line: 2, raw: 'b2', current: 'c3', currentView: 'd4', rawLineNum: 2 },
       ], content);
@@ -998,7 +1002,9 @@ describe('handleProposeChange', () => {
 
       expect(result.isError).toBeUndefined();
       const fileAfter = await fs.readFile(filePath, 'utf-8');
-      expect(fileAfter).not.toContain('{~~old~>new~~}');
+      const lines2 = fileAfter.split('\n');
+      // Inline content should not have old markup; hashline annotations in footnotes may reference it
+      expect(lines2[1]).not.toContain('{~~old~>new~~}');
       expect(fileAfter).toContain('{~~new~>newer~~}');
       expect(fileAfter).toContain('[^cn-1]: @alice');
     });
@@ -1045,7 +1051,7 @@ describe('handleProposeChange', () => {
       ].join('\n');
       await fs.writeFile(filePath, content);
 
-      state.recordAfterRead(filePath, 'settled', [
+      state.recordAfterRead(filePath, 'decided', [
         { line: 1, raw: 'a1', current: 'a1', currentView: 'a1', rawLineNum: 1 },
         { line: 2, raw: 'b2', current: 'c3', currentView: 'd4', rawLineNum: 2 },
       ], content);

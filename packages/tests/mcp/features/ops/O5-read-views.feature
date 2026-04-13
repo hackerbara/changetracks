@@ -24,8 +24,8 @@ Feature: Read tracked file views
     Then the output contains both inline CriticMarkup and full footnotes
     And the output format is identical to content view
 
-  Scenario: Settled view shows accepted-applied, pending-reverted text
-    When I call read_tracked_file with view = "settled"
+  Scenario: Final view shows accepted-applied, pending-reverted text
+    When I call read_tracked_file with view = "final"
     Then the output shows "ALPHA" (accepted substitution applied)
     And "gamma" does NOT appear (replaced by ALPHA... wait, gamma is a different change)
     And "gamma" appears (pending substitution reverted to original)

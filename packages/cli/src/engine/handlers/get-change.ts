@@ -198,39 +198,29 @@ export async function handleGetChange(
     const typeStr = TYPE_MAP[change.type];
     const statusStr = change.status.toLowerCase() as GetChangeResponse['status'];
 
-    let footnoteAuthor = '';
-    let footnoteDate = '';
-    let rawFootnoteText = '';
-    let reasoning: string | null = null;
-    let discussionCount = 0;
-    const approvals: string[] = [];
-    const rejections: string[] = [];
-    const requestChanges: string[] = [];
+    const meta = change.metadata;
+    const footnoteAuthor = meta?.author ?? '';
+    const footnoteDate = meta?.date ?? '';
+    const discussionCount = meta?.discussion?.length ?? 0;
+    const reasoning: string | null = meta?.discussion?.[0]?.text ?? null;
+    const approvals: string[] = (meta?.approvals ?? []).map((a) => a.author);
+    const rejections: string[] = (meta?.rejections ?? []).map((a) => a.author);
+    const requestChanges: string[] = (meta?.requestChanges ?? []).map((a) => a.author);
 
-    const block = findFootnoteBlock(lines, changeId);
-    if (block) {
-      rawFootnoteText = lines.slice(block.headerLine, block.blockEnd + 1).join('\n');
-      const header = parseFootnoteHeader(lines[block.headerLine]);
-      if (header) {
-        footnoteAuthor = header.author;
-        footnoteDate = header.date;
+    let rawFootnoteText = '';
+    if (includeRawFootnote) {
+      const block = findFootnoteBlock(lines, changeId);
+      if (block) {
+        rawFootnoteText = lines.slice(block.headerLine, block.blockEnd + 1).join('\n');
       }
-      const meta = change.metadata;
-      if (meta?.discussion?.length) {
-        discussionCount = meta.discussion.length;
-        reasoning = meta.discussion[0].text ?? null;
-      }
-      meta?.approvals?.forEach((a) => approvals.push(a.author));
-      meta?.rejections?.forEach((a) => rejections.push(a.author));
-      meta?.requestChanges?.forEach((a) => requestChanges.push(a.author));
     }
 
     const participantsSet = new Set<string>();
-    if (change.metadata?.author) participantsSet.add(change.metadata.author);
-    change.metadata?.discussion?.forEach((d) => participantsSet.add(d.author));
-    change.metadata?.approvals?.forEach((a) => participantsSet.add(a.author));
-    change.metadata?.rejections?.forEach((a) => participantsSet.add(a.author));
-    change.metadata?.requestChanges?.forEach((a) => participantsSet.add(a.author));
+    if (meta?.author) participantsSet.add(meta.author);
+    meta?.discussion?.forEach((d) => participantsSet.add(d.author));
+    meta?.approvals?.forEach((a) => participantsSet.add(a.author));
+    meta?.rejections?.forEach((a) => participantsSet.add(a.author));
+    meta?.requestChanges?.forEach((a) => participantsSet.add(a.author));
     const participants = [...participantsSet];
 
     const dotIndex = changeId.lastIndexOf('.');

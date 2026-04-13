@@ -1,11 +1,11 @@
 import type {
   EditorHost, TypedLspConnection, DecorationPort, PreviewPort,
-  Disposable, DocumentState, DocumentSnapshot, ViewMode,
+  Disposable, DocumentState, DocumentSnapshot,
   ContentChange, RangeEdit, ReviewResult, ChangeNode, Event,
   FormatAdapter, ParseAdapter, DisplayOptions, Projection,
   SettlementConfig, ApplyEditResult, View, BuiltinView,
 } from './types.js';
-import { EventEmitter, VIEW_MODE_PRESETS, VIEW_PRESETS } from './types.js';
+import { EventEmitter, VIEW_PRESETS } from './types.js';
 import { DocumentStateManager } from './document-state-manager.js';
 import { DecorationScheduler } from './decoration-scheduler.js';
 import { TrackingService, type TrackingServiceConfig } from './services/tracking-service.js';
@@ -16,7 +16,9 @@ import { rangeToOffsetBatch, offsetToRange } from './edit-convert.js';
 import { type CrystallizedEdit } from './pending-edit-manager.js';
 import { type DocumentUri, UriMap, normalizeUri } from './uri.js';
 import { FormatService } from './format-service.js';
-import { ProjectionService } from './projection-service.js';
+import { parseL2, parseL3 } from '../operations/parse-document.js';
+import type { Format, Document, L2Document, L3Document } from '../model/document.js';
+import { LSP_METHOD } from './lsp-methods.js';
 
 export interface ControllerConfig {
   readonly host: EditorHost;
@@ -25,9 +27,9 @@ export interface ControllerConfig {
   readonly lsp?: TypedLspConnection;
   readonly formatAdapter: FormatAdapter;
   readonly parseAdapter?: ParseAdapter;
-  readonly defaultFormat?: 'L2' | 'L3';
+  readonly defaultFormat?: Format;
   readonly defaultDisplay?: DisplayOptions;
-  /** Initial view configuration. Defaults to VIEW_PRESETS.review. */
+  /** Initial view configuration. Defaults to VIEW_PRESETS.working. */
   readonly defaultView?: View;
   readonly hooks?: ControllerHooks;
   readonly settlement?: SettlementConfig;
@@ -55,50 +57,63 @@ export class BaseController implements Disposable {
   readonly coherenceService: CoherenceService;
   readonly scheduler: DecorationScheduler;
   readonly formatService: FormatService;
-  readonly projectionService: ProjectionService;
 
   private activeUri: DocumentUri | undefined = undefined;
   private _defaultView: View;
   private _viewOverrides = new UriMap<View>();
+  /**
+   * User-applied display overrides. Merged over the preset's display to
+   * build the effective view. Populated from construction-time defaultDisplay
+   * and subsequent setDisplay calls.
+   *
+   * A field set to `undefined` via setDisplay is DELETED from this object
+   * rather than stored — consumers can walk a preference back to "use preset
+   * default" with setDisplay({field: undefined}).
+   */
+  private _userDisplay: Partial<DisplayOptions> = {};
   private lastCursorOffset = new UriMap<number>();
+  /**
+   * URIs currently in an in-flight format conversion. Guards pushSnapshot
+   * against rendering stale state while convertFormat's critical section
+   * is between host.replaceDocument resolving and state.text being updated.
+   */
+  private _convertingUris = new Set<string>();
   private disposables: Disposable[] = [];
-
-  private readonly _onDidChangeViewMode = new EventEmitter<ViewMode>();
-  readonly onDidChangeViewMode: Event<ViewMode> = this._onDidChangeViewMode.event;
 
   private readonly _onDidChangeView = new EventEmitter<View>();
   readonly onDidChangeView: Event<View> = this._onDidChangeView.event;
+
+  private readonly _onDidConvertFormat = new EventEmitter<{
+    uri: string;
+    from: Format;
+    to: Format;
+    document: Document;
+  }>();
+  readonly onDidConvertFormat: Event<{
+    uri: string;
+    from: Format;
+    to: Format;
+    document: Document;
+  }> = this._onDidConvertFormat.event;
+
+  private readonly _onDidConvertFormatError = new EventEmitter<{
+    uri: string;
+    error: unknown;
+  }>();
+  readonly onDidConvertFormatError: Event<{
+    uri: string;
+    error: unknown;
+  }> = this._onDidConvertFormatError.event;
 
   private readonly host: EditorHost;
   private readonly lsp?: TypedLspConnection;
   private readonly decorationPort: DecorationPort;
   private readonly previewPort?: PreviewPort;
-  private readonly defaultFormat: 'L2' | 'L3';
+  private readonly defaultFormat: Format;
   private readonly hooks?: ControllerHooks;
   private readonly parseAdapter?: ParseAdapter;
 
-  /** @deprecated Use getView() instead. Derives ViewMode from current view for backward compat. */
-  get viewMode(): ViewMode {
-    const view = this.getView(this.activeUri);
-    switch (view.projection) {
-      case 'decided': return 'settled';
-      case 'original': return 'raw';
-      case 'none': return 'raw';
-      default: return view.display.delimiters === 'show' ? 'review' : 'changes';
-    }
-  }
-
   get defaultView(): View { return this._defaultView; }
-
-  get showDelimiters(): boolean {
-    const view = this.getView(this.activeUri);
-    return view.display.delimiters === 'show';
-  }
-
-  get projection(): Projection {
-    const view = this.getView(this.activeUri);
-    return view.projection;
-  }
 
   /** Get the active view for a URI, falling back to the default. */
   getView(uri?: DocumentUri): View {
@@ -110,21 +125,26 @@ export class BaseController implements Disposable {
 
   /** Set the active view. Pass a BuiltinView name or a custom View object. */
   setView(preset: BuiltinView | View, uri?: DocumentUri): void {
-    const view = typeof preset === 'string' ? VIEW_PRESETS[preset] : preset;
+    const basePreset = typeof preset === 'string' ? VIEW_PRESETS[preset] : preset;
+    const effectiveView: View = {
+      ...basePreset,
+      display: { ...basePreset.display, ...this._userDisplay },
+    };
     if (uri) {
-      this._viewOverrides.set(uri, view);
+      this._viewOverrides.set(uri, effectiveView);
     } else {
-      this._defaultView = view;
+      this._defaultView = effectiveView;
     }
     if (this.activeUri) {
-      // Translate View name → ViewMode for LSP protocol compatibility
-      const lspMode = view.projection === 'decided' ? 'settled'
-        : view.projection === 'original' ? 'raw'
-        : view.display.delimiters === 'show' ? 'review' : 'changes';
-      this.lsp?.sendViewMode(this.activeUri, lspMode as ViewMode);
+      const lspName = effectiveView.name as BuiltinView;
+      this.lsp?.sendViewMode(this.activeUri, lspName);
     }
-    this.pushSnapshotForActive();
-    this._onDidChangeView.fire(view);
+    if (uri) {
+      this.pushSnapshot(uri);
+    } else {
+      this.pushSnapshotForAllUris();
+    }
+    this._onDidChangeView.fire(effectiveView);
   }
 
   constructor(config: ControllerConfig) {
@@ -135,11 +155,20 @@ export class BaseController implements Disposable {
     this.defaultFormat = config.defaultFormat ?? 'L2';
     this.hooks = config.hooks;
     this.parseAdapter = config.parseAdapter;
-    let defaultView = config.defaultView ?? VIEW_PRESETS.review;
+    // Seed _userDisplay from config.defaultDisplay
     if (config.defaultDisplay) {
-      defaultView = { ...defaultView, display: { ...defaultView.display, ...config.defaultDisplay } };
+      for (const [k, v] of Object.entries(config.defaultDisplay)) {
+        if (v !== undefined) {
+          (this._userDisplay as any)[k] = v;
+        }
+      }
     }
-    this._defaultView = defaultView;
+    // Build initial _defaultView: preset with user overrides layered over
+    const basePreset = config.defaultView ?? VIEW_PRESETS.working;
+    this._defaultView = {
+      ...basePreset,
+      display: { ...basePreset.display, ...this._userDisplay },
+    };
 
     this.trackingService = new TrackingService(config.tracking);
     this.reviewService = new ReviewService(
@@ -149,7 +178,6 @@ export class BaseController implements Disposable {
     this.coherenceService = new CoherenceService();
     this.scheduler = new DecorationScheduler((uri) => this.pushSnapshot(uri));
     this.formatService = new FormatService(config.formatAdapter);
-    this.projectionService = new ProjectionService();
 
     // Subscribe to local TrackingService crystallization events
     this.disposables.push(
@@ -170,7 +198,7 @@ export class BaseController implements Disposable {
 
     // Wire EditorHost events
     this.disposables.push(
-      this.host.onDidOpenDocument((e) => this.handleOpenDocument(e.uri, e.text)),
+      this.host.onDidOpenDocument((e) => { void this.handleOpenDocument(e.uri, e.text); }),
       this.host.onDidCloseDocument((e) => this.handleCloseDocument(e.uri)),
       this.host.onDidSaveDocument((e) => {
         this.trackingService.handleSave(e.uri);
@@ -178,7 +206,7 @@ export class BaseController implements Disposable {
       }),
       this.host.onDidChangeContent((e) => this.handleContentChange(e)),
       this.host.onDidChangeActiveDocument((e) => {
-        if (e && e.uri !== this.activeUri) this.handleOpenDocument(e.uri, e.text);
+        if (e && e.uri !== this.activeUri) { void this.handleOpenDocument(e.uri, e.text); }
       }),
       this.host.onDidChangeCursorPosition((e) => {
         const prev = this.lastCursorOffset.get(e.uri as DocumentUri);
@@ -189,7 +217,7 @@ export class BaseController implements Disposable {
             this.stateManager.getState(e.uri)?.text ?? '');
         }
         this.navigationService.updateCursorContext(e.uri, e.offset);
-        if (this.showDelimiters) this.scheduler.schedule(e.uri);
+        if (this.getView(this.activeUri).display.delimiters === 'show') this.scheduler.schedule(e.uri);
       }),
     );
 
@@ -197,8 +225,43 @@ export class BaseController implements Disposable {
     if (this.lsp) {
       this.disposables.push(
         this.lsp.onDecorationData((data) => {
-          this.stateManager.setCachedDecorations(data.uri, data.changes, data.documentVersion);
-          this.scheduler.schedule(data.uri);
+          // Reconciliation-only path: in hybrid mode the controller's local
+          // parse (via parseAdapter) is authoritative for state.cachedChanges.
+          // The server's push is a consistency check, not a state update.
+          //
+          // Rules:
+          //  - If no parseAdapter is wired, fall back to authoritative behavior
+          //    (setCachedDecorations) — supports pure LSP-driven consumers.
+          //  - If parseAdapter IS wired and documentVersion matches local
+          //    state.version, compare change-ID sets. Drift → one warning per
+          //    event. Never overwrite local state.
+          //  - If documentVersion does NOT match local state.version, skip
+          //    silently — this is a normal race window.
+          //  - The hook-callback path (hooks.onDecorationData) is always
+          //    invoked so side-channel consumers (auto-fold, dev signal)
+          //    keep receiving. They read autoFoldLines, not data.changes.
+          if (this.parseAdapter) {
+            const state = this.stateManager.getState(data.uri);
+            if (state && state.version === data.documentVersion) {
+              const localIds = new Set(state.cachedChanges.map(c => c.id));
+              const serverIds = new Set(data.changes.map(c => c.id));
+              const missing = [...localIds].filter(id => !serverIds.has(id));
+              const extra = [...serverIds].filter(id => !localIds.has(id));
+              if (missing.length > 0 || extra.length > 0) {
+                // eslint-disable-next-line no-console
+                console.warn(
+                  `[reconciliation] URI=${data.uri} version=${data.documentVersion} ` +
+                  `local=${localIds.size} server=${serverIds.size} ` +
+                  `drift={missing: [${missing.join(',')}], extra: [${extra.join(',')}]}`
+                );
+              }
+            }
+            // Never overwrite local state in hybrid mode.
+          } else {
+            // No parseAdapter — authoritative LSP behavior preserved.
+            this.stateManager.setCachedDecorations(data.uri, data.changes, data.documentVersion);
+            this.scheduler.schedule(data.uri);
+          }
           this.hooks?.onDecorationData?.(data);
         }),
         this.lsp.onPendingEditFlushed((data) => this.handlePendingEditFlushed(data)),
@@ -225,8 +288,8 @@ export class BaseController implements Disposable {
 
   // --- Public API ---
 
-  openDocument(uri: string, text?: string): void {
-    this.handleOpenDocument(uri, text);
+  async openDocument(uri: string, text?: string): Promise<void> {
+    await this.handleOpenDocument(uri, text);
   }
 
   closeDocument(uri: string): void {
@@ -241,53 +304,49 @@ export class BaseController implements Disposable {
     return this.activeUri;
   }
 
-  /** @deprecated Use setView() instead. */
-  setProjection(projection: Projection): void {
-    this._defaultView = { ...this._defaultView, projection };
-    this.pushSnapshotForActive();
-  }
-
   setDisplay(partial: Partial<DisplayOptions>, uri?: DocumentUri): void {
+    for (const [k, v] of Object.entries(partial)) {
+      if (v === undefined) {
+        delete (this._userDisplay as any)[k];
+      } else {
+        (this._userDisplay as any)[k] = v;
+      }
+    }
     const current = this.getView(uri);
-    const merged: View = { ...current, display: { ...current.display, ...partial } };
+    const basePreset: View = VIEW_PRESETS[current.name as BuiltinView] ?? {
+      name: current.name,
+      projection: current.projection,
+      display: {},
+    };
+    const effectiveView: View = {
+      ...basePreset,
+      display: { ...basePreset.display, ...this._userDisplay },
+    };
     if (uri) {
-      this._viewOverrides.set(uri, merged);
+      this._viewOverrides.set(uri, effectiveView);
     } else {
-      this._defaultView = merged;
+      this._defaultView = effectiveView;
     }
-    // Update LSP viewMode when display changes affect the derived mode
+    // Update LSP viewMode when display changes
     if (this.activeUri) {
-      const lspMode = merged.projection === 'decided' ? 'settled'
-        : merged.projection === 'original' || merged.projection === 'none' ? 'raw'
-        : merged.display.delimiters === 'show' ? 'review' : 'changes';
-      this.lsp?.sendViewMode(this.activeUri, lspMode as ViewMode);
+      const lspName = effectiveView.name as BuiltinView;
+      this.lsp?.sendViewMode(this.activeUri, lspName);
     }
-    this.pushSnapshotForActive();
+    this._onDidChangeView.fire(effectiveView);
+    if (uri) {
+      this.pushSnapshot(uri);
+    } else {
+      this.pushSnapshotForAllUris();
+    }
   }
 
-  setFormatPreference(uri: string, format: 'L2' | 'L3'): Promise<void> {
+  setFormatPreference(uri: string, format: Format): Promise<void> {
     this.formatService.setPreferredFormat(uri, format);
     const state = this.stateManager.getState(normalizeUri(uri));
     if (state && state.format !== format) {
-      return this.convertFormat(uri, state.text, format);
+      return this.convertFormat(uri, format);
     }
     return Promise.resolve();
-  }
-
-  /** @deprecated Use setView() instead. */
-  setViewMode(mode: ViewMode): void {
-    const preset = VIEW_MODE_PRESETS[mode];
-    this.setView({
-      name: mode,
-      projection: preset.projection,
-      display: { ...this._defaultView.display, ...preset.display },
-    });
-    this._onDidChangeViewMode.fire(mode);
-  }
-
-  /** @deprecated Use setDisplay({ delimiters }) instead. */
-  setShowDelimiters(show: boolean): void {
-    this.setDisplay({ delimiters: show ? 'show' : 'hide' });
   }
 
   invalidateRendering(uri: string): void {
@@ -370,23 +429,28 @@ export class BaseController implements Disposable {
     this.navigationService.dispose();
     this.coherenceService.dispose();
     this.formatService.dispose();
-    this.projectionService.dispose();
     this.stateManager.dispose();
-    this._onDidChangeViewMode.dispose();
     this._onDidChangeView.dispose();
+    this._onDidConvertFormat.dispose();
+    this._onDidConvertFormatError.dispose();
   }
 
   // --- Private handlers ---
 
   /** Parse locally and cache results. No-op when parseAdapter is absent. */
-  private localParseAndCache(uri: string, text: string, version: number, format?: 'L2' | 'L3'): void {
+  private localParseAndCache(uri: string, text: string, version: number, format?: Format): void {
     if (!this.parseAdapter) return;
-    const fmt = format ?? this.stateManager.getState(uri)?.format ?? 'L2';
+    const state = this.stateManager.getState(uri);
+    const fmt = format ?? state?.format ?? 'L2';
     const changes = this.parseAdapter.parse(uri, text, fmt);
     this.stateManager.setCachedDecorations(uri, changes, version);
+    // Populate typed Document on state for Plan 4 (footnote block dimming).
+    if (state) {
+      state.document = fmt === 'L2' ? parseL2(text) : parseL3(text);
+    }
   }
 
-  private handleOpenDocument(uri: string, text?: string): void {
+  private async handleOpenDocument(uri: string, text?: string): Promise<void> {
     const docText = text ?? this.host.getDocumentText(uri);
     this.hooks?.onWillOpenDocument?.(uri);
     const isNew = !this.stateManager.getState(uri);
@@ -395,14 +459,12 @@ export class BaseController implements Disposable {
     // Detect format
     state.format = this.formatService.getDetectedFormat(uri, docText);
 
+    // Pre-parse at detected format so decorations are ready if conversion is not needed
     this.localParseAndCache(uri, docText, state.version, state.format);
 
-    // Check if format preference differs → convert
+    // Decide whether to convert
     const preferred = this.defaultFormat ?? this.formatService.getPreferredFormat(uri);
-    if (preferred && state.format !== preferred) {
-      // Defer async conversion — don't block openDocument
-      void this.convertFormat(uri, docText, preferred);
-    }
+    const willConvert = !!(preferred && state.format !== preferred);
 
     this.activeUri = uri as DocumentUri;
     if (isNew) this.lsp?.sendDidOpen(uri, docText);
@@ -410,7 +472,21 @@ export class BaseController implements Disposable {
     // This disables the server's PEM for this document, preventing double-crystallization.
     // handlePendingEditFlushed remains wired as a fallback for server-generated edits.
     if (isNew) this.lsp?.sendSetDocumentState(uri, { tracking: { enabled: false } });
-    this.pushSnapshot(uri);
+
+    if (willConvert) {
+      // Synchronous promotion — do NOT push a snapshot yet. Run conversion
+      // and let convertFormat push the authoritative first snapshot after
+      // the buffer swap lands. The user never sees a transient L2 render.
+      // convertFormat never rethrows — errors are signaled via
+      // onDidConvertFormatError. On failure, convertFormat's rollback
+      // restores state and re-parses, but does NOT push a snapshot.
+      // Subscribe to onDidConvertFormatError to handle conversion failures.
+      await this.convertFormat(uri, preferred!);
+    } else {
+      // No conversion — push the initial snapshot normally.
+      this.pushSnapshot(uri);
+    }
+
     this.hooks?.onDidOpenDocument?.(uri, state);
   }
 
@@ -419,7 +495,6 @@ export class BaseController implements Disposable {
     this.lsp?.sendDidClose(uri);
     this.stateManager.removeState(uri);
     this.formatService.remove(uri);
-    this.projectionService.invalidate(uri);
     this.decorationPort.clear(uri);
     this.previewPort?.clear(uri);
     this.lastCursorOffset.delete(uri as DocumentUri);
@@ -432,6 +507,11 @@ export class BaseController implements Disposable {
     changes: ContentChange[]; isEcho: boolean;
   }): void {
     if (event.isEcho) return;
+    // Swallow content changes during format conversion. Defense-in-depth:
+    // the host's replaceDocument registers the echo (caught above), but any
+    // non-echo content event mid-conversion is also swallowed so
+    // convertFormat's state updates aren't clobbered.
+    if (this._convertingUris.has(event.uri)) return;
     // Use pre-computed offsets when the host provides them (VS Code does natively).
     // Fall back to range→offset scan for hosts that don't (website, tests).
     let offsetChanges;
@@ -547,11 +627,41 @@ export class BaseController implements Disposable {
     }
   }
 
-  private pushSnapshotForActive(): void {
-    if (this.activeUri) this.pushSnapshot(this.activeUri);
+  /**
+   * Push a snapshot for every URI currently held in state.
+   * Used by setDisplay / setView when no URI is explicit.
+   * Per-URI errors are caught and logged so one bad URI does not halt fan-out.
+   */
+  private pushSnapshotForAllUris(): void {
+    for (const uri of this.stateManager.getAllUris()) {
+      try {
+        this.pushSnapshot(uri);
+      } catch (err) {
+        // Per-URI failure should not halt the fan-out.
+        // eslint-disable-next-line no-console
+        console.warn(`[BaseController.pushSnapshotForAllUris] ${uri}: ${err}`);
+      }
+    }
   }
 
+  /**
+   * Push a snapshot to decoration + preview ports. Guarded against the
+   * in-flight format conversion critical section — pushSnapshot early-returns
+   * when _convertingUris contains the URI. convertFormat calls
+   * pushSnapshotUnguarded directly at the end of its critical section to
+   * publish the authoritative first render at the new format.
+   */
   private pushSnapshot(uri: string): void {
+    if (this._convertingUris.has(uri)) return;
+    this.pushSnapshotUnguarded(uri);
+  }
+
+  /**
+   * Push a snapshot without the _convertingUris guard. Bypasses the guard
+   * so callers inside the critical section (e.g., convertFormat) can push
+   * the authoritative first render after state is updated.
+   */
+  private pushSnapshotUnguarded(uri: string): void {
     const state = this.stateManager.getState(uri);
     if (!state) return;
 
@@ -565,23 +675,119 @@ export class BaseController implements Disposable {
       format: state.format,
       view,
       cursorOffset: this.lastCursorOffset.get(uri as DocumentUri),
+      document: state.document,
     };
 
     this.decorationPort.update(snapshot);
     this.previewPort?.update(snapshot);
   }
 
-  private async convertFormat(uri: string, text: string, targetFormat: 'L2' | 'L3'): Promise<void> {
-    const result = targetFormat === 'L3'
-      ? await this.formatService.promoteToL3(uri, text)
-      : await this.formatService.demoteToL2(uri, text);
-    // Apply the converted text via host
-    // For now, just update the state — full implementation in a future task
-    const state = this.stateManager.getState(normalizeUri(uri));
-    if (state) {
-      state.text = result.convertedText;
+  /**
+   * Durable format conversion for a document the controller already knows about.
+   *
+   * Orchestration:
+   *  1. Parse current state.text into typed Document
+   *  2. Call formatService.promote/demote — typed in, typed out
+   *  3. Serialize target Document to text
+   *  4. Pre-cache the new parse so decorations are ready BEFORE the buffer swap
+   *  5. Open LSP batch bracket
+   *  6. Call host.replaceDocument — host suppresses echo via registerEcho
+   *  7. Update state.text, state.format, state.version, state.document
+   *  8. Push authoritative snapshot (unguarded)
+   *  9. Fire onDidConvertFormat event
+   *  On error: roll back the pre-cache, fire onDidConvertFormatError
+   *  Finally: release LSP bracket, delete _convertingUris entry
+   */
+  async convertFormat(uri: string, targetFormat: Format): Promise<void> {
+    const normalized = normalizeUri(uri);
+    const state = this.stateManager.getState(normalized);
+    if (!state) return;
+    if (state.format === targetFormat) return;
+    if (this._convertingUris.has(normalized)) return;
+
+    this._convertingUris.add(normalized);
+
+    // Save previous state for rollback on failure
+    const previousText = state.text;
+    const previousFormat = state.format;
+    const previousVersion = state.version;
+    const previousDocument = state.document;
+
+    let lspBracketOpen = false;
+    try {
+      // 1. Parse current text into typed document
+      const sourceDoc: Document = state.format === 'L2'
+        ? this.formatService.parseL2(state.text)
+        : this.formatService.parseL3(state.text);
+
+      // 2. Typed conversion — typed in, typed out
+      const targetDoc: Document = targetFormat === 'L3'
+        ? await this.formatService.promote(sourceDoc as L2Document, { uri: normalized })
+        : await this.formatService.demote(sourceDoc as L3Document, { uri: normalized });
+
+      // 3. Serialize only at the buffer boundary
+      const targetText = targetFormat === 'L3'
+        ? this.formatService.serializeL3(targetDoc as L3Document)
+        : this.formatService.serializeL2(targetDoc as L2Document);
+
+      // 4. Pre-cache the new parse so decorations are ready BEFORE the swap
+      const newVersion = previousVersion + 1;
+      this.localParseAndCache(normalized, targetText, newVersion, targetFormat);
+
+      // 5. LSP batch bracket
+      this.lsp?.sendNotification(LSP_METHOD.BATCH_EDIT_START, { uri: normalized });
+      lspBracketOpen = true;
+
+      // 6. Ask the host to replace the buffer
+      if (!this.host.replaceDocument) {
+        throw new Error(
+          `Host does not implement replaceDocument; cannot perform format conversion for ${uri}`,
+        );
+      }
+      const result = await this.host.replaceDocument(normalized, targetText, {
+        reason: 'format-conversion',
+        from: previousFormat,
+        to: targetFormat,
+      });
+      if (!result.applied) {
+        throw new Error(`replaceDocument rejected for ${uri}`);
+      }
+
+      // 7. Update state to match the new reality
+      state.text = result.text;  // use the host's verified post-swap text
       state.format = targetFormat;
+      state.version = result.version;
+      state.document = targetDoc;
+
+      // 8. Push authoritative snapshot (unguarded) — use the conversion URI
+      //    directly, not activeUri, because setFormatPreference may convert a
+      //    non-active document.
+      this.pushSnapshotUnguarded(normalized);
+
+      // 9. Fire event
+      this._onDidConvertFormat.fire({
+        uri: normalized,
+        from: previousFormat,
+        to: targetFormat,
+        document: targetDoc,
+      });
+    } catch (err) {
+      // Rollback: re-parse the original text so the decoration cache is coherent
+      state.text = previousText;
+      state.format = previousFormat;
+      state.version = previousVersion;
+      state.document = previousDocument;
+      this.localParseAndCache(normalized, previousText, previousVersion, previousFormat);
+      this._onDidConvertFormatError.fire({ uri: normalized, error: err });
+      this.pushSnapshotUnguarded(normalized);
+      // Do NOT rethrow — convertFormat is awaited from handleOpenDocument,
+      // so a throw would reject the open promise. Callers handle errors via
+      // onDidConvertFormatError subscription.
+    } finally {
+      if (lspBracketOpen) {
+        this.lsp?.sendNotification(LSP_METHOD.BATCH_EDIT_END, { uri: normalized });
+      }
+      this._convertingUris.delete(normalized);
     }
-    this.pushSnapshotForActive();
   }
 }

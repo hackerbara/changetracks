@@ -342,7 +342,7 @@ When(
     const state = getState(this);
     state.lastResponse = await callTool(state, 'read_tracked_file', {
       file: state.testFilePath,
-      view: 'review',
+      view: 'working',
     });
   },
 );

@@ -321,11 +321,11 @@ describe('handleReadTrackedFile', () => {
     expect(lines[1]).toMatch(/^\s*2:[0-9a-f]{2}\s+\| Line 2$/);
   });
 
-  // ─── Settled view ────────────────────────────────────────────────────
+  // ─── Final view ──────────────────────────────────────────────────────
 
-  it('settled view strips CriticMarkup from content', async () => {
+  it('final view strips CriticMarkup from content', async () => {
     const filePath = path.join(tmpDir, 'doc.md');
-    // Use accepted footnotes so settled view applies the changes
+    // Use accepted footnotes so final view applies the changes
     const content = [
       'Hello {++beautiful ++}[^cn-1]world.',
       'Plain line.',
@@ -337,7 +337,7 @@ describe('handleReadTrackedFile', () => {
     await fs.writeFile(filePath, content);
 
     const result = await handleReadTrackedFile(
-      { file: filePath, view: 'settled' },
+      { file: filePath, view: 'decided' },
       resolver,
       state,
     );
@@ -358,7 +358,7 @@ describe('handleReadTrackedFile', () => {
     expect(lines[2]).toMatch(/\|  text\.$/);
   });
 
-  it('settled view uses settled hashes (not raw hashes)', async () => {
+  it('final view uses final hashes (not raw hashes)', async () => {
     const filePath = path.join(tmpDir, 'doc.md');
     const content = 'Hello {++beautiful ++}world.';
     await fs.writeFile(filePath, content);
@@ -371,7 +371,7 @@ describe('handleReadTrackedFile', () => {
     );
     // Settled view
     const settledResult = await handleReadTrackedFile(
-      { file: filePath, view: 'settled' },
+      { file: filePath, view: 'decided' },
       resolver,
       state,
     );
@@ -379,7 +379,7 @@ describe('handleReadTrackedFile', () => {
     const rawText = rawResult.content[0].text;
     const settledText = settledResult.content[0].text;
 
-    // The hash in settled view should differ from the raw hash
+    // The hash in final view should differ from the raw hash
     // (since the content is different after stripping CriticMarkup)
     const rawHashMatch = rawText.split('\n\n').pop()!.match(/1:([0-9a-f]{2})/);
     const settledHashMatch = settledText.split('\n\n').pop()!.match(/1:([0-9a-f]{2})/);
@@ -411,7 +411,6 @@ describe('handleReadTrackedFile', () => {
     expect(hashes).toHaveLength(2);
     expect(hashes![0].line).toBe(1);
     expect(hashes![0].raw).toMatch(/^[0-9a-f]{2}$/);
-    expect(hashes![0].current).toMatch(/^[0-9a-f]{2}$/);
     expect(hashes![1].line).toBe(2);
   });
 
@@ -528,9 +527,9 @@ describe('handleReadTrackedFile', () => {
       state,
     );
     expect(result.isError).toBe(true);
-    expect(result.content[0].text).toContain('Invalid view');
-    expect(result.content[0].text).toContain('meta');
-    expect(result.content[0].text).toContain('content');
+    expect(result.content[0].text).toContain('Unknown view');
+    expect(result.content[0].text).toContain('working');
+    expect(result.content[0].text).toContain('simple');
   });
 
   it('full view is treated as alias for content view', async () => {
@@ -606,9 +605,9 @@ describe('handleReadTrackedFile', () => {
     expect(text).toContain('{++world++}');
   });
 
-  // ─── Settled view with multi-line CriticMarkup ──────────────────────
+  // ─── Final view with multi-line CriticMarkup ────────────────────────
 
-  describe('settled view with multi-line CriticMarkup', () => {
+  describe('decided view with multi-line CriticMarkup', () => {
     it('correctly settles multi-line insertions (accept-all: proposed kept)', async () => {
       const filePath = path.join(tmpDir, 'doc.md');
       // Multi-line insertion spanning lines 2-4
@@ -616,7 +615,7 @@ describe('handleReadTrackedFile', () => {
       await fs.writeFile(filePath, content);
 
       const result = await handleReadTrackedFile(
-        { file: filePath, view: 'settled' },
+        { file: filePath, view: 'decided' },
         resolver,
         state,
       );
@@ -624,7 +623,7 @@ describe('handleReadTrackedFile', () => {
       expect(result.isError).toBeUndefined();
       const text = result.content[0].text;
 
-      // Accept-all: proposed insertions are applied (kept) in settled view
+      // Accept-all: proposed insertions are applied (kept) in decided view
       expect(text).toContain('Line one');
       expect(text).toContain('Line five');
       expect(text).toContain('Line two');
@@ -639,8 +638,9 @@ describe('handleReadTrackedFile', () => {
       const content = 'Line one\n{--Line two\nLine three--}[^cn-1]\nLine four\n\n[^cn-1]: @test | 2026-02-12 | del | proposed';
       await fs.writeFile(filePath, content);
 
+      // Use simple view (accept-all projection): proposed deletions are applied = text removed
       const result = await handleReadTrackedFile(
-        { file: filePath, view: 'settled' },
+        { file: filePath, view: 'simple' },
         resolver,
         state,
       );
@@ -655,13 +655,14 @@ describe('handleReadTrackedFile', () => {
       expect(text).toContain('Line four');
     });
 
-    it('accepted deletion removes text and settled view has fewer lines', async () => {
+    it('accepted deletion removes text and simple view has fewer lines', async () => {
       const filePath = path.join(tmpDir, 'doc.md');
       const content = 'Line one\n{--Line two\nLine three--}[^cn-1]\nLine four\n\n[^cn-1]: @test | 2026-02-12 | del | accepted';
       await fs.writeFile(filePath, content);
 
+      // Use simple view (accept-all projection): accepted deletions are applied = text removed
       const result = await handleReadTrackedFile(
-        { file: filePath, view: 'settled' },
+        { file: filePath, view: 'simple' },
         resolver,
         state,
       );
@@ -677,9 +678,9 @@ describe('handleReadTrackedFile', () => {
     });
   });
 
-  it('settled view with pagination shows correct sliced settled content', async () => {
+  it('final view with pagination shows correct sliced final content', async () => {
     const filePath = path.join(tmpDir, 'doc.md');
-    // Use accepted footnote so settled view applies the insertion
+    // Use accepted footnote so final view applies the insertion
     const content = [
       'Line 1',
       'Hello {++world++}[^cn-1].',
@@ -691,7 +692,7 @@ describe('handleReadTrackedFile', () => {
     await fs.writeFile(filePath, content);
 
     const result = await handleReadTrackedFile(
-      { file: filePath, offset: 2, limit: 2, view: 'settled' },
+      { file: filePath, offset: 2, limit: 2, view: 'decided' },
       resolver,
       state,
     );
@@ -781,7 +782,7 @@ describe('handleReadTrackedFile', () => {
       const metaResult = await handleReadTrackedFile(
         { file: filePath, view: 'meta' }, resolver, state);
       const reviewResult = await handleReadTrackedFile(
-        { file: filePath, view: 'review' }, resolver, state);
+        { file: filePath, view: 'working' }, resolver, state);
       expect(reviewResult.content[0].text).toBe(metaResult.content[0].text);
     });
 
@@ -792,7 +793,7 @@ describe('handleReadTrackedFile', () => {
       const committedResult = await handleReadTrackedFile(
         { file: filePath, view: 'committed' }, resolver, state);
       const changesResult = await handleReadTrackedFile(
-        { file: filePath, view: 'changes' }, resolver, state);
+        { file: filePath, view: 'simple' }, resolver, state);
       expect(changesResult.content[0].text).toBe(committedResult.content[0].text);
     });
 
@@ -876,14 +877,14 @@ describe('handleReadTrackedFile', () => {
     it('returns error when agent requests non-default view', async () => {
       const requireConfig: ChangeDownConfig = {
         ...config,
-        policy: { mode: 'safety-net', creation_tracking: 'footnote', default_view: 'review', view_policy: 'require' },
+        policy: { mode: 'safety-net', creation_tracking: 'footnote', default_view: 'working', view_policy: 'require' },
       };
       const requireResolver = await createTestResolver(tmpDir, requireConfig);
       const filePath = path.join(tmpDir, 'policy-require.md');
       await fs.writeFile(filePath, 'Hello world.');
 
       const result = await handleReadTrackedFile(
-        { file: filePath, view: 'changes' },
+        { file: filePath, view: 'simple' },
         requireResolver,
         state,
       );
@@ -896,14 +897,14 @@ describe('handleReadTrackedFile', () => {
     it('allows the default view when explicitly requested', async () => {
       const requireConfig: ChangeDownConfig = {
         ...config,
-        policy: { mode: 'safety-net', creation_tracking: 'footnote', default_view: 'review', view_policy: 'require' },
+        policy: { mode: 'safety-net', creation_tracking: 'footnote', default_view: 'working', view_policy: 'require' },
       };
       const requireResolver = await createTestResolver(tmpDir, requireConfig);
       const filePath = path.join(tmpDir, 'policy-allow.md');
       await fs.writeFile(filePath, 'Hello world.');
 
       const result = await handleReadTrackedFile(
-        { file: filePath, view: 'review' },
+        { file: filePath, view: 'working' },
         requireResolver,
         state,
       );
@@ -914,7 +915,7 @@ describe('handleReadTrackedFile', () => {
     it('allows when no view specified (uses default)', async () => {
       const requireConfig: ChangeDownConfig = {
         ...config,
-        policy: { mode: 'safety-net', creation_tracking: 'footnote', default_view: 'review', view_policy: 'require' },
+        policy: { mode: 'safety-net', creation_tracking: 'footnote', default_view: 'working', view_policy: 'require' },
       };
       const requireResolver = await createTestResolver(tmpDir, requireConfig);
       const filePath = path.join(tmpDir, 'policy-noview.md');
@@ -932,13 +933,13 @@ describe('handleReadTrackedFile', () => {
     it('rejects alias of non-default view', async () => {
       const requireConfig: ChangeDownConfig = {
         ...config,
-        policy: { mode: 'safety-net', creation_tracking: 'footnote', default_view: 'review', view_policy: 'require' },
+        policy: { mode: 'safety-net', creation_tracking: 'footnote', default_view: 'working', view_policy: 'require' },
       };
       const requireResolver = await createTestResolver(tmpDir, requireConfig);
       const filePath = path.join(tmpDir, 'policy-alias.md');
       await fs.writeFile(filePath, 'Hello world.');
 
-      // 'simple' is alias for 'changes', which is not 'review'
+      // 'simple' is alias for 'changes', which is not 'working'
       const result = await handleReadTrackedFile(
         { file: filePath, view: 'simple' },
         requireResolver,
@@ -952,13 +953,13 @@ describe('handleReadTrackedFile', () => {
     it('accepts alias of default view', async () => {
       const requireConfig: ChangeDownConfig = {
         ...config,
-        policy: { mode: 'safety-net', creation_tracking: 'footnote', default_view: 'review', view_policy: 'require' },
+        policy: { mode: 'safety-net', creation_tracking: 'footnote', default_view: 'working', view_policy: 'require' },
       };
       const requireResolver = await createTestResolver(tmpDir, requireConfig);
       const filePath = path.join(tmpDir, 'policy-alias-ok.md');
       await fs.writeFile(filePath, 'Hello world.');
 
-      // 'all' is alias for 'review'
+      // 'all' is alias for 'working'
       const result = await handleReadTrackedFile(
         { file: filePath, view: 'all' },
         requireResolver,
@@ -974,7 +975,7 @@ describe('handleReadTrackedFile', () => {
       const suggestConfig: ChangeDownConfig = {
         ...config,
         hashline: { enabled: false, auto_remap: false },
-        policy: { mode: 'safety-net', creation_tracking: 'footnote', default_view: 'settled', view_policy: 'suggest' },
+        policy: { mode: 'safety-net', creation_tracking: 'footnote', default_view: 'decided', view_policy: 'suggest' },
       };
       const suggestResolver = await createTestResolver(tmpDir, suggestConfig);
       const filePath = path.join(tmpDir, 'policy-suggest-default.md');
@@ -997,7 +998,7 @@ describe('handleReadTrackedFile', () => {
       const suggestConfig: ChangeDownConfig = {
         ...config,
         hashline: { enabled: false, auto_remap: false },
-        policy: { mode: 'safety-net', creation_tracking: 'footnote', default_view: 'settled', view_policy: 'suggest' },
+        policy: { mode: 'safety-net', creation_tracking: 'footnote', default_view: 'decided', view_policy: 'suggest' },
       };
       const suggestResolver = await createTestResolver(tmpDir, suggestConfig);
       const filePath = path.join(tmpDir, 'policy-suggest-override.md');

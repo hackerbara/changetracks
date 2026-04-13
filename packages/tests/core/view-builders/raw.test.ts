@@ -8,7 +8,7 @@ describe('buildRawDocument', () => {
     const content = 'Hello {++world++}[^cn-1].\n\n[^cn-1]: @ai:test | 2026-01-01 | ins | proposed';
     const doc = buildRawDocument(content, {
       filePath: 'test.md', trackingStatus: 'tracked',
-      protocolMode: 'classic', defaultView: 'review', viewPolicy: 'suggest',
+      protocolMode: 'classic', defaultView: 'working', viewPolicy: 'suggest',
     });
     expect(doc.view).toBe('raw');
     expect(doc.lines).toHaveLength(3);
@@ -20,7 +20,7 @@ describe('buildRawDocument', () => {
     const content = 'Hello.\n\n[^cn-1]: @ai:test | 2026-01-01 | ins | proposed';
     const doc = buildRawDocument(content, {
       filePath: 'test.md', trackingStatus: 'tracked',
-      protocolMode: 'classic', defaultView: 'review', viewPolicy: 'suggest',
+      protocolMode: 'classic', defaultView: 'working', viewPolicy: 'suggest',
     });
     for (const line of doc.lines) {
       expect(line.margin.flags).toStrictEqual([]);
@@ -32,7 +32,7 @@ describe('buildRawDocument', () => {
     const content = 'Line 1\nLine 2\nLine 3';
     const doc = buildRawDocument(content, {
       filePath: 'test.md', trackingStatus: 'tracked',
-      protocolMode: 'classic', defaultView: 'review', viewPolicy: 'suggest',
+      protocolMode: 'classic', defaultView: 'working', viewPolicy: 'suggest',
     });
     for (const line of doc.lines) {
       expect(line.margin.lineNumber).toBe(line.rawLineNumber);

@@ -17,15 +17,15 @@ const VIEW_OPTIONS = {
   filePath: 'test.md',
   trackingStatus: 'tracked' as const,
   protocolMode: 'classic',
-  defaultView: 'review' as const,
+  defaultView: 'working' as const,
   viewPolicy: 'suggest',
 };
 
 describe('unified renderer CLI integration', () => {
   beforeAll(async () => { await initHashline(); });
 
-  it('review view output contains three-zone format', () => {
-    const doc = buildViewDocument(FIXTURE_CONTENT, 'review', VIEW_OPTIONS);
+  it('working view output contains three-zone format', () => {
+    const doc = buildViewDocument(FIXTURE_CONTENT, 'working', VIEW_OPTIONS);
     const output = formatPlainText(doc);
 
     // Header present with counts
@@ -40,26 +40,27 @@ describe('unified renderer CLI integration', () => {
     expect(output).toContain('{>>cn-1');
   });
 
-  it('changes view output contains P/A flags and change IDs', () => {
-    const doc = buildViewDocument(FIXTURE_CONTENT, 'changes', VIEW_OPTIONS);
+  it('simple view output contains P/A flags and change IDs', () => {
+    const doc = buildViewDocument(FIXTURE_CONTENT, 'simple', VIEW_OPTIONS);
     const output = formatPlainText(doc);
 
     // P flag for proposed change
     expect(output).toMatch(/P\|/);
 
-    // Change ID in metadata
-    expect(output).toContain('{>>cn-1<<}');
+    // Change ID in metadata (simple view: rich bracket format)
+    expect(output).toContain('[cn-1');
 
-    // Committed text (insertion stripped since proposed)
-    expect(output).toContain('Hello .');
+    // Current projection text (insertion applied since simple uses current projection)
+    expect(output).toContain('Hello world.');
   });
 
-  it('settled view output contains clean text', () => {
-    const doc = buildViewDocument(FIXTURE_CONTENT, 'settled', VIEW_OPTIONS);
+  it('decided view output contains clean text', () => {
+    const doc = buildViewDocument(FIXTURE_CONTENT, 'decided', VIEW_OPTIONS);
     const output = formatPlainText(doc);
 
-    // Accept-all: insertion applied
-    expect(output).toContain('Hello world.');
+    // Decided projection: proposals reverted, only accepted changes applied.
+    // The insertion is proposed (not accepted), so it is stripped.
+    expect(output).toContain('Hello .');
 
     // No CriticMarkup in output
     expect(output).not.toContain('{++');
@@ -79,7 +80,7 @@ describe('unified renderer CLI integration', () => {
   });
 
   it('ANSI formatter produces colored output without hashlines', () => {
-    const doc = buildViewDocument(FIXTURE_CONTENT, 'review', VIEW_OPTIONS);
+    const doc = buildViewDocument(FIXTURE_CONTENT, 'working', VIEW_OPTIONS);
     const output = formatAnsi(doc);
 
     // ANSI escape codes present
@@ -90,7 +91,7 @@ describe('unified renderer CLI integration', () => {
   });
 
   it('ANSI formatter respects showMarkup option', () => {
-    const doc = buildViewDocument(FIXTURE_CONTENT, 'review', VIEW_OPTIONS);
+    const doc = buildViewDocument(FIXTURE_CONTENT, 'working', VIEW_OPTIONS);
     const withMarkup = formatAnsi(doc, { showMarkup: true });
     const withoutMarkup = formatAnsi(doc, { showMarkup: false });
 

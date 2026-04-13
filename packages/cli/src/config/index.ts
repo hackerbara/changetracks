@@ -70,6 +70,7 @@ export {
   resolveProjectDir,
   resolveProtocolMode,
   isFileInScope,
+  expandTrackingAbsolutePattern,
   derivePolicyMode,
   asStringArray,
 } from './loader.js';

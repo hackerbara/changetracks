@@ -1,49 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { ChangedownServer } from '@changedown/lsp-server/internals';
-import type { Connection, InitializeParams } from '@changedown/lsp-server/internals';
-
-/**
- * Mock connection for browser-mode tests.
- * Mirrors the pattern in server.test.ts.
- */
-function createMockConnection(): Connection {
-  const handlers: any = {};
-  const notifications: Array<{ method: string; params: any }> = [];
-
-  return {
-    onInitialize: (handler: any) => { handlers.initialize = handler; },
-    onInitialized: (handler: any) => { handlers.initialized = handler; },
-    onShutdown: (handler: any) => { handlers.shutdown = handler; },
-    onExit: (handler: any) => { handlers.exit = handler; },
-    onDidOpenTextDocument: (handler: any) => { handlers.didOpen = handler; },
-    onDidChangeTextDocument: (handler: any) => { handlers.didChange = handler; },
-    onDidCloseTextDocument: (handler: any) => { handlers.didClose = handler; },
-    onWillSaveTextDocument: (handler: any) => { handlers.willSave = handler; },
-    onWillSaveTextDocumentWaitUntil: (handler: any) => { handlers.willSaveWaitUntil = handler; },
-    onDidSaveTextDocument: (handler: any) => { handlers.didSave = handler; },
-    onHover: (handler: any) => { handlers.hover = handler; },
-    onCodeLens: (handler: any) => { handlers.codeLens = handler; },
-    onFoldingRanges: (handler: any) => { handlers.foldingRanges = handler; },
-    onCodeAction: (handler: any) => { handlers.codeAction = handler; },
-    onDocumentLinks: (handler: any) => { handlers.documentLinks = handler; },
-    onRequest: (method: string, handler: any) => { handlers[`request:${method}`] = handler; },
-    onNotification: (method: string, handler: any) => { handlers[`notification:${method}`] = handler; },
-    sendDiagnostics: (params: any) => { notifications.push({ method: 'textDocument/publishDiagnostics', params }); },
-    sendNotification: (method: string, params: any) => { notifications.push({ method, params }); },
-    languages: {
-      semanticTokens: {
-        on: (handler: any) => { handlers.semanticTokens = handler; },
-      },
-    },
-    console: { log: () => {}, error: () => {}, warn: () => {}, info: () => {} },
-    client: { register: async () => {} },
-    workspace: { applyEdit: async () => ({ applied: false }) },
-    onDidChangeWatchedFiles: () => {},
-    listen: () => {},
-    _handlers: handlers,
-    _notifications: notifications,
-  } as any;
-}
+import type { InitializeParams } from '@changedown/lsp-server/internals';
+import { createMockConnection } from './mock-connection.js';
 
 describe('Browser-mode ChangedownServer', () => {
   let server: ChangedownServer;
@@ -96,7 +54,7 @@ describe('Browser-mode ChangedownServer', () => {
 
   it('loadProjectConfig uses provided callback', async () => {
     let callbackCalled = false;
-    const customServer = new ChangedownServer(createMockConnection(), {
+    const customServer = new ChangedownServer(createMockConnection() as any, {
       loadConfig: () => {
         callbackCalled = true;
         return undefined;

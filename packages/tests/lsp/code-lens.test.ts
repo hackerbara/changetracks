@@ -262,7 +262,7 @@ describe('Code Lens', () => {
         },
       ];
       const text = '{++first change++} {++consumed op++} {++third change++}';
-      const lenses = createCodeLenses(changes, text, 'review', 'always');
+      const lenses = createCodeLenses(changes, text, 'working', 'always');
 
       // cn-2 is consumed — should not generate a per-change lens
       const perChangeLenses = lenses.filter(

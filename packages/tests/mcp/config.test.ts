@@ -1,5 +1,11 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { loadConfig, resolveProjectDir, isFileInScope, type ChangeDownConfig } from '@changedown/mcp/internals';
+import {
+  loadConfig,
+  resolveProjectDir,
+  isFileInScope,
+  type ChangeDownConfig,
+} from '@changedown/mcp/internals';
+import { expandTrackingAbsolutePattern } from 'changedown/config';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
@@ -486,18 +492,18 @@ enabled = true
     it('parses default_view and view_policy from config', async () => {
       const configDir = path.join(tmpDir, '.changedown');
       await fs.mkdir(configDir, { recursive: true });
-      await fs.writeFile(path.join(configDir, 'config.toml'), '[policy]\nmode = "strict"\ndefault_view = "changes"\nview_policy = "require"\n', 'utf-8');
+      await fs.writeFile(path.join(configDir, 'config.toml'), '[policy]\nmode = "strict"\ndefault_view = "simple"\nview_policy = "require"\n', 'utf-8');
       const config = await loadConfig(tmpDir);
-      expect(config.policy.default_view).toBe('changes');
+      expect(config.policy.default_view).toBe('simple');
       expect(config.policy.view_policy).toBe('require');
     });
 
-    it('defaults default_view to "review" when not specified', async () => {
+    it('defaults default_view to "working" when not specified', async () => {
       const configDir = path.join(tmpDir, '.changedown');
       await fs.mkdir(configDir, { recursive: true });
       await fs.writeFile(path.join(configDir, 'config.toml'), '[policy]\nmode = "strict"\n', 'utf-8');
       const config = await loadConfig(tmpDir);
-      expect(config.policy.default_view).toBe('review');
+      expect(config.policy.default_view).toBe('working');
     });
 
     it('defaults view_policy to "suggest" when not specified', async () => {
@@ -508,12 +514,12 @@ enabled = true
       expect(config.policy.view_policy).toBe('suggest');
     });
 
-    it('parses default_view = "settled"', async () => {
+    it('parses default_view = "final" (normalized from settled)', async () => {
       const configDir = path.join(tmpDir, '.changedown');
       await fs.mkdir(configDir, { recursive: true });
-      await fs.writeFile(path.join(configDir, 'config.toml'), '[policy]\ndefault_view = "settled"\n', 'utf-8');
+      await fs.writeFile(path.join(configDir, 'config.toml'), '[policy]\ndefault_view = "final"\n', 'utf-8');
       const config = await loadConfig(tmpDir);
-      expect(config.policy.default_view).toBe('settled');
+      expect(config.policy.default_view).toBe('decided');
     });
 
     it('defaults default_view for invalid value', async () => {
@@ -521,7 +527,7 @@ enabled = true
       await fs.mkdir(configDir, { recursive: true });
       await fs.writeFile(path.join(configDir, 'config.toml'), '[policy]\ndefault_view = "garbage"\n', 'utf-8');
       const config = await loadConfig(tmpDir);
-      expect(config.policy.default_view).toBe('review');
+      expect(config.policy.default_view).toBe('working');
     });
 
     it('defaults view_policy for invalid value', async () => {
@@ -537,7 +543,7 @@ enabled = true
       await fs.mkdir(configDir, { recursive: true });
       await fs.writeFile(path.join(configDir, 'config.toml'), '[tracking]\ninclude = ["**/*.md"]\n', 'utf-8');
       const config = await loadConfig(tmpDir);
-      expect(config.policy.default_view).toBe('review');
+      expect(config.policy.default_view).toBe('working');
       expect(config.policy.view_policy).toBe('suggest');
     });
   });
@@ -695,5 +701,53 @@ describe('isFileInScope', () => {
       projectDir
     );
     expect(result).toBe(false);
+  });
+
+  it('matches paths outside project when include_absolute matches', () => {
+    const home = os.homedir();
+    const planFile = path.join(home, '.claude', 'plans', 'scenario.md');
+    const config: ChangeDownConfig = {
+      ...defaultConfig,
+      tracking: {
+        ...defaultConfig.tracking,
+        include_absolute: [`${home.split(path.sep).join('/')}/.claude/plans/**/*.md`],
+      },
+    };
+    expect(isFileInScope(planFile, config, projectDir)).toBe(true);
+  });
+
+  it('returns false for outside-project path when include_absolute is unset', () => {
+    const planFile = path.join(os.homedir(), '.claude', 'plans', 'orphan.md');
+    expect(isFileInScope(planFile, defaultConfig, projectDir)).toBe(false);
+  });
+
+  it('applies tracking.exclude to absolute paths when using include_absolute', () => {
+    const home = os.homedir();
+    const blocked = path.join(home, '.claude', 'plans', 'blocked', 'x.md');
+    const config: ChangeDownConfig = {
+      ...defaultConfig,
+      tracking: {
+        ...defaultConfig.tracking,
+        include_absolute: [`${home.split(path.sep).join('/')}/.claude/plans/**/*.md`],
+        exclude: [...defaultConfig.tracking.exclude, '**/.claude/plans/blocked/**'],
+      },
+    };
+    expect(isFileInScope(blocked, config, projectDir)).toBe(false);
+  });
+});
+
+describe('expandTrackingAbsolutePattern', () => {
+  it('expands $HOME and normalizes slashes', () => {
+    const home = os.homedir().split(path.sep).join('/');
+    expect(expandTrackingAbsolutePattern('$HOME/.claude/plans/**/*.md')).toBe(
+      `${home}/.claude/plans/**/*.md`
+    );
+  });
+
+  it('expands ~/ prefix', () => {
+    const home = os.homedir().split(path.sep).join('/');
+    expect(expandTrackingAbsolutePattern('~/.claude/plans/**/*.md')).toBe(
+      `${home}/.claude/plans/**/*.md`
+    );
   });
 });

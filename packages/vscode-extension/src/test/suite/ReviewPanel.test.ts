@@ -34,7 +34,7 @@ function makeChange(overrides: Partial<ChangeNode> = {}): ChangeNode {
 function makeState(overrides: Partial<any> = {}): any {
     return {
         trackingEnabled: false,
-        viewMode: 'review',
+        view: 'working',
         changes: [],
         hasActiveMarkdownEditor: true,
         activeFilter: 'all',

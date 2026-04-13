@@ -1,32 +1,33 @@
 import MarkdownIt = require('markdown-it');
 import markdownItKatex = require('@traptitech/markdown-it-katex');
 import { parseForFormat, ChangeType } from '@changedown/core';
-import type { ViewMode } from '../view-mode';
+import type { BuiltinView } from '@changedown/core/host';
 import { changedownPlugin, PluginConfig } from '@changedown/preview';
 
 /**
  * Renders markdown (with CriticMarkup) to HTML using markdown-it
  * and the changedown preview plugin. Runs in the extension host.
  *
- * @param viewMode Controls how changes are rendered:
- *   - 'review' (default): full CriticMarkup rendering with colors
- *   - 'changes': full markup rendered, CSS hides deletions and metadata; change gutters visible
- *   - 'raw': pre-change view — insertions stripped, deletions/subs resolved to old text
- *   - 'settled': post-change view — deletions stripped, insertions/subs resolved to new text
+ * @param view Controls how changes are rendered:
+ *   - 'working' (default): full CriticMarkup rendering with all markup visible
+ *   - 'simple': full markup rendered, CSS hides deletions and metadata; change gutters visible
+ *   - 'original': pre-change view — insertions stripped, deletions/subs resolved to old text
+ *   - 'decided': post-change view — deletions stripped, insertions/subs resolved to new text
+ *   - 'raw': full CriticMarkup rendered without author colors
  */
 export function renderMarkdownToHtml(
     markdown: string,
     isDarkTheme = false,
-    viewMode: ViewMode = 'review'
+    view: BuiltinView = 'working'
 ): string {
     const md = new MarkdownIt({ html: true, linkify: true, typographer: false });
 
-    const isChanges = viewMode === 'changes';
-    const isResolved = viewMode === 'raw' || viewMode === 'settled';
+    const isSimple = view === 'simple';
+    const isResolved = view === 'original' || view === 'decided';
 
     const config: PluginConfig = {
         enabled: true,
-        showFootnotes: isChanges,  // Changes: keep ref badges (definitions hidden via CSS); others: sidebar handles it
+        showFootnotes: isSimple,  // Simple: keep ref badges (definitions hidden via CSS); others: sidebar handles it
         showComments: !isResolved,
         renderInCodeFences: true,
         metadataDetail: 'badge',
@@ -39,13 +40,13 @@ export function renderMarkdownToHtml(
 
     let src = markdown;
 
-    // For raw/settled modes, pre-process to strip one side of changes
+    // For original/final modes, pre-process to strip one side of changes
     if (isResolved) {
         const doc = parseForFormat(src);
         const changes = [...doc.getChanges()].sort((a, b) => b.range.start - a.range.start);
 
         for (const c of changes) {
-            if (viewMode === 'raw') {
+            if (view === 'original') {
                 if (c.type === ChangeType.Insertion) {
                     // Strip insertion entirely — it didn't exist in the original
                     src = src.slice(0, c.range.start) + src.slice(c.range.end);
@@ -59,7 +60,7 @@ export function renderMarkdownToHtml(
                     src = src.slice(0, c.range.start) + text + src.slice(c.range.end);
                 }
             } else {
-                // viewMode === 'settled'
+                // view === 'decided'
                 if (c.type === ChangeType.Insertion) {
                     // Resolve to inserted text (keep the content)
                     const text = c.modifiedText ?? src.slice(c.contentRange.start, c.contentRange.end);

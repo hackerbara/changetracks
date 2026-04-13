@@ -1,4 +1,5 @@
-import { CriticMarkupParser, Workspace, ChangeNode, ChangeType, splitBodyAndFootnotes, type ViewMode } from '@changedown/core';
+import { CriticMarkupParser, Workspace, ChangeNode, ChangeType, splitBodyAndFootnotes } from '@changedown/core';
+import type { BuiltinView } from '@changedown/core/host';
 import { buildReplacements, PreviewOptions, LineOffsetMap } from './replacements.js';
 import { escapeHtml, sanitizeContentHtml } from './escape-html.js';
 
@@ -107,9 +108,7 @@ export interface PluginConfig {
     isDarkTheme: boolean;
     emitSourceMap?: boolean;
     urlResolver?: (url: string) => string | null;
-    /** @deprecated Use viewName */
-    viewMode?: ViewMode;
-    viewName?: string;
+    viewName?: BuiltinView;
 }
 
 // Fence languages to skip — these contain CriticMarkup as examples/docs
@@ -131,7 +130,7 @@ export function changedownPlugin(md: any, getConfig?: () => PluginConfig): void 
         metadataDetail: 'badge',
         authorColors: 'auto',
         isDarkTheme: false,
-        viewMode: undefined,
+        viewName: undefined,
     };
     const resolveConfig = getConfig ?? (() => defaultConfig);
 

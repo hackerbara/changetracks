@@ -8483,7 +8483,7 @@ ${JSON.stringify(message, null, 4)}`);
         policy: {
           mode: "safety-net",
           creation_tracking: "footnote",
-          default_view: "review",
+          default_view: "working",
           view_policy: "suggest"
         }
       };
@@ -8613,6 +8613,7 @@ ${JSON.stringify(message, null, 4)}`);
       Object.defineProperty(exports, "__esModule", { value: true });
       exports.ChangeStatus = exports.ChangeType = void 0;
       exports.changeTypeToAbbrev = changeTypeToAbbrev;
+      exports.changeTypeToShortCode = changeTypeToShortCode;
       exports.isGhostNode = isGhostNode;
       exports.consumptionLabel = consumptionLabel;
       exports.nodeStatus = nodeStatus;
@@ -8634,6 +8635,20 @@ ${JSON.stringify(message, null, 4)}`);
             return "sub";
           case ChangeType.Highlight:
             return "hig";
+          case ChangeType.Comment:
+            return "com";
+        }
+      }
+      function changeTypeToShortCode(type) {
+        switch (type) {
+          case ChangeType.Insertion:
+            return "ins";
+          case ChangeType.Deletion:
+            return "del";
+          case ChangeType.Substitution:
+            return "sub";
+          case ChangeType.Highlight:
+            return "hl";
           case ChangeType.Comment:
             return "com";
         }
@@ -12868,6 +12883,7 @@ ${JSON.stringify(message, null, 4)}`);
       exports.stripHashlinePrefixes = stripHashlinePrefixes;
       exports.detectNoOp = detectNoOp;
       exports.relocateHashRef = relocateHashRef;
+      exports.relocateHashRefMulti = relocateHashRefMulti;
       exports.stripBoundaryEcho = stripBoundaryEcho;
       var HASHLINE_PREFIX = /^\d+:[0-9a-zA-Z]{1,16}\|/;
       var DIFF_ADD_PREFIX = /^\+(?!\+)/;
@@ -12920,6 +12936,35 @@ ${JSON.stringify(message, null, 4)}`);
           return null;
         }
         return { relocated: true, newLine };
+      }
+      function relocateHashRefMulti(ref, fileLines, strategies) {
+        const results = [];
+        const targetHash = ref.hash.toLowerCase();
+        for (const strategy of strategies) {
+          let uniqueIdx = -1;
+          let ambiguous = false;
+          for (let i = 0; i < fileLines.length; i++) {
+            const h = strategy.fn(i, fileLines[i]).toLowerCase();
+            if (h === targetHash) {
+              if (uniqueIdx !== -1) {
+                ambiguous = true;
+                break;
+              }
+              uniqueIdx = i;
+            }
+          }
+          if (!ambiguous && uniqueIdx !== -1) {
+            results.push({ newLine: uniqueIdx + 1, strategy: strategy.name });
+          }
+        }
+        if (results.length === 0)
+          return null;
+        const first = results[0];
+        for (let i = 1; i < results.length; i++) {
+          if (results[i].newLine !== first.newLine)
+            return null;
+        }
+        return first;
       }
       function equalsIgnoringWhitespace(a, b) {
         return a.replace(/\s+/g, "") === b.replace(/\s+/g, "");
@@ -15759,6 +15804,20 @@ Hint: Re-read the file for current content, or use LINE:HASH addressing.`);
         }
         return fullText.slice(0, offset);
       }
+      function hasL3ProposedChanges(text) {
+        const lines = text.split("\n");
+        let inProposedFootnote = false;
+        for (const line of lines) {
+          if (footnote_patterns_js_1.FOOTNOTE_DEF_STATUS_VALUE.test(line)) {
+            inProposedFootnote = /\|\s*proposed\s*$/.test(line);
+          } else if (inProposedFootnote && footnote_patterns_js_1.FOOTNOTE_L3_EDIT_OP.test(line)) {
+            return true;
+          } else if (line.trim() === "" || line.startsWith("[^") && !line.startsWith("    ")) {
+            inProposedFootnote = false;
+          }
+        }
+        return false;
+      }
       async function applyProposeChange(params) {
         const { text, oldText, newText, changeId, author, reasoning, insertAfter, level = 2 } = params;
         let kind = params.kind;
@@ -15768,7 +15827,7 @@ Hint: Re-read the file for current content, or use LINE:HASH addressing.`);
         const isL3 = level === 3;
         if (isL3)
           await (0, hashline_js_1.initHashline)();
-        if (!isL3 && text.includes("[^cn-") && (0, footnote_patterns_js_1.isL3Format)(text)) {
+        if (!isL3 && text.includes("[^cn-") && (0, footnote_patterns_js_1.isL3Format)(text) && hasL3ProposedChanges(text)) {
           throw new Error("L3 format detected but level is not 3. Pass level: 3 for L3 text to avoid garbled output.");
         }
         let bodyText;
@@ -18457,12 +18516,32 @@ ${sidecarSection}
         const meta = formatMetadata(line.metadata, view);
         return meta ? `${margin} ${content} ${meta}` : `${margin} ${content}`;
       }
+      function ensureAt(author, fallback = "") {
+        if (!author)
+          return fallback;
+        return author.startsWith("@") ? author : `@${author}`;
+      }
       function formatMetadata(metadata, view) {
         if (metadata.length === 0)
           return "";
         return metadata.map((m) => {
-          if (view === "changes") {
-            return `{>>${m.changeId}<<}`;
+          if (view === "simple") {
+            const author = ensureAt(m.author);
+            let block2 = `[${m.changeId}`;
+            if (author)
+              block2 += ` ${author}`;
+            if (m.type)
+              block2 += ` ${m.type}`;
+            if (m.status)
+              block2 += ` ${m.status}`;
+            if (m.reason)
+              block2 += `: ${m.reason}`;
+            if (m.latestThreadTurn) {
+              const turnAuthor = ensureAt(m.latestThreadTurn.author, "@?");
+              block2 += ` | ${turnAuthor}: ${m.latestThreadTurn.text}`;
+            }
+            block2 += "]";
+            return block2;
           }
           let block = `{>>${m.changeId}`;
           if (m.author)
@@ -18733,6 +18812,96 @@ ${sidecarSection}
     }
   });
 
+  // ../core/dist/renderers/view-builders/session-hashes.js
+  var require_session_hashes = __commonJS({
+    "../core/dist/renderers/view-builders/session-hashes.js"(exports) {
+      "use strict";
+      Object.defineProperty(exports, "__esModule", { value: true });
+      exports.buildSessionHashes = buildSessionHashes;
+      var decided_text_js_1 = require_decided_text();
+      var current_text_js_1 = require_current_text();
+      var hashline_js_1 = require_hashline();
+      function buildSessionHashes(rawContent, changes) {
+        const rawLines = rawContent.split("\n");
+        const decidedResult = (0, decided_text_js_1.computeDecidedView)(rawContent, changes);
+        const currentResult = (0, current_text_js_1.computeCurrentView)(rawContent, changes);
+        const committedByRaw = /* @__PURE__ */ new Map();
+        for (const cl of decidedResult.lines) {
+          committedByRaw.set(cl.rawLineNum, cl.hash);
+        }
+        const currentViewByRaw = /* @__PURE__ */ new Map();
+        for (const sl of currentResult.lines) {
+          currentViewByRaw.set(sl.rawLineNum, sl.hash);
+        }
+        const byRawLine = /* @__PURE__ */ new Map();
+        for (let i = 0; i < rawLines.length; i++) {
+          const rawLineNum = i + 1;
+          const rawHash = (0, hashline_js_1.computeLineHash)(i, rawLines[i], rawLines);
+          byRawLine.set(rawLineNum, {
+            raw: rawHash,
+            committed: committedByRaw.get(rawLineNum),
+            currentView: currentViewByRaw.get(rawLineNum)
+          });
+        }
+        const decidedLineByRaw = /* @__PURE__ */ new Map();
+        const rawLineByDecided = /* @__PURE__ */ new Map();
+        for (const cl of decidedResult.lines) {
+          decidedLineByRaw.set(cl.rawLineNum, cl.decidedLineNum);
+          rawLineByDecided.set(cl.decidedLineNum, cl.rawLineNum);
+        }
+        const currentLineByRaw = /* @__PURE__ */ new Map();
+        const rawLineByCurrent = /* @__PURE__ */ new Map();
+        for (const sl of currentResult.lines) {
+          currentLineByRaw.set(sl.rawLineNum, sl.currentLineNum);
+          rawLineByCurrent.set(sl.currentLineNum, sl.rawLineNum);
+        }
+        return {
+          byRawLine,
+          decidedResult,
+          currentResult,
+          decidedLineByRaw,
+          currentLineByRaw,
+          rawLineByDecided,
+          rawLineByCurrent
+        };
+      }
+    }
+  });
+
+  // ../core/dist/renderers/view-builders/line-metadata.js
+  var require_line_metadata = __commonJS({
+    "../core/dist/renderers/view-builders/line-metadata.js"(exports) {
+      "use strict";
+      Object.defineProperty(exports, "__esModule", { value: true });
+      exports.buildLineMetadataFromFootnotes = buildLineMetadataFromFootnotes;
+      var types_js_1 = require_types();
+      function buildLineMetadataFromFootnotes(refIds, footnoteMap) {
+        if (!refIds)
+          return [];
+        const metadata = [];
+        for (const id of refIds) {
+          const node = footnoteMap.get(id);
+          if (!node)
+            continue;
+          const status = (0, types_js_1.nodeStatus)(node);
+          const discussion = node.metadata?.discussion ?? [];
+          const reason = node.metadata?.comment || discussion[0]?.text || void 0;
+          const latestThreadTurn = discussion.length >= 2 ? { author: discussion[discussion.length - 1].author, text: discussion[discussion.length - 1].text } : void 0;
+          metadata.push({
+            changeId: node.id,
+            type: (0, types_js_1.changeTypeToShortCode)(node.type),
+            status,
+            author: node.metadata?.author ?? node.inlineMetadata?.author,
+            reason,
+            replyCount: (node.replyCount ?? 0) > 0 ? node.replyCount : void 0,
+            latestThreadTurn
+          });
+        }
+        return metadata;
+      }
+    }
+  });
+
   // ../core/dist/renderers/view-builder-utils.js
   var require_view_builder_utils = __commonJS({
     "../core/dist/renderers/view-builder-utils.js"(exports) {
@@ -18741,6 +18910,7 @@ ${sidecarSection}
       exports.buildDeliberationHeader = buildDeliberationHeader;
       exports.buildLineRefMap = buildLineRefMap;
       exports.findFootnoteSectionRange = findFootnoteSectionRange;
+      exports.computePAFlags = computePAFlags;
       exports.computeContinuationLines = computeContinuationLines;
       var format_aware_parse_js_1 = require_format_aware_parse();
       var types_js_1 = require_types();
@@ -18804,6 +18974,27 @@ ${sidecarSection}
           return null;
         return [min, max];
       }
+      function computePAFlags(refIds, footnoteMap) {
+        if (!refIds)
+          return [];
+        let hasProposed = false;
+        let hasAccepted = false;
+        for (const id of refIds) {
+          const node = footnoteMap.get(id);
+          if (!node)
+            continue;
+          const status = (0, types_js_1.nodeStatus)(node);
+          if (status === "proposed")
+            hasProposed = true;
+          if (status === "accepted")
+            hasAccepted = true;
+        }
+        if (hasProposed)
+          return ["P"];
+        if (hasAccepted)
+          return ["A"];
+        return [];
+      }
       function computeContinuationLines(content, preParsed) {
         const changes = preParsed ?? (0, format_aware_parse_js_1.parseForFormat)(content).getChanges();
         if (changes.length === 0)
@@ -18839,32 +19030,26 @@ ${sidecarSection}
     }
   });
 
-  // ../core/dist/renderers/view-builders/review.js
-  var require_review = __commonJS({
-    "../core/dist/renderers/view-builders/review.js"(exports) {
+  // ../core/dist/renderers/view-builders/working.js
+  var require_working = __commonJS({
+    "../core/dist/renderers/view-builders/working.js"(exports) {
       "use strict";
       Object.defineProperty(exports, "__esModule", { value: true });
       exports.buildReviewDocument = buildReviewDocument;
-      var decided_text_js_1 = require_decided_text();
+      var session_hashes_js_1 = require_session_hashes();
+      var line_metadata_js_1 = require_line_metadata();
+      var format_aware_parse_js_1 = require_format_aware_parse();
       var footnote_utils_js_1 = require_footnote_utils();
-      var types_js_1 = require_types();
-      var hashline_js_1 = require_hashline();
-      var hashline_tracked_js_1 = require_hashline_tracked();
       var view_builder_utils_js_1 = require_view_builder_utils();
       var CRITIC_MARKUP_RE = /\{\+\+((?:[^+]|\+(?!\+\}))*?)\+\+\}|\{--((?:[^-]|-(?!-\}))*?)--\}|\{~~((?:[^~]|~(?!>))*?)~>((?:[^~]|~(?!~\}))*?)~~\}|\{==((?:[^=]|=(?!=\}))*?)==\}|\{>>((?:[^<]|<(?!<\}))*?)<<\}/g;
       var FOOTNOTE_REF_RE = /\[\^(cn-\d+(?:\.\d+)?)\]/g;
       function buildReviewDocument(content, options) {
-        const decidedResult = (0, decided_text_js_1.computeDecidedView)(content);
-        const changes = decidedResult.changes;
+        const changes = (0, format_aware_parse_js_1.parseForFormat)(content).getChanges();
+        const sessionHashesResult = (0, session_hashes_js_1.buildSessionHashes)(content, changes);
+        const rawLines = content.split("\n");
         const footnoteMap = /* @__PURE__ */ new Map();
         for (const node of changes) {
           footnoteMap.set(node.id, node);
-        }
-        const rawLines = content.split("\n");
-        const allCurrent = rawLines.map((l) => (0, hashline_tracked_js_1.currentLine)(l));
-        const rawToCommittedHash = /* @__PURE__ */ new Map();
-        for (const cl of decidedResult.lines) {
-          rawToCommittedHash.set(cl.rawLineNum, cl.hash);
         }
         let fnRange = (0, view_builder_utils_js_1.findFootnoteSectionRange)(changes);
         if (!fnRange) {
@@ -18877,30 +19062,28 @@ ${sidecarSection}
         const continuations = (0, view_builder_utils_js_1.computeContinuationLines)(content, changes);
         const outputLines = [];
         for (let i = 0; i < rawLines.length; i++) {
-          if (fnRange && i >= fnRange[0] && i <= fnRange[1]) {
+          if (fnRange && i >= fnRange[0] && i <= fnRange[1])
             continue;
-          }
-          if (fnRange && i === fnRange[0] - 1 && rawLines[i].trim() === "") {
+          if (fnRange && i === fnRange[0] - 1 && rawLines[i].trim() === "")
             continue;
-          }
           const rawLine = rawLines[i];
           const lineNum = i + 1;
           const contentSpans = buildContentSpans(rawLine, footnoteMap);
           const refIds = lineRefMap.get(i);
-          const metadata = buildLineMetadata(refIds, footnoteMap);
-          const flags = computeFlags(refIds, footnoteMap);
-          const rawHash = (0, hashline_js_1.computeLineHash)(i, rawLine, rawLines);
-          const hash = rawToCommittedHash.get(lineNum) ?? rawHash;
+          const metadata = (0, line_metadata_js_1.buildLineMetadataFromFootnotes)(refIds, footnoteMap);
+          const flags = (0, view_builder_utils_js_1.computePAFlags)(refIds, footnoteMap);
+          const sh = sessionHashesResult.byRawLine.get(lineNum);
+          const marginHash = sh.raw;
           outputLines.push({
-            margin: { lineNumber: lineNum, hash, flags },
+            margin: { lineNumber: lineNum, hash: marginHash, flags },
             content: contentSpans,
             metadata,
             rawLineNumber: lineNum,
             continuesChange: continuations.has(i) || void 0,
             sessionHashes: {
-              raw: rawHash,
-              current: (0, hashline_tracked_js_1.computeCurrentLineHash)(lineNum, rawLine, allCurrent),
-              committed: rawToCommittedHash.get(lineNum)
+              raw: sh.raw,
+              committed: sh.committed,
+              currentView: sh.currentView
             }
           });
         }
@@ -18913,7 +19096,7 @@ ${sidecarSection}
           changes
         });
         return {
-          view: "review",
+          view: "working",
           header,
           lines: outputLines
         };
@@ -18983,90 +19166,62 @@ ${sidecarSection}
           spans.push({ type: "plain", text: text.slice(lastIdx) });
         }
       }
-      function buildLineMetadata(refIds, footnoteMap) {
-        if (!refIds)
-          return [];
-        const metadata = [];
-        for (const id of refIds) {
-          const node = footnoteMap.get(id);
-          if (!node)
-            continue;
-          const status = (0, types_js_1.nodeStatus)(node);
-          const reason = node.metadata?.comment || node.metadata?.discussion?.[0]?.text || void 0;
-          metadata.push({
-            changeId: node.id,
-            author: node.metadata?.author ?? node.inlineMetadata?.author,
-            reason,
-            replyCount: (node.replyCount ?? 0) > 0 ? node.replyCount : void 0,
-            status
-          });
-        }
-        return metadata;
-      }
-      function computeFlags(refIds, footnoteMap) {
-        if (!refIds)
-          return [];
-        let hasProposed = false;
-        let hasAccepted = false;
-        for (const id of refIds) {
-          const node = footnoteMap.get(id);
-          if (!node)
-            continue;
-          const status = (0, types_js_1.nodeStatus)(node);
-          if (status === "proposed")
-            hasProposed = true;
-          if (status === "accepted")
-            hasAccepted = true;
-        }
-        if (hasProposed)
-          return ["P"];
-        if (hasAccepted)
-          return ["A"];
-        return [];
-      }
     }
   });
 
-  // ../core/dist/renderers/view-builders/changes.js
-  var require_changes = __commonJS({
-    "../core/dist/renderers/view-builders/changes.js"(exports) {
+  // ../core/dist/renderers/view-builders/simple.js
+  var require_simple = __commonJS({
+    "../core/dist/renderers/view-builders/simple.js"(exports) {
       "use strict";
       Object.defineProperty(exports, "__esModule", { value: true });
-      exports.buildChangesDocument = buildChangesDocument;
-      var decided_text_js_1 = require_decided_text();
-      var hashline_js_1 = require_hashline();
-      var hashline_tracked_js_1 = require_hashline_tracked();
+      exports.buildSimpleDocument = buildSimpleDocument;
+      var format_aware_parse_js_1 = require_format_aware_parse();
+      var session_hashes_js_1 = require_session_hashes();
+      var line_metadata_js_1 = require_line_metadata();
       var view_builder_utils_js_1 = require_view_builder_utils();
-      function buildChangesDocument(rawContent, options) {
-        const decidedResult = (0, decided_text_js_1.computeDecidedView)(rawContent);
-        const changes = decidedResult.changes;
-        const rawLines = rawContent.split("\n");
-        const allCurrent = rawLines.map((l) => (0, hashline_tracked_js_1.currentLine)(l));
-        while (decidedResult.lines.length > 0 && decidedResult.lines[decidedResult.lines.length - 1].text.trim() === "") {
-          decidedResult.lines.pop();
+      function buildSimpleDocument(rawContent, options) {
+        const changes = (0, format_aware_parse_js_1.parseForFormat)(rawContent, { skipCodeBlocks: false }).getChanges();
+        const sessionHashesResult = (0, session_hashes_js_1.buildSessionHashes)(rawContent, changes);
+        const currentResult = sessionHashesResult.currentResult;
+        const footnoteMap = /* @__PURE__ */ new Map();
+        for (const node of changes)
+          footnoteMap.set(node.id, node);
+        const currentLines = [...currentResult.lines];
+        while (currentLines.length > 0 && currentLines[currentLines.length - 1].text.trim() === "") {
+          currentLines.pop();
         }
-        const lines = decidedResult.lines.map((cl) => {
-          const flags = cl.flag === "P" ? ["P"] : cl.flag === "A" ? ["A"] : [];
-          const metadata = cl.changeIds.map((id) => ({ changeId: id }));
+        const rawLines = rawContent.split("\n");
+        const lineRefMap = (0, view_builder_utils_js_1.buildLineRefMap)(rawLines);
+        const continuations = (0, view_builder_utils_js_1.computeContinuationLines)(rawContent, changes);
+        const lines = currentLines.map((sl) => {
+          const refIds = lineRefMap.get(sl.rawLineNum - 1);
+          const metadata = (0, line_metadata_js_1.buildLineMetadataFromFootnotes)(refIds, footnoteMap);
+          const flags = (0, view_builder_utils_js_1.computePAFlags)(refIds, footnoteMap);
+          const sh = sessionHashesResult.byRawLine.get(sl.rawLineNum);
           return {
             margin: {
-              lineNumber: cl.decidedLineNum,
-              hash: cl.hash,
+              lineNumber: sl.currentLineNum,
+              hash: sh.currentView ?? sl.hash,
+              // currentView hash
               flags
             },
-            content: [{ type: "plain", text: cl.text }],
+            content: [{ type: "plain", text: sl.text }],
             metadata,
-            rawLineNumber: cl.rawLineNum,
+            rawLineNumber: sl.rawLineNum,
+            continuesChange: continuations.has(sl.rawLineNum - 1) || void 0,
             sessionHashes: {
-              raw: (0, hashline_js_1.computeLineHash)(cl.rawLineNum - 1, rawLines[cl.rawLineNum - 1] ?? "", rawLines),
-              current: (0, hashline_tracked_js_1.computeCurrentLineHash)(cl.rawLineNum, rawLines[cl.rawLineNum - 1] ?? "", allCurrent),
-              committed: cl.hash,
-              rawLineNum: cl.rawLineNum
+              raw: sh.raw,
+              committed: sh.committed,
+              currentView: sh.currentView
             }
           };
         });
         const header = (0, view_builder_utils_js_1.buildDeliberationHeader)({
-          ...options,
+          filePath: options.filePath,
+          trackingStatus: options.trackingStatus,
+          protocolMode: options.protocolMode,
+          defaultView: options.defaultView,
+          viewPolicy: options.viewPolicy,
           changes,
           lineRange: { start: 1, end: lines.length, total: lines.length }
         });
@@ -19075,47 +19230,74 @@ ${sidecarSection}
     }
   });
 
-  // ../core/dist/renderers/view-builders/current.js
-  var require_current = __commonJS({
-    "../core/dist/renderers/view-builders/current.js"(exports) {
+  // ../core/dist/renderers/view-builders/decided.js
+  var require_decided = __commonJS({
+    "../core/dist/renderers/view-builders/decided.js"(exports) {
       "use strict";
       Object.defineProperty(exports, "__esModule", { value: true });
-      exports.buildCurrentDocument = buildCurrentDocument;
-      var current_text_js_1 = require_current_text();
-      var hashline_js_1 = require_hashline();
-      var hashline_tracked_js_1 = require_hashline_tracked();
+      exports.buildDecidedDocument = buildDecidedDocument;
       var format_aware_parse_js_1 = require_format_aware_parse();
+      var types_js_1 = require_types();
+      var session_hashes_js_1 = require_session_hashes();
       var view_builder_utils_js_1 = require_view_builder_utils();
-      function buildCurrentDocument(rawContent, options) {
+      function buildDecidedDocument(rawContent, options) {
         const changes = (0, format_aware_parse_js_1.parseForFormat)(rawContent, { skipCodeBlocks: false }).getChanges();
-        const currentResult = (0, current_text_js_1.computeCurrentView)(rawContent, changes);
-        const rawLines = rawContent.split("\n");
-        const allCurrent = rawLines.map((l) => (0, hashline_tracked_js_1.currentLine)(l));
-        while (currentResult.lines.length > 0 && currentResult.lines[currentResult.lines.length - 1].text.trim() === "") {
-          currentResult.lines.pop();
+        const sessionHashesResult = (0, session_hashes_js_1.buildSessionHashes)(rawContent, changes);
+        const decidedResult = sessionHashesResult.decidedResult;
+        const footnoteMap = /* @__PURE__ */ new Map();
+        for (const node of changes)
+          footnoteMap.set(node.id, node);
+        const decidedLines = [...decidedResult.lines];
+        while (decidedLines.length > 0 && decidedLines[decidedLines.length - 1].text.trim() === "") {
+          decidedLines.pop();
         }
-        const lines = currentResult.lines.map((sl) => ({
-          margin: {
-            lineNumber: sl.currentLineNum,
-            hash: sl.hash,
-            flags: []
-          },
-          content: [{ type: "plain", text: sl.text }],
-          metadata: [],
-          rawLineNumber: sl.rawLineNum,
-          sessionHashes: {
-            raw: (0, hashline_js_1.computeLineHash)(sl.rawLineNum - 1, rawLines[sl.rawLineNum - 1] ?? "", rawLines),
-            current: (0, hashline_tracked_js_1.computeCurrentLineHash)(sl.rawLineNum, rawLines[sl.rawLineNum - 1] ?? "", allCurrent),
-            currentView: sl.hash,
-            rawLineNum: sl.rawLineNum
-          }
-        }));
+        const rawLines = rawContent.split("\n");
+        const lineRefMap = (0, view_builder_utils_js_1.buildLineRefMap)(rawLines);
+        const continuations = (0, view_builder_utils_js_1.computeContinuationLines)(rawContent, changes);
+        const lines = decidedLines.map((cl) => {
+          const refIds = lineRefMap.get(cl.rawLineNum - 1);
+          const flags = computeAFlagOnly(refIds, footnoteMap);
+          const sh = sessionHashesResult.byRawLine.get(cl.rawLineNum);
+          return {
+            margin: {
+              lineNumber: cl.decidedLineNum,
+              hash: cl.hash,
+              flags
+            },
+            content: [{ type: "plain", text: cl.text }],
+            metadata: [],
+            rawLineNumber: cl.rawLineNum,
+            continuesChange: continuations.has(cl.rawLineNum - 1) || void 0,
+            sessionHashes: {
+              raw: sh.raw,
+              committed: sh.committed,
+              currentView: sh.currentView
+            }
+          };
+        });
         const header = (0, view_builder_utils_js_1.buildDeliberationHeader)({
-          ...options,
+          filePath: options.filePath,
+          trackingStatus: options.trackingStatus,
+          protocolMode: options.protocolMode,
+          defaultView: options.defaultView,
+          viewPolicy: options.viewPolicy,
           changes,
           lineRange: { start: 1, end: lines.length, total: lines.length }
         });
-        return { view: "final", header, lines };
+        return { view: "decided", header, lines };
+      }
+      function computeAFlagOnly(refIds, footnoteMap) {
+        if (!refIds)
+          return [];
+        for (const id of refIds) {
+          const node = footnoteMap.get(id);
+          if (!node)
+            continue;
+          const status = (0, types_js_1.nodeStatus)(node);
+          if (status === "accepted")
+            return ["A"];
+        }
+        return [];
       }
     }
   });
@@ -19126,30 +19308,31 @@ ${sidecarSection}
       "use strict";
       Object.defineProperty(exports, "__esModule", { value: true });
       exports.buildRawDocument = buildRawDocument;
-      var hashline_js_1 = require_hashline();
-      var hashline_tracked_js_1 = require_hashline_tracked();
+      var session_hashes_js_1 = require_session_hashes();
       var format_aware_parse_js_1 = require_format_aware_parse();
       var view_builder_utils_js_1 = require_view_builder_utils();
       function buildRawDocument(rawContent, options) {
         const changes = (0, format_aware_parse_js_1.parseForFormat)(rawContent).getChanges();
+        const sessionHashesResult = (0, session_hashes_js_1.buildSessionHashes)(rawContent, changes);
         const rawLines = rawContent.split("\n");
-        const allCurrent = rawLines.map((l) => (0, hashline_tracked_js_1.currentLine)(l));
         const continuations = (0, view_builder_utils_js_1.computeContinuationLines)(rawContent, changes);
         const lines = rawLines.map((text, i) => {
-          const rawHash = (0, hashline_js_1.computeLineHash)(i, text, rawLines);
+          const lineNum = i + 1;
+          const sh = sessionHashesResult.byRawLine.get(lineNum);
           return {
             margin: {
-              lineNumber: i + 1,
-              hash: rawHash,
+              lineNumber: lineNum,
+              hash: sh.raw,
               flags: []
             },
             content: [{ type: "plain", text }],
             metadata: [],
-            rawLineNumber: i + 1,
+            rawLineNumber: lineNum,
             continuesChange: continuations.has(i) || void 0,
             sessionHashes: {
-              raw: rawHash,
-              current: (0, hashline_tracked_js_1.computeCurrentLineHash)(i + 1, text, allCurrent)
+              raw: sh.raw,
+              committed: sh.committed,
+              currentView: sh.currentView
             }
           };
         });
@@ -19160,7 +19343,7 @@ ${sidecarSection}
         });
         const fnRange = (0, view_builder_utils_js_1.findFootnoteSectionRange)(changes);
         const footnoteSection = fnRange ? rawLines.slice(fnRange[0], fnRange[1] + 1).join("\n") : void 0;
-        return { view: "bytes", header, lines, footnoteSection };
+        return { view: "raw", header, lines, footnoteSection };
       }
     }
   });
@@ -19170,19 +19353,19 @@ ${sidecarSection}
     "../core/dist/renderers/view-builders/index.js"(exports) {
       "use strict";
       Object.defineProperty(exports, "__esModule", { value: true });
-      exports.buildRawDocument = exports.buildCurrentDocument = exports.buildChangesDocument = exports.buildReviewDocument = void 0;
+      exports.buildRawDocument = exports.buildDecidedDocument = exports.buildSimpleDocument = exports.buildReviewDocument = void 0;
       exports.buildViewDocument = buildViewDocument;
-      var review_js_1 = require_review();
+      var working_js_1 = require_working();
       Object.defineProperty(exports, "buildReviewDocument", { enumerable: true, get: function() {
-        return review_js_1.buildReviewDocument;
+        return working_js_1.buildReviewDocument;
       } });
-      var changes_js_1 = require_changes();
-      Object.defineProperty(exports, "buildChangesDocument", { enumerable: true, get: function() {
-        return changes_js_1.buildChangesDocument;
+      var simple_js_1 = require_simple();
+      Object.defineProperty(exports, "buildSimpleDocument", { enumerable: true, get: function() {
+        return simple_js_1.buildSimpleDocument;
       } });
-      var current_js_1 = require_current();
-      Object.defineProperty(exports, "buildCurrentDocument", { enumerable: true, get: function() {
-        return current_js_1.buildCurrentDocument;
+      var decided_js_1 = require_decided();
+      Object.defineProperty(exports, "buildDecidedDocument", { enumerable: true, get: function() {
+        return decided_js_1.buildDecidedDocument;
       } });
       var raw_js_1 = require_raw();
       Object.defineProperty(exports, "buildRawDocument", { enumerable: true, get: function() {
@@ -19190,19 +19373,18 @@ ${sidecarSection}
       } });
       function buildViewDocument(rawContent, view, options) {
         switch (view) {
-          case "review":
-            return (0, review_js_1.buildReviewDocument)(rawContent, options);
+          case "working":
+            return (0, working_js_1.buildReviewDocument)(rawContent, options);
           case "simple":
-            return (0, changes_js_1.buildChangesDocument)(rawContent, options);
-          case "final":
-            return (0, current_js_1.buildCurrentDocument)(rawContent, options);
-          case "bytes":
+            return (0, simple_js_1.buildSimpleDocument)(rawContent, options);
+          case "decided":
+            return (0, decided_js_1.buildDecidedDocument)(rawContent, options);
+          case "raw":
             return (0, raw_js_1.buildRawDocument)(rawContent, options);
           case "original":
-            return (0, review_js_1.buildReviewDocument)(rawContent, options);
-          // not yet implemented
+            throw new Error("View 'original' is not supported by buildViewDocument. Host-side consumers should call computeOriginalText directly. MCP agents should not receive this view name (rejected by resolveView enum).");
           default:
-            return (0, review_js_1.buildReviewDocument)(rawContent, options);
+            throw new Error(`Unknown view: ${String(view)}`);
         }
       }
     }
@@ -19780,11 +19962,11 @@ ${sidecarSection}
     "../core/dist/index.js"(exports) {
       "use strict";
       Object.defineProperty(exports, "__esModule", { value: true });
-      exports.promoteToLevel1 = exports.computeSupersedeResult = exports.computeAmendEdits = exports.VALID_DECISIONS = exports.applyReview = exports.ensureL2 = exports.buildContextualL3EditOp = exports.formatL3EditOpLine = exports.buildEditOpFromParts = exports.scanMaxCnId = exports.generateFootnoteDefinition = exports.insertComment = exports.wrapSubstitution = exports.wrapDeletion = exports.wrapInsertion = exports.previousChange = exports.nextChange = exports.computeReplyEdit = exports.computeUnresolveEdit = exports.computeResolutionEdit = exports.computeFootnoteArchiveLineEdit = exports.computeApprovalLineEdit = exports.computeFootnoteStatusEdits = exports.computeRejectParts = exports.computeAcceptParts = exports.computeReject = exports.computeAccept = exports.isFenceCloserLine = exports.skipInlineCode = exports.tryMatchFenceClose = exports.tryMatchFenceOpen = exports.findCodeZones = exports.CriticMarkupParser = exports.TokenType = exports.VirtualDocument = exports.nodeStatus = exports.consumptionLabel = exports.isGhostNode = exports.changeTypeToAbbrev = exports.ChangeStatus = exports.ChangeType = exports.formatTimestamp = exports.compareTimestamps = exports.nowTimestamp = exports.parseTimestamp = exports.canWithdraw = exports.canAccept = exports.reviewerType = exports.DEFAULT_CONFIG = exports.parseProjectConfig = void 0;
-      exports.initHashline = exports.computeCurrentView = exports.applyRejectedChanges = exports.applyAcceptedChanges = exports.computeOriginalText = exports.computeCurrentText = exports.computeCurrentReplace = exports.tryDiagnosticConfusableMatch = exports.unicodeName = exports.diagnosticConfusableNormalize = exports.whitespaceCollapsedIsAmbiguous = exports.whitespaceCollapsedFind = exports.buildWhitespaceCollapseMap = exports.collapseWhitespace = exports.normalizedIndexOf = exports.defaultNormalizer = exports.insertTrackingHeader = exports.generateTrackingHeader = exports.parseTrackingHeader = exports.computeSidecarResolveAll = exports.computeSidecarReject = exports.computeSidecarAccept = exports.parseContextualEditOp = exports.FootnoteNativeParser = exports.SidecarParser = exports.annotateSidecar = exports.annotateMarkdown = exports.lineOffset = exports.escapeRegex = exports.stripLineComment = exports.wrapLineComment = exports.getCommentSyntax = exports.Workspace = exports.resolveReplayFromParsedFootnotes = exports.traceDependencies = exports.resolve = exports.scrubForward = exports.scrubBackward = exports.convertL3ToL2 = exports.offsetToLineNumber = exports.buildLineStarts = exports.bodyReplacement = exports.convertL2ToL3 = exports.checkSupersedesIntegrity = exports.compactL2 = exports.compact = exports.analyzeCompactionCandidates = exports.compactToLevel0 = exports.compactToLevel1 = exports.promoteToLevel2 = void 0;
-      exports.isL3Format = exports.FOOTNOTE_L3_EDIT_OP = exports.FOOTNOTE_THREAD_REPLY = exports.FOOTNOTE_CONTINUATION = exports.FOOTNOTE_DEF_STATUS_VALUE = exports.FOOTNOTE_DEF_STATUS = exports.FOOTNOTE_DEF_STRICT = exports.FOOTNOTE_DEF_LENIENT = exports.FOOTNOTE_DEF_START_QUICK = exports.FOOTNOTE_DEF_START = exports.footnoteRefNumericGlobal = exports.footnoteRefGlobal = exports.FOOTNOTE_REF_ANCHORED = exports.FOOTNOTE_ID_NUMERIC_PATTERN = exports.FOOTNOTE_ID_PATTERN = exports.markupWithRef = exports.inlineMarkupAll = exports.hasCriticMarkup = exports.HAS_CRITIC_MARKUP = exports.multiLineComment = exports.multiLineHighlight = exports.multiLineDeletion = exports.multiLineInsertion = exports.multiLineSubstitution = exports.singleLineComment = exports.singleLineHighlight = exports.singleLineInsertion = exports.singleLineDeletion = exports.singleLineSubstitution = exports.findSidecarBlockStart = exports.SIDECAR_BLOCK_MARKER = exports.formatDecidedOutput = exports.computeDecidedView = exports.computeDecidedLine = exports.parseFootnotes = exports.findFootnoteBlockStart = exports.stripBoundaryEcho = exports.relocateHashRef = exports.detectNoOp = exports.stripHashlinePrefixes = exports.formatTrackedHeader = exports.formatTrackedHashLines = exports.computeCurrentLineHash = exports.currentLine = exports.HashlineMismatchError = exports.validateLineRef = exports.parseLineRef = exports.formatHashLines = exports.computeLineHash = exports.ensureHashlineReady = void 0;
-      exports.appendOriginal = exports.prependOriginal = exports.extendBuffer = exports.bufferContainsOffset = exports.bufferEnd = exports.isBufferEmpty = exports.DEFAULT_EDIT_BOUNDARY_CONFIG = exports.computeContinuationLines = exports.findFootnoteSectionRange = exports.buildLineRefMap = exports.buildDeliberationHeader = exports.buildRawDocument = exports.buildCurrentDocument = exports.buildChangesDocument = exports.buildReviewDocument = exports.buildViewDocument = exports.formatHtml = exports.formatAnsi = exports.formatPlainText = exports.formatDocument = exports.parseOp = exports.resolveAt = exports.parseAt = exports.extractFootnoteStatuses = exports.resolveChangeById = exports.findChildFootnoteIds = exports.findReviewInsertionIndex = exports.findDiscussionInsertionIndex = exports.parseFootnoteHeader = exports.findFootnoteBlock = exports.countFootnoteHeadersWithStatus = exports.contentZoneText = exports.resolveOverlapWithAuthor = exports.findAllProposedOverlaps = exports.stripRefsFromContent = exports.guardOverlap = exports.checkCriticMarkupOverlap = exports.stripCriticMarkupToCommittedWithMap = exports.stripCriticMarkup = exports.stripCriticMarkupWithMap = exports.replaceUnique = exports.extractLineRange = exports.appendFootnote = exports.applySingleOperation = exports.applyProposeChange = exports.tryFindUniqueMatch = exports.findUniqueMatch = exports.viewAwareFind = exports.buildViewSurfaceMap = exports.splitBodyAndFootnotes = void 0;
-      exports.serializeL3 = exports.serializeL2 = exports.parseL3 = exports.parseL2 = exports.stripFootnoteBlocks = exports.parseForFormat = exports.processEvent = exports.classifySignal = exports.createBuffer = exports.spliceDelete = exports.spliceInsert = void 0;
+      exports.computeSupersedeResult = exports.computeAmendEdits = exports.VALID_DECISIONS = exports.applyReview = exports.ensureL2 = exports.buildContextualL3EditOp = exports.formatL3EditOpLine = exports.buildEditOpFromParts = exports.scanMaxCnId = exports.generateFootnoteDefinition = exports.insertComment = exports.wrapSubstitution = exports.wrapDeletion = exports.wrapInsertion = exports.previousChange = exports.nextChange = exports.computeReplyEdit = exports.computeUnresolveEdit = exports.computeResolutionEdit = exports.computeFootnoteArchiveLineEdit = exports.computeApprovalLineEdit = exports.computeFootnoteStatusEdits = exports.computeRejectParts = exports.computeAcceptParts = exports.computeReject = exports.computeAccept = exports.isFenceCloserLine = exports.skipInlineCode = exports.tryMatchFenceClose = exports.tryMatchFenceOpen = exports.findCodeZones = exports.CriticMarkupParser = exports.TokenType = exports.VirtualDocument = exports.nodeStatus = exports.consumptionLabel = exports.isGhostNode = exports.changeTypeToShortCode = exports.changeTypeToAbbrev = exports.ChangeStatus = exports.ChangeType = exports.formatTimestamp = exports.compareTimestamps = exports.nowTimestamp = exports.parseTimestamp = exports.canWithdraw = exports.canAccept = exports.reviewerType = exports.DEFAULT_CONFIG = exports.parseProjectConfig = void 0;
+      exports.computeCurrentView = exports.applyRejectedChanges = exports.applyAcceptedChanges = exports.computeOriginalText = exports.computeCurrentText = exports.computeCurrentReplace = exports.tryDiagnosticConfusableMatch = exports.unicodeName = exports.diagnosticConfusableNormalize = exports.whitespaceCollapsedIsAmbiguous = exports.whitespaceCollapsedFind = exports.buildWhitespaceCollapseMap = exports.collapseWhitespace = exports.normalizedIndexOf = exports.defaultNormalizer = exports.insertTrackingHeader = exports.generateTrackingHeader = exports.parseTrackingHeader = exports.computeSidecarResolveAll = exports.computeSidecarReject = exports.computeSidecarAccept = exports.parseContextualEditOp = exports.FootnoteNativeParser = exports.SidecarParser = exports.annotateSidecar = exports.annotateMarkdown = exports.lineOffset = exports.escapeRegex = exports.stripLineComment = exports.wrapLineComment = exports.getCommentSyntax = exports.Workspace = exports.resolveReplayFromParsedFootnotes = exports.traceDependencies = exports.resolve = exports.scrubForward = exports.scrubBackward = exports.convertL3ToL2 = exports.offsetToLineNumber = exports.buildLineStarts = exports.bodyReplacement = exports.convertL2ToL3 = exports.checkSupersedesIntegrity = exports.compactL2 = exports.compact = exports.analyzeCompactionCandidates = exports.compactToLevel0 = exports.compactToLevel1 = exports.promoteToLevel2 = exports.promoteToLevel1 = void 0;
+      exports.FOOTNOTE_THREAD_REPLY = exports.FOOTNOTE_CONTINUATION = exports.FOOTNOTE_DEF_STATUS_VALUE = exports.FOOTNOTE_DEF_STATUS = exports.FOOTNOTE_DEF_STRICT = exports.FOOTNOTE_DEF_LENIENT = exports.FOOTNOTE_DEF_START_QUICK = exports.FOOTNOTE_DEF_START = exports.footnoteRefNumericGlobal = exports.footnoteRefGlobal = exports.FOOTNOTE_REF_ANCHORED = exports.FOOTNOTE_ID_NUMERIC_PATTERN = exports.FOOTNOTE_ID_PATTERN = exports.markupWithRef = exports.inlineMarkupAll = exports.hasCriticMarkup = exports.HAS_CRITIC_MARKUP = exports.multiLineComment = exports.multiLineHighlight = exports.multiLineDeletion = exports.multiLineInsertion = exports.multiLineSubstitution = exports.singleLineComment = exports.singleLineHighlight = exports.singleLineInsertion = exports.singleLineDeletion = exports.singleLineSubstitution = exports.findSidecarBlockStart = exports.SIDECAR_BLOCK_MARKER = exports.formatDecidedOutput = exports.computeDecidedView = exports.computeDecidedLine = exports.parseFootnotes = exports.findFootnoteBlockStart = exports.stripBoundaryEcho = exports.relocateHashRefMulti = exports.relocateHashRef = exports.detectNoOp = exports.stripHashlinePrefixes = exports.formatTrackedHeader = exports.formatTrackedHashLines = exports.computeCurrentLineHash = exports.currentLine = exports.HashlineMismatchError = exports.validateLineRef = exports.parseLineRef = exports.formatHashLines = exports.computeLineHash = exports.ensureHashlineReady = exports.initHashline = void 0;
+      exports.extendBuffer = exports.bufferContainsOffset = exports.bufferEnd = exports.isBufferEmpty = exports.DEFAULT_EDIT_BOUNDARY_CONFIG = exports.computeContinuationLines = exports.findFootnoteSectionRange = exports.buildLineRefMap = exports.buildDeliberationHeader = exports.buildRawDocument = exports.buildDecidedDocument = exports.buildSimpleDocument = exports.buildReviewDocument = exports.buildViewDocument = exports.formatHtml = exports.formatAnsi = exports.formatPlainText = exports.formatDocument = exports.parseOp = exports.resolveAt = exports.parseAt = exports.extractFootnoteStatuses = exports.resolveChangeById = exports.findChildFootnoteIds = exports.findReviewInsertionIndex = exports.findDiscussionInsertionIndex = exports.parseFootnoteHeader = exports.findFootnoteBlock = exports.countFootnoteHeadersWithStatus = exports.contentZoneText = exports.resolveOverlapWithAuthor = exports.findAllProposedOverlaps = exports.stripRefsFromContent = exports.guardOverlap = exports.checkCriticMarkupOverlap = exports.stripCriticMarkupToCommittedWithMap = exports.stripCriticMarkup = exports.stripCriticMarkupWithMap = exports.replaceUnique = exports.extractLineRange = exports.appendFootnote = exports.applySingleOperation = exports.applyProposeChange = exports.tryFindUniqueMatch = exports.findUniqueMatch = exports.viewAwareFind = exports.buildViewSurfaceMap = exports.splitBodyAndFootnotes = exports.isL3Format = exports.FOOTNOTE_L3_EDIT_OP = void 0;
+      exports.serializeL3 = exports.serializeL2 = exports.parseL3 = exports.parseL2 = exports.buildSessionHashes = exports.stripFootnoteBlocks = exports.parseForFormat = exports.processEvent = exports.classifySignal = exports.createBuffer = exports.spliceDelete = exports.spliceInsert = exports.appendOriginal = exports.prependOriginal = void 0;
       var index_js_1 = require_config();
       Object.defineProperty(exports, "parseProjectConfig", { enumerable: true, get: function() {
         return index_js_1.parseProjectConfig;
@@ -19824,6 +20006,9 @@ ${sidecarSection}
       } });
       Object.defineProperty(exports, "changeTypeToAbbrev", { enumerable: true, get: function() {
         return types_js_1.changeTypeToAbbrev;
+      } });
+      Object.defineProperty(exports, "changeTypeToShortCode", { enumerable: true, get: function() {
+        return types_js_1.changeTypeToShortCode;
       } });
       Object.defineProperty(exports, "isGhostNode", { enumerable: true, get: function() {
         return types_js_1.isGhostNode;
@@ -20162,6 +20347,9 @@ ${sidecarSection}
       Object.defineProperty(exports, "relocateHashRef", { enumerable: true, get: function() {
         return hashline_cleanup_js_1.relocateHashRef;
       } });
+      Object.defineProperty(exports, "relocateHashRefMulti", { enumerable: true, get: function() {
+        return hashline_cleanup_js_1.relocateHashRefMulti;
+      } });
       Object.defineProperty(exports, "stripBoundaryEcho", { enumerable: true, get: function() {
         return hashline_cleanup_js_1.stripBoundaryEcho;
       } });
@@ -20394,11 +20582,11 @@ ${sidecarSection}
       Object.defineProperty(exports, "buildReviewDocument", { enumerable: true, get: function() {
         return index_js_3.buildReviewDocument;
       } });
-      Object.defineProperty(exports, "buildChangesDocument", { enumerable: true, get: function() {
-        return index_js_3.buildChangesDocument;
+      Object.defineProperty(exports, "buildSimpleDocument", { enumerable: true, get: function() {
+        return index_js_3.buildSimpleDocument;
       } });
-      Object.defineProperty(exports, "buildCurrentDocument", { enumerable: true, get: function() {
-        return index_js_3.buildCurrentDocument;
+      Object.defineProperty(exports, "buildDecidedDocument", { enumerable: true, get: function() {
+        return index_js_3.buildDecidedDocument;
       } });
       Object.defineProperty(exports, "buildRawDocument", { enumerable: true, get: function() {
         return index_js_3.buildRawDocument;
@@ -20462,6 +20650,10 @@ ${sidecarSection}
       Object.defineProperty(exports, "stripFootnoteBlocks", { enumerable: true, get: function() {
         return format_aware_parse_js_1.stripFootnoteBlocks;
       } });
+      var session_hashes_js_1 = require_session_hashes();
+      Object.defineProperty(exports, "buildSessionHashes", { enumerable: true, get: function() {
+        return session_hashes_js_1.buildSessionHashes;
+      } });
       var parse_document_js_1 = require_parse_document();
       Object.defineProperty(exports, "parseL2", { enumerable: true, get: function() {
         return parse_document_js_1.parseL2;
@@ -20508,8 +20700,8 @@ ${sidecarSection}
       };
       exports.EventEmitter = EventEmitter;
       exports.VIEW_PRESETS = {
-        review: {
-          name: "review",
+        working: {
+          name: "working",
           projection: "current",
           display: {
             insertions: "inline",
@@ -20540,8 +20732,8 @@ ${sidecarSection}
             cursorReveal: false
           }
         },
-        final: {
-          name: "final",
+        decided: {
+          name: "decided",
           projection: "decided",
           display: {
             insertions: "inline",
@@ -20572,8 +20764,8 @@ ${sidecarSection}
             cursorReveal: false
           }
         },
-        bytes: {
-          name: "bytes",
+        raw: {
+          name: "raw",
           projection: "none",
           display: {
             insertions: "inline",
@@ -22051,6 +22243,7 @@ ${sidecarSection}
               pushMoveTo({ range: contentRange });
             } else {
               (0, helpers_js_1.hideOrGhostDelimiters)(fullRange, contentRange, plan, inlineDelimiters, showGhostDelimitersPolicy, tokens_js_1.TokenType.AdditionOpen, tokens_js_1.TokenType.AdditionClose);
+              pushMoveTo({ range: contentRange });
             }
           } else if (change.type === types_js_1.ChangeType.Insertion) {
             const reasonHover = change.metadata?.comment ? `**Reason:** ${change.metadata.comment}` : void 0;
@@ -22068,6 +22261,7 @@ ${sidecarSection}
               pushInsertion({ range: contentRange, hoverText: reasonHover });
             } else {
               (0, helpers_js_1.hideOrGhostDelimiters)(fullRange, contentRange, plan, inlineDelimiters, showGhostDelimitersPolicy, tokens_js_1.TokenType.AdditionOpen, tokens_js_1.TokenType.AdditionClose);
+              pushInsertion({ range: contentRange, hoverText: reasonHover });
             }
           } else if (change.type === types_js_1.ChangeType.Deletion) {
             const reasonHover = change.metadata?.comment ? `**Reason:** ${change.metadata.comment}` : void 0;
@@ -22139,6 +22333,7 @@ ${sidecarSection}
                 } else if (showGhostDelimitersPolicy) {
                   (0, helpers_js_1.injectGhostDelimiters)(fullRange, contentRange, plan.ghostDelimiters, tokens_js_1.TokenType.SubstitutionOpen, tokens_js_1.TokenType.SubstitutionClose);
                 }
+                pushSubModified({ range: change.modifiedRange, hoverText: reasonHover });
               }
             } else if (change.originalText || change.modifiedText) {
               const charRanges = (0, helpers_js_1.getCharLevelRanges)(change);
@@ -22926,7 +23121,7 @@ ${sidecarSection}
               }
             }
           }
-          const basePreset = config.defaultView ?? types_js_1.VIEW_PRESETS.review;
+          const basePreset = config.defaultView ?? types_js_1.VIEW_PRESETS.working;
           this._defaultView = {
             ...basePreset,
             display: { ...basePreset.display, ...this._userDisplay }
@@ -23402,15 +23597,42 @@ ${sidecarSection}
       "use strict";
       Object.defineProperty(exports, "__esModule", { value: true });
       exports.VIEW_LABELS = void 0;
+      exports.resolveView = resolveView;
       exports.isTypeVisibleInView = isTypeVisibleInView;
       exports.isChangeVisibleInView = isChangeVisibleInView;
       var types_js_1 = require_types();
+      var VIEW_KNOWN_NAMES = /* @__PURE__ */ new Map([
+        // Canonical (identity)
+        ["working", "working"],
+        ["simple", "simple"],
+        ["decided", "decided"],
+        ["original", "original"],
+        ["raw", "raw"],
+        // Legacy config compat (silent normalization)
+        ["review", "working"],
+        ["bytes", "raw"],
+        ["changes", "simple"],
+        ["final", "decided"],
+        ["settled", "decided"],
+        // Legacy MCP aliases
+        ["full", "raw"],
+        ["all", "working"],
+        ["content", "raw"],
+        ["meta", "working"],
+        ["committed", "simple"],
+        // VS Code settings compat
+        ["all-markup", "working"],
+        ["markup", "working"]
+      ]);
+      function resolveView(input) {
+        return VIEW_KNOWN_NAMES.get(input) ?? null;
+      }
       exports.VIEW_LABELS = {
-        review: "Review",
+        working: "Working",
         simple: "Simple",
-        final: "Final",
+        decided: "Decided",
         original: "Original",
-        bytes: "Bytes"
+        raw: "Raw"
       };
       function isTypeVisibleInView(type, view) {
         const d = view.display;
@@ -23519,7 +23741,7 @@ ${sidecarSection}
     "../core/dist/host/index.js"(exports) {
       "use strict";
       Object.defineProperty(exports, "__esModule", { value: true });
-      exports.PendingEditManager = exports.LocalFormatAdapter = exports.LocalParseAdapter = exports.LspFormatAdapter = exports.isTypeVisibleInView = exports.isChangeVisibleInView = exports.VIEW_LABELS = exports.VIEW_PRESETS = exports.NULL_LSP_CONNECTION = exports.FormatService = exports.LSP_METHOD = exports.UriKeyedStore = exports.BaseController = exports.UriSet = exports.UriMap = exports.normalizeUri = exports.transformRange = exports.NO_CURSOR = exports.TOKEN_MODIFIERS = exports.TOKEN_TYPES = exports.planToSemanticTokens = exports.applyPlan = exports.buildOverviewRulerPlan = exports.buildDecorationPlan = exports.hasInlineDelimiters = exports.hideOrGhostDelimiters = exports.getCharLevelRanges = exports.createEmptyPlan = exports.revealDelimiters = exports.hideDelimiters = exports.isOffsetInRange = exports.offsetToLine = exports.computeLineStarts = exports.AuthorColorMap = exports.AUTHOR_PALETTE = exports.OVERVIEW_RULER_COLORS = exports.DECORATION_STYLES = exports.CoherenceService = exports.ReviewService = exports.NavigationService = exports.TrackingService = exports.DecorationScheduler = exports.DocumentStateManager = exports.rangeToOffsetBatch = exports.rangeToOffset = exports.offsetToRange = exports.EventEmitter = void 0;
+      exports.PendingEditManager = exports.LocalFormatAdapter = exports.LocalParseAdapter = exports.LspFormatAdapter = exports.isTypeVisibleInView = exports.isChangeVisibleInView = exports.resolveView = exports.VIEW_LABELS = exports.VIEW_PRESETS = exports.NULL_LSP_CONNECTION = exports.FormatService = exports.LSP_METHOD = exports.UriKeyedStore = exports.BaseController = exports.UriSet = exports.UriMap = exports.normalizeUri = exports.transformRange = exports.NO_CURSOR = exports.TOKEN_MODIFIERS = exports.TOKEN_TYPES = exports.planToSemanticTokens = exports.applyPlan = exports.buildOverviewRulerPlan = exports.buildDecorationPlan = exports.hasInlineDelimiters = exports.hideOrGhostDelimiters = exports.getCharLevelRanges = exports.createEmptyPlan = exports.revealDelimiters = exports.hideDelimiters = exports.isOffsetInRange = exports.offsetToLine = exports.computeLineStarts = exports.AuthorColorMap = exports.AUTHOR_PALETTE = exports.OVERVIEW_RULER_COLORS = exports.DECORATION_STYLES = exports.CoherenceService = exports.ReviewService = exports.NavigationService = exports.TrackingService = exports.DecorationScheduler = exports.DocumentStateManager = exports.rangeToOffsetBatch = exports.rangeToOffset = exports.offsetToRange = exports.EventEmitter = void 0;
       var types_js_1 = require_types3();
       Object.defineProperty(exports, "EventEmitter", { enumerable: true, get: function() {
         return types_js_1.EventEmitter;
@@ -23662,6 +23884,9 @@ ${sidecarSection}
       var view_helpers_js_1 = require_view_helpers();
       Object.defineProperty(exports, "VIEW_LABELS", { enumerable: true, get: function() {
         return view_helpers_js_1.VIEW_LABELS;
+      } });
+      Object.defineProperty(exports, "resolveView", { enumerable: true, get: function() {
+        return view_helpers_js_1.resolveView;
       } });
       Object.defineProperty(exports, "isChangeVisibleInView", { enumerable: true, get: function() {
         return view_helpers_js_1.isChangeVisibleInView;
@@ -23836,7 +24061,7 @@ This change's visible effect was absorbed by a later edit. The change is preserv
       var converters_1 = require_converters();
       function createCodeLenses(changes, text, viewMode, codeLensMode, cursorState, coherenceRate) {
         const lenses = [];
-        if (coherenceRate !== void 0 && coherenceRate < 100 && viewMode !== "bytes" && codeLensMode !== "off") {
+        if (coherenceRate !== void 0 && coherenceRate < 100 && viewMode !== "raw" && codeLensMode !== "off") {
           const unresolvedCount = changes.filter(core_1.isGhostNode).length;
           if (unresolvedCount > 0) {
             lenses.push({
@@ -23847,7 +24072,7 @@ This change's visible effect was absorbed by a later edit. The change is preserv
         }
         if (codeLensMode === "off")
           return lenses;
-        if (viewMode === "final" || viewMode === "bytes")
+        if (viewMode === "decided" || viewMode === "raw")
           return lenses;
         const mode = codeLensMode ?? "cursor";
         const resolved = changes.filter((c) => !(0, core_1.isGhostNode)(c));
@@ -24131,7 +24356,7 @@ This change's visible effect was absorbed by a later edit. The change is preserv
           tokenModifiers: [...host_1.TOKEN_MODIFIERS]
         };
       }
-      function buildSemanticTokens(changes, text, viewMode = "review") {
+      function buildSemanticTokens(changes, text, viewMode = "working") {
         const view = host_1.VIEW_PRESETS[viewMode];
         const plan = (0, host_1.buildDecorationPlan)(changes, text, view, host_1.NO_CURSOR);
         const { data } = (0, host_1.planToSemanticTokens)(plan, changes, text);
@@ -24477,7 +24702,7 @@ This change's visible effect was absorbed by a later edit. The change is preserv
             ranges.push(vscode_languageserver_1.FoldingRange.create(startLine, endLine, void 0, void 0, vscode_languageserver_1.FoldingRangeKind.Region));
           }
         }
-        if (viewMode === "review" || viewMode === "simple") {
+        if (viewMode === "working" || viewMode === "simple") {
           const blockStart = (0, core_1.findFootnoteBlockStart)(lines);
           if (blockStart < lines.length) {
             const sectionStart = blockStart > 0 && lines[blockStart - 1].trim() === "" ? blockStart - 1 : blockStart;
@@ -24571,7 +24796,7 @@ This change's visible effect was absorbed by a later edit. The change is preserv
           languageId,
           parseResult,
           overlay: null,
-          viewMode: "review",
+          viewMode: "working",
           cursorState: null,
           decorationTimeout: null,
           isBatchEditing: false,
@@ -24752,15 +24977,15 @@ This change's visible effect was absorbed by a later edit. The change is preserv
             try {
               const uri = params.textDocument.uri;
               const rawView = params.viewMode;
-              if (!(rawView in host_1.VIEW_PRESETS)) {
+              const view = (0, host_1.resolveView)(rawView);
+              if (view === null) {
                 this.connection.console.warn(`${host_1.LSP_METHOD.SET_VIEW_MODE}: ignoring unknown viewMode "${rawView}" for ${uri}`);
                 return;
               }
-              const view = rawView;
               const state = this.docStates.get(uri);
               if (state) {
                 state.viewMode = view;
-                if (view !== "review" && view !== "simple") {
+                if (view !== "working" && view !== "simple") {
                   state.autoFoldSent = false;
                 }
               }
@@ -25052,7 +25277,7 @@ This change's visible effect was absorbed by a later edit. The change is preserv
           if (!text)
             return;
           const tracking = (0, document_state_1.resolveTracking)(text, this.projectTrackingDefault);
-          const viewMode = this.docStates.get(uri)?.viewMode ?? "review";
+          const viewMode = this.docStates.get(uri)?.viewMode ?? "working";
           (0, document_state_1.sendDocumentState)(this.connection, uri, tracking, viewMode);
         }
         /**
@@ -25204,7 +25429,7 @@ This change's visible effect was absorbed by a later edit. The change is preserv
           const changes = this.getMergedChanges(uri);
           const isL3ForFold = this.formatService.getDetectedFormat(uri, text) === "L3";
           const viewModeForFold = state.viewMode;
-          const autoFoldLines = isL3ForFold && !state.autoFoldSent && (viewModeForFold === "review" || viewModeForFold === "simple") ? (0, folding_ranges_1.computeAutoFoldLines)(text) : void 0;
+          const autoFoldLines = isL3ForFold && !state.autoFoldSent && (viewModeForFold === "working" || viewModeForFold === "simple") ? (0, folding_ranges_1.computeAutoFoldLines)(text) : void 0;
           (0, decoration_data_1.sendDecorationData)(this.connection, uri, changes, state.version, autoFoldLines ?? void 0);
           if (autoFoldLines)
             state.autoFoldSent = true;
@@ -25322,7 +25547,7 @@ This change's visible effect was absorbed by a later edit. The change is preserv
           try {
             const uri = params.textDocument.uri;
             const viewMode = this.getViewMode(uri);
-            if (viewMode === "bytes") {
+            if (viewMode === "raw") {
               return { data: [] };
             }
             const text = this.getDocumentText(uri);
@@ -25517,13 +25742,13 @@ This change's visible effect was absorbed by a later edit. The change is preserv
         }
         /**
          * Get the current view mode for a document.
-         * Defaults to 'review' if no mode has been explicitly set.
+         * Defaults to 'working' if no mode has been explicitly set.
          *
          * @param uri Document URI
          * @returns The active BuiltinView for this document
          */
         getViewMode(uri) {
-          return this.docStates.get(uri)?.viewMode ?? "review";
+          return this.docStates.get(uri)?.viewMode ?? "working";
         }
         /**
          * Handle changedown/getChanges request (Section 11).

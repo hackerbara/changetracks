@@ -1,6 +1,5 @@
 // packages/core/src/host/decorations/styles.ts
 import type { DecorationTypeId, DecorationStyleDef } from './types.js';
-import type { ViewMode } from '../types.js';
 import { ChangeType } from '../../model/types.js';
 
 export const DECORATION_STYLES: Record<DecorationTypeId, DecorationStyleDef> = {
@@ -127,54 +126,7 @@ export const AUTHOR_PALETTE = [
 
 export type VisibilityRule = 'visible' | 'hidden' | 'dimmed' | 'plain';
 
-// Omission means 'visible' (the default). Only overrides are listed.
-export const VIEW_MODE_VISIBILITY: Record<ViewMode, Partial<Record<DecorationTypeId, VisibilityRule>>> = {
-  review: {},
-  changes: {
-    deletion: 'hidden',
-    substitutionOriginal: 'hidden',
-    moveFrom: 'hidden',
-    moveLabel: 'hidden',
-    comment: 'hidden',
-    highlight: 'plain',
-    hidden: 'hidden',
-    unfoldedDelimiter: 'hidden',
-    anchorMeta: 'hidden',
-    decidedRef: 'hidden',
-    footnoteBlock: 'hidden',
-    consumingAnnotation: 'hidden',
-    ghostDelimiter: 'hidden',
-    ghostRef: 'hidden',
-  },
-  settled: {},
-  raw: {},
-};
-
-/**
- * Whether a change of the given type has visible content in the given view mode.
- *
- * This is content visibility (is the change's text present in the rendered view?),
- * not decoration visibility (which CSS styles are applied?). The logic mirrors
- * the plan builder's settled/raw mode routing.
- *
- * - Settled: deletions removed, comments removed, everything else visible
- * - Raw: insertions removed, comments removed, everything else visible
- * - Review/changes: all types visible
- */
-export function isTypeVisibleInMode(type: ChangeType, mode: ViewMode): boolean {
-  switch (mode) {
-    case 'settled':
-      return type !== ChangeType.Deletion && type !== ChangeType.Comment;
-    case 'raw':
-      return type !== ChangeType.Insertion && type !== ChangeType.Comment;
-    case 'review':
-    case 'changes':
-      return true;
-  }
-}
-
 export interface DecorationThemeOverride {
   styles?: Partial<Record<DecorationTypeId, Partial<DecorationStyleDef>>>;
-  visibility?: Partial<Record<ViewMode, Partial<Record<DecorationTypeId, VisibilityRule>>>>;
   authorPalette?: Array<{ light: string; dark: string }>;
 }

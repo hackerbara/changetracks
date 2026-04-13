@@ -10,7 +10,7 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
 
-describe('review view cross-batch coordinate stability', () => {
+describe('working view cross-batch coordinate stability', () => {
   let tmpDir: string;
   let state: SessionState;
   let resolver: ConfigResolver;
@@ -53,9 +53,9 @@ describe('review view cross-batch coordinate stability', () => {
     const filePath = path.join(tmpDir, 'cross-batch-review.md');
     await fs.writeFile(filePath, content);
 
-    // 2. Read in review view — records hashes in session state
+    // 2. Read in working view — records hashes in session state
     const readResult = await handleReadTrackedFile(
-      { file: filePath, view: 'review' },
+      { file: filePath, view: 'working' },
       resolver, state,
     );
     expect(readResult.isError).toBeFalsy();

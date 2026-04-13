@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll } from 'vitest';
-import { initHashline, buildChangesDocument, buildCurrentDocument, buildReviewDocument, buildRawDocument } from '@changedown/core/internals';
+import { initHashline, buildSimpleDocument, buildDecidedDocument, buildReviewDocument, buildRawDocument } from '@changedown/core/internals';
 
 const FIXTURE = [
   'Hello {++world++}[^cn-1] and {--old--}[^cn-2]',
@@ -14,23 +14,23 @@ const OPTIONS = {
   filePath: 'test.md',
   trackingStatus: 'tracked' as const,
   protocolMode: 'standard',
-  defaultView: 'review' as const,
+  defaultView: 'working' as const,
   viewPolicy: 'default',
 };
 
 describe('parse-once view builders', () => {
-  it('changes view produces correct header counts', () => {
-    const doc = buildChangesDocument(FIXTURE, OPTIONS);
+  it('simple view produces correct header counts', () => {
+    const doc = buildSimpleDocument(FIXTURE, OPTIONS);
     expect(doc.header.counts).toEqual({ proposed: 1, accepted: 1, rejected: 0 });
     expect(doc.header.authors).toEqual(['@alice', '@bob']);
   });
 
-  it('settled view produces correct header counts', () => {
-    const doc = buildCurrentDocument(FIXTURE, OPTIONS);
+  it('decided view produces correct header counts', () => {
+    const doc = buildDecidedDocument(FIXTURE, OPTIONS);
     expect(doc.header.counts).toEqual({ proposed: 1, accepted: 1, rejected: 0 });
   });
 
-  it('review view produces correct header and metadata', () => {
+  it('working view produces correct header and metadata', () => {
     const doc = buildReviewDocument(FIXTURE, OPTIONS);
     expect(doc.header.counts).toEqual({ proposed: 1, accepted: 1, rejected: 0 });
     expect(doc.lines.length).toBeGreaterThan(0);

@@ -7,7 +7,7 @@
 
 import { CodeLens, Command, Range } from 'vscode-languageserver';
 import { ChangeNode, ChangeStatus, isGhostNode } from '@changedown/core';
-import type { ViewMode } from '@changedown/core';
+import type { BuiltinView } from '@changedown/core/host';
 import { offsetToPosition } from '../converters';
 
 /** CodeLens display mode */
@@ -24,7 +24,7 @@ export interface CursorState {
  *
  * @param changes Array of change nodes from parser
  * @param text Full document text (needed for offset-to-position conversion)
- * @param viewMode Current view mode — CodeLens is suppressed in settled/raw
+ * @param viewMode Current view mode — CodeLens is suppressed in final/bytes
  * @param codeLensMode Display mode: cursor, always, or off
  * @param cursorState Current cursor position (for cursor mode)
  * @param coherenceRate Optional coherence percentage (0–100); triggers document-level lens when < 100
@@ -33,14 +33,14 @@ export interface CursorState {
 export function createCodeLenses(
   changes: ChangeNode[],
   text: string,
-  viewMode?: ViewMode,
+  viewMode?: BuiltinView,
   codeLensMode?: CodeLensMode,
   cursorState?: CursorState,
   coherenceRate?: number
 ): CodeLens[] {
   const lenses: CodeLens[] = [];
 
-  // Document-level coherence lens — appears in all modes except raw and off
+  // Document-level coherence lens — appears in all modes except bytes and off
   if (coherenceRate !== undefined && coherenceRate < 100 && viewMode !== 'raw' && codeLensMode !== 'off') {
     const unresolvedCount = changes.filter(isGhostNode).length;
     if (unresolvedCount > 0) {
@@ -56,7 +56,7 @@ export function createCodeLenses(
 
   // Off mode or clean preview modes — return early with document-level lenses only
   if (codeLensMode === 'off') return lenses;
-  if (viewMode === 'settled' || viewMode === 'raw') return lenses;
+  if (viewMode === 'decided' || viewMode === 'raw') return lenses;
 
   const mode = codeLensMode ?? 'cursor';
 

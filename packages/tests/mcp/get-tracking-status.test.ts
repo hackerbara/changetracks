@@ -224,7 +224,8 @@ describe('handleGetTrackingStatus', () => {
     // BUG-001 fix: Settlement preserves footnote refs and definitions
     expect(content).toContain('Text added[^cn-1] end.');
     expect(content).toContain('[^cn-1]:'); // Footnote definition preserved
-    expect(content).not.toContain('{++'); // Markup removed
+    // L3 audit trail stores {++...++} in footnote edit-op line; check inline anchor form is absent
+    expect(content).not.toContain('{++added++}[^cn-1]'); // Inline markup removed from body
   });
 
   it('without file arg: reflects custom config values', async () => {

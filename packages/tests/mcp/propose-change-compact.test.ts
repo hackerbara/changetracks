@@ -338,9 +338,9 @@ describe('propose_change compact mode', () => {
     });
   });
 
-  describe('view-aware coordinate translation (settled view)', () => {
-    it('accepts settled-view coordinates in compact mode after reading settled view', async () => {
-      // File has an accepted substitution: in settled view, deleted text is gone,
+  describe('view-aware coordinate translation (final view)', () => {
+    it('accepts final-view coordinates in compact mode after reading final view', async () => {
+      // File has an accepted substitution: in final view, deleted text is gone,
       // inserted text appears as a real line, shifting line numbers.
       // The accepted sub means "old" text is gone, "new" text is present.
       const rawContent = [
@@ -354,16 +354,16 @@ describe('propose_change compact mode', () => {
       const filePath = path.join(tmpDir, 'settled-test.md');
       await fs.writeFile(filePath, rawContent);
 
-      // 1. Read in settled view — records settled-view hashes in session state
+      // 1. Read in decided view — records decided-view hashes in session state
       const readResult = await handleReadTrackedFile(
-        { file: filePath, view: 'settled' },
+        { file: filePath, view: 'decided' },
         resolver,
         state,
       );
       expect(readResult.isError).toBeUndefined();
 
-      // 2. Extract settled hash for "Line three" from the read output
-      //    In settled view: line 1="Line one", line 2="new text", line 3="Line three"
+      // 2. Extract decided hash for "Line three" from the read output
+      //    In decided view: line 1="Line one", line 2="new text", line 3="Line three"
       const readText = readResult.content[readResult.content.length - 1].text;
       const lines = readText.split('\n');
       const targetEntry = lines.find(l => l.includes('Line three'));
@@ -409,9 +409,9 @@ describe('propose_change compact mode', () => {
       const filePath = path.join(tmpDir, 'mismatch-test.md');
       await fs.writeFile(filePath, rawContent);
 
-      // Read in settled view first
+      // Read in decided view first
       await handleReadTrackedFile(
-        { file: filePath, view: 'settled' },
+        { file: filePath, view: 'decided' },
         resolver,
         state,
       );
@@ -465,8 +465,8 @@ describe('propose_change compact mode', () => {
       expect(modified).toContain('{~~Just~>Only~~}');
     });
 
-    it('returns affected_lines in settled-space after compact-mode edit and re-records for chained edits', async () => {
-      // File has a proposed substitution. In settled view, line 2 shows "new text"
+    it('returns affected_lines in final-space after compact-mode edit and re-records for chained edits', async () => {
+      // File has a proposed substitution. In final view, line 2 shows "new text"
       // (old replaced by new), line 3 shows "Line three".
       const rawContent = [
         'Line one',
@@ -478,16 +478,16 @@ describe('propose_change compact mode', () => {
       const filePath = path.join(tmpDir, 'settled-projection.md');
       await fs.writeFile(filePath, rawContent);
 
-      // 1. Read in settled view — records settled-view hashes in session state
+      // 1. Read in decided view — records decided-view hashes in session state
       const readResult = await handleReadTrackedFile(
-        { file: filePath, view: 'settled' },
+        { file: filePath, view: 'decided' },
         resolver,
         state,
       );
       expect(readResult.isError).toBeUndefined();
 
-      // 2. Extract the settled hash for "Line three" (settled line 3)
-      //    The settled view output lines look like: "  3:HH| Line three"
+      // 2. Extract the decided hash for "Line three" (decided line 3)
+      //    The decided view output lines look like: "  3:HH| Line three"
       const readText = readResult.content[readResult.content.length - 1].text;
       const readLines = readText.split('\n');
       const lineThreeLine = readLines.find(l => l.includes('Line three') && !l.includes('one'));
@@ -500,7 +500,7 @@ describe('propose_change compact mode', () => {
       // "Line three" should be at settled line 3
       expect(settledLineNum).toBe(3);
 
-      // 3. Propose a compact edit using settled-view coordinates
+      // 3. Propose a compact edit using final-view coordinates
       const result = await handleProposeChange(
         {
           file: filePath,
@@ -516,21 +516,21 @@ describe('propose_change compact mode', () => {
       expect(result.isError).toBeUndefined();
       const parsed = JSON.parse(result.content[0].text);
 
-      // 4. Verify affected_lines uses settled-space line numbers (not raw line numbers)
-      //    Raw line 3 is "Line three" in the original. After edit, settled line 3 is still line 3.
-      //    The affected_lines should reference settled-view lines (small numbers), not raw lines.
+      // 4. Verify affected_lines uses final-space line numbers (not raw line numbers)
+      //    Raw line 3 is "Line three" in the original. After edit, final line 3 is still line 3.
+      //    The affected_lines should reference final-view lines (small numbers), not raw lines.
       expect(parsed.affected_lines).toBeDefined();
       const affectedLineNums = (parsed.affected_lines as Array<{ line: number }>).map(e => e.line);
-      // Settled view line numbers should be small (1-3 range for a 3-line settled file)
+      // Final view line numbers should be small (1-3 range for a 3-line final file)
       // Raw line numbers for the footnote section would be 4-5+
       expect(affectedLineNums.every((n: number) => n <= 5)).toBe(true);
       // The edit target (settled line 3) should appear in affected_lines
       expect(affectedLineNums).toContain(settledLineNum);
 
-      // 5. Verify hashes in affected_lines are settled-view hashes (not raw hashes)
-      //    Settled hashes should match the new settled view of the modified file
+      // 5. Verify hashes in affected_lines are final-view hashes (not raw hashes)
+      //    Final hashes should match the new final view of the modified file
       if (parsed.affected_lines[0]?.hash) {
-        // All hashes should be 2-char hex (settled-view hash format)
+        // All hashes should be 2-char hex (final-view hash format)
         for (const entry of parsed.affected_lines as Array<{ hash?: string }>) {
           if (entry.hash) {
             expect(entry.hash).toMatch(/^[0-9a-f]{2}$/);

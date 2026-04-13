@@ -33,7 +33,7 @@ function parseAndComputeLenses(
 ): CodeLens[] {
     const parser = new CriticMarkupParser();
     const vdoc = parser.parse(text);
-    return createCodeLenses(vdoc.getChanges(), text, 'review', mode, cursorState);
+    return createCodeLenses(vdoc.getChanges(), text, 'working', mode, cursorState);
 }
 
 function findChangeLineAndId(text: string, changeId: string): { line: number; id: string } {

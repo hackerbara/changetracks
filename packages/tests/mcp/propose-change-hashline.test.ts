@@ -767,12 +767,14 @@ describe('propose_change hashline addressing', () => {
       const content = 'Line one\nLine two\nLine three';
       await fs.writeFile(filePath, content);
 
-      // Record hashes from a "previous read" matching original content
-      state.recordFileHashes(filePath, [
-        { line: 1, raw: hashForLine(content, 1), current: hashForLine(content, 1) },
-        { line: 2, raw: hashForLine(content, 2), current: hashForLine(content, 2) },
-        { line: 3, raw: hashForLine(content, 3), current: hashForLine(content, 3) },
-      ]);
+      // Record hashes from a "previous read" matching original content.
+      // Use recordAfterRead to set lastReadView so getRecordedHashes can find
+      // the stored hashes (recordFileHashes alone doesn't set lastReadView).
+      state.recordAfterRead(filePath, 'working', [
+        { line: 1, raw: hashForLine(content, 1), currentView: hashForLine(content, 1) },
+        { line: 2, raw: hashForLine(content, 2), currentView: hashForLine(content, 2) },
+        { line: 3, raw: hashForLine(content, 3), currentView: hashForLine(content, 3) },
+      ], content);
 
       // Now modify the file externally (simulating another agent/editor)
       const modified = 'Line one\nLine two CHANGED\nLine three';

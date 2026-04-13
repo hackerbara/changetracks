@@ -255,7 +255,7 @@ describe('applyProposeChange — overlap guard integration', () => {
     }
   });
 
-  it('error message is actionable (mentions settled view)', async () => {
+  it('error message is actionable (mentions final view)', async () => {
     const text = 'Intro {++added text++}[^cn-1] end.\n\n[^cn-1]: @ai:test | 2026-02-20 | ins | proposed';
     try {
       await applyProposeChange({

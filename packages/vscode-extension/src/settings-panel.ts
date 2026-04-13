@@ -967,10 +967,14 @@ export class SettingsPanelProvider implements vscode.WebviewViewProvider, vscode
 
     private async writeEditorPreferences(prefs: EditorPreferencesConfig): Promise<void> {
         const cfg = vscode.workspace.getConfiguration('changedown');
-        await cfg.update('showDelimiters', prefs.showDelimiters, vscode.ConfigurationTarget.Workspace);
-        await cfg.update('clickToShowComments', prefs.clickToShowComments, vscode.ConfigurationTarget.Workspace);
-        await cfg.update('commentInsertFormat', prefs.commentInsertFormat, vscode.ConfigurationTarget.Workspace);
-        await cfg.update('changeExplorer.groupBy', prefs.changeExplorerGroupBy, vscode.ConfigurationTarget.Workspace);
+        // Use Global (user settings) so writes are silent — ConfigurationTarget.Workspace
+        // writes to .vscode/settings.json and can trigger VS Code to open that file in a
+        // preview tab. These are personal UI preferences that belong in user settings, not
+        // in a project's version-controlled workspace settings.
+        await cfg.update('showDelimiters', prefs.showDelimiters, vscode.ConfigurationTarget.Global);
+        await cfg.update('clickToShowComments', prefs.clickToShowComments, vscode.ConfigurationTarget.Global);
+        await cfg.update('commentInsertFormat', prefs.commentInsertFormat, vscode.ConfigurationTarget.Global);
+        await cfg.update('changeExplorer.groupBy', prefs.changeExplorerGroupBy, vscode.ConfigurationTarget.Global);
     }
 
     private sendConfigToWebview(): void {

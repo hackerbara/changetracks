@@ -1,4 +1,5 @@
 import { ChangeNode, ChangeStatus, ChangeType, isGhostNode, OffsetRange, PendingOverlay, UnresolvedDiagnostic } from './types.js';
+import type { Footnote } from './footnote.js';
 
 export class VirtualDocument {
   private changes: ChangeNode[];
@@ -79,3 +80,34 @@ export class VirtualDocument {
     return this.changes.filter(c => c.groupId === groupId);
   }
 }
+
+// ── Typed document model ──────────────────────────────────────────────
+// See docs/superpowers/specs/2026-04-07-view-and-format-cleanup-design.md
+
+/** Format discriminator for the typed Document union. */
+export type Format = 'L2' | 'L3';
+
+/**
+ * An L2 document: body text with inline CriticMarkup and optional footnote log.
+ * Field is called `text` (not `body`) because in L2 the markup is structurally
+ * part of the body — splitting "clean body" from "markup" is not meaningful.
+ */
+export interface L2Document {
+  readonly format: 'L2';
+  readonly text: string;
+  readonly footnotes: readonly Footnote[];
+}
+
+/**
+ * An L3 document: clean body text plus footnote log.
+ * Field is called `body` (not `text`) to emphasize the clean separation
+ * — no inline CriticMarkup, no footnote refs in the body.
+ */
+export interface L3Document {
+  readonly format: 'L3';
+  readonly body: string;
+  readonly footnotes: readonly Footnote[];
+}
+
+/** Typed document union. `format` is the discriminator. */
+export type Document = L2Document | L3Document;

@@ -517,3 +517,5 @@ These must remain true across all changes:
 7. Extension communicates with core through LSP, not direct import, for change operations.
 8. `isL3Format()` is O(n). Use `FormatService.getDetectedFormat()` to centralize detection.
 9. All `OperationResult.requiredEdits` must be applied atomically.
+
+[^ct-1.2]: @unknown | 2026-04-13 | sub | proposed

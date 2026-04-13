@@ -4,6 +4,8 @@ export interface ChangeDownConfig {
     tracking: {
         include: string[];
         exclude: string[];
+        /** Glob patterns against full absolute path (POSIX slashes). Omitted = empty. */
+        include_absolute?: string[];
         default: 'tracked' | 'untracked';
         auto_header: boolean;
     };
@@ -36,7 +38,8 @@ export interface ChangeDownConfig {
     policy: {
         mode: PolicyMode;
         creation_tracking: CreationTracking;
-        default_view?: 'review' | 'changes' | 'settled';
+        // Keep in sync with BuiltinView in @changedown/core/host/types.ts
+        default_view?: 'working' | 'simple' | 'decided' | 'original' | 'raw';
         view_policy?: 'suggest' | 'require';
     };
     protocol: {
@@ -50,4 +53,4 @@ export interface ChangeDownConfig {
     };
 }
 export declare const DEFAULT_CONFIG: ChangeDownConfig;
-export { loadConfig, parseConfigToml, findConfigFile, resolveProjectDir, resolveProtocolMode, isFileInScope, derivePolicyMode, asStringArray, } from './loader.js';
+export { loadConfig, parseConfigToml, findConfigFile, resolveProjectDir, resolveProtocolMode, isFileInScope, expandTrackingAbsolutePattern, derivePolicyMode, asStringArray, } from './loader.js';

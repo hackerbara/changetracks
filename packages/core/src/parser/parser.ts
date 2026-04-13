@@ -1,7 +1,7 @@
 import { ChangeNode, ChangeType, ChangeStatus, InlineMetadata, Approval, Revision, DiscussionComment, Resolution } from '../model/types.js';
 import { VirtualDocument } from '../model/document.js';
 import { TokenType } from './tokens.js';
-import { FOOTNOTE_REF_ANCHORED, FOOTNOTE_DEF_STRICT } from '../footnote-patterns.js';
+import { FOOTNOTE_REF_ANCHORED, FOOTNOTE_DEF_STRICT, IMAGE_DIMENSIONS_RE } from '../footnote-patterns.js';
 import { tryMatchFenceOpen, tryMatchFenceClose, skipInlineCode } from './code-zones.js';
 import { parseTimestamp } from '../timestamp.js';
 import { scanMaxCnId } from '../operations/footnote-generator.js';
@@ -54,7 +54,7 @@ function applyImageExtraMetadata(def: FootnoteDefinition, metadata: NonNullable<
   if (!def.extraMetadata) return;
   const dimStr = def.extraMetadata['image-dimensions'];
   if (dimStr) {
-    const dimMatch = dimStr.match(/^([\d.]+)in\s*x\s*([\d.]+)in$/);
+    const dimMatch = dimStr.match(IMAGE_DIMENSIONS_RE);
     if (dimMatch) {
       metadata.imageDimensions = {
         widthIn: parseFloat(dimMatch[1]),

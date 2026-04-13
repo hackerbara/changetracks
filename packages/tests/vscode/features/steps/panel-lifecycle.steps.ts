@@ -50,7 +50,7 @@ When('I build the review panel HTML', function (this: ChangeDownWorld) {
 
     const state: ReviewPanelState = {
         trackingEnabled: false,
-        viewMode: 'review',
+        view: 'working',
         changes: cards,
         hasActiveMarkdownEditor: true,
         activeFilter: 'all',

@@ -8,6 +8,7 @@ export {
   loadConfig,
   resolveProjectDir,
   isFileInScope,
+  expandTrackingAbsolutePattern,
   resolveProtocolMode,
 } from './config.js';
 export type { ChangeDownConfig } from './config.js';

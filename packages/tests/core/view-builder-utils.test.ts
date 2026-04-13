@@ -39,7 +39,7 @@ describe('view-builder-utils', () => {
         filePath: 'test.md',
         trackingStatus: 'tracked',
         protocolMode: 'classic',
-        defaultView: 'review',
+        defaultView: 'working',
         viewPolicy: 'suggest',
         changes: [ct1Node, ct2Node],
       });
@@ -55,7 +55,7 @@ describe('view-builder-utils', () => {
         filePath: 'empty.md',
         trackingStatus: 'untracked',
         protocolMode: 'compact',
-        defaultView: 'review',
+        defaultView: 'working',
         viewPolicy: 'suggest',
         changes: [],
       });

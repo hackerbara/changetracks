@@ -11,7 +11,7 @@
  */
 
 import type { AnnotationCard } from './annotation-extractor';
-import type { ViewMode } from '../view-mode';
+import type { BuiltinView } from '@changedown/core/host';
 import { generateViewModeCSS, generateKatexCSS } from '@changedown/preview';
 
 function generateNonce(): string {
@@ -121,7 +121,7 @@ export interface PreviewHtmlOptions {
     bodyHtml: string;
     annotations: AnnotationCard[];
     stats: ImportStats;
-    currentViewMode: ViewMode;
+    currentView: BuiltinView;
 }
 
 function replaceUnsupportedImages(html: string): string {
@@ -136,11 +136,11 @@ function replaceUnsupportedImages(html: string): string {
 }
 
 export function buildPreviewHtml(opts: PreviewHtmlOptions): string {
-    const { fileName, bodyHtml: rawBodyHtml, annotations, stats, currentViewMode } = opts;
+    const { fileName, bodyHtml: rawBodyHtml, annotations, stats, currentView } = opts;
     const bodyHtml = replaceUnsupportedImages(rawBodyHtml);
     const nonce = generateNonce();
 
-    const sel = (mode: string) => mode === currentViewMode ? 'selected' : '';
+    const sel = (view: BuiltinView) => view === currentView ? 'selected' : '';
 
     const authorBadges = stats.authors
         .map(a => `<span class="cn-toolbar-author">${esc(a)}</span>`)
@@ -291,17 +291,17 @@ ${generateKatexCSS()}
 <div class="cn-docx-toolbar">
   <span class="cn-toolbar-filename">${esc(fileName)}</span>
   <select class="cn-toolbar-viewmode" id="viewModeSelect">
-    <option value="review" ${sel('review')}>All Markup</option>
-    <option value="changes" ${sel('changes')}>Simple</option>
-    <option value="raw" ${sel('raw')}>Original</option>
-    <option value="settled" ${sel('settled')}>Final</option>
+    <option value="working" ${sel('working')}>All Markup</option>
+    <option value="simple" ${sel('simple')}>Simple</option>
+    <option value="original" ${sel('original')}>Original</option>
+    <option value="decided" ${sel('decided')}>Decided</option>
   </select>
   <div class="cn-toolbar-stats">${statsHtml}</div>
   <div class="cn-toolbar-spacer"></div>
   <div class="cn-toolbar-authors">${authorBadges}</div>
   <button class="cn-toolbar-edit" id="editBtn">Edit as Markdown</button>
 </div>
-<div class="cn-preview-layout" data-view-mode="${esc(currentViewMode)}">
+<div class="cn-preview-layout" data-view-name="${esc(currentView)}">
   <div class="cn-preview-body" id="previewBody">
     <div class="cn-document-card">
       ${bodyHtml}

@@ -234,6 +234,55 @@ export class VsCodeEditorHost implements EditorHost, Disposable {
     };
   }
 
+  async replaceDocument(
+    uri: string,
+    newText: string,
+    _metadata:
+      | { reason: 'format-conversion'; from: 'L2' | 'L3'; to: 'L2' | 'L3' }
+      | { reason: 'external' },
+  ): Promise<ApplyEditResult> {
+    const doc = vscode.workspace.textDocuments.find(d => d.uri.toString() === uri);
+    if (!doc) {
+      return { applied: false, text: '', version: 0 };
+    }
+
+    const textBefore = doc.getText();
+    const fullRange = new vscode.Range(
+      doc.positionAt(0),
+      doc.positionAt(textBefore.length),
+    );
+
+    const wsEdit = new vscode.WorkspaceEdit();
+    const docUri = vscode.Uri.parse(uri);
+    wsEdit.replace(docUri, fullRange, newText);
+
+    // Register the echo BEFORE applyEdit so the incoming didChange is
+    // marked isEcho=true by handleContentChange's guard.
+    this._echoUris.add(uri);
+    const applied = await vscode.workspace.applyEdit(wsEdit);
+
+    if (!applied) {
+      this._echoUris.delete(uri);
+      return { applied: false, text: '', version: 0 };
+    }
+
+    const textAfter = doc.getText();
+
+    // No-op detection: if the replace resulted in the same bytes (e.g., a
+    // format conversion that happened to produce identical text), VS Code
+    // does NOT fire onDidChangeTextDocument. Drop the echo flag so the
+    // next real keystroke isn't misclassified as an echo.
+    if (textBefore === textAfter) {
+      this._echoUris.delete(uri);
+    }
+
+    return {
+      applied: true,
+      text: textAfter,
+      version: doc.version,
+    };
+  }
+
   showOverlay(uri: string, overlay: PendingOverlay): void {
     // Server-side PEM pushes overlay via onOverlayUpdate → BaseController → here.
     // TODO: Implement overlay decoration rendering
@@ -245,7 +294,7 @@ export class VsCodeEditorHost implements EditorHost, Disposable {
   }
 
   /** Register an incoming echo for the given URI. Called by edit paths that
-   *  bypass applyEdits (e.g. ProjectedView buffer swap). */
+   *  bypass applyEdits. */
   public registerEcho(uri: string): void {
     this._echoUris.add(uri);
   }

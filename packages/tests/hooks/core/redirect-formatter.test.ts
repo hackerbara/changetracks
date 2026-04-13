@@ -205,21 +205,21 @@ describe('formatReadRedirect', () => {
     const result = formatReadRedirect('docs/readme.md', {});
     expect(result).toContain('read_tracked_file');
     expect(result).toContain('file="docs/readme.md"');
-    expect(result).toContain('view="review"');
+    expect(result).toContain('view="working"');
     expect(result).toContain('tracked');
   });
 
   it('uses configured default_view when set', () => {
     const result = formatReadRedirect('docs/readme.md', {
-      policy: { default_view: 'changes' },
+      policy: { default_view: 'simple' },
     });
-    expect(result).toContain('view="changes"');
+    expect(result).toContain('view="simple"');
   });
 
-  it('falls back to review when default_view is undefined', () => {
+  it('falls back to working when default_view is undefined', () => {
     const result = formatReadRedirect('docs/readme.md', {
       policy: {},
     });
-    expect(result).toContain('view="review"');
+    expect(result).toContain('view="working"');
   });
 });

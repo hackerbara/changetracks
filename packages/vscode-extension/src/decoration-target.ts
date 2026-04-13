@@ -5,7 +5,7 @@
 // decorations from applyPlan() into VS Code API calls.
 //
 // Key behaviors preserved from the original EditorDecorator:
-//   - CSS injection for specificity over semantic tokens (D7)
+//   - Direct top-level color/backgroundColor properties (D7 CSS injection removed)
 //   - hiddenObj dispose/recreate lifecycle on empty-range transition
 //   - Dynamic per-author types created on first encounter and cached
 //   - Overview ruler calls are buffered and flushed in endPass() AFTER the 19
@@ -56,36 +56,25 @@ type FixedTypeId = typeof FIXED_TYPE_IDS[number];
 /**
  * Build VS Code decoration render options from a platform-agnostic style def.
  *
- * CSS injection technique (D7): VS Code's semantic tokens override regular
- * decoration colors. The workaround is embedding color/background-color INTO
- * the textDecoration CSS property string so the browser-layer specificity wins.
- *
- * For a style like { textDecoration: 'underline dotted #1E824C40', color: '#1E824C' }
- * we produce: textDecoration = 'underline dotted #1E824C40; color: #1E824C'
+ * Each CSS property is set as a direct top-level ThemableDecorationRenderOptions
+ * field. The former D7 CSS injection (smuggling color/background-color into the
+ * textDecoration string) no longer reaches the rendering layer in current VS Code /
+ * Cursor versions and has been removed.
  */
 function buildThemeStyle(
     styleDef: Pick<DecorationStyleDef['light'], 'color' | 'textDecoration' | 'backgroundColor' | 'opacity' | 'fontStyle' | 'border'>,
 ): vscode.ThemableDecorationRenderOptions {
     const opts: vscode.ThemableDecorationRenderOptions = {};
 
-    // Build combined textDecoration string using CSS injection
-    let tdParts: string[] = [];
-
     if (styleDef.textDecoration) {
-        tdParts.push(styleDef.textDecoration);
+        opts.textDecoration = styleDef.textDecoration;
     }
     if (styleDef.color) {
-        tdParts.push(`color: ${styleDef.color}`);
+        opts.color = styleDef.color;
     }
     if (styleDef.backgroundColor) {
-        tdParts.push(`background-color: ${styleDef.backgroundColor}`);
+        opts.backgroundColor = styleDef.backgroundColor;
     }
-
-    if (tdParts.length > 0) {
-        opts.textDecoration = tdParts.join('; ');
-    }
-
-    // These CSS properties can't be injected via textDecoration — apply normally
     if (styleDef.opacity) {
         opts.opacity = styleDef.opacity;
     }
@@ -293,17 +282,6 @@ export class VSCodeDecorationTarget implements DecorationTarget {
         return this.lastHiddenOffsets;
     }
 
-    /**
-     * Force a dispose/recreate of the hiddenType decoration type.
-     * Call before re-decorating after a view mode switch to flush VS Code's
-     * CSS renderer cache so the display:none CSS takes effect in the new mode.
-     */
-    public forceHiddenRecreate(): void {
-        this.hiddenType.dispose();
-        this.hiddenType = this.createHiddenType();
-        this.hadHiddenRanges = false;
-    }
-
     // ─── DecorationTarget interface ──────────────────────────────────────────
 
     /** Reset per-pass state: ruler buffer and active author key tracking. */
@@ -473,33 +451,37 @@ export class VSCodeDecorationTarget implements DecorationTarget {
         if (role === 'move-from' || role === 'move-to') {
             const base = needsStrikethrough ? 'line-through' : (needsUnderline ? 'underline' : 'none');
             decorationOptions = {
-                light: { textDecoration: `${base}; color: #6C3483` },
-                dark: { textDecoration: `${base}; color: #CE93D8` },
+                light: { textDecoration: base !== 'none' ? base : undefined, color: '#6C3483' },
+                dark: { textDecoration: base !== 'none' ? base : undefined, color: '#CE93D8' },
             };
         } else if (this.style === 'foreground') {
-            const base = needsStrikethrough ? 'line-through' : 'none';
+            const base = needsStrikethrough ? 'line-through' : undefined;
             if (isDeletionRole) {
                 // Fixed red for deletions regardless of author
                 decorationOptions = {
-                    light: { textDecoration: `${base}; color: #C0392B` },
-                    dark: { textDecoration: `${base}; color: #EF5350` },
+                    light: { textDecoration: base, color: '#C0392B' },
+                    dark: { textDecoration: base, color: '#EF5350' },
                 };
             } else {
                 decorationOptions = {
-                    light: { textDecoration: `${base}; color: ${color.light}` },
-                    dark: { textDecoration: `${base}; color: ${color.dark}` },
+                    light: { textDecoration: base, color: color.light },
+                    dark: { textDecoration: base, color: color.dark },
                 };
             }
         } else {
             // Background mode
-            const base = needsStrikethrough ? 'line-through' : 'none';
+            const base = needsStrikethrough ? 'line-through' : undefined;
             if (isDeletionRole) {
                 decorationOptions = {
-                    textDecoration: `${base}; background-color: rgba(255,0,0,0.15); color: rgba(255,50,50,1); opacity: 0.7`,
+                    textDecoration: base,
+                    backgroundColor: 'rgba(255,0,0,0.15)',
+                    color: 'rgba(255,50,50,1)',
+                    opacity: '0.7',
                 };
             } else {
                 decorationOptions = {
-                    textDecoration: `${base}; background-color: ${color.light}20`,
+                    textDecoration: base,
+                    backgroundColor: `${color.light}20`,
                 };
             }
         }

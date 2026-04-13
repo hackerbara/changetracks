@@ -87,7 +87,7 @@ export function registerTestCommands(
             const activeUri = vscode.window.activeTextEditor?.document.uri.toString();
             const state = {
                 trackingEnabled: activeUri ? controller.trackingService.isTrackingEnabled(activeUri) : false,
-                viewMode: controller.viewMode,
+                view: controller.getView().name,
                 changeCount: changes.length,
                 changeTypes: changes.map(c => c.type),
                 hasActiveMarkdownEditor: !!doc,
@@ -371,6 +371,35 @@ export function registerTestCommands(
                 fs.writeFileSync(statePath, JSON.stringify({ items: [], count: 0, error: err.message, timestamp: Date.now() }));
             }
         }),
+        // D-lsp-disconnected: Stop / start the LSP client for hybrid-mode regression testing
+        vscode.commands.registerCommand('changedown._testStopLsp', async () => {
+            const statePath = path.join(os.tmpdir(), 'changedown-test-lsp-stop.json');
+            const client = getClient();
+            if (!client) {
+                fs.writeFileSync(statePath, JSON.stringify({ ok: false, error: 'no client', timestamp: Date.now() }));
+                return;
+            }
+            try {
+                await client.stop();
+                fs.writeFileSync(statePath, JSON.stringify({ ok: true, clientRunning: client.isRunning?.() ?? false, timestamp: Date.now() }));
+            } catch (err: any) {
+                fs.writeFileSync(statePath, JSON.stringify({ ok: false, error: err.message, timestamp: Date.now() }));
+            }
+        }),
+        vscode.commands.registerCommand('changedown._testStartLsp', async () => {
+            const statePath = path.join(os.tmpdir(), 'changedown-test-lsp-start.json');
+            const client = getClient();
+            if (!client) {
+                fs.writeFileSync(statePath, JSON.stringify({ ok: false, error: 'no client', timestamp: Date.now() }));
+                return;
+            }
+            try {
+                await client.start();
+                fs.writeFileSync(statePath, JSON.stringify({ ok: true, clientRunning: client.isRunning?.() ?? false, timestamp: Date.now() }));
+            } catch (err: any) {
+                fs.writeFileSync(statePath, JSON.stringify({ ok: false, error: err.message, timestamp: Date.now() }));
+            }
+        }),
         // Task 0C: Get review panel card data
         vscode.commands.registerCommand('changedown._testGetReviewPanelCards', () => {
             const statePath = path.join(os.tmpdir(), 'changedown-test-review-panel-cards.json');
@@ -426,6 +455,63 @@ export function registerTestCommands(
                 }));
             } catch (err: any) {
                 fs.writeFileSync(statePath, JSON.stringify({ cards: [], count: 0, error: err.message, timestamp: Date.now() }));
+            }
+        }),
+
+        // Task 17: Inject a one-shot promote failure so the next convertFormat
+        // call fires onDidConvertFormatError (regression gate for that subscription).
+        vscode.commands.registerCommand('changedown._testFailNextConvert', () => {
+            const statePath = path.join(os.tmpdir(), 'changedown-test-fail-next-convert.json');
+            try {
+                const formatService = (controller as any).formatService;
+                if (!formatService) {
+                    fs.writeFileSync(statePath, JSON.stringify({ ok: false, error: 'formatService not accessible', timestamp: Date.now() }));
+                    return;
+                }
+                const originalPromote = formatService.promote.bind(formatService);
+                formatService.promote = async (...args: unknown[]) => {
+                    formatService.promote = originalPromote;
+                    throw new Error('Injected promote failure for test');
+                };
+                fs.writeFileSync(statePath, JSON.stringify({ ok: true, timestamp: Date.now() }));
+            } catch (err: any) {
+                fs.writeFileSync(statePath, JSON.stringify({ ok: false, error: err.message, timestamp: Date.now() }));
+            }
+        }),
+
+        // Task 17: Trigger format conversion on the active document to L3.
+        // Used after _testFailNextConvert to exercise the convertFormat error path.
+        vscode.commands.registerCommand('changedown._testTriggerFormatConversionL3', async () => {
+            const statePath = path.join(os.tmpdir(), 'changedown-test-trigger-convert.json');
+            try {
+                const editor = vscode.window.activeTextEditor;
+                if (!editor) {
+                    fs.writeFileSync(statePath, JSON.stringify({ ok: false, error: 'no active editor', timestamp: Date.now() }));
+                    return;
+                }
+                const uri = editor.document.uri.toString();
+                await controller.setFormatPreference(uri, 'L3');
+                fs.writeFileSync(statePath, JSON.stringify({ ok: true, uri, timestamp: Date.now() }));
+            } catch (err: any) {
+                fs.writeFileSync(statePath, JSON.stringify({ ok: false, error: err.message, timestamp: Date.now() }));
+            }
+        }),
+
+        // Task 17: Demote the active document to L2.
+        // Used before _testFailNextConvert to put the document in a promotable state.
+        vscode.commands.registerCommand('changedown._testTriggerFormatConversionL2', async () => {
+            const statePath = path.join(os.tmpdir(), 'changedown-test-trigger-convert.json');
+            try {
+                const editor = vscode.window.activeTextEditor;
+                if (!editor) {
+                    fs.writeFileSync(statePath, JSON.stringify({ ok: false, error: 'no active editor', timestamp: Date.now() }));
+                    return;
+                }
+                const uri = editor.document.uri.toString();
+                await controller.setFormatPreference(uri, 'L2');
+                fs.writeFileSync(statePath, JSON.stringify({ ok: true, uri, timestamp: Date.now() }));
+            } catch (err: any) {
+                fs.writeFileSync(statePath, JSON.stringify({ ok: false, error: err.message, timestamp: Date.now() }));
             }
         })
     );

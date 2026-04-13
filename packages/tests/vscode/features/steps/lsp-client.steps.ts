@@ -17,7 +17,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import type { ChangeDownWorld } from './world';
-import { executeCommand } from '../../journeys/playwrightHarness';
+import { executeCommandViaBridge } from '../../journeys/playwrightHarness';
 
 // ── Extend ChangeDownWorld with LSP client state ────────────────────
 
@@ -39,7 +39,7 @@ const LSP_STATE_PATH = path.join(os.tmpdir(), 'changedown-test-lsp-state.json');
  */
 async function queryLspState(page: import('playwright').Page): Promise<Record<string, unknown> | null> {
     const beforeTs = Date.now();
-    await executeCommand(page, 'ChangeDown: Test LSP Client');
+    await executeCommandViaBridge(page, 'ChangeDown: Test LSP Client');
     await page.waitForTimeout(500);
     try {
         if (!fs.existsSync(LSP_STATE_PATH)) return null;
@@ -159,6 +159,55 @@ Then(
             selector[0].scheme,
             expectedScheme,
             `Expected document selector scheme "${expectedScheme}", got "${selector[0].scheme}"`
+        );
+    }
+);
+
+// ── D-lsp-disconnected: stop/start steps ─────────────────────────────
+
+const LSP_STOP_STATE_PATH = path.join(os.tmpdir(), 'changedown-test-lsp-stop.json');
+
+/**
+ * Stop the LSP client via the _testStopLsp bridge command.
+ * Writes result to changedown-test-lsp-stop.json.
+ */
+async function stopLspClient(page: import('playwright').Page): Promise<Record<string, unknown> | null> {
+    const beforeTs = Date.now();
+    await executeCommandViaBridge(page, 'changedown._testStopLsp');
+    await page.waitForTimeout(600);
+    try {
+        if (!fs.existsSync(LSP_STOP_STATE_PATH)) return null;
+        const raw = fs.readFileSync(LSP_STOP_STATE_PATH, 'utf8');
+        const state = JSON.parse(raw);
+        if (state.timestamp < beforeTs) return null;
+        return state;
+    } catch { return null; }
+}
+
+When(
+    'I disconnect the LSP server',
+    { timeout: 15000 },
+    async function (this: ChangeDownWorld) {
+        assert.ok(this.page, 'Page not available');
+        const result = await stopLspClient(this.page!);
+        // If the bridge command fails (e.g. no client), mark world state as not running.
+        // The test still proceeds — the point is to verify decorations render without LSP.
+        this.lspClientRunning = result?.clientRunning === true;
+    }
+);
+
+Then(
+    'the LSP client is not running after disconnect',
+    { timeout: 10000 },
+    async function (this: ChangeDownWorld) {
+        assert.ok(this.page, 'Page not available');
+        // Re-query the live state — client.stop() should leave isRunning() === false.
+        const state = await queryLspState(this.page!);
+        assert.ok(state, 'Failed to read LSP state after disconnect');
+        assert.strictEqual(
+            state.clientRunning,
+            false,
+            'Expected LSP client to not be running after _testStopLsp'
         );
     }
 );

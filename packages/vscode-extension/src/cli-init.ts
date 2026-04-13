@@ -17,7 +17,7 @@ export interface InitConfigOptions {
     trackingExclude?: string[];
     authorEnforcement?: 'optional' | 'required';
     policyMode?: 'safety-net' | 'strict' | 'permissive';
-    policyDefaultView?: 'review' | 'changes' | 'settled';
+    policyDefaultView?: 'working' | 'simple' | 'decided' | 'original' | 'raw';
     protocolMode?: 'classic' | 'compact';
     protocolReasoning?: 'optional' | 'required';
     autoSettleOnApprove?: boolean;

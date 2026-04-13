@@ -20,9 +20,9 @@ Feature: MTB1 — Multi-tab behavior
 
   # ── View mode independence ─────────────────────────────────
 
-  Scenario: MTB1-03 View mode defaults to review on open
+  Scenario: MTB1-03 View mode defaults to working on open
     And I open the ChangeDown sidebar
-    Then the active view mode is "review"
+    Then the active view mode is "working"
 
   Scenario: MTB1-04 View mode change persists within session
     And I open the ChangeDown sidebar

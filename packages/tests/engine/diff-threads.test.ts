@@ -152,11 +152,11 @@ describe('formatAnsiWithThreads', () => {
   // Helper to build a ThreeZoneDocument from content
   async function buildDoc(content: string): Promise<ThreeZoneDocument> {
     await initHashline();
-    return buildViewDocument(content, 'review', {
+    return buildViewDocument(content, 'working', {
       filePath: 'test.md',
       trackingStatus: 'tracked',
       protocolMode: 'classic',
-      defaultView: 'review',
+      defaultView: 'working',
       viewPolicy: 'suggest',
     });
   }

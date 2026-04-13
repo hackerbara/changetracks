@@ -28,13 +28,13 @@ Feature: I10 — CLI interactive mode
     And the user answers all basic prompts with defaults
     And the user confirms "advanced settings" with "yes"
     And the user selects "Protocol mode" as "compact"
-    And the user selects "Default view" as "changes"
+    And the user selects "Default view" as "simple"
     And the user confirms "Auto-settle changes on approve" with "no"
     And the user confirms "Auto-settle changes on reject" with "yes"
     And the user confirms "No .gitignore" with "yes"
     When I run runInit interactively
     Then the init file ".changedown/config.toml" contains 'mode = "compact"'
-    And the init file ".changedown/config.toml" contains 'default_view = "changes"'
+    And the init file ".changedown/config.toml" contains 'default_view = "simple"'
     And the init file ".changedown/config.toml" contains "auto_on_approve = false"
 
   @fast @I10

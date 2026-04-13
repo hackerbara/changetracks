@@ -7,8 +7,8 @@ This has {++an insertion++} and {--a deletion--} in it.
 `;
 
 describe('renderProjection', () => {
-  it('renders review mode with change HTML', () => {
-    const result = renderProjection(TRACKED_DOC, 'review', 'dark');
+  it('renders working mode with change HTML', () => {
+    const result = renderProjection(TRACKED_DOC, 'working', 'dark');
     expect(result.html).toContain('cn-ins');
     expect(result.html).toContain('cn-del');
     expect(result.html).toContain('data-change-id');
@@ -16,8 +16,8 @@ describe('renderProjection', () => {
     expect(result.changes.length).toBe(2);
   });
 
-  it('renders settled mode without change markup', () => {
-    const result = renderProjection(TRACKED_DOC, 'settled', 'dark');
+  it('renders final mode without change markup', () => {
+    const result = renderProjection(TRACKED_DOC, 'final', 'dark');
     expect(result.html).not.toContain('cn-ins');
     expect(result.html).not.toContain('cn-del');
     expect(result.html).toContain('an insertion');
@@ -25,7 +25,7 @@ describe('renderProjection', () => {
   });
 
   it('returns serialized changes with IDs and offsets', () => {
-    const result = renderProjection(TRACKED_DOC, 'review', 'dark');
+    const result = renderProjection(TRACKED_DOC, 'working', 'dark');
     for (const change of result.changes) {
       expect(change.id).toBeTruthy();
       expect(change.kind).toBeTruthy();
@@ -34,8 +34,8 @@ describe('renderProjection', () => {
   });
 
   it('includes CSS for both themes', () => {
-    const dark = renderProjection(TRACKED_DOC, 'review', 'dark');
-    const light = renderProjection(TRACKED_DOC, 'review', 'light');
+    const dark = renderProjection(TRACKED_DOC, 'working', 'dark');
+    const light = renderProjection(TRACKED_DOC, 'working', 'light');
     expect(dark.css).not.toBe(light.css);
   });
 });

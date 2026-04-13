@@ -13,6 +13,7 @@
     "./style.css": "./media/preview.css"
   },
   "scripts": {
+    "prebuild": "node scripts/generate-katex-data.mjs",
     "build": "tsc",
     "clean": "rm -rf dist"
   },

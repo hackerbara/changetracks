@@ -1,6 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import { computeSettlement } from 'changedown/internals';
 
+// Helper: extract body (content before the first blank-line-separated footnote block)
+function bodyOf(content: string): string {
+  const parts = content.split(/\n\n(?=\[\^)/);
+  return parts[0];
+}
+
 describe('computeSettlement', () => {
   it('settles an accepted insertion (removes markup, keeps text)', () => {
     const content = [
@@ -12,9 +18,10 @@ describe('computeSettlement', () => {
     const result = computeSettlement(content);
     expect(result.appliedCount).toBe(1);
     // After settlement, the inline markup is removed but footnote ref and definition remain (Layer 1)
+    // Markup checks on body only — edit-op lines in footnotes may contain original markup syntax
     expect(result.currentContent).toContain('world');
-    expect(result.currentContent).not.toContain('{++');
-    expect(result.currentContent).not.toContain('++}');
+    expect(bodyOf(result.currentContent)).not.toContain('{++');
+    expect(bodyOf(result.currentContent)).not.toContain('++}');
   });
 
   it('settles an accepted deletion (removes markup and text)', () => {
@@ -26,8 +33,9 @@ describe('computeSettlement', () => {
     ].join('\n');
     const result = computeSettlement(content);
     expect(result.appliedCount).toBe(1);
-    expect(result.currentContent).not.toContain('{--');
-    expect(result.currentContent).not.toContain('--}');
+    // Markup checks on body only — edit-op lines in footnotes may contain original markup syntax
+    expect(bodyOf(result.currentContent)).not.toContain('{--');
+    expect(bodyOf(result.currentContent)).not.toContain('--}');
     // The deleted text "world" is removed; "Hello" and "there" remain
     expect(result.currentContent).toContain('Hello');
     expect(result.currentContent).toContain('there');

@@ -1,8 +1,8 @@
 // packages/vscode-extension/src/adapters/vscode-lsp-adapter.ts
 import type { LanguageClient } from 'vscode-languageclient/node';
-import { LSP_METHOD, type TypedLspConnection, type ContentChange, type ViewMode,
+import { LSP_METHOD, type TypedLspConnection, type ContentChange,
   type ReviewResult, type Disposable, type ChangeNode, type RangeEdit,
-  type PendingOverlay, type SupersedeResult,
+  type PendingOverlay, type SupersedeResult, type BuiltinView,
 } from '@changedown/core/host';
 
 interface QueuedCall {
@@ -31,9 +31,24 @@ export class VsCodeLspAdapter implements TypedLspConnection, Disposable {
   private urisNeedingResync = new Set<string>();
   private queueOverflowed = false;
 
+  /**
+   * Promise that resolves once the LSP client is ready (setClient called)
+   * or rejects if startup fails (clearQueue called after failure).
+   * sendRequest awaits this so format-conversion requests issued during
+   * extension activation are held until the server handshake completes,
+   * rather than throwing "LSP not ready".
+   */
+  private clientReadyResolve!: (client: LanguageClient) => void;
+  private clientReadyReject!: (err: Error) => void;
+  private clientReadyPromise: Promise<LanguageClient> = new Promise((resolve, reject) => {
+    this.clientReadyResolve = resolve;
+    this.clientReadyReject = reject;
+  });
+
   /** Called by extension.ts after client.start() resolves. */
   setClient(client: LanguageClient): void {
     this.client = client;
+    this.clientReadyResolve(client);
     for (const call of this.queue) call.fn();
     this.queue = [];
     this.queueOverflowed = false;
@@ -44,6 +59,12 @@ export class VsCodeLspAdapter implements TypedLspConnection, Disposable {
 
   /** Called by extension.ts if client.start() fails — drop queued work. */
   clearQueue(): void {
+    this.clientReadyReject(new Error('LSP client failed to start'));
+    // Re-create the promise so a subsequent setClient() attempt (if any) works.
+    this.clientReadyPromise = new Promise((resolve, reject) => {
+      this.clientReadyResolve = resolve;
+      this.clientReadyReject = reject;
+    });
     this.queue = [];
     this.urisNeedingResync.clear();
     this.queueOverflowed = false;
@@ -94,9 +115,9 @@ export class VsCodeLspAdapter implements TypedLspConnection, Disposable {
     }), uri);
   }
 
-  sendViewMode(uri: string, viewMode: ViewMode): void {
+  sendViewMode(uri: string, viewName: BuiltinView): void {
     this.send(() => this.client!.sendNotification(LSP_METHOD.SET_VIEW_MODE, {
-      textDocument: { uri }, viewMode,
+      textDocument: { uri }, viewMode: viewName,
     }), uri);
   }
 
@@ -170,7 +191,7 @@ export class VsCodeLspAdapter implements TypedLspConnection, Disposable {
     return this.onNotification(LSP_METHOD.PENDING_EDIT_FLUSHED, handler as (params: unknown) => void);
   }
 
-  onDocumentState(handler: (data: { uri: string; tracking: { enabled: boolean; source: string }; viewMode: ViewMode }) => void): Disposable {
+  onDocumentState(handler: (data: { uri: string; tracking: { enabled: boolean; source: string }; view: BuiltinView }) => void): Disposable {
     return this.onNotification(LSP_METHOD.DOCUMENT_STATE, handler as (params: unknown) => void);
   }
 
@@ -184,8 +205,13 @@ export class VsCodeLspAdapter implements TypedLspConnection, Disposable {
 
   // ── Escape hatch ──────────────────────────────────────────
   async sendRequest<R>(method: string, params: unknown): Promise<R> {
-    if (!this.client) throw new Error(`LSP not ready: ${method}`);
-    return this.client.sendRequest(method, params) as Promise<R>;
+    // Await the client-ready promise so requests issued before the LSP
+    // handshake completes (e.g., format conversion triggered by an
+    // already-open document at activation time) are held rather than
+    // thrown. If the client fails to start, clientReadyPromise rejects
+    // and the error propagates to the caller as before.
+    const client = await this.clientReadyPromise;
+    return client.sendRequest(method, params) as Promise<R>;
   }
 
   sendNotification(method: string, params: unknown): void {

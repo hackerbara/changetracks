@@ -1,9 +1,8 @@
 import * as vscode from 'vscode';
-import { parseForFormat, isGhostNode } from '@changedown/core';
-import type { ChangeNode } from '@changedown/core';
+import { isGhostNode } from '@changedown/core';
 import {
   buildDecorationPlan, buildOverviewRulerPlan, applyPlan,
-  type DecorationPort, type DocumentSnapshot, type ViewMode, type View,
+  type DecorationPort, type DocumentSnapshot,
 } from '@changedown/core/host';
 import { VSCodeDecorationTarget } from '../decoration-target';
 import { isSupported, logError } from './shared';
@@ -27,22 +26,14 @@ export class DecorationManager implements DecorationPort, vscode.Disposable {
     private targets = new Map<string, VSCodeDecorationTarget>();
     private style: 'foreground' | 'background';
     private authorColors: 'auto' | 'always' | 'never';
-    private localParseHotPath: boolean;
     private afterUpdate: ((editor: vscode.TextEditor) => void) | undefined;
 
     constructor(
         style: 'foreground' | 'background',
         authorColors: 'auto' | 'always' | 'never',
-        localParseHotPath: boolean,
     ) {
         this.style = style;
         this.authorColors = authorColors;
-        this.localParseHotPath = localParseHotPath;
-    }
-
-    /** Update localParseHotPath at runtime (called from onDidChangeConfiguration). */
-    public setLocalParseHotPath(value: boolean): void {
-        this.localParseHotPath = value;
     }
 
     /** Hook invoked after a decoration update (for status bar + cursor context refresh). */
@@ -116,21 +107,12 @@ export class DecorationManager implements DecorationPort, vscode.Disposable {
     // ── Decoration pipeline ─────────────────────────────────────────────
 
     /**
-     * Render a snapshot (text + changes + viewMode + cursor) into an editor.
+     * Render a snapshot (text + changes + view + cursor) into an editor.
      * Core entry — used by both DecorationPort.update and direct calls.
      */
     public renderSnapshot(editor: vscode.TextEditor, snapshot: DocumentSnapshot): void {
         if (!isSupported(editor.document)) return;
         if (editor.document.uri.toString().includes('commentinput-')) return;
-
-        // Skip rendering for projected view modes — editor buffer has projected text,
-        // but snapshot.changes carry CriticMarkup offsets. Rendering would draw at
-        // wrong positions. Clear any stale decorations.
-        if (snapshot.view.projection === 'decided' || snapshot.view.projection === 'original') {
-            const target = this.targets.get(editorKey(editor));
-            target?.clear();
-            return;
-        }
 
         try {
             const text = snapshot.text;
@@ -141,13 +123,7 @@ export class DecorationManager implements DecorationPort, vscode.Disposable {
                 return;
             }
 
-            // Prefer snapshot's cached changes; fall back to local parse if empty
-            // and the hot path is enabled.
-            let changes = snapshot.changes;
-            if (changes.length === 0 && this.localParseHotPath) {
-                const virtualDoc = parseForFormat(text);
-                changes = virtualDoc.getChanges();
-            }
+            const changes = snapshot.changes;
 
             // Log unresolved ghost nodes
             const ch = getOutputChannel();
@@ -161,7 +137,7 @@ export class DecorationManager implements DecorationPort, vscode.Disposable {
 
             const cursorOffset = snapshot.cursorOffset ?? positionToOffset(text, editor.selection.active);
             const plan = buildDecorationPlan(
-                changes, text, snapshot.view, snapshot.format,
+                changes, text, snapshot.view,
                 cursorOffset,
             );
             const rulerPlan = buildOverviewRulerPlan(changes, snapshot.view);
@@ -175,29 +151,6 @@ export class DecorationManager implements DecorationPort, vscode.Disposable {
         }
     }
 
-    /**
-     * Render decorations for a specific editor using a fresh local parse.
-     * Used for synchronous refresh on viewMode change, visibility change, etc.
-     */
-    public updateDecorations(editor: vscode.TextEditor, viewMode: ViewMode, showDelimiters: boolean, providedChanges?: ChangeNode[], format: 'L2' | 'L3' = 'L2'): void {
-        if (!isSupported(editor.document)) return;
-        if (editor.document.uri.toString().includes('commentinput-')) return;
-        const text = editor.document.getText();
-        const changes = providedChanges ?? parseForFormat(text).getChanges();
-        const projection = viewMode === 'settled' ? 'decided' : viewMode === 'raw' ? 'original' : 'current';
-        const display = { delimiters: showDelimiters ? 'show' : 'hide' } as const;
-        const snapshot: DocumentSnapshot = {
-            uri: editor.document.uri.toString(),
-            text,
-            sourceVersion: 0,
-            changes,
-            format,
-            view: { name: viewMode, projection, display },
-            cursorOffset: positionToOffset(text, editor.selection.active),
-        };
-        this.renderSnapshot(editor, snapshot);
-    }
-
     // ── Bulk operations ─────────────────────────────────────────────────
 
     /** Clear decorations on a specific editor (no-op if no target exists). */
@@ -207,13 +160,6 @@ export class DecorationManager implements DecorationPort, vscode.Disposable {
         if (!target) return;
         target.setEditor(editor);
         target.clear();
-    }
-
-    /** Flush hidden type CSS cache on all targets (call before re-decorating after mode switch). */
-    public forceHiddenRecreate(): void {
-        for (const target of this.targets.values()) {
-            target.forceHiddenRecreate();
-        }
     }
 
     // ── Hidden offsets (for NavigationCommands cursor snapping) ───────────

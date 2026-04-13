@@ -52,12 +52,18 @@ echo ""
 # node_modules first (they're the vector for the corruption), then npm ci.
 MAIN_REPO="$(git rev-parse --show-superproject-working-tree 2>/dev/null || echo "")"
 if [ -z "$MAIN_REPO" ]; then
-  # Also try the common worktree layout: worktrees live under .claude/worktrees/
-  # inside the main repo, so ../../.. from here is typically the main repo root.
-  CANDIDATE="$(cd "$WORKTREE/../../.." 2>/dev/null && pwd)"
-  if [ -f "$CANDIDATE/package.json" ] && [ -d "$CANDIDATE/node_modules" ]; then
-    MAIN_REPO="$CANDIDATE"
-  fi
+  # Try two common worktree layouts:
+  #   .worktrees/<name>/          → ../.. is the main repo root  (two levels deep)
+  #   .claude/worktrees/<name>/   → ../../.. is the main repo root (three levels deep)
+  for CANDIDATE in \
+    "$(cd "$WORKTREE/../.." 2>/dev/null && pwd)" \
+    "$(cd "$WORKTREE/../../.." 2>/dev/null && pwd)"
+  do
+    if [ -f "$CANDIDATE/package.json" ] && [ -d "$CANDIDATE/node_modules" ]; then
+      MAIN_REPO="$CANDIDATE"
+      break
+    fi
+  done
 fi
 
 if [ -n "$MAIN_REPO" ] && [ -d "$MAIN_REPO/node_modules" ]; then
@@ -78,6 +84,14 @@ if [ -n "$MAIN_REPO" ] && [ -d "$MAIN_REPO/node_modules" ]; then
     [ "$subdir" = "packages" ] && continue
     [ -d "$WORKTREE/$subdir" ] || continue
     rsync -a --delete "$d/" "$WORKTREE/$subdir/node_modules/" 2>/dev/null || true
+  done
+  # Sync changedown-plugin dist/ directories (llm-jail must be pre-built before
+  # hooks-impl esbuild runs; these are not rebuilt by npm run build from scratch)
+  for d in "$MAIN_REPO"/changedown-plugin/*/dist; do
+    pkg=$(basename "$(dirname "$d")")
+    [ -d "$d" ] || continue
+    mkdir -p "$WORKTREE/changedown-plugin/$pkg/dist"
+    rsync -a --delete "$d/" "$WORKTREE/changedown-plugin/$pkg/dist/" 2>/dev/null || true
   done
   echo -e "${GREEN}ok${RESET}"
 else

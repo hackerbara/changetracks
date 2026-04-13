@@ -11,6 +11,9 @@ import { strict as assert } from 'assert';
 import { CriticMarkupParser } from '@changedown/core';
 import { buildThreadDataForChanges } from 'changedown-vscode/internals';
 import type { CommentData, ThreadData } from 'changedown-vscode/internals';
+import { VIEW_PRESETS } from '@changedown/core/host';
+import type { BuiltinView } from '@changedown/core/host';
+import { toBuiltinView } from './view-helpers';
 import type { ChangeDownWorld } from './world';
 
 // Re-export types and builder so other step files can import them
@@ -23,7 +26,7 @@ declare module './world' {
     interface ChangeDownWorld {
         lifecycleThreads?: ThreadData[];
         lifecycleDocText?: string;
-        lifecycleViewMode?: string;
+        lifecycleViewMode?: BuiltinView;
     }
 }
 
@@ -46,7 +49,8 @@ When('I build comment threads', async function (this: ChangeDownWorld) {
     const parser = new CriticMarkupParser();
     const vdoc = parser.parse(this.lifecycleDocText);
     const changes = vdoc.getChanges();
-    this.lifecycleThreads = buildThreadDataForChanges(changes, this.lifecycleViewMode);
+    const view = this.lifecycleViewMode !== undefined ? VIEW_PRESETS[this.lifecycleViewMode] : undefined;
+    this.lifecycleThreads = buildThreadDataForChanges(changes, view);
 });
 
 Then('a thread exists for {string}', function (this: ChangeDownWorld, threadId: string) {
@@ -137,7 +141,7 @@ Then('{int} thread exists', function (this: ChangeDownWorld, expectedCount: numb
 // ── LV7: View mode surface visibility ──────────────────────────────
 
 Given('view mode is {string}', function (this: ChangeDownWorld, mode: string) {
-    this.lifecycleViewMode = mode;
+    this.lifecycleViewMode = toBuiltinView(mode);
 });
 
 Then('{int} threads exist with gutter presence', function (this: ChangeDownWorld, expectedCount: number) {

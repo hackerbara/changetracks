@@ -54,8 +54,8 @@ describe('propose_change with settled hashes', () => {
   });
 
   it('accepts settled hash and maps to raw position for substitution', async () => {
-    // File with a proposed insertion — in settled view (accept-all), the insertion
-    // text appears as a real line, so settled line numbers shift relative to raw
+    // File with a proposed insertion — in final view (accept-all), the insertion
+    // text appears as a real line, so final line numbers shift relative to raw
     const filePath = path.join(tmpDir, 'test.md');
     await fs.writeFile(filePath, [
       '<!-- changedown.com/v1: tracked -->',
@@ -69,9 +69,9 @@ describe('propose_change with settled hashes', () => {
 
     const resolver = await createTestResolver(tmpDir, config);
 
-    // 1. Read with settled view (records settled hashes with rawLineNum in session state)
+    // 1. Read with decided view (records decided hashes with rawLineNum in session state)
     const readResult = await handleReadTrackedFile(
-      { file: filePath, view: 'settled' },
+      { file: filePath, view: 'decided' },
       resolver,
       state,
     );
@@ -125,9 +125,9 @@ describe('propose_change with settled hashes', () => {
 
     const resolver = await createTestResolver(tmpDir, config);
 
-    // 1. Read with settled view (records settled hashes)
+    // 1. Read with decided view (records decided hashes)
     await handleReadTrackedFile(
-      { file: filePath, view: 'settled' },
+      { file: filePath, view: 'decided' },
       resolver,
       state,
     );
@@ -152,9 +152,10 @@ describe('propose_change with settled hashes', () => {
     expect(errorText).toContain('read_tracked_file');
   });
 
-  it('handles file with pending deletion — deleted line absent from settled view', async () => {
-    // In settled (accept-all) view, a pending deletion line disappears entirely.
-    // The agent should be able to target lines around the deletion using settled-space coordinates.
+  it('handles file with pending deletion — deleted line present in decided view', async () => {
+    // In decided view, a pending deletion line is still visible (only accepted
+    // changes are applied; proposed deletions are kept pending).
+    // The agent can still target lines around the deletion using decided-space coordinates.
     const filePath = path.join(tmpDir, 'test.md');
     await fs.writeFile(filePath, [
       '<!-- changedown.com/v1: tracked -->',
@@ -168,17 +169,17 @@ describe('propose_change with settled hashes', () => {
 
     const resolver = await createTestResolver(tmpDir, config);
 
-    // 1. Read settled view — "Deleted line." is absent
+    // 1. Read decided view — "Deleted line." is present (pending deletions not yet applied)
     const readResult = await handleReadTrackedFile(
-      { file: filePath, view: 'settled' },
+      { file: filePath, view: 'decided' },
       resolver,
       state,
     );
     expect(readResult.isError).toBeUndefined();
     const readText = readResult.content[0].text;
 
-    // Verify the deleted line is NOT in settled output
-    expect(readText).not.toContain('Deleted line.');
+    // Verify the deleted line IS in decided output (pending, not yet accepted)
+    expect(readText).toContain('Deleted line.');
 
     // Extract settled hash for "Line after deletion."
     const lines = readText.split('\n');
@@ -228,9 +229,9 @@ describe('propose_change with settled hashes', () => {
 
     const resolver = await createTestResolver(tmpDir, config);
 
-    // 1. Read with settled view
+    // 1. Read with decided view
     const readResult = await handleReadTrackedFile(
-      { file: filePath, view: 'settled' },
+      { file: filePath, view: 'decided' },
       resolver,
       state,
     );
@@ -262,9 +263,9 @@ describe('propose_change with settled hashes', () => {
     expect(hashes).toBeDefined();
     expect(hashes!.some(h => h.currentView !== undefined)).toBe(true);
 
-    // 4. Read settled view again to get fresh hashes for second edit
+    // 4. Read decided view again to get fresh hashes for second edit
     const readResult2 = await handleReadTrackedFile(
-      { file: filePath, view: 'settled' },
+      { file: filePath, view: 'decided' },
       resolver,
       state,
     );
@@ -310,9 +311,9 @@ describe('propose_change with settled hashes', () => {
 
     const resolver = await createTestResolver(tmpDir, config);
 
-    // 1. Read settled view
+    // 1. Read decided view
     const readResult = await handleReadTrackedFile(
-      { file: filePath, view: 'settled' },
+      { file: filePath, view: 'decided' },
       resolver,
       state,
     );

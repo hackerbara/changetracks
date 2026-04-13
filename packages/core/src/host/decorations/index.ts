@@ -5,13 +5,12 @@ export type {
   AuthorDecorationRole, AuthorDecorationEntry,
 } from './types.js';
 export { DECORATION_STYLES, OVERVIEW_RULER_COLORS, AUTHOR_PALETTE,
-  VIEW_MODE_VISIBILITY, type VisibilityRule, type DecorationThemeOverride,
-  isTypeVisibleInMode } from './styles.js';
+  type VisibilityRule, type DecorationThemeOverride } from './styles.js';
 export { AuthorColorMap } from './author-colors.js';
 export {
   computeLineStarts, offsetToLine, isOffsetInRange,
   hideDelimiters, revealDelimiters, createEmptyPlan,
-  getCharLevelRanges,
+  getCharLevelRanges, hideOrGhostDelimiters, hasInlineDelimiters,
 } from './helpers.js';
 export { buildDecorationPlan } from './plan-builder.js';
 export { buildOverviewRulerPlan } from './ruler-builder.js';

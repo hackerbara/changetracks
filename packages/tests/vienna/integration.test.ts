@@ -32,14 +32,14 @@ describe('Vienna plugin integration', () => {
   });
 
   it('renders review projection with all changes visible', () => {
-    const result = renderProjection(TRACKED_CONTENT, 'review');
+    const result = renderProjection(TRACKED_CONTENT, 'working');
     expect(result.changes.length).toBeGreaterThanOrEqual(3);
     expect(result.html).toContain('cn-ins');
     expect(result.html).toContain('cn-del');
   });
 
   it('renders settled projection as clean text', () => {
-    const result = renderProjection(TRACKED_CONTENT, 'settled');
+    const result = renderProjection(TRACKED_CONTENT, 'final');
     expect(result.html).toContain('a new section');
     expect(result.html).not.toContain('an old section');
     expect(result.html).toContain('updated text');
@@ -53,7 +53,7 @@ describe('Vienna plugin integration', () => {
     await new Promise(r => setTimeout(r, 500));
 
     // Find the insertion change from the projection
-    const { changes } = renderProjection(TRACKED_CONTENT, 'review');
+    const { changes } = renderProjection(TRACKED_CONTENT, 'working');
     const insertion = changes.find(c => c.kind.toLowerCase().includes('insert'));
     expect(insertion).toBeDefined();
     expect(insertion!.id).toBeTruthy();
@@ -85,7 +85,7 @@ describe('Vienna plugin integration', () => {
     lsp.didOpen(TEST_URI, currentText);
     await new Promise(r => setTimeout(r, 500));
 
-    const { changes } = renderProjection(currentText, 'review');
+    const { changes } = renderProjection(currentText, 'working');
     const deletion = changes.find(c => c.kind.toLowerCase().includes('delet'));
 
     if (deletion) {

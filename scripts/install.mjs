@@ -84,6 +84,14 @@ function run(cmd, opts = {}) {
     execSync(cmd, { stdio: 'pipe', encoding: 'utf8', ...opts });
     return true;
   } catch (e) {
+    const stderr = (e.stderr || '').toString().trim();
+    const stdout = (e.stdout || '').toString().trim();
+    const detail = stderr || stdout || e.message;
+    if (detail) {
+      for (const line of detail.split('\n')) {
+        console.log(`    ${dim('>')} ${line}`);
+      }
+    }
     return false;
   }
 }

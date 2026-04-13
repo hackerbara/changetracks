@@ -161,10 +161,10 @@ describe('BaseController', () => {
       expect(lsp.sendCursorMove).toHaveBeenCalledWith('file:///test.md', 42);
     });
 
-    it('setViewMode updates viewMode and notifies LSP', () => {
+    it('setView updates view and notifies LSP', () => {
       host.fireOpen('file:///test.md', '# Hello');
-      controller.setViewMode('changes');
-      expect(controller.viewMode).toBe('changes');
+      controller.setView('simple');
+      expect(controller.getView().name).toBe('simple');
       expect(lsp.sendViewMode).toHaveBeenCalled();
     });
   });

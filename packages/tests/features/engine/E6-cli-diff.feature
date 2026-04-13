@@ -21,7 +21,7 @@ Feature: E6 - CLI Diff
       """
       Hello {++inserted++} and {--deleted--} text.
       """
-    When I run diff on "mixed.md" with view "review"
+    When I run diff on "mixed.md" with view "working"
     Then the diff output contains "inserted"
     And the diff output contains ANSI red color code for deletions
 
@@ -33,7 +33,7 @@ Feature: E6 - CLI Diff
       [^cn-1]: @alice | 2026-02-01 | ins | accepted
           reason: added greeting
       """
-    When I run diff on "settled.md" with view "settled"
+    When I run diff on "settled.md" with view "final"
     Then the diff output contains "world"
 
   Scenario: Changes view marks lines with pending changes
@@ -41,7 +41,7 @@ Feature: E6 - CLI Diff
       """
       Hello {++world++} there.
       """
-    When I run diff on "changes.md" with view "changes"
+    When I run diff on "changes.md" with view "simple"
     Then the diff output contains ANSI escape codes
     And the diff output contains "Hello"
 

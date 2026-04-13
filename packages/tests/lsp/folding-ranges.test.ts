@@ -4,9 +4,9 @@ import { ChangeNode, ChangeType, ChangeStatus } from '@changedown/core';
 import type { FoldingRange } from '@changedown/lsp-server/internals';
 
 describe('createFoldingRanges', () => {
-  describe('deletion folds (changes mode)', () => {
+  describe('deletion folds (simple mode)', () => {
     it('returns empty for no changes', () => {
-      const result = createFoldingRanges([], 'hello\nworld', 'changes', null);
+      const result = createFoldingRanges([], 'hello\nworld', 'simple', null);
       expect(result).toEqual([]);
     });
 
@@ -19,7 +19,7 @@ describe('createFoldingRanges', () => {
         range: { start: 6, end: 24 }, contentRange: { start: 9, end: 21 },
         level: 0, anchored: false
       }];
-      const result = createFoldingRanges(changes, text, 'changes', null);
+      const result = createFoldingRanges(changes, text, 'simple', null);
       expect(result).toHaveLength(1);
       expect(result[0].startLine).toBe(1);
       expect(result[0].endLine).toBe(2);
@@ -32,7 +32,7 @@ describe('createFoldingRanges', () => {
         range: { start: 6, end: 19 }, contentRange: { start: 9, end: 17 },
         level: 0, anchored: false
       }];
-      const result = createFoldingRanges(changes, text, 'changes', null);
+      const result = createFoldingRanges(changes, text, 'simple', null);
       expect(result).toEqual([]);
     });
 
@@ -43,7 +43,7 @@ describe('createFoldingRanges', () => {
         range: { start: 6, end: 24 }, contentRange: { start: 9, end: 21 },
         level: 0, anchored: false, settled: true
       }];
-      const result = createFoldingRanges(changes, text, 'changes', null);
+      const result = createFoldingRanges(changes, text, 'simple', null);
       expect(result).toEqual([]);
     });
 
@@ -55,18 +55,18 @@ describe('createFoldingRanges', () => {
         level: 0, anchored: false
       }];
       const cursor = { line: 2 };
-      const result = createFoldingRanges(changes, text, 'changes', cursor);
+      const result = createFoldingRanges(changes, text, 'simple', cursor);
       expect(result).toEqual([]);
     });
 
-    it('returns empty in review mode (deletion folds are changes-only)', () => {
+    it('returns empty in working mode (deletion folds are simple-only)', () => {
       const text = 'line1\n{--deleted\ntext--}\nline4';
       const changes: ChangeNode[] = [{
         id: 'c1', type: ChangeType.Deletion, status: ChangeStatus.Proposed,
         range: { start: 6, end: 24 }, contentRange: { start: 9, end: 21 },
         level: 0, anchored: false
       }];
-      const result = createFoldingRanges(changes, text, 'review', null);
+      const result = createFoldingRanges(changes, text, 'working', null);
       expect(result).toEqual([]);
     });
   });
@@ -83,19 +83,19 @@ describe('createFoldingRanges', () => {
     ].join('\n');
 
     it('creates Level 1 section fold from blank line to end', () => {
-      const result = createFoldingRanges([], l3Doc, 'review', null);
+      const result = createFoldingRanges([], l3Doc, 'working', null);
       const level1 = result.find(r => r.startLine === 1 && r.endLine === 6);
       expect(level1).toBeDefined();
     });
 
     it('creates Level 2 edit-op folds within each footnote', () => {
-      const result = createFoldingRanges([], l3Doc, 'review', null);
+      const result = createFoldingRanges([], l3Doc, 'working', null);
       const level2 = result.find(r => r.startLine === 5 && r.endLine === 6);
       expect(level2).toBeDefined();
     });
 
-    it('returns no L3 folds in settled mode', () => {
-      const result = createFoldingRanges([], l3Doc, 'settled', null);
+    it('returns no L3 folds in final mode', () => {
+      const result = createFoldingRanges([], l3Doc, 'final', null);
       expect(result).toEqual([]);
     });
 
@@ -105,12 +105,12 @@ describe('createFoldingRanges', () => {
     });
 
     it('returns no L3 folds for non-L3 document', () => {
-      const result = createFoldingRanges([], 'just plain text\nno footnotes', 'review', null);
+      const result = createFoldingRanges([], 'just plain text\nno footnotes', 'working', null);
       expect(result).toEqual([]);
     });
 
-    it('returns L3 folds in changes mode', () => {
-      const result = createFoldingRanges([], l3Doc, 'changes', null);
+    it('returns L3 folds in simple mode', () => {
+      const result = createFoldingRanges([], l3Doc, 'simple', null);
       // Level 1 section fold starting at the blank line (line 1)
       const level1 = result.find(r => r.startLine === 1 && r.endLine === 6);
       expect(level1).toBeDefined();

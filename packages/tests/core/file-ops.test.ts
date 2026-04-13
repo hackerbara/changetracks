@@ -1,5 +1,8 @@
 import { describe, it, expect, beforeAll } from 'vitest';
-import { initHashline, splitBodyAndFootnotes } from '@changedown/core';
+import {
+  initHashline, splitBodyAndFootnotes, ChangeType,
+  FootnoteNativeParser, convertL3ToL2, convertL2ToL3,
+} from '@changedown/core';
 import {
   findUniqueMatch,
   applyProposeChange,
@@ -912,5 +915,232 @@ describe('applyProposeChange level=3 (L3)', () => {
         level: 2,
       })).rejects.toThrow();
     });
+  });
+});
+
+// ─── applyProposeChange kind='highlight' ────────────────────────────────────
+
+describe('applyProposeChange kind=highlight', () => {
+  const bodyDoc = '# Title\n\nThe quick brown fox jumps over the lazy dog.\n';
+
+  beforeAll(async () => {
+    await initHashline();
+  });
+
+  it('L2 — wraps matched text in {==...==} with footnote ref and footnote type hig', async () => {
+    const result = await applyProposeChange({
+      text: bodyDoc,
+      oldText: 'quick brown',
+      newText: '',
+      changeId: 'cn-1',
+      author: 'ai:test',
+      level: 2,
+      kind: 'highlight',
+    });
+    expect(result.changeType).toBe('highlight');
+    expect(result.modifiedText).toContain('{==quick brown==}[^cn-1]');
+    expect(result.modifiedText).toMatch(/\[\^cn-1\]:.*\| hig \| proposed/);
+    // Body still contains the highlighted text
+    expect(result.modifiedText).toContain('quick brown');
+  });
+
+  it('L2 — appends inline comment suffix when reasoning provided', async () => {
+    const result = await applyProposeChange({
+      text: bodyDoc,
+      oldText: 'fox',
+      newText: '',
+      changeId: 'cn-1',
+      author: 'ai:test',
+      reasoning: 'needs citation',
+      level: 2,
+      kind: 'highlight',
+    });
+    expect(result.modifiedText).toContain('{==fox==}[^cn-1]');
+    expect(result.modifiedText).toContain('{>>needs citation<<}');
+    expect(result.modifiedText).toMatch(/\[\^cn-1\]:.*\| hig \| proposed/);
+  });
+
+  it('L2 — throws when oldText is empty', async () => {
+    await expect(applyProposeChange({
+      text: bodyDoc,
+      oldText: '',
+      newText: '',
+      changeId: 'cn-1',
+      author: 'ai:test',
+      level: 2,
+      kind: 'highlight',
+    })).rejects.toThrow(/oldText.*empty|highlight requires/i);
+  });
+
+  it('L3 — body unchanged, footnote has {==text==} edit-op with type hig', async () => {
+    const l3Doc = [
+      '# Title',
+      '',
+      'The quick brown fox jumps over the lazy dog.',
+    ].join('\n');
+
+    const result = await applyProposeChange({
+      text: l3Doc,
+      oldText: 'quick brown',
+      newText: '',
+      changeId: 'cn-1',
+      author: 'ai:test',
+      level: 3,
+      kind: 'highlight',
+    });
+    expect(result.changeType).toBe('highlight');
+    // Body unchanged — no {== in body
+    const body = splitBodyAndFootnotes(result.modifiedText.split('\n')).bodyLines.join('\n');
+    expect(body).toContain('quick brown');
+    expect(body).not.toContain('{==');
+    // Footnote has hig type and {==text==} edit-op
+    expect(result.modifiedText).toMatch(/\[\^cn-1\]:.*\| hig \| proposed/);
+    expect(result.modifiedText).toMatch(/\{==quick brown==\}/);
+  });
+
+  it('L3 — reasoning embedded as {>>reasoning in edit-op line', async () => {
+    const l3Doc = [
+      '# Title',
+      '',
+      'The quick brown fox jumps over the lazy dog.',
+    ].join('\n');
+
+    const result = await applyProposeChange({
+      text: l3Doc,
+      oldText: 'fox',
+      newText: '',
+      changeId: 'cn-1',
+      author: 'ai:test',
+      reasoning: 'check this',
+      level: 3,
+      kind: 'highlight',
+    });
+    // Edit-op line contains {==fox==}{>>check this (unclosed)
+    expect(result.modifiedText).toMatch(/\{==fox==\}\{>>check this/);
+  });
+
+  it('L3 round-trip — parse back gives ChangeType.Highlight with metadata.comment', async () => {
+    const l3Doc = [
+      '# Title',
+      '',
+      'The quick brown fox jumps over the lazy dog.',
+    ].join('\n');
+
+    const result = await applyProposeChange({
+      text: l3Doc,
+      oldText: 'fox',
+      newText: '',
+      changeId: 'cn-1',
+      author: 'ai:test',
+      reasoning: 'check this',
+      level: 3,
+      kind: 'highlight',
+    });
+
+    const parser = new FootnoteNativeParser();
+    const doc = parser.parse(result.modifiedText);
+    const nodes = doc.changes;
+    expect(nodes).toHaveLength(1);
+    expect(nodes[0]!.type).toBe(ChangeType.Highlight);
+    expect(nodes[0]!.metadata?.comment).toBe('check this');
+  });
+});
+
+// ─── applyProposeChange kind='comment' ──────────────────────────────────────
+
+describe('applyProposeChange kind=comment', () => {
+  const bodyDoc = 'First line.\nSecond line.\n';
+
+  beforeAll(async () => {
+    await initHashline();
+  });
+
+  it('L2 — inserts {>>comment<<}[^id] and footnote with type com', async () => {
+    const result = await applyProposeChange({
+      text: bodyDoc,
+      oldText: '',
+      newText: '',
+      changeId: 'cn-1',
+      author: 'ai:test',
+      reasoning: 'hello world',
+      level: 2,
+      kind: 'comment',
+    });
+    expect(result.changeType).toBe('comment');
+    expect(result.modifiedText).toContain('{>>hello world<<}[^cn-1]');
+    expect(result.modifiedText).toMatch(/\[\^cn-1\]:.*\| com \| proposed/);
+  });
+
+  it('L2 — throws when reasoning is empty', async () => {
+    await expect(applyProposeChange({
+      text: bodyDoc,
+      oldText: '',
+      newText: '',
+      changeId: 'cn-1',
+      author: 'ai:test',
+      reasoning: '',
+      level: 2,
+      kind: 'comment',
+    })).rejects.toThrow(/reasoning.*empty|comment requires/i);
+  });
+
+  it('L3 — body unchanged, footnote has {>>comment edit-op with type com', async () => {
+    const l3Doc = 'First line.\nSecond line.';
+
+    const result = await applyProposeChange({
+      text: l3Doc,
+      oldText: '',
+      newText: '',
+      changeId: 'cn-1',
+      author: 'ai:test',
+      reasoning: 'note this',
+      level: 3,
+      kind: 'comment',
+    });
+    expect(result.changeType).toBe('comment');
+    // Body unchanged
+    const body = splitBodyAndFootnotes(result.modifiedText.split('\n')).bodyLines.join('\n');
+    expect(body).toBe(l3Doc);
+    // Footnote has com type and {>>comment edit-op
+    expect(result.modifiedText).toMatch(/\[\^cn-1\]:.*\| com \| proposed/);
+    expect(result.modifiedText).toMatch(/\{>>note this/);
+  });
+
+  it('L3 round-trip — parse back gives ChangeType.Comment with metadata.comment', async () => {
+    const l3Doc = 'First line.\nSecond line.';
+
+    const result = await applyProposeChange({
+      text: l3Doc,
+      oldText: '',
+      newText: '',
+      changeId: 'cn-1',
+      author: 'ai:test',
+      reasoning: 'my comment',
+      level: 3,
+      kind: 'comment',
+    });
+
+    const parser = new FootnoteNativeParser();
+    const doc = parser.parse(result.modifiedText);
+    const nodes = doc.changes;
+    expect(nodes).toHaveLength(1);
+    expect(nodes[0]!.type).toBe(ChangeType.Comment);
+    expect(nodes[0]!.metadata?.comment).toBe('my comment');
+  });
+
+  it('non-empty oldText with kind=comment is treated as highlight+comment', async () => {
+    const result = await applyProposeChange({
+      text: bodyDoc,
+      oldText: 'First',
+      newText: '',
+      changeId: 'cn-1',
+      author: 'ai:test',
+      reasoning: 'note this',
+      level: 2,
+      kind: 'comment',
+    });
+    // Treated as highlight
+    expect(result.changeType).toBe('highlight');
+    expect(result.modifiedText).toContain('{==First==}');
   });
 });

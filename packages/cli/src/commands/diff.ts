@@ -4,9 +4,9 @@ import {
   formatAnsi,
   initHashline,
   findFootnoteBlock,
-  type ThreeZoneViewMode,
   type ThreeZoneDocument,
 } from '@changedown/core';
+import type { BuiltinView } from '@changedown/core/host';
 
 // ANSI codes used for thread rendering (subset of what formatAnsi uses)
 const RESET = '\x1b[0m';
@@ -202,18 +202,18 @@ export function isGitDiffDriverInvocation(args: string[]): boolean {
 export async function handleGitDiffDriver(args: string[]): Promise<string> {
   await initHashline();
   const content = fs.readFileSync(args[4], 'utf-8');
-  const doc = buildViewDocument(content, 'review', {
+  const doc = buildViewDocument(content, 'working', {
     filePath: args[4],
     trackingStatus: 'tracked',
     protocolMode: 'classic',
-    defaultView: 'review',
+    defaultView: 'working',
     viewPolicy: 'suggest',
   });
   return formatAnsi(doc, { useUnicodeStrikethrough: true });
 }
 
 export interface DiffOptions {
-  view?: ThreeZoneViewMode;
+  view?: BuiltinView;
   showMarkup?: boolean;
   unicodeStrike?: boolean;
   threads?: boolean;
@@ -226,12 +226,12 @@ export interface DiffOptions {
 export async function handleDiff(file: string, options?: DiffOptions): Promise<string> {
   await initHashline();
   const content = fs.readFileSync(file, 'utf-8');
-  const view: ThreeZoneViewMode = options?.view ?? 'review';
+  const view: BuiltinView = options?.view ?? 'working';
   const doc = buildViewDocument(content, view, {
     filePath: file,
     trackingStatus: 'tracked',
     protocolMode: 'classic',
-    defaultView: 'review',
+    defaultView: 'working',
     viewPolicy: 'suggest',
   });
 

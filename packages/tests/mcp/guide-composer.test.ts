@@ -97,34 +97,34 @@ describe('composeGuide', () => {
   });
 
   describe('view section', () => {
-    it('review default describes review view and mentions alternatives', () => {
+    it('working default describes working view and mentions alternatives', () => {
       const guide = composeGuide({
         ...DEFAULT_CONFIG,
-        policy: { ...DEFAULT_CONFIG.policy, default_view: 'review' },
+        policy: { ...DEFAULT_CONFIG.policy, default_view: 'working' },
       });
-      expect(guide).toContain('review view');
-      expect(guide).toContain('changes');
-      expect(guide).toContain('settled');
+      expect(guide).toContain('working view');
+      expect(guide).toContain('simple');
+      expect(guide).toContain('decided');
     });
 
-    it('changes default describes changes view', () => {
+    it('simple default describes simple view', () => {
       const guide = composeGuide({
         ...DEFAULT_CONFIG,
-        policy: { ...DEFAULT_CONFIG.policy, default_view: 'changes' },
+        policy: { ...DEFAULT_CONFIG.policy, default_view: 'simple' },
       });
-      expect(guide).toContain('changes view');
-      expect(guide).toContain('review');
-      expect(guide).toContain('settled');
+      expect(guide).toContain('simple view');
+      expect(guide).toContain('working');
+      expect(guide).toContain('decided');
     });
 
-    it('settled default describes settled view', () => {
+    it('decided default describes decided view', () => {
       const guide = composeGuide({
         ...DEFAULT_CONFIG,
-        policy: { ...DEFAULT_CONFIG.policy, default_view: 'settled' },
+        policy: { ...DEFAULT_CONFIG.policy, default_view: 'decided' },
       });
-      expect(guide).toContain('settled view');
-      expect(guide).toContain('review');
-      expect(guide).toContain('changes');
+      expect(guide).toContain('decided view');
+      expect(guide).toContain('working');
+      expect(guide).toContain('simple');
     });
   });
 
@@ -180,7 +180,7 @@ describe('composeGuide', () => {
         protocol: { mode: 'compact', level: 2, reasoning: 'required', batch_reasoning: 'required' },
         hashline: { enabled: true, auto_remap: false },
         author: { default: '', enforcement: 'required' },
-        policy: { ...DEFAULT_CONFIG.policy, default_view: 'review' },
+        policy: { ...DEFAULT_CONFIG.policy, default_view: 'working' },
       });
       // Rough token estimate: ~4 chars per token
       expect(guide.length).toBeLessThan(2000);

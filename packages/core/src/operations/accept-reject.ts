@@ -2,6 +2,7 @@ import { ChangeNode, ChangeType, TextEdit } from '../model/types.js';
 import { FOOTNOTE_DEF_STATUS } from '../footnote-patterns.js';
 import { nowTimestamp } from '../timestamp.js';
 import { findFootnoteBlock, findReviewInsertionIndex } from '../footnote-utils.js';
+import { hasInlineDelimiters } from '../host/decorations/helpers.js';
 
 /**
  * Separated text + footnote ref parts from an accept/reject operation.
@@ -52,13 +53,10 @@ export function computeRejectParts(change: ChangeNode): AcceptRejectParts {
 }
 
 export function computeAccept(change: ChangeNode): TextEdit {
-  // L3 shape: range === contentRange means no delimiters in body.
-  // The body already shows the accepted state for all change types:
-  // - Insertion: text is already present
-  // - Deletion: text is already absent (zero-width range)
-  // - Substitution: modified text is already present
-  // Only the footnote status update is needed (handled separately).
-  if (change.range.start === change.contentRange.start && change.range.end === change.contentRange.end) {
+  // L3 shape: no delimiters in body — body already shows the accepted state for
+  // all change types (insertion: text present; deletion: zero-width; substitution:
+  // modified text present). Only the footnote status update is needed (handled separately).
+  if (!hasInlineDelimiters(change)) {
     return { offset: change.range.start, length: 0, newText: '' };
   }
   // L2 path (CriticMarkup delimiters present)
@@ -68,9 +66,8 @@ export function computeAccept(change: ChangeNode): TextEdit {
 }
 
 export function computeReject(change: ChangeNode): TextEdit {
-  // L3 shape: range === contentRange means no delimiters in body.
-  // Rejecting requires reverting the body to its pre-change state.
-  if (change.range.start === change.contentRange.start && change.range.end === change.contentRange.end) {
+  // L3 shape: no delimiters in body — rejecting requires reverting the body to its pre-change state.
+  if (!hasInlineDelimiters(change)) {
     switch (change.type) {
       case ChangeType.Insertion:
         // Remove the inserted text from the body

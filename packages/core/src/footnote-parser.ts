@@ -15,7 +15,7 @@
  * Extracted from `[^cn-N]: @author | date | type | status` header lines
  * plus indented metadata and thread reply lines.
  */
-import { FOOTNOTE_DEF_LENIENT, FOOTNOTE_THREAD_REPLY } from './footnote-patterns.js';
+import { FOOTNOTE_DEF_LENIENT, FOOTNOTE_THREAD_REPLY, IMAGE_DIMENSIONS_RE } from './footnote-patterns.js';
 import { findFootnoteBlockStart } from './footnote-utils.js';
 import { parseTimestamp, type Timestamp } from './timestamp.js';
 
@@ -98,7 +98,7 @@ export function parseFootnotes(content: string): Map<string, FootnoteInfo> {
         if (metaMatch && metaMatch[1] === 'reason') {
           info.reason = metaMatch[2];
         } else if (metaMatch && metaMatch[1] === 'image-dimensions') {
-          const dimMatch = metaMatch[2].match(/^([\d.]+)in\s*x\s*([\d.]+)in$/);
+          const dimMatch = metaMatch[2].match(IMAGE_DIMENSIONS_RE);
           if (dimMatch) {
             info.imageDimensions = {
               widthIn: parseFloat(dimMatch[1]),

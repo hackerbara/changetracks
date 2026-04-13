@@ -35,24 +35,22 @@ import type {
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import {
   Workspace, VirtualDocument, ChangeNode, ChangeType, ChangeStatus, isGhostNode,
-  annotateMarkdown, annotateSidecar, SIDECAR_BLOCK_MARKER, VIEW_MODES,
+  annotateMarkdown, annotateSidecar, SIDECAR_BLOCK_MARKER,
   applyReview, computeSupersedeResult, computeReplyEdit,
   computeResolutionEdit, computeUnresolveEdit, compactToLevel1, compactToLevel0,
   applyAcceptedChanges, applyRejectedChanges,
   findFootnoteBlock, parseFootnoteHeader, parseForFormat,
   initHashline,
-  convertL2ToL3,
-  convertL3ToL2,
   compact, compactL2,
   splitBodyAndFootnotes,
   scanMaxCnId,
 } from '@changedown/core';
-import type { ViewMode, Decision, VerificationResult } from '@changedown/core';
+import type { Decision, VerificationResult } from '@changedown/core';
 import type { PreviousVersionResult } from './git';
 import { DEFAULT_CONFIG } from '@changedown/core';
 import type { ChangeDownConfig } from '@changedown/core';
-import { LSP_METHOD, buildDecorationPlan, FormatService } from '@changedown/core/host';
-import type { FormatAdapter, View } from '@changedown/core/host';
+import { LSP_METHOD, buildDecorationPlan, FormatService, LocalFormatAdapter, VIEW_PRESETS, resolveView } from '@changedown/core/host';
+import type { View, BuiltinView } from '@changedown/core/host';
 import { createHover } from './capabilities/hover';
 import { createCodeLenses, CodeLensMode, CursorState } from './capabilities/code-lens';
 import { sendDecorationData, sendChangeCount, sendCoherenceStatus } from './notifications/decoration-data';
@@ -177,13 +175,7 @@ export class ChangedownServer {
       },
     );
 
-    // The server uses a local FormatAdapter that calls core functions directly
-    // (since the server IS the LSP — it doesn't proxy to itself)
-    const serverLocalAdapter: FormatAdapter = {
-      convertL2ToL3: async (_uri, text) => convertL2ToL3(text),
-      convertL3ToL2: async (_uri, text) => convertL3ToL2(text),
-    };
-    this.formatService = new FormatService(serverLocalAdapter);
+    this.formatService = new FormatService(new LocalFormatAdapter());
 
     this.setupHandlers();
   }
@@ -354,24 +346,26 @@ export class ChangedownServer {
     this.connection.onNotification(LSP_METHOD.SET_VIEW_MODE, (params: SetViewModeParams) => {
       try {
         const uri = params.textDocument.uri;
-        const viewMode = params.viewMode;
-        // Validate incoming viewMode against the canonical set of view names
-        if (!VIEW_MODES.includes(viewMode as ViewMode)) {
+        // params.viewMode is wire-parsed JSON — type as string before narrowing
+        const rawView: string = params.viewMode as string;
+        // Resolve legacy aliases and validate against known view names
+        const view = resolveView(rawView);
+        if (view === null) {
           this.connection.console.warn(
-            `${LSP_METHOD.SET_VIEW_MODE}: ignoring unknown viewMode "${viewMode}" for ${uri}`
+            `${LSP_METHOD.SET_VIEW_MODE}: ignoring unknown viewMode "${rawView}" for ${uri}`
           );
           return;
         }
         const state = this.docStates.get(uri);
         if (state) {
-          state.viewMode = viewMode;
-          // Reset autoFoldSent when leaving review/changes so re-entering triggers auto-fold
-          if (params.viewMode !== 'review' && params.viewMode !== 'changes') {
+          state.viewMode = view;
+          // Reset autoFoldSent when leaving review/simple so re-entering triggers auto-fold
+          if (view !== 'working' && view !== 'simple') {
             state.autoFoldSent = false;
           }
         }
         // Broadcast confirmation back to client
-        sendViewModeChanged(this.connection, uri, viewMode);
+        sendViewModeChanged(this.connection, uri, view);
         // Broadcast composite documentState (carries both tracking + view mode)
         this.broadcastDocumentState(uri);
         // Debounce semanticTokens.refresh() — when the extension sends setViewMode for
@@ -741,8 +735,8 @@ export class ChangedownServer {
     const text = this.getDocumentText(uri);
     if (!text) return;
     const tracking = resolveTracking(text, this.projectTrackingDefault);
-    // Use existing state viewMode (defaults to 'review' when not set)
-    const viewMode = this.docStates.get(uri)?.viewMode ?? 'review';
+    // Use existing state viewMode (defaults to 'working' when not set)
+    const viewMode = this.docStates.get(uri)?.viewMode ?? 'working';
     sendDocumentState(this.connection, uri, tracking, viewMode);
   }
 
@@ -914,7 +908,7 @@ export class ChangedownServer {
     const changes = this.getMergedChanges(uri);
     const isL3ForFold = this.formatService.getDetectedFormat(uri, text) === 'L3';
     const viewModeForFold = state.viewMode;
-    const autoFoldLines = (isL3ForFold && !state.autoFoldSent && (viewModeForFold === 'review' || viewModeForFold === 'changes'))
+    const autoFoldLines = (isL3ForFold && !state.autoFoldSent && (viewModeForFold === 'working' || viewModeForFold === 'simple'))
       ? computeAutoFoldLines(text) : undefined;
     sendDecorationData(this.connection, uri, changes, state.version, autoFoldLines ?? undefined);
     if (autoFoldLines) state.autoFoldSent = true;
@@ -1305,13 +1299,13 @@ export class ChangedownServer {
 
   /**
    * Get the current view mode for a document.
-   * Defaults to 'review' if no mode has been explicitly set.
+   * Defaults to 'working' if no mode has been explicitly set.
    *
    * @param uri Document URI
-   * @returns The active ViewMode for this document
+   * @returns The active BuiltinView for this document
    */
-  public getViewMode(uri: string): ViewMode {
-    return this.docStates.get(uri)?.viewMode ?? 'review';
+  public getViewMode(uri: string): BuiltinView {
+    return this.docStates.get(uri)?.viewMode ?? 'working';
   }
 
   /**
@@ -1378,22 +1372,22 @@ export class ChangedownServer {
     targetFormat: 'L2' | 'L3';
   }) {
     const { uri, text, targetFormat } = params;
-    const result = targetFormat === 'L3'
-      ? await this.formatService.promoteToL3(uri, text)
-      : await this.formatService.demoteToL2(uri, text);
+    const convertedText = targetFormat === 'L3'
+      ? await this.formatService.promoteText(text, { uri })
+      : await this.formatService.demoteText(text, { uri });
 
-    const parseResult = parseForFormat(result.convertedText);
+    const parseResult = parseForFormat(convertedText);
     const view: View = {
       name: 'convert',
       projection: 'current',
       display: { delimiters: 'hide', authorColors: 'auto' },
     };
     const decorationPlan = buildDecorationPlan(
-      parseResult.getChanges(), result.convertedText, view, targetFormat, 0,
+      parseResult.getChanges(), convertedText, view, 0,
     );
 
     return {
-      convertedText: result.convertedText,
+      convertedText,
       newFormat: targetFormat,
       edits: [], // TODO: compute structural diff for incremental apply
       decorationPlan,

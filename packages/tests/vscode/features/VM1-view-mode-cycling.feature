@@ -13,30 +13,30 @@ Feature: VM1 — View mode cycling
   # ── Full cycle ───────────────────────────────────────────────
 
   Scenario: VM1-01 Cycle through all 4 modes in order
-    Then the active view mode is "review"
+    Then the active view mode is "working"
     When I toggle Smart View
-    Then the active view mode is "changes"
+    Then the active view mode is "simple"
     When I toggle Smart View
-    Then the active view mode is "settled"
+    Then the active view mode is "final"
     When I toggle Smart View
     Then the active view mode is "raw"
     When I toggle Smart View
-    Then the active view mode is "review"
+    Then the active view mode is "working"
 
   # ── Display names ────────────────────────────────────────────
 
   Scenario: VM1-02 All Markup mode shows all decorations and delimiters
-    Then the active view mode is "review"
+    Then the active view mode is "working"
     And inline decorations are visible
 
   Scenario: VM1-03 Simple mode hides delimiters
     When I switch to "simple" view mode
-    Then the active view mode is "changes"
+    Then the active view mode is "simple"
     And delimiters are hidden via display:none
 
   Scenario: VM1-04 Final mode shows settled text
     When I switch to "final" view mode
-    Then the active view mode is "settled"
+    Then the active view mode is "final"
 
   Scenario: VM1-05 Original mode shows pre-change text
     When I switch to "original" view mode
@@ -46,9 +46,9 @@ Feature: VM1 — View mode cycling
 
   Scenario: VM1-06 Panel buttons stay in sync with cycling
     When I toggle Smart View
-    Then the active view mode is "changes"
-    When I switch to the "settled" view mode from the panel
-    Then the active view mode is "settled"
+    Then the active view mode is "simple"
+    When I switch to the "final" view mode from the panel
+    Then the active view mode is "final"
 
   # ── Decorations match mode ───────────────────────────────────
 

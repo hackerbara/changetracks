@@ -7,7 +7,7 @@ import { ChangeType, parseForFormat } from '@changedown/core';
 import { renderMarkdownToHtml } from './docx-preview-renderer';
 import { buildAnnotationCards } from './annotation-extractor';
 import { buildLoadingHtml, buildErrorHtml, buildChoiceHtml, buildPreviewHtml } from './docx-preview-html';
-import type { ViewMode } from '../view-mode';
+import type { BuiltinView } from '@changedown/core/host';
 
 function rewriteImagePaths(markdown: string, mediaDir: string, webview: vscode.Webview): string {
   // Markdown paths are relative to where the .md file would sit (e.g., "basename_media/hash.png").
@@ -61,7 +61,7 @@ export class DocxEditorProvider implements vscode.CustomReadonlyEditorProvider {
     // State tracking
     let tempPath: string | undefined;
     let currentMdPath: string | undefined;
-    let currentViewMode: ViewMode = 'review';
+    let currentViewMode: BuiltinView = 'working';
     let currentMediaDir: string | undefined;
 
     // Single consolidated message handler (Task 9 fix — no duplicate listeners)
@@ -100,7 +100,7 @@ export class DocxEditorProvider implements vscode.CustomReadonlyEditorProvider {
           }
           break;
         case 'setViewMode':
-          currentViewMode = message.mode;
+          currentViewMode = message.mode as BuiltinView;
           if (currentMdPath && fs.existsSync(currentMdPath)) {
             const md = fs.readFileSync(currentMdPath, 'utf-8');
             await this.showPreviewFromMarkdown(
@@ -155,7 +155,7 @@ export class DocxEditorProvider implements vscode.CustomReadonlyEditorProvider {
     webviewPanel: vscode.WebviewPanel,
     docxPath: string,
     fileName: string,
-    viewMode: ViewMode,
+    viewMode: BuiltinView,
     onMediaDir?: (dir: string) => void,
   ): Promise<string | undefined> {
     webviewPanel.webview.html = buildLoadingHtml(fileName);
@@ -197,7 +197,7 @@ export class DocxEditorProvider implements vscode.CustomReadonlyEditorProvider {
     webviewPanel: vscode.WebviewPanel,
     markdown: string,
     fileName: string,
-    viewMode: ViewMode = 'review',
+    viewMode: BuiltinView = 'working',
     mediaDir?: string
   ): Promise<void> {
     const doc = parseForFormat(markdown);
@@ -224,7 +224,7 @@ export class DocxEditorProvider implements vscode.CustomReadonlyEditorProvider {
     };
 
     webviewPanel.webview.html = buildPreviewHtml({
-      fileName, bodyHtml, annotations, stats, currentViewMode: viewMode,
+      fileName, bodyHtml, annotations, stats, currentView: viewMode,
     });
   }
 

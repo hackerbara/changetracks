@@ -3,19 +3,19 @@ Feature: D9 -- Show Delimiters behavior matrix
   The showDelimiters setting controls delimiter and footnote reference visibility
   with view-mode-specific behavior:
 
-  - Review + Delimiters OFF (default): Type decorations on contentRange, delimiters hidden, NO cursor unfolding
-  - Review + Delimiters ON: Full static markup (delimiters + refs visible), no cursor tricks
+  - Working + Delimiters OFF (default): Type decorations on contentRange, delimiters hidden, NO cursor unfolding
+  - Working + Delimiters ON: Full static markup (delimiters + refs visible), no cursor tricks
   - Simple + Delimiters OFF: Clean text, delimiters always hidden, NO cursor unfolding
   - Simple + Delimiters ON: Delimiters hidden, but cursor entering CONTENT range reveals them
 
   The trigger zone for cursor unfolding uses contentRange (not fullRange), so
   cursor on delimiter characters does NOT trigger unfolding.
 
-  # ── Review + Delimiters OFF: type decorations always applied, no unfolding ──
+  # ── Working + Delimiters OFF: type decorations always applied, no unfolding ──
 
-  Scenario: Review + Delimiters OFF + cursor in content: delimiters stay hidden
+  Scenario: Working + Delimiters OFF + cursor in content: delimiters stay hidden
     Given markup text "Hello {++world++} end"
-    When I decorate in review mode with showDelimiters off and cursor at 0:10
+    When I decorate in working mode with showDelimiters off and cursor at 0:10
     Then insertions count is 1
     And insertions has range 0:9 to 0:14
     And hiddens count is 2
@@ -23,9 +23,9 @@ Feature: D9 -- Show Delimiters behavior matrix
     And hiddens has range 0:14 to 0:17
     And unfolded is empty
 
-  Scenario: Review + Delimiters OFF + no cursor: type decorations still applied
+  Scenario: Working + Delimiters OFF + no cursor: type decorations still applied
     Given markup text "Hello {++world++} end"
-    When I decorate in review mode with showDelimiters off
+    When I decorate in working mode with showDelimiters off
     Then insertions count is 1
     And insertions has range 0:9 to 0:14
     And hiddens count is 2
@@ -33,9 +33,9 @@ Feature: D9 -- Show Delimiters behavior matrix
     And hiddens has range 0:14 to 0:17
     And unfolded is empty
 
-  Scenario: Review + Delimiters OFF + deletion + no cursor: type decorations still applied
+  Scenario: Working + Delimiters OFF + deletion + no cursor: type decorations still applied
     Given markup text "Hello {--world--} end"
-    When I decorate in review mode with showDelimiters off
+    When I decorate in working mode with showDelimiters off
     Then deletions count is 1
     And deletions has range 0:9 to 0:14
     And hiddens count is 2
@@ -43,35 +43,35 @@ Feature: D9 -- Show Delimiters behavior matrix
     And hiddens has range 0:14 to 0:17
     And unfolded is empty
 
-  Scenario: Review + Delimiters OFF + deletion + cursor in content: delimiters stay hidden
+  Scenario: Working + Delimiters OFF + deletion + cursor in content: delimiters stay hidden
     Given markup text "Hello {--world--} end"
-    When I decorate in review mode with showDelimiters off and cursor at 0:10
+    When I decorate in working mode with showDelimiters off and cursor at 0:10
     Then deletions count is 1
     And deletions has range 0:9 to 0:14
     And hiddens count is 2
     And unfolded is empty
 
-  # ── Review + Delimiters ON: full static markup, no cursor tricks ──
+  # ── Working + Delimiters ON: full static markup, no cursor tricks ──
 
-  Scenario: Review + Delimiters ON: insertion shows full range including delimiters
+  Scenario: Working + Delimiters ON: insertion shows full range including delimiters
     Given markup text "Hello {++world++} end"
-    When I decorate in review mode with showDelimiters on
+    When I decorate in working mode with showDelimiters on
     Then insertions count is 1
     And insertions has range 0:6 to 0:17
     And hiddens is empty
     And unfolded is empty
 
-  Scenario: Review + Delimiters ON + cursor in content: still static, no unfolding
+  Scenario: Working + Delimiters ON + cursor in content: still static, no unfolding
     Given markup text "Hello {++world++} end"
-    When I decorate in review mode with showDelimiters on and cursor at 0:10
+    When I decorate in working mode with showDelimiters on and cursor at 0:10
     Then insertions count is 1
     And insertions has range 0:6 to 0:17
     And hiddens is empty
     And unfolded is empty
 
-  Scenario: Review + Delimiters ON: substitution shows full range
+  Scenario: Working + Delimiters ON: substitution shows full range
     Given markup text "Hello {~~old~>new~~} end"
-    When I decorate in review mode with showDelimiters on
+    When I decorate in working mode with showDelimiters on
     Then substitutionOriginals count is 1
     And substitutionModifieds count is 1
     And hiddens is empty
@@ -185,14 +185,14 @@ Feature: D9 -- Show Delimiters behavior matrix
 
   # ── Boundary: activeHighlights use contentRange, not fullRange ──
 
-  Scenario: Review + Delimiters ON + cursor on opening delimiter: no activeHighlight
+  Scenario: Working + Delimiters ON + cursor on opening delimiter: no activeHighlight
     Given markup text "Hello {++world++} end"
-    When I decorate in review mode with showDelimiters on and cursor at 0:6
+    When I decorate in working mode with showDelimiters on and cursor at 0:6
     Then activeHighlights is empty
 
-  Scenario: Review + Delimiters ON + cursor on closing delimiter: no activeHighlight
+  Scenario: Working + Delimiters ON + cursor on closing delimiter: no activeHighlight
     Given markup text "Hello {++world++} end"
-    When I decorate in review mode with showDelimiters on and cursor at 0:15
+    When I decorate in working mode with showDelimiters on and cursor at 0:15
     Then activeHighlights is empty
 
   # ── Settled/Raw modes: showDelimiters has no effect ──

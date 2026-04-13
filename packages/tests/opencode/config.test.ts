@@ -42,7 +42,7 @@ describe('loadConfig', () => {
 
     expect(config.policy.mode).toBe('safety-net');
     expect(config.policy.creation_tracking).toBe('footnote');
-    expect(config.policy.default_view).toBe('review');
+    expect(config.policy.default_view).toBe('working');
     expect(config.policy.view_policy).toBe('suggest');
   });
 
@@ -80,7 +80,7 @@ auto_on_reject = true
       `[policy]
 mode = "strict"
 creation_tracking = "inline"
-default_view = "changes"
+default_view = "simple"
 view_policy = "require"
 `
     );
@@ -89,7 +89,7 @@ view_policy = "require"
 
     expect(config.policy.mode).toBe('strict');
     expect(config.policy.creation_tracking).toBe('inline');
-    expect(config.policy.default_view).toBe('changes');
+    expect(config.policy.default_view).toBe('simple');
     expect(config.policy.view_policy).toBe('require');
   });
 

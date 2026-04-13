@@ -3,7 +3,7 @@ import { findFootnoteBlock } from '@changedown/core';
 import type { ChangeNode } from '@changedown/core';
 import type { BaseController } from '@changedown/core/host';
 import { positionToOffset } from '../converters';
-import { isChangeVisibleInMode } from '../view-mode';
+import { isChangeVisibleInView } from '@changedown/core/host';
 import { findContainingHiddenRange } from '../hidden-range-search';
 import { findSupportedEditor, isSupported, setContextKey } from '../managers/shared';
 
@@ -11,7 +11,7 @@ import { findSupportedEditor, isSupported, setContextKey } from '../managers/sha
  * NavigationCommands owns change navigation (next/prev/linked), cursor context
  * tracking, cursor snapping past hidden ranges, and the changeAtCursor context key.
  *
- * Consumes BaseController directly — reads viewMode/showDelimiters from controller,
+ * Consumes BaseController directly — reads View from controller via getView(),
  * no callbacks. Replaces NavigationManager.
  */
 export class NavigationCommands implements vscode.Disposable {
@@ -37,11 +37,6 @@ export class NavigationCommands implements vscode.Disposable {
     }
 
     // ── Helpers ────────────────────────────────────────────────────────
-
-    private getVisibleChanges(uri: string): ChangeNode[] {
-        return this.controller.getChangesForUri(uri)
-            .filter(c => isChangeVisibleInMode(c, this.controller.viewMode, this.controller.showDelimiters));
-    }
 
     private changeAtOffset(changes: ChangeNode[], offset: number): ChangeNode | null {
         for (const c of changes) {
@@ -94,7 +89,9 @@ export class NavigationCommands implements vscode.Disposable {
         if (!editor) return;
 
         const uri = editor.document.uri.toString();
-        const visibleChanges = this.getVisibleChanges(uri);
+        const view = this.controller.getView();
+        const visibleChanges = this.controller.getChangesForUri(uri)
+            .filter(c => isChangeVisibleInView(c, view));
 
         if (visibleChanges.length === 0) {
             vscode.window.showInformationMessage('No visible changes in this view');
@@ -102,7 +99,7 @@ export class NavigationCommands implements vscode.Disposable {
         }
 
         const cursorOffset = editor.document.offsetAt(editor.selection.active);
-        const filter = (c: ChangeNode) => isChangeVisibleInMode(c, this.controller.viewMode, this.controller.showDelimiters);
+        const filter = (c: ChangeNode) => isChangeVisibleInView(c, view);
 
         const target = this.controller.navigationService.nextChange(uri, cursorOffset, filter);
         if (target) {
@@ -122,7 +119,9 @@ export class NavigationCommands implements vscode.Disposable {
         if (!editor) return;
 
         const uri = editor.document.uri.toString();
-        const visibleChanges = this.getVisibleChanges(uri);
+        const view = this.controller.getView();
+        const visibleChanges = this.controller.getChangesForUri(uri)
+            .filter(c => isChangeVisibleInView(c, view));
 
         if (visibleChanges.length === 0) {
             vscode.window.showInformationMessage('No visible changes in this view');
@@ -130,7 +129,7 @@ export class NavigationCommands implements vscode.Disposable {
         }
 
         const cursorOffset = editor.document.offsetAt(editor.selection.active);
-        const filter = (c: ChangeNode) => isChangeVisibleInMode(c, this.controller.viewMode, this.controller.showDelimiters);
+        const filter = (c: ChangeNode) => isChangeVisibleInView(c, view);
 
         const target = this.controller.navigationService.previousChange(uri, cursorOffset, filter);
         if (target) {

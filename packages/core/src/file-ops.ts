@@ -5,7 +5,7 @@
  * They operate on strings and return strings (or structured results).
  */
 
-import { generateFootnoteDefinition, buildContextualL3EditOp } from './operations/footnote-generator.js';
+import { generateFootnoteDefinition, buildContextualL3EditOp, formatL3EditOpLine } from './operations/footnote-generator.js';
 import { nowTimestamp } from './timestamp.js';
 import { applyReview } from './operations/apply-review.js';
 import { applyRejectedChanges } from './operations/current-text.js';
@@ -24,12 +24,14 @@ import {
 import { parseForFormat } from './format-aware-parse.js';
 import { ChangeType, ChangeStatus } from './model/types.js';
 import { findFootnoteBlockStart, extractFootnoteStatuses } from './footnote-utils.js';
-import { FOOTNOTE_DEF_START, FOOTNOTE_CONTINUATION, isL3Format, splitBodyAndFootnotes } from './footnote-patterns.js';
+import { FOOTNOTE_DEF_START, FOOTNOTE_CONTINUATION, isL3Format, splitBodyAndFootnotes, FOOTNOTE_L3_EDIT_OP, FOOTNOTE_DEF_STATUS_VALUE } from './footnote-patterns.js';
 import { computeLineHash, initHashline } from './hashline.js';
 import { buildLineStarts, offsetToLineNumber } from './operations/l2-to-l3.js';
 import { viewAwareFind } from './view-surface.js';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
+
+export type ProposeChangeKind = 'ins' | 'del' | 'sub' | 'highlight' | 'comment';
 
 export interface ProposeChangeParams {
   text: string;          // current file content
@@ -41,11 +43,13 @@ export interface ProposeChangeParams {
   insertAfter?: string;  // anchor for insertions (when oldText is empty)
   /** 1 = adjacent comment only (Level 1); 2 = footnote (Level 2); 3 = L3 clean body + footnote with LINE:HASH edit-op. Default 2. */
   level?: 1 | 2 | 3;
+  /** When provided, forces the change kind rather than inferring from oldText/newText. */
+  kind?: ProposeChangeKind;
 }
 
 export interface ProposeChangeResult {
   modifiedText: string;
-  changeType: 'ins' | 'del' | 'sub';
+  changeType: 'ins' | 'del' | 'sub' | 'highlight' | 'comment';
 }
 
 export interface CriticMarkupOverlap {
@@ -97,7 +101,7 @@ export interface ApplySingleOperationParams {
 
 export interface ApplySingleOperationResult {
   modifiedText: string;
-  changeType: 'ins' | 'del' | 'sub';
+  changeType: 'ins' | 'del' | 'sub' | 'highlight' | 'comment';
   affectedStartLine?: number;
   affectedEndLine?: number;
 }
@@ -122,7 +126,7 @@ interface CurrentMapResult {
 }
 
 /** Build Level 1 adjacent comment: @author|date|type|proposed */
-function level1Comment(author: string, changeType: 'ins' | 'del' | 'sub'): string {
+function level1Comment(author: string, changeType: string): string {
   const ts = nowTimestamp();
   const authorPrefixed = author.startsWith('@') ? author : `@${author}`;
   return `{>>${authorPrefixed}|${ts.raw}|${changeType}|proposed<<}`;
@@ -1025,6 +1029,35 @@ export function contentZoneText(fullText: string): string {
   return fullText.slice(0, offset);
 }
 
+/**
+ * Returns true only if the document contains L3-format PROPOSED (pending) changes.
+ *
+ * L3 settlement audit trail (accepted/rejected footnotes with edit-op lines) is NOT
+ * considered a pending L3 change — those are historic records. Only footnotes with
+ * `| proposed` status AND L3 edit-op lines indicate an active L3-format proposal.
+ *
+ * Used to guard against running L2 proposal logic on pure-L3 documents (where changes
+ * are stored only in footnotes). Hybrid documents (L2 settled + L3 audit trail) are
+ * allowed to accept new L2 proposals because their body uses L2 inline markup.
+ */
+function hasL3ProposedChanges(text: string): boolean {
+  const lines = text.split('\n');
+  let inProposedFootnote = false;
+  for (const line of lines) {
+    if (FOOTNOTE_DEF_STATUS_VALUE.test(line)) {
+      // Check if this footnote has | proposed status
+      inProposedFootnote = /\|\s*proposed\s*$/.test(line);
+    } else if (inProposedFootnote && FOOTNOTE_L3_EDIT_OP.test(line)) {
+      // Found a proposed footnote with an L3 edit-op line
+      return true;
+    } else if (line.trim() === '' || (line.startsWith('[^') && !line.startsWith('    '))) {
+      // End of footnote continuation
+      inProposedFootnote = false;
+    }
+  }
+  return false;
+}
+
 // ─── Propose change ─────────────────────────────────────────────────────────
 
 /**
@@ -1040,12 +1073,21 @@ export function contentZoneText(fullText: string): string {
 export async function applyProposeChange(params: ProposeChangeParams): Promise<ProposeChangeResult> {
   const { text, oldText, newText, changeId, author, reasoning, insertAfter, level = 2 } = params;
 
+  // Normalise kind: if 'comment' with non-empty oldText, treat as highlight+comment.
+  let kind = params.kind;
+  if (kind === 'comment' && oldText !== '') {
+    kind = 'highlight';
+  }
+
   const isL3 = level === 3;
   if (isL3) await initHashline();
 
-  // Safety check: prevent L2 logic on L3 text.
-  // Cheap pre-check avoids the expensive isL3Format scan for documents without footnotes.
-  if (!isL3 && text.includes('[^cn-') && isL3Format(text)) {
+  // Safety check: prevent L2 logic on L3 text with pending proposed changes.
+  // Only fires when there are PROPOSED (not yet decided) L3-format changes in the footnotes.
+  // Documents with only L3 settlement audit trail (accepted/rejected status) are hybrid
+  // docs and can still accept L2 proposals — contentZoneText handles them correctly.
+  // Cheap pre-check avoids the expensive scan for documents without footnotes.
+  if (!isL3 && text.includes('[^cn-') && isL3Format(text) && hasL3ProposedChanges(text)) {
     throw new Error('L3 format detected but level is not 3. Pass level: 3 for L3 text to avoid garbled output.');
   }
 
@@ -1057,6 +1099,130 @@ export async function applyProposeChange(params: ProposeChangeParams): Promise<P
   } else {
     bodyText = text;
   }
+
+  // ─── Highlight ─────────────────────────────────────────────────────────────
+  if (kind === 'highlight') {
+    if (oldText === '') {
+      throw new Error('Highlight requires oldText (the text to highlight) — oldText must not be empty.');
+    }
+    const hlSearchText = isL3 ? bodyText : contentZoneText(text);
+    const match = findUniqueMatch(hlSearchText, oldText, defaultNormalizer);
+    if (!isL3 && !match.wasSettledMatch && !match.wasCommittedMatch) {
+      guardOverlap(text, match.index, match.length);
+    }
+    const changeOffset = match.index;
+
+    if (isL3) {
+      // Body is unchanged for highlights — the text stays in place.
+      const modifiedBody = text;
+      const split = splitBodyAndFootnotes(modifiedBody.split('\n'));
+      const mutatedBodyText = split.bodyLines.join('\n');
+      const lineStarts = buildLineStarts(mutatedBodyText);
+      const lineNumber = offsetToLineNumber(lineStarts, changeOffset);
+      const lineIdx = lineNumber - 1;
+      const lineContent = split.bodyLines[lineIdx] ?? '';
+      const hash = computeLineHash(lineIdx, lineContent, split.bodyLines);
+
+      // Build a simple (non-contextual) op so reasoning survives round-trip.
+      // contextual-edit-op.ts line 88-89 blocks {>>reasoning as contextAfter when
+      // contextBefore is empty, causing parseOp to receive the full op+reasoning string.
+      const rawOp = reasoning ? `{==${match.originalText}==}{>>${reasoning}` : `{==${match.originalText}==}`;
+      const editOpLine = formatL3EditOpLine(lineNumber, hash, rawOp);
+
+      const footnoteHeader = generateFootnoteDefinition(changeId, 'hig', author);
+      const footnoteBlock = footnoteHeader + '\n' + editOpLine;
+      const modifiedText = appendFootnote(modifiedBody, footnoteBlock);
+      return { modifiedText, changeType: 'highlight' };
+    }
+
+    // L2 / L1
+    const actualOldText = match.originalText;
+    const { cleaned: cleanedOld, refs: preservedRefs } = stripRefsFromContent(actualOldText);
+    const commentSuffix = reasoning ? `{>>${reasoning}<<}` : '';
+    const refSuffix = level === 2 ? `[^${changeId}]` : '';
+    const inlineMarkup = `{==${cleanedOld}==}${refSuffix}${preservedRefs.join('')}${commentSuffix}${level === 1 ? level1Comment(author, 'highlight') : ''}`;
+    const modifiedBody = text.slice(0, match.index) + inlineMarkup + text.slice(match.index + match.length);
+
+    if (level === 1) {
+      return { modifiedText: modifiedBody, changeType: 'highlight' };
+    }
+
+    const footnoteHeader = generateFootnoteDefinition(changeId, 'hig', author);
+    const footnoteBlock = footnoteHeader;
+    const modifiedText = appendFootnote(modifiedBody, footnoteBlock);
+    return { modifiedText, changeType: 'highlight' };
+  }
+
+  // ─── Comment ───────────────────────────────────────────────────────────────
+  if (kind === 'comment') {
+    if (!reasoning || reasoning.trim() === '') {
+      throw new Error('Comment requires reasoning (the comment body) — reasoning must not be empty.');
+    }
+
+    if (isL3) {
+      // Body is unchanged for standalone comments.
+      const modifiedBody = text;
+      const split = splitBodyAndFootnotes(modifiedBody.split('\n'));
+      const mutatedBodyText = split.bodyLines.join('\n');
+      // Anchor comment to the last body line (or insertAfter if provided).
+      let targetOffset = mutatedBodyText.length > 0 ? mutatedBodyText.length - 1 : 0;
+      if (insertAfter) {
+        const anchorIdx = mutatedBodyText.lastIndexOf(insertAfter);
+        if (anchorIdx !== -1) targetOffset = anchorIdx + insertAfter.length - 1;
+      }
+      const lineStarts = buildLineStarts(mutatedBodyText);
+      const lineNumber = offsetToLineNumber(lineStarts, Math.max(0, targetOffset));
+      const lineIdx = lineNumber - 1;
+      const lineContent = split.bodyLines[lineIdx] ?? '';
+      const hash = computeLineHash(lineIdx, lineContent, split.bodyLines);
+
+      // Comment op: {>>reasoning (unclosed), which parseOp reads as type='comment'.
+      const rawOp = `{>>${reasoning}`;
+      const editOpLine = formatL3EditOpLine(lineNumber, hash, rawOp);
+
+      const footnoteHeader = generateFootnoteDefinition(changeId, 'com', author);
+      const footnoteBlock = footnoteHeader + '\n' + editOpLine;
+      const modifiedText = appendFootnote(modifiedBody, footnoteBlock);
+      return { modifiedText, changeType: 'comment' };
+    }
+
+    // L2 / L1: insert {>>reasoning<<}[^id] at end of insertAfter line or end of body.
+    const insertPos = (() => {
+      if (insertAfter) {
+        const anchorIdx = text.lastIndexOf(insertAfter);
+        if (anchorIdx !== -1) {
+          // Insert at end of the line containing insertAfter
+          const afterAnchor = anchorIdx + insertAfter.length;
+          const nlIdx = text.indexOf('\n', afterAnchor);
+          return nlIdx !== -1 ? nlIdx : text.length;
+        }
+      }
+      // Default: end of body (before any existing footnote block)
+      const lines = text.split('\n');
+      const blockStart = findFootnoteBlockStart(lines);
+      if (blockStart >= lines.length) return text.length;
+      // Insert before the footnote block — find offset of that line
+      let offset = 0;
+      for (let i = 0; i < blockStart; i++) offset += lines[i]!.length + 1;
+      // Back up over trailing newlines
+      return Math.max(0, offset - 1);
+    })();
+
+    const refSuffix = level === 2 ? `[^${changeId}]` : '';
+    const inlineMarkup = `{>>${reasoning}<<}${refSuffix}${level === 1 ? level1Comment(author, 'comment') : ''}`;
+    const modifiedBody = text.slice(0, insertPos) + inlineMarkup + text.slice(insertPos);
+
+    if (level === 1) {
+      return { modifiedText: modifiedBody, changeType: 'comment' };
+    }
+
+    const footnoteHeader = generateFootnoteDefinition(changeId, 'com', author);
+    const footnoteBlock = footnoteHeader;
+    const modifiedText = appendFootnote(modifiedBody, footnoteBlock);
+    return { modifiedText, changeType: 'comment' };
+  }
+
+  // ─── Existing ins / del / sub logic ────────────────────────────────────────
 
   // Validate: both empty is invalid
   if (oldText === '' && newText === '') {

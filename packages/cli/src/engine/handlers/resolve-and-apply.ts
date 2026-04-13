@@ -13,7 +13,7 @@ import {
   computeCurrentView,
 } from '@changedown/core';
 import { validateOrAutoRemap, HashlineMismatchError, type RelocationEntry, type AutoRemapResult } from './hashline-relocate.js';
-import type { SessionState, ViewMode } from '../state.js';
+import type { SessionState, BuiltinView } from '../state.js';
 import type { ChangeDownConfig } from '../config.js';
 import {
   findUniqueMatch,
@@ -41,7 +41,7 @@ export interface ResolvedCoordinates {
   content: string;
   relocations: RelocationEntry[];
   remaps: AutoRemapResult[];
-  viewResolved?: ViewMode;
+  viewResolved?: BuiltinView;
   op: NormalizedCompactOp;
 }
 
@@ -53,7 +53,7 @@ export interface ApplyResult {
   affectedEndLine: number;
   relocations: RelocationEntry[];
   remaps: AutoRemapResult[];
-  viewResolved?: ViewMode;
+  viewResolved?: BuiltinView;
   settled: boolean;
 }
 
@@ -75,7 +75,7 @@ export function resolveCoordinates(
   let startHash = parsed.startHash;
   let endLine = parsed.endLine;
   let endHash = parsed.endHash;
-  let viewResolved: ViewMode | undefined;
+  let viewResolved: BuiltinView | undefined;
 
   // Stage 2: View-aware translation
   const startResolution = state.resolveHash(filePath, startLine, startHash);
@@ -178,8 +178,8 @@ export function resolveCoordinates(
   // Stage 3.5b: View-hash resolution via committed/settled view
   // Fires when 3.5a didn't resolve (insertion, comment, whole-line del/sub, or ambiguous oldText)
   if (stage3StartFailed || stage3EndFailed) {
-    const lastView = state.getLastReadView(filePath) ?? 'raw';
-    const useSettled = lastView === 'settled';
+    const lastView = state.getLastReadView(filePath) ?? 'working';
+    const useSettled = lastView === 'decided';
 
     // Compute the appropriate view — decided strips pending proposals,
     // current accepts them. Both return line-number mappings to raw file.

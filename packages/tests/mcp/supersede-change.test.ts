@@ -147,7 +147,7 @@ describe('handleSupersedeChange', () => {
 
     // When no settlement, the old markup stays. The new change targets text
     // in the file as-is (which still has the old CriticMarkup).
-    // The old_text for the new change should be something findable in the settled view.
+    // The old_text for the new change should be something findable in the final view.
     // Since settlement is off, the file still has {~~quick~>slow~~}[^cn-1]
     // So we target 'The' (which is plain text) for a different substitution.
     const result = await handleSupersedeChange(

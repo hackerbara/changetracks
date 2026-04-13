@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
-import type { BaseController } from '@changedown/core/host';
-import { VIEW_MODE_LABELS } from '../view-mode';
+import type { BaseController, BuiltinView } from '@changedown/core/host';
+import { VIEW_LABELS } from '@changedown/core/host';
 
 export class StatusBar implements vscode.Disposable {
     private readonly item: vscode.StatusBarItem;
@@ -15,7 +15,7 @@ export class StatusBar implements vscode.Disposable {
             controller.stateManager.onDidChangeChanges(() => this.update()),
             controller.coherenceService.onDidChangeCoherence(() => this.update()),
             vscode.window.onDidChangeActiveTextEditor(() => this.update()),
-            controller.onDidChangeViewMode(() => this.update()),
+            controller.onDidChangeView(() => this.update()),
         );
         this.update();
     }
@@ -28,7 +28,7 @@ export class StatusBar implements vscode.Disposable {
         }
         const uri = editor.document.uri.toString();
         const count = this.controller.getChangesForUri(uri).length;
-        const label = VIEW_MODE_LABELS[this.controller.viewMode];
+        const label = VIEW_LABELS[this.controller.getView().name as BuiltinView];
         const cs = this.controller.getCoherence(uri);
 
         if (cs && cs.unresolvedCount > 0) {

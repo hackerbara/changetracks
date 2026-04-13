@@ -727,9 +727,10 @@ describe('handleReviewChange', () => {
 
     content = await fs.readFile(filePath, 'utf-8');
 
-    // BUG-001 FIX: Inline markup should be removed but footnote ref and definition should remain
-    expect(content).not.toContain('{~~');  // Markup removed
-    expect(content).not.toContain('~~}');
+    // BUG-001 FIX: Inline markup should be removed from body; footnote ref and definition remain.
+    // L3 audit trail stores the op as a {~~...~~} edit-op line in the footnote block —
+    // so we check the inline anchor form is absent (body settled), not the whole file.
+    expect(content).not.toContain('{~~quick brown~>slow red~~}[^cn-1]');  // Inline markup removed from body
     expect(content).toContain('slow red[^cn-1]');  // Content + footnote ref preserved
     expect(content).toContain(`[^cn-1]: @ai:test-author | ${TODAY} | sub | accepted`);  // Footnote definition preserved with accepted status
     expect(content).toMatch(new RegExp(`    approved: @ai:reviewer ${TS_RE} "Good change"`));  // Review line preserved

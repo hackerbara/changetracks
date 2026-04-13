@@ -4,31 +4,31 @@ Feature: D8 -- Delimiter visibility independent of view mode
   are visible, independent of the view mode. When false, delimiters
   are hidden and content is decorated with semantic styling only.
   Cursor-aware unfolding only activates when showDelimiters=true in
-  changes/simple mode — it does not activate in review or settled modes.
+  changes/simple mode — it does not activate in working or final modes.
 
-  # ── Review mode + showDelimiters=false (NEW: delimiters hidden in review) ──
+  # ── Working mode + showDelimiters=false (NEW: delimiters hidden in working) ──
 
-  Scenario: Review + showDelimiters=false: insertion type decoration applied, delimiters hidden
+  Scenario: Working + showDelimiters=false: insertion type decoration applied, delimiters hidden
     Given markup text "Hello {++world++} end"
-    When I decorate in review mode with showDelimiters off
+    When I decorate in working mode with showDelimiters off
     Then insertions count is 1
     And insertions has range 0:9 to 0:14
     And hiddens count is 2
     And hiddens has range 0:6 to 0:9
     And hiddens has range 0:14 to 0:17
 
-  Scenario: Review + showDelimiters=false: deletion type decoration applied, delimiters hidden
+  Scenario: Working + showDelimiters=false: deletion type decoration applied, delimiters hidden
     Given markup text "Hello {--world--} end"
-    When I decorate in review mode with showDelimiters off
+    When I decorate in working mode with showDelimiters off
     Then deletions count is 1
     And deletions has range 0:9 to 0:14
     And hiddens count is 2
     And hiddens has range 0:6 to 0:9
     And hiddens has range 0:14 to 0:17
 
-  Scenario: Review + showDelimiters=false: substitution type decorations applied, delimiters hidden
+  Scenario: Working + showDelimiters=false: substitution type decorations applied, delimiters hidden
     Given markup text "Hello {~~old~>new~~} end"
-    When I decorate in review mode with showDelimiters off
+    When I decorate in working mode with showDelimiters off
     Then substitutionOriginals count is 1
     And substitutionOriginals has range 0:9 to 0:12
     And substitutionModifieds count is 1
@@ -38,9 +38,9 @@ Feature: D8 -- Delimiter visibility independent of view mode
     And hiddens has range 0:12 to 0:14
     And hiddens has range 0:17 to 0:20
 
-  Scenario: Review + showDelimiters=false: cursor-in-change does NOT unfold (review mode)
+  Scenario: Working + showDelimiters=false: cursor-in-change does NOT unfold (working mode)
     Given markup text "Hello {++world++} end"
-    When I decorate in review mode with showDelimiters off and cursor at 0:10
+    When I decorate in working mode with showDelimiters off and cursor at 0:10
     Then insertions count is 1
     And insertions has range 0:9 to 0:14
     And hiddens count is 2
@@ -48,18 +48,18 @@ Feature: D8 -- Delimiter visibility independent of view mode
     And hiddens has range 0:14 to 0:17
     And unfolded is empty
 
-  # ── Review mode + showDelimiters=true (existing behavior preserved) ──
+  # ── Working mode + showDelimiters=true (existing behavior preserved) ──
 
-  Scenario: Review + showDelimiters=true: insertion decorates full range with delimiters
+  Scenario: Working + showDelimiters=true: insertion decorates full range with delimiters
     Given markup text "Hello {++world++} end"
-    When I decorate in review mode with showDelimiters on
+    When I decorate in working mode with showDelimiters on
     Then insertions count is 1
     And insertions has range 0:6 to 0:17
     And hiddens is empty
 
-  Scenario: Review + showDelimiters=true: deletion decorates full range
+  Scenario: Working + showDelimiters=true: deletion decorates full range
     Given markup text "Hello {--world--} end"
-    When I decorate in review mode with showDelimiters on
+    When I decorate in working mode with showDelimiters on
     Then deletions count is 1
     And deletions has range 0:6 to 0:17
     And hiddens is empty

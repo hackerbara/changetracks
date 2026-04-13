@@ -1,6 +1,6 @@
 import {
-  initHashline, computeLineHash, computeCurrentLineHash, currentLine,
-  computeCurrentView, computeDecidedView,
+  initHashline,
+  parseForFormat, buildSessionHashes,
   type CurrentViewResult, type DecidedViewResult,
 } from '@changedown/core';
 import type { SessionState } from './state.js';
@@ -10,12 +10,12 @@ import type { ChangeDownConfig } from './config.js';
  * Recompute and record session hashes after a file write.
  * Clears the ID counter cache, updates hashes, preserves lastReadView.
  *
- * When the agent's lastReadView is 'settled' or 'changes', computes the
- * corresponding projected view and stores view-specific hashes (currentView
- * or committed) alongside the raw/current base hashes. Returns the computed
+ * When the agent's lastReadView is 'decided' or 'simple', computes the
+ * corresponding projected view and stores view-specific hashes (committed
+ * or currentView) alongside the raw/current base hashes. Returns the computed
  * view result so callers can reuse it without double-computing.
  *
- * For the review view, also computes decided hashes so the view-aware
+ * For the working view, also computes decided hashes so the view-aware
  * resolution pipeline can match stale decided hashes from the agent's
  * original read across batch boundaries.
  *
@@ -35,61 +35,57 @@ export async function rerecordState(
   }
 
   await initHashline();
-  const lines = content.split('\n');
-  const allCurrent = lines.map(l => currentLine(l));
-  const lastView = state.getLastReadView(filePath);
+  const lastView = state.getLastReadView(filePath) ?? 'raw';
 
-  let hashes: Array<{
-    line: number; raw: string; current: string;
+  const changes = parseForFormat(content).getChanges();
+  const sessionHashesResult = buildSessionHashes(content, changes);
+
+  const hashes: Array<{
+    line: number; raw: string;
     committed?: string; currentView?: string; rawLineNum?: number;
-  }>;
+  }> = [];
 
-  let sv: CurrentViewResult | undefined;
-  let cv: DecidedViewResult | undefined;
-
-  if (lastView === 'settled') {
-    sv = computeCurrentView(content);
-    hashes = sv.lines.map(sl => ({
-      line: sl.currentLineNum,
-      raw: computeLineHash(sl.rawLineNum - 1, lines[sl.rawLineNum - 1], lines),
-      current: computeCurrentLineHash(sl.rawLineNum - 1, lines[sl.rawLineNum - 1], allCurrent),
-      currentView: sl.hash,
-      rawLineNum: sl.rawLineNum,
-    }));
-  } else if (lastView === 'changes') {
-    cv = computeDecidedView(content);
-    hashes = cv.lines.map(cl => ({
-      line: cl.decidedLineNum,
-      raw: computeLineHash(cl.rawLineNum - 1, lines[cl.rawLineNum - 1], lines),
-      current: computeCurrentLineHash(cl.rawLineNum - 1, lines[cl.rawLineNum - 1], allCurrent),
-      committed: cl.hash,
-      rawLineNum: cl.rawLineNum,
-    }));
-  } else if (lastView === 'review') {
-    // Review view: raw line numbers + committed hashes for cross-batch stability.
-    cv = computeDecidedView(content);
-    const rawToDecidedHash = new Map<number, string>();
-    for (const cl of cv.lines) {
-      rawToDecidedHash.set(cl.rawLineNum, cl.hash);
+  for (const [rawLineNum, sh] of sessionHashesResult.byRawLine) {
+    let lineNumInView: number | undefined;
+    switch (lastView) {
+      case 'working':
+      case 'raw':
+      case 'original':
+        lineNumInView = rawLineNum;
+        break;
+      case 'simple':
+        lineNumInView = sessionHashesResult.currentLineByRaw.get(rawLineNum);
+        break;
+      case 'decided':
+        lineNumInView = sessionHashesResult.decidedLineByRaw.get(rawLineNum);
+        break;
     }
-    hashes = lines.map((line, i) => ({
-      line: i + 1,
-      raw: computeLineHash(i, line, lines),
-      current: computeCurrentLineHash(i, line, allCurrent),
-      committed: rawToDecidedHash.get(i + 1),
-    }));
-  } else {
-    // raw: line numbers are raw (identity mapping)
-    hashes = lines.map((line, i) => ({
-      line: i + 1,
-      raw: computeLineHash(i, line, lines),
-      current: computeCurrentLineHash(i, line, allCurrent),
-    }));
+    if (lineNumInView === undefined) continue;
+
+    if (lastView === 'raw' || lastView === 'original') {
+      // Raw/original views: only raw hash — no committed or currentView fields.
+      hashes.push({ line: lineNumInView, raw: sh.raw, rawLineNum });
+    } else {
+      hashes.push({
+        line: lineNumInView,
+        raw: sh.raw,
+        committed: sh.committed,
+        currentView: sh.currentView,
+        rawLineNum,
+      });
+    }
   }
 
   state.rerecordAfterWrite(filePath, content, hashes);
 
-  if (sv) return { currentView: sv };
-  if (cv) return { decidedView: cv };
+  // Return real view results (not stubs) so callers that iterate .lines get
+  // actual line data (rawLineNum, hash, text, etc.). propose-change.ts:1264
+  // iterates currentView.lines and decidedView.lines to build viewProjection.
+  if (lastView === 'decided') {
+    return { decidedView: sessionHashesResult.decidedResult };
+  }
+  if (lastView === 'simple' || lastView === 'working') {
+    return { currentView: sessionHashesResult.currentResult };
+  }
   return undefined;
 }

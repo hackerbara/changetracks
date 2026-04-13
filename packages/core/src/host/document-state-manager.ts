@@ -163,4 +163,13 @@ export class DocumentStateManager {
   getChangesForUri(uri: string): ChangeNode[] {
     return this.states.get(uri as DocumentUri)?.cachedChanges ?? [];
   }
+
+  /**
+   * Return a snapshot array of all URIs currently holding state.
+   * Returned by value (not a live view) so mutation during iteration
+   * — e.g., during BaseController fan-out — is safe.
+   */
+  getAllUris(): DocumentUri[] {
+    return Array.from(this.states.keys());
+  }
 }

@@ -11,7 +11,7 @@ import {
   ChangeNode, ChangeType,
   findFootnoteBlockStart, FOOTNOTE_L3_EDIT_OP, FOOTNOTE_DEF_START,
 } from '@changedown/core';
-import type { ViewMode } from '@changedown/core';
+import type { BuiltinView } from '@changedown/core/host';
 import type { CursorState } from './code-lens';
 
 /**
@@ -53,14 +53,14 @@ export function computeAutoFoldLines(text: string): number[] | undefined {
 export function createFoldingRanges(
   changes: ChangeNode[],
   text: string,
-  viewMode: ViewMode | undefined,
+  viewMode: BuiltinView | undefined,
   cursorState: CursorState | null,
 ): FoldingRange[] {
   const ranges: FoldingRange[] = [];
   const lines = text.split('\n');
 
-  // ── Deletion folds (changes mode only) ──────────────────────────
-  if (viewMode === 'changes') {
+  // ── Deletion folds (simple mode only) ──────────────────────────
+  if (viewMode === 'simple') {
     for (const change of changes) {
       if (change.type !== ChangeType.Deletion) continue;
       if (change.decided) continue;
@@ -75,8 +75,8 @@ export function createFoldingRanges(
     }
   }
 
-  // ── L3 footnote folds (review + changes modes) ─────────────────
-  if (viewMode === 'review' || viewMode === 'changes') {
+  // ── L3 footnote folds (review + simple modes) ─────────────────
+  if (viewMode === 'working' || viewMode === 'simple') {
     const blockStart = findFootnoteBlockStart(lines);
     if (blockStart < lines.length) {
       // Level 1: fold entire footnote section

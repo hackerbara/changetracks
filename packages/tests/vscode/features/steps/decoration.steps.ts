@@ -7,8 +7,8 @@ import {
     getDecorationCounts,
     getDocumentText,
 } from '../../journeys/playwrightHarness';
-import { resolveViewMode, VIEW_MODES } from '@changedown/core';
-import type { ViewMode } from '@changedown/core';
+import type { BuiltinView } from '@changedown/core/host';
+import { BUILTIN_VIEW_CYCLE_ORDER, toBuiltinView } from './view-helpers';
 
 // Note: getEditorText uses textContent (includes CSS-hidden text).
 // For assertions that need to respect display:none, use hasHiddenSpans
@@ -18,17 +18,20 @@ import type { Page } from 'playwright';
 
 // ── View mode steps ──────────────────────────────────────────────────
 
-/** Canonical view modes for cycling. Delegates to core's VIEW_MODES. */
-export const VIEW_MODE_ORDER: readonly ViewMode[] = VIEW_MODES;
+/**
+ * Canonical BuiltinView cycle order for `changedown.toggleView`.
+ * Re-exported from view-helpers so call sites in interaction.steps.ts
+ * continue to import it from this module (historical shape).
+ */
+export const VIEW_MODE_ORDER: readonly BuiltinView[] = BUILTIN_VIEW_CYCLE_ORDER;
 
 /**
- * Track the current view mode per shared VS Code instance.
- * Key = fixture tag (or 'default'), value = current mode.
+ * Track the current view per shared VS Code instance.
+ * Key = fixture tag (or 'default'), value = current BuiltinView.
  * Needed because scenarios sharing an instance (launch batching)
- * don't reset view mode between them, but each Cucumber World
- * is fresh.
+ * don't reset view between them, but each Cucumber World is fresh.
  */
-export const instanceViewMode = new Map<string, string>();
+export const instanceViewMode = new Map<string, BuiltinView>();
 
 export function getInstanceKey(world: ChangeDownWorld): string {
     return world.fixtureFile ?? 'default';
@@ -36,29 +39,37 @@ export function getInstanceKey(world: ChangeDownWorld): string {
 
 // Note: instanceViewMode must NOT be cleared per scenario — the VS Code
 // instance retains its actual view mode between scenarios. Clearing the map
-// makes the test assume 'review' as the starting mode, but the VS Code
+// makes the test assume 'working' as the starting mode, but the VS Code
 // instance is in whatever mode the previous scenario left it in, causing
 // the toggle count calculation to be wrong.
 
 When('I switch to {string} view mode', { timeout: 20000 }, async function (this: ChangeDownWorld, viewMode: string) {
     assert.ok(this.page, 'Page not available');
-    const canonical = resolveViewMode(viewMode);
+    let canonical: BuiltinView;
+    try {
+        canonical = toBuiltinView(viewMode);
+    } catch {
+        assert.fail(
+            `Unknown view mode: "${viewMode}". Pass a canonical name (${VIEW_MODE_ORDER.join(', ')}) or alias (all-markup, review, changes, settled, bytes).`
+        );
+    }
+    // Only cycle-participating views can be reached via Toggle Smart View.
     assert.ok(
-        canonical !== undefined,
-        `Unknown view mode: "${viewMode}". Pass a canonical name (${VIEW_MODE_ORDER.join(', ')}) or alias (all-markup, simple, final, original).`
+        VIEW_MODE_ORDER.indexOf(canonical) !== -1,
+        `View "${canonical}" is not in the toggle cycle (${VIEW_MODE_ORDER.join(', ')}).`
     );
 
     const key = getInstanceKey(this);
-    const currentMode = instanceViewMode.get(key) ?? 'review'; // default is review (first canonical name)
+    const currentMode = instanceViewMode.get(key) ?? 'working'; // default is working (first canonical name)
 
     if (currentMode === canonical) {
         // Already in the target mode — nothing to do
-        this.currentViewMode = canonical;
+        this.currentView = canonical;
         return;
     }
 
     // Calculate how many toggles to get from current → target
-    const currentIdx = VIEW_MODE_ORDER.indexOf(currentMode as ViewMode);
+    const currentIdx = VIEW_MODE_ORDER.indexOf(currentMode);
     const targetIdx = VIEW_MODE_ORDER.indexOf(canonical);
     const toggles = (targetIdx - currentIdx + VIEW_MODE_ORDER.length) % VIEW_MODE_ORDER.length;
 
@@ -68,7 +79,7 @@ When('I switch to {string} view mode', { timeout: 20000 }, async function (this:
     }
 
     instanceViewMode.set(key, canonical);
-    this.currentViewMode = canonical;
+    this.currentView = canonical;
     await this.page.waitForTimeout(500);
 });
 
@@ -335,16 +346,14 @@ const DECORATION_BASELINES: Record<string, BaselineAssertion> = {
         assert.ok(deco.withStrikethrough > 0, 'Deletion should have strikethrough');
     },
     'deletion-simple-outside': async (page: Page) => {
-        const deco = await getDecorationCounts(page);
-        assert.ok(deco.total > 0, 'Deletion should have content decorations');
-        assert.ok(deco.withStrikethrough > 0, 'Deletion should have strikethrough in simple');
+        // Simple view has deletions:'hide' — deletion content is hidden entirely, not shown with strikethrough.
         const hidden = await hasHiddenSpans(page);
-        assert.ok(hidden, 'Delimiters should be hidden in simple view');
-        // Content check: delimiters hidden, deleted text visible (simple shows all content with strikethrough)
+        assert.ok(hidden, 'Deletion content should be hidden (display:none) in simple view');
+        // Content check: delimiters and deleted text are all hidden
         const visibleText = await getVisibleEditorText(page);
         assert.ok(!visibleText.includes('{--'), 'Deletion delimiter {-- should be hidden in simple view');
         assert.ok(!visibleText.includes('--}'), 'Deletion delimiter --} should be hidden in simple view');
-        assert.ok(visibleText.includes('deleted phrase'), `Deleted text "deleted phrase" should be visible (with strikethrough) in simple view. visibleText(first 300)=${JSON.stringify(visibleText.substring(0, 300))}`);
+        assert.ok(!visibleText.includes('deleted phrase'), `Deleted text "deleted phrase" should be hidden in simple view (deletions:'hide'). visibleText(first 300)=${JSON.stringify(visibleText.substring(0, 300))}`);
     },
     'deletion-simple-inside': async (page: Page) => {
         const deco = await getDecorationCounts(page);
@@ -377,16 +386,15 @@ const DECORATION_BASELINES: Record<string, BaselineAssertion> = {
         assert.ok(deco.total > 0, 'Substitution should have decorations');
     },
     'substitution-simple-outside': async (page: Page) => {
-        const deco = await getDecorationCounts(page);
-        assert.ok(deco.total > 0, 'Substitution should have decorations in simple');
+        // Simple view has deletions:'hide' — old text + delimiters are hidden, only new text is shown.
         const hidden = await hasHiddenSpans(page);
-        assert.ok(hidden, 'Delimiters should be hidden in simple view');
-        // Content check: delimiters hidden, both old and new text visible
+        assert.ok(hidden, 'Substitution should have hidden spans in simple view (old text + delimiters hidden)');
+        // Content check: delimiters and old text hidden, new text visible
         const visibleText = await getVisibleEditorText(page);
         assert.ok(!visibleText.includes('{~~'), 'Substitution delimiter {~~ should be hidden in simple view');
         assert.ok(!visibleText.includes('~>'), 'Substitution separator ~> should be hidden in simple view');
         assert.ok(!visibleText.includes('~~}'), 'Substitution delimiter ~~} should be hidden in simple view');
-        assert.ok(visibleText.includes('old phrase'), `Old text "old phrase" should be visible in simple view. visibleText(first 300)=${JSON.stringify(visibleText.substring(0, 300))}`);
+        assert.ok(!visibleText.includes('old phrase'), `Old text "old phrase" should be hidden in simple view (deletions:'hide'). visibleText(first 300)=${JSON.stringify(visibleText.substring(0, 300))}`);
         assert.ok(visibleText.includes('new phrase'), `New text "new phrase" should be visible in simple view. visibleText(first 300)=${JSON.stringify(visibleText.substring(0, 300))}`);
     },
     'substitution-simple-inside': async (page: Page) => {

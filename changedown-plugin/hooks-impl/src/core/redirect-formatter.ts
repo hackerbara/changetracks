@@ -142,7 +142,7 @@ export function formatReadRedirect(
   filePath: string,
   config: ReadRedirectConfig,
 ): string {
-  const view = config.policy?.default_view ?? 'review';
+  const view = config.policy?.default_view ?? 'working';
   return `Markdown files are tracked in this project. Direct reads and writes to tracked files are blocked. You must use ChangeDown tools to read and edit these files.
 
 Use this read tool and you'll be given the file content along with everything you need to use the tools effectively:

@@ -10,8 +10,8 @@ import { strict as assert } from 'assert';
 import { CriticMarkupParser } from '@changedown/core';
 import { buildAnnotationCards, renderMarkdownToHtml, buildLoadingHtml, buildErrorHtml, buildChoiceHtml, buildPreviewHtml } from 'changedown-vscode/internals';
 import type { AnnotationCard, ImportStats } from 'changedown-vscode/internals';
-import { resolveViewMode, type ViewMode } from '@changedown/core';
 import type { ChangeDownWorld } from './world';
+import { toBuiltinView } from './view-helpers';
 
 // -- Extend World with DOCX preview test state ----------------------------
 
@@ -191,26 +191,24 @@ When('I build preview HTML', function (this: ChangeDownWorld) {
         bodyHtml: this.previewBodyHtml!,
         annotations: this.previewAnnotations ?? [],
         stats: this.previewStats ?? { insertions: 0, deletions: 0, substitutions: 0, comments: 0, authors: [] },
-        currentViewMode: 'review',
+        currentView: 'working',
     });
 });
 
 When('I build preview HTML with view mode {string}', function (this: ChangeDownWorld, viewMode: string) {
     assert.ok(this.previewBodyHtml !== undefined, 'No preview body HTML set');
-    const resolved = resolveViewMode(viewMode) ?? viewMode as ViewMode;
     this.webviewHtml = buildPreviewHtml({
         fileName: this.docxFileName ?? 'test.docx',
         bodyHtml: this.previewBodyHtml!,
         annotations: this.previewAnnotations ?? [],
         stats: this.previewStats ?? { insertions: 0, deletions: 0, substitutions: 0, comments: 0, authors: [] },
-        currentViewMode: resolved,
+        currentView: toBuiltinView(viewMode),
     });
 });
 
 When('I render markdown to preview HTML in {string} mode', function (this: ChangeDownWorld, viewMode: string) {
     assert.ok(this.docxPreviewMarkdown !== undefined, 'No markdown set');
-    const resolved = resolveViewMode(viewMode) ?? viewMode as ViewMode;
-    this.docxPreviewHtml = renderMarkdownToHtml(this.docxPreviewMarkdown!, false, resolved);
+    this.docxPreviewHtml = renderMarkdownToHtml(this.docxPreviewMarkdown!, false, toBuiltinView(viewMode));
 });
 
 Then('the webview HTML contains {string}', function (this: ChangeDownWorld, expected: string) {

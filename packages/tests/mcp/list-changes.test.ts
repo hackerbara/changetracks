@@ -73,9 +73,9 @@ describe('list_changes tool', () => {
   it('returns author and line number for each change', async () => {
     const result = await handleListChanges({ file: filePath }, resolver, state);
     const data = JSON.parse(result.content[0].text);
-    expect(data.changes[0].author).toBe('ai:test');
+    expect(data.changes[0].author).toBe('@ai:test');
     expect(data.changes[0].line).toBe(2);
-    expect(data.changes[1].author).toBe('ai:test');
+    expect(data.changes[1].author).toBe('@ai:test');
     expect(data.changes[1].line).toBe(4);
   });
 
@@ -198,7 +198,7 @@ describe('list_changes tool', () => {
     const data = JSON.parse(result.content[0].text);
     const change = data.changes[0];
     expect(change.footnote).toBeDefined();
-    expect(change.footnote.author).toBe('ai:test');
+    expect(change.footnote.author).toBe('@ai:test');
     expect(change.participants).toBeInstanceOf(Array);
   });
 
@@ -252,7 +252,7 @@ describe('list_changes tool', () => {
     expect(data.changes).toHaveLength(1);
     expect(data.changes[0].change_id).toBe('cn-2');
     expect(data.changes[0].footnote).toBeDefined();
-    expect(data.changes[0].footnote.author).toBe('ai:test');
+    expect(data.changes[0].footnote.author).toBe('@ai:test');
   });
 
   it('defaults to detail=full when change_id specified without detail', async () => {
@@ -290,7 +290,7 @@ describe('list_changes tool', () => {
     const bare = changes.find((c: any) => c.anchored === false);
     expect(bare).toBeDefined();
     expect(bare.anchored).toBe(false);
-    expect(bare.change_id).toMatch(/^ct-/);
+    expect(bare.change_id).toMatch(/^cn-/);
   });
 
   // ─── Consumed ops ──────────────────────────────────────────────────────
@@ -312,7 +312,7 @@ describe('list_changes tool', () => {
     const data = JSON.parse(result.content[0].text);
     const consumed = data.changes.find((c: any) => c.consumed_by);
     expect(consumed).toBeDefined();
-    expect(consumed.consumed_by).toMatch(/^ct-/);
+    expect(consumed.consumed_by).toMatch(/^cn-/);
     expect(consumed.anchored).toBe(false);
   });
 

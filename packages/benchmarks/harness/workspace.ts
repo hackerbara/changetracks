@@ -109,7 +109,7 @@ export async function createTempWorkspace(
       configLines.push(
         '',
         '[policy]',
-        'default_view = "review"',
+        'default_view = "working"',
         '',
         '[settlement]',
         'auto_on_approve = true',

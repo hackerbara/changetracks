@@ -56,6 +56,7 @@ const COMMAND_TITLE_TO_ID: Record<string, string> = {
     'ChangeDown: Test Get Comment Threads': 'changedown._testGetCommentThreads',
     'ChangeDown: Test Get CodeLens Items': 'changedown._testGetCodeLensItems',
     'ChangeDown: Test Get Review Panel Cards': 'changedown._testGetReviewPanelCards',
+    'ChangeDown: Test LSP Client': 'changedown._testLspClient',
 };
 
 /**

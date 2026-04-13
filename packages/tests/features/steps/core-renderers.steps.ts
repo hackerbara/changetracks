@@ -18,7 +18,7 @@ import {
   guardOverlap,
   defaultNormalizer,
   type ViewOptions,
-  type ThreeZoneViewMode,
+  type BuiltinView,
 } from '@changedown/core';
 
 // ─── ANSI helpers ───────────────────────────────────────────────────────────
@@ -63,7 +63,7 @@ const testViewOptions: ViewOptions = {
   filePath: 'test.md',
   trackingStatus: 'tracked',
   protocolMode: 'classic',
-  defaultView: 'review',
+  defaultView: 'working',
   viewPolicy: 'suggest',
 };
 
@@ -175,9 +175,9 @@ When(
   'I render with ANSI in {string} view',
   async function (this: ChangeDownWorld, view: string) {
     await ensureHashline();
-    // Map old view names to new three-zone ViewMode
-    const viewName: ThreeZoneViewMode =
-      (view === 'markup' || view === 'smart') ? 'review' : view as ThreeZoneViewMode;
+    // Map old view names to BuiltinView
+    const viewName: BuiltinView =
+      (view === 'markup' || view === 'smart') ? 'working' : view as BuiltinView;
     const doc = buildViewDocument(this.coreText, viewName, testViewOptions);
     const ansiOpts: { showMarkup?: boolean } = {};
     if (view === 'markup') ansiOpts.showMarkup = true;
@@ -190,7 +190,7 @@ When(
   'I render with ANSI using Unicode strikethrough',
   async function (this: ChangeDownWorld) {
     await ensureHashline();
-    const doc = buildViewDocument(this.coreText, 'review', testViewOptions);
+    const doc = buildViewDocument(this.coreText, 'working', testViewOptions);
     this.coreAnsiRaw = formatAnsi(doc, { useUnicodeStrikethrough: true });
     this.coreResult = stripAnsi(this.coreAnsiRaw);
   },
@@ -319,7 +319,7 @@ When(
     // Read file content from disk
     const { readFile } = await import('node:fs/promises');
     const content = await readFile(filePath, 'utf-8');
-    const doc = buildViewDocument(content, 'review', {
+    const doc = buildViewDocument(content, 'working', {
       ...testViewOptions,
       filePath: name,
     });
