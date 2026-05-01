@@ -8624,6 +8624,7 @@ ${JSON.stringify(message, null, 4)}`);
         ChangeType2["Substitution"] = "Substitution";
         ChangeType2["Highlight"] = "Highlight";
         ChangeType2["Comment"] = "Comment";
+        ChangeType2["Move"] = "Move";
       })(ChangeType || (exports.ChangeType = ChangeType = {}));
       function changeTypeToAbbrev(type) {
         switch (type) {
@@ -8637,6 +8638,8 @@ ${JSON.stringify(message, null, 4)}`);
             return "hig";
           case ChangeType.Comment:
             return "com";
+          case ChangeType.Move:
+            return "mov";
         }
       }
       function changeTypeToShortCode(type) {
@@ -8651,6 +8654,8 @@ ${JSON.stringify(message, null, 4)}`);
             return "hl";
           case ChangeType.Comment:
             return "com";
+          case ChangeType.Move:
+            return "mov";
         }
       }
       var ChangeStatus;
@@ -8659,8 +8664,8 @@ ${JSON.stringify(message, null, 4)}`);
         ChangeStatus2["Accepted"] = "Accepted";
         ChangeStatus2["Rejected"] = "Rejected";
       })(ChangeStatus || (exports.ChangeStatus = ChangeStatus = {}));
-      function isGhostNode(change) {
-        return change.anchored === false && change.level >= 2 && !change.consumedBy;
+      function isGhostNode(node) {
+        return node.resolved === false && !node.consumedBy;
       }
       function consumptionLabel(type) {
         return type === "partial" ? "Partially consumed" : "Consumed";
@@ -8671,15 +8676,43 @@ ${JSON.stringify(message, null, 4)}`);
     }
   });
 
+  // ../core/dist/model/diagnostic.js
+  var require_diagnostic2 = __commonJS({
+    "../core/dist/model/diagnostic.js"(exports) {
+      "use strict";
+      Object.defineProperty(exports, "__esModule", { value: true });
+      exports.StructuralIntegrityError = exports.UnresolvedChangesError = void 0;
+      var UnresolvedChangesError = class extends Error {
+        constructor(diagnostics) {
+          super(`Document has ${diagnostics.length} unresolved change(s); cannot mutate.`);
+          this.name = "UnresolvedChangesError";
+          this.diagnostics = diagnostics;
+        }
+      };
+      exports.UnresolvedChangesError = UnresolvedChangesError;
+      var StructuralIntegrityError = class extends Error {
+        constructor(violations) {
+          super(`Structural integrity violated: ${violations.map((v) => v.kind).join(", ")}.`);
+          this.name = "StructuralIntegrityError";
+          this.violations = violations;
+        }
+      };
+      exports.StructuralIntegrityError = StructuralIntegrityError;
+    }
+  });
+
   // ../core/dist/model/document.js
   var require_document = __commonJS({
     "../core/dist/model/document.js"(exports) {
       "use strict";
       Object.defineProperty(exports, "__esModule", { value: true });
       exports.VirtualDocument = void 0;
+      exports.assertResolved = assertResolved;
       var types_js_1 = require_types();
+      var diagnostic_js_1 = require_diagnostic2();
       var VirtualDocument = class _VirtualDocument {
         constructor(changes = [], coherenceRate = 100, unresolvedDiagnostics = [], resolvedText) {
+          this.diagnostics = [];
           this.changes = changes;
           this.coherenceRate = coherenceRate;
           this.unresolvedDiagnostics = unresolvedDiagnostics;
@@ -8699,7 +8732,8 @@ ${JSON.stringify(message, null, 4)}`);
             contentRange: overlay.range,
             modifiedText: overlay.text,
             level: 1,
-            anchored: false
+            anchored: false,
+            resolved: true
           };
           return new _VirtualDocument([change]);
         }
@@ -8737,8 +8771,44 @@ ${JSON.stringify(message, null, 4)}`);
         getGroupMembers(groupId) {
           return this.changes.filter((c) => c.groupId === groupId);
         }
+        /**
+         * Returns a readonly view of diagnostics emitted during parsing or
+         * subsequent operations on this document. Diagnostics live on the
+         * document, not on individual ChangeNodes — see model/diagnostic.ts.
+         */
+        getDiagnostics() {
+          return this.diagnostics;
+        }
+        /**
+         * Append a diagnostic. Called by parsers during construction and by
+         * recovery paths that detect new issues. Not part of the read API
+         * surface for ordinary consumers.
+         */
+        addDiagnostic(d) {
+          this.diagnostics.push(d);
+        }
+        /**
+         * Remove all diagnostics whose changeId matches. Used by the replay
+         * protocol in footnote-native-parser when a previously-failed change
+         * is recovered, and by review-changes when a change settles.
+         */
+        removeDiagnosticsForChange(changeId) {
+          this.diagnostics = this.diagnostics.filter((d) => d.changeId !== changeId);
+        }
       };
       exports.VirtualDocument = VirtualDocument;
+      var BLOCKING_KINDS = /* @__PURE__ */ new Set([
+        "coordinate_failed",
+        "anchor_ambiguous",
+        "anchor_missing",
+        "structural_invalid"
+      ]);
+      function assertResolved(doc, options) {
+        const allowed = new Set(options?.allow ?? []);
+        const violations = doc.getDiagnostics().filter((d) => BLOCKING_KINDS.has(d.kind) && !allowed.has(d.kind));
+        if (violations.length > 0)
+          throw new diagnostic_js_1.UnresolvedChangesError(violations);
+      }
     }
   });
 
@@ -8770,11 +8840,22 @@ ${JSON.stringify(message, null, 4)}`);
     "../core/dist/parser/code-zones.js"(exports) {
       "use strict";
       Object.defineProperty(exports, "__esModule", { value: true });
+      exports.buildCodeZoneMask = buildCodeZoneMask;
       exports.findCodeZones = findCodeZones;
       exports.tryMatchFenceOpen = tryMatchFenceOpen;
       exports.tryMatchFenceClose = tryMatchFenceClose;
       exports.isFenceCloserLine = isFenceCloserLine;
       exports.skipInlineCode = skipInlineCode;
+      function buildCodeZoneMask(text) {
+        const mask = new Uint8Array(text.length);
+        for (const zone of findCodeZones(text)) {
+          const end = Math.min(zone.end, text.length);
+          for (let i = zone.start; i < end; i++) {
+            mask[i] = 1;
+          }
+        }
+        return mask;
+      }
       function findCodeZones(text) {
         const zones = [];
         let position = 0;
@@ -9056,7 +9137,7 @@ ${JSON.stringify(message, null, 4)}`);
         };
       }
       exports.FOOTNOTE_CONTINUATION = /^\s+\S/;
-      exports.FOOTNOTE_THREAD_REPLY = /^\s+@\S+\s+\d{4}-\d{2}-\d{2}(?:[T ]\d{1,2}:\d{2}(?::\d{2})?(?:\s?[AaPp][Mm])?Z?)?:/;
+      exports.FOOTNOTE_THREAD_REPLY = /^\s+@\S+\s+\d{4}-\d{2}-\d{2}(?:[T ]\d{1,2}:\d{2}(?::\d{2})?(?:\s?[AaPp][Mm])?Z?)?(?:\s+\[[^\]]+\])?:/;
     }
   });
 
@@ -9102,7 +9183,8 @@ ${JSON.stringify(message, null, 4)}`);
         [types_js_1.ChangeType.Deletion]: "deletion",
         [types_js_1.ChangeType.Substitution]: "substitution",
         [types_js_1.ChangeType.Highlight]: "highlight",
-        [types_js_1.ChangeType.Comment]: "comment"
+        [types_js_1.ChangeType.Comment]: "comment",
+        [types_js_1.ChangeType.Move]: "move"
       };
       var UNKNOWN_PRIOR_SUB = "\u2026";
       function buildContextualL3EditOp(params) {
@@ -9401,7 +9483,8 @@ ${JSON.stringify(message, null, 4)}`);
             contentRange: { start: contentStart, end: closePos },
             modifiedText: content,
             level: 0,
-            anchored: false
+            anchored: false,
+            resolved: true
           };
         }
         parseDeletion(text, startPos, counter) {
@@ -9420,7 +9503,8 @@ ${JSON.stringify(message, null, 4)}`);
             contentRange: { start: contentStart, end: closePos },
             originalText: content,
             level: 0,
-            anchored: false
+            anchored: false,
+            resolved: true
           };
         }
         /**
@@ -9466,7 +9550,8 @@ ${JSON.stringify(message, null, 4)}`);
             originalText,
             modifiedText,
             level: 0,
-            anchored: false
+            anchored: false,
+            resolved: true
           };
         }
         parseHighlight(text, startPos, counter) {
@@ -9495,7 +9580,8 @@ ${JSON.stringify(message, null, 4)}`);
             originalText: highlightedText,
             metadata: comment !== void 0 ? { comment } : void 0,
             level: 0,
-            anchored: false
+            anchored: false,
+            resolved: true
           };
         }
         parseComment(text, startPos, counter) {
@@ -9514,7 +9600,8 @@ ${JSON.stringify(message, null, 4)}`);
             contentRange: { start: contentStart, end: closePos },
             metadata: { comment },
             level: 0,
-            anchored: false
+            anchored: false,
+            resolved: true
           };
         }
         parseFootnoteDefinitions(text) {
@@ -9667,6 +9754,21 @@ ${JSON.stringify(message, null, 4)}`);
               lastDiscussionComment = comment;
               continue;
             }
+            const supersedesMatch = trimmed.match(_CriticMarkupParser.SUPERSEDES_RE);
+            if (supersedesMatch) {
+              if (!currentDef.supersedes)
+                currentDef.supersedes = supersedesMatch[1];
+              lastDiscussionComment = null;
+              continue;
+            }
+            const supersededByMatch = trimmed.match(_CriticMarkupParser.SUPERSEDED_BY_RE);
+            if (supersededByMatch) {
+              if (!currentDef.supersededBy)
+                currentDef.supersededBy = [];
+              currentDef.supersededBy.push(supersededByMatch[1]);
+              lastDiscussionComment = null;
+              continue;
+            }
             const discMatch = trimmed.match(_CriticMarkupParser.DISCUSSION_RE);
             if (discMatch) {
               const depth = Math.max(0, Math.floor((rawIndent - 4) / 2));
@@ -9745,6 +9847,10 @@ ${JSON.stringify(message, null, 4)}`);
             }
             applyImageExtraMetadata(def, node.metadata);
             applyEquationExtraMetadata(def, node.metadata);
+            if (def.supersedes)
+              node.supersedes = def.supersedes;
+            if (def.supersededBy && def.supersededBy.length > 0)
+              node.supersededBy = def.supersededBy;
             if (def.startLine !== void 0) {
               node.footnoteLineRange = { startLine: def.startLine, endLine: def.endLine ?? def.startLine };
             }
@@ -9785,6 +9891,7 @@ ${JSON.stringify(message, null, 4)}`);
                 level: 2,
                 decided: true,
                 anchored: true,
+                resolved: true,
                 metadata: {
                   author: def.author,
                   date: def.date,
@@ -9808,6 +9915,10 @@ ${JSON.stringify(message, null, 4)}`);
                 node.metadata.resolution = def.resolution;
               applyImageExtraMetadata(def, node.metadata);
               applyEquationExtraMetadata(def, node.metadata);
+              if (def.supersedes)
+                node.supersedes = def.supersedes;
+              if (def.supersededBy && def.supersededBy.length > 0)
+                node.supersededBy = def.supersededBy;
               if (def.startLine !== void 0) {
                 node.footnoteLineRange = { startLine: def.startLine, endLine: def.endLine ?? def.startLine };
               }
@@ -9860,6 +9971,7 @@ ${JSON.stringify(message, null, 4)}`);
             node.range = { start: node.range.start, end: node.range.end + match[0].length };
             node.level = 2;
             node.anchored = true;
+            node.resolved = true;
           }
         }
         matchesAt(text, position, delimiter) {
@@ -9873,6 +9985,8 @@ ${JSON.stringify(message, null, 4)}`);
       CriticMarkupParser.FOOTNOTE_REF = footnote_patterns_js_1.FOOTNOTE_REF_ANCHORED;
       CriticMarkupParser.FOOTNOTE_DEF = footnote_patterns_js_1.FOOTNOTE_DEF_STRICT;
       CriticMarkupParser.APPROVAL_RE = /^(approved|rejected|request-changes):\s+(@\S+)\s+(\S+)(?:\s+"([^"]*)")?$/;
+      CriticMarkupParser.SUPERSEDES_RE = /^supersedes:\s+(\S+)\s*$/;
+      CriticMarkupParser.SUPERSEDED_BY_RE = /^superseded-by:\s+(\S+)\s*$/;
       CriticMarkupParser.DISCUSSION_RE = /^(@\S+)\s+(\S+)(?:\s+\[([^\]]+)\])?:\s*(.*)$/;
       CriticMarkupParser.RESOLVED_RE = /^resolved:?\s+(@\S+)\s+(\S+)(?::\s*(.*))?$/;
       CriticMarkupParser.OPEN_RE = /^open(?:\s+--\s+(.*))?$/;
@@ -12127,6 +12241,8 @@ ${JSON.stringify(message, null, 4)}`);
             return { offset: change.range.start, length: rangeLength, text: change.originalText ?? "", refId };
           case types_js_1.ChangeType.Comment:
             return { offset: change.range.start, length: rangeLength, text: "", refId: "" };
+          case types_js_1.ChangeType.Move:
+            return { offset: change.range.start, length: rangeLength, text: change.modifiedText ?? "", refId };
         }
       }
       function computeRejectParts(change) {
@@ -12143,6 +12259,8 @@ ${JSON.stringify(message, null, 4)}`);
             return { offset: change.range.start, length: rangeLength, text: change.originalText ?? "", refId };
           case types_js_1.ChangeType.Comment:
             return { offset: change.range.start, length: rangeLength, text: "", refId: "" };
+          case types_js_1.ChangeType.Move:
+            return { offset: change.range.start, length: rangeLength, text: change.originalText ?? "", refId };
         }
       }
       function computeAccept(change) {
@@ -12166,6 +12284,8 @@ ${JSON.stringify(message, null, 4)}`);
               return { offset: change.range.start, length: 0, newText: "" };
             case types_js_1.ChangeType.Comment:
               return { offset: change.range.start, length: 0, newText: "" };
+            case types_js_1.ChangeType.Move:
+              return { offset: change.range.start, length: change.range.end - change.range.start, newText: "" };
           }
         }
         const parts = computeRejectParts(change);
@@ -13066,6 +13186,8 @@ ${JSON.stringify(message, null, 4)}`);
       var contextual_edit_op_js_1 = require_contextual_edit_op();
       var APPROVED_RE = /^ {4}approved:\s+(\S+)\s+(\S+)(?:\s+"([^"]*)")?/;
       var REJECTED_RE = /^ {4}rejected:\s+(\S+)\s+(\S+)(?:\s+"([^"]*)")?/;
+      var REQUEST_CHANGES_RE = /^ {4}request-changes:\s+(\S+)\s+(\S+)(?:\s+"([^"]*)")?/;
+      var REVISION_RE = /^ {4,}(r\d+)\s+(@?\S+)\s+(\S+):\s+"([^"]*)"$/;
       function parseApprovalLine(match) {
         return {
           author: match[1],
@@ -13078,6 +13200,8 @@ ${JSON.stringify(message, null, 4)}`);
       var CONTEXT_RE = /^ {4}context:\s+(.*)$/;
       var RESOLVED_RE = /^ {4}resolved:\s+(\S+)\s+(\S+)(?:\s+"([^"]*)")?/;
       var OPEN_RE = /^ {4}open(?:\s+--\s+(.*))?$/;
+      var SUPERSEDES_RE = /^ {4}supersedes:\s+(\S+)\s*$/;
+      var SUPERSEDED_BY_RE = /^ {4}superseded-by:\s+(\S+)\s*$/;
       var IMAGE_META_RE = /^ {4}(image-[\w-]+):\s*(.*)$/;
       var EQUATION_META_RE = /^ {4}(equation-[\w-]+):\s*(.*)$/;
       function parseFootnoteBlock(lines, startLineOffset = 0) {
@@ -13111,9 +13235,14 @@ ${JSON.stringify(message, null, 4)}`);
           const discussion = [];
           const approvals = [];
           const rejections = [];
+          const requestChanges = [];
+          const revisions = [];
+          let inRevisions = false;
           let resolution = null;
           let imageMetadata;
           let equationMetadata;
+          let supersedesTarget;
+          const supersededByTargets = [];
           while (i < lines.length) {
             const body = lines[i];
             if (footnote_patterns_js_1.FOOTNOTE_DEF_START.test(body))
@@ -13170,13 +13299,16 @@ ${JSON.stringify(message, null, 4)}`);
               continue;
             }
             if (footnote_patterns_js_1.FOOTNOTE_THREAD_REPLY.test(body)) {
-              const replyMatch = body.match(/^\s+@(\S+)\s+(\S+):\s*(.*)$/);
+              const replyMatch = body.match(/^\s+@(\S+)\s+(\S+)(?:\s+\[([^\]]+)\])?:\s*(.*)$/);
               if (replyMatch) {
                 const reply = {
                   author: replyMatch[1],
                   date: replyMatch[2],
+                  label: replyMatch[3] ?? void 0,
+                  // group 3: optional [label]
                   timestamp: (0, timestamp_js_1.parseTimestamp)(replyMatch[2]),
-                  text: replyMatch[3],
+                  text: replyMatch[4],
+                  // group 4: text (shifted from group 3)
                   depth: 0
                 };
                 discussion.push(reply);
@@ -13201,6 +13333,37 @@ ${JSON.stringify(message, null, 4)}`);
               i++;
               continue;
             }
+            const requestChangesMatch = body.match(REQUEST_CHANGES_RE);
+            if (requestChangesMatch) {
+              const action = parseApprovalLine(requestChangesMatch);
+              requestChanges.push(action);
+              bodyLines.push({ kind: "request-changes", action, raw: body });
+              i++;
+              continue;
+            }
+            if (body.trim() === "revisions:") {
+              inRevisions = true;
+              bodyLines.push({ kind: "revisions-header", raw: body });
+              i++;
+              continue;
+            }
+            if (inRevisions) {
+              const revMatch = body.match(REVISION_RE);
+              if (revMatch) {
+                const rev = {
+                  label: revMatch[1],
+                  author: revMatch[2],
+                  date: revMatch[3],
+                  timestamp: (0, timestamp_js_1.parseTimestamp)(revMatch[3]),
+                  text: revMatch[4]
+                };
+                revisions.push(rev);
+                bodyLines.push({ kind: "revision", revision: rev, raw: body });
+                i++;
+                continue;
+              }
+              inRevisions = false;
+            }
             const resolvedMatch = body.match(RESOLVED_RE);
             if (resolvedMatch) {
               const res = {
@@ -13222,6 +13385,23 @@ ${JSON.stringify(message, null, 4)}`);
               if (!resolution)
                 resolution = res;
               bodyLines.push({ kind: "resolution", resolution: res, raw: body });
+              i++;
+              continue;
+            }
+            const supersedesMatch = body.match(SUPERSEDES_RE);
+            if (supersedesMatch) {
+              const target = supersedesMatch[1];
+              if (supersedesTarget === void 0)
+                supersedesTarget = target;
+              bodyLines.push({ kind: "supersedes", target, raw: body });
+              i++;
+              continue;
+            }
+            const supersededByMatch = body.match(SUPERSEDED_BY_RE);
+            if (supersededByMatch) {
+              const target = supersededByMatch[1];
+              supersededByTargets.push(target);
+              bodyLines.push({ kind: "superseded-by", target, raw: body });
               i++;
               continue;
             }
@@ -13255,9 +13435,13 @@ ${JSON.stringify(message, null, 4)}`);
             discussion,
             approvals,
             rejections,
+            requestChanges,
+            revisions,
             resolution,
             imageMetadata: imageMetadata ? Object.freeze(imageMetadata) : void 0,
             equationMetadata: equationMetadata ? Object.freeze(equationMetadata) : void 0,
+            supersedes: supersedesTarget,
+            supersededBy: Object.freeze(supersededByTargets),
             sourceRange: { startLine: startLineOffset + startLine, endLine: startLineOffset + endLine }
           });
         }
@@ -13446,6 +13630,8 @@ ${JSON.stringify(message, null, 4)}`);
             return change.originalText ?? "";
           case types_js_1.ChangeType.Comment:
             return "";
+          case types_js_1.ChangeType.Move:
+            return change.modifiedText ?? "";
         }
       }
       function buildLineStarts(text) {
@@ -13520,7 +13706,10 @@ ${JSON.stringify(message, null, 4)}`);
             case types_js_1.ChangeType.Highlight:
               anchorLen = (change.originalText ?? "").length;
               break;
-            default:
+            case types_js_1.ChangeType.Move:
+              anchorLen = change.status === types_js_1.ChangeStatus.Rejected ? 0 : (change.modifiedText ?? "").length;
+              break;
+            case types_js_1.ChangeType.Comment:
               anchorLen = 0;
               break;
           }
@@ -13946,15 +14135,15 @@ ${JSON.stringify(message, null, 4)}`);
             };
           }
           const isConsumed = !!node.consumedBy;
-          const isResolved = node.anchored || isConsumed;
+          const isResolved = node.resolved !== false || isConsumed;
           const result = {
             id: node.id,
             resolved: isResolved,
             resolutionPath: node.resolutionPath ?? (isResolved ? "replay" : "rejected"),
             freshAnchor: node.freshAnchor,
-            // Only provide resolvedRange for non-consumed, anchored nodes.
+            // Only provide resolvedRange for non-consumed, resolved nodes.
             // Consumed ops' text is absent from the current body, so a body range is invalid.
-            resolvedRange: node.anchored && !isConsumed ? { start: node.range.start, end: node.range.end } : void 0
+            resolvedRange: node.resolved !== false && !isConsumed ? { start: node.range.start, end: node.range.end } : void 0
           };
           if (node.consumedBy) {
             result.consumedBy = node.consumedBy;
@@ -14141,17 +14330,27 @@ ${JSON.stringify(message, null, 4)}`);
           return null;
         return { before: (0, footnote_patterns_js_1.unescapeCtxString)(match[1]), after: (0, footnote_patterns_js_1.unescapeCtxString)(match[2]) };
       }
+      function truncate(s, n) {
+        return s.length > n ? s.slice(0, n) + "\u2026" : s;
+      }
       var FootnoteNativeParser = class {
+        constructor() {
+          this.pendingDiagnostics = [];
+        }
         parse(text) {
+          this.pendingDiagnostics = [];
           const lines = text.split("\n");
           const { bodyLines, footnoteLines } = (0, footnote_patterns_js_1.splitBodyAndFootnotes)(lines);
           const footnotes = this.parseFootnotes(lines);
           if (footnotes.length === 0) {
-            return new document_js_1.VirtualDocument([]);
+            const emptyDoc = new document_js_1.VirtualDocument([]);
+            for (const d of this.pendingDiagnostics)
+              emptyDoc.addDiagnostic(d);
+            return emptyDoc;
           }
           const changes = this.resolveChanges(footnotes, bodyLines);
           let freshAnchors = /* @__PURE__ */ new Map();
-          if (changes.some((c) => !c.anchored)) {
+          if (changes.some((c) => c.resolved === false)) {
             try {
               const bodyText = bodyLines.join("\n");
               const replayFootnotes = footnotes.map((fn) => ({
@@ -14165,15 +14364,16 @@ ${JSON.stringify(message, null, 4)}`);
               }));
               const replay = (0, scrub_js_1.resolveReplayFromParsedFootnotes)(bodyText, replayFootnotes);
               for (const node of changes) {
-                if (node.anchored)
+                if (node.resolved !== false)
                   continue;
                 const finalPos = replay.finalPositions.get(node.id);
                 const isConsumed = replay.consumption.has(node.id);
                 if (finalPos && !isConsumed) {
-                  node.anchored = true;
+                  node.resolved = true;
                   node.range = { start: finalPos.start, end: finalPos.end };
                   node.contentRange = { ...node.range };
                   node.resolutionPath = "replay";
+                  this.pendingDiagnostics = this.pendingDiagnostics.filter((d) => d.changeId !== node.id);
                 }
                 const freshAnchor = replay.freshAnchors.get(node.id);
                 if (freshAnchor)
@@ -14195,7 +14395,7 @@ ${JSON.stringify(message, null, 4)}`);
             }
           }
           const resolvableCount = changes.length;
-          const resolvedCount = changes.filter((c) => c.anchored || !!c.consumedBy).length;
+          const resolvedCount = changes.filter((c) => c.resolved !== false || !!c.consumedBy).length;
           const coherenceRate = resolvableCount > 0 ? Math.round(resolvedCount / resolvableCount * 100) : 100;
           let resolvedText;
           if (freshAnchors.size > 0) {
@@ -14236,7 +14436,10 @@ ${JSON.stringify(message, null, 4)}`);
               resolvedText = bodyLines.join("\n") + "\n\n" + rebuiltFootnotes.join("\n") + "\n";
             }
           }
-          return new document_js_1.VirtualDocument(changes, coherenceRate, [], resolvedText);
+          const doc = new document_js_1.VirtualDocument(changes, coherenceRate, [], resolvedText);
+          for (const d of this.pendingDiagnostics)
+            doc.addDiagnostic(d);
+          return doc;
         }
         /**
          * Test-only hook: run just the footnote-scanning phase and return the raw
@@ -14284,6 +14487,12 @@ ${JSON.stringify(message, null, 4)}`);
             imageDimensions,
             imageMetadata: f.imageMetadata ? { ...f.imageMetadata } : void 0,
             equationMetadata: f.equationMetadata ? { ...f.equationMetadata } : void 0,
+            discussion: f.discussion.length > 0 ? [...f.discussion] : void 0,
+            requestChanges: f.requestChanges.length > 0 ? f.requestChanges.map((a) => ({ author: a.author, date: a.date, reason: a.reason ?? "" })) : void 0,
+            revisions: f.revisions.length > 0 ? [...f.revisions] : void 0,
+            resolution: f.resolution ?? void 0,
+            supersedes: f.supersedes,
+            supersededBy: f.supersededBy.length > 0 ? [...f.supersededBy] : void 0,
             unknownBodyLines: f.bodyLines.filter((l) => l.kind === "unknown").map((l) => l.raw.trim())
           };
         }
@@ -14317,7 +14526,7 @@ ${JSON.stringify(message, null, 4)}`);
               }
             }
             const rangeResult = this.resolveRangeAndContent(fn, parsedOp, ctxResult, changeType, status, bodyLines, lineOffsets);
-            const { range, originalText, modifiedText, comment, anchored, resolutionPath } = rangeResult;
+            const { range, originalText, modifiedText, comment, anchored: positionResolved, resolved: rangeResolved, resolutionPath } = rangeResult;
             const node = {
               id: fn.id,
               type: changeType,
@@ -14326,9 +14535,10 @@ ${JSON.stringify(message, null, 4)}`);
               contentRange: { ...range },
               // L3: range === contentRange (no delimiters in body)
               level: 2,
-              // anchored:false means position could not be deterministically resolved (Invariant A).
-              // anchored:true (default) means either resolved uniquely or explicitly OK (deletion line-start).
-              anchored: anchored !== false,
+              anchored: true,
+              // L3 nodes always have a footnote ref by construction
+              resolved: rangeResolved !== void 0 ? rangeResolved : positionResolved !== false,
+              // false only when edit-op text could not be located
               metadata: {
                 author: fn.author,
                 date: fn.date,
@@ -14374,6 +14584,27 @@ ${JSON.stringify(message, null, 4)}`);
                 reason: r.reason || void 0
               }));
             }
+            if (fn.discussion && fn.discussion.length > 0) {
+              node.metadata.discussion = fn.discussion;
+            }
+            if (fn.requestChanges && fn.requestChanges.length > 0) {
+              node.metadata.requestChanges = fn.requestChanges.map((a) => ({
+                author: a.author,
+                date: a.date,
+                timestamp: (0, timestamp_js_1.parseTimestamp)(a.date),
+                reason: a.reason || void 0
+              }));
+            }
+            if (fn.revisions && fn.revisions.length > 0) {
+              node.metadata.revisions = fn.revisions;
+            }
+            if (fn.resolution) {
+              node.metadata.resolution = fn.resolution;
+            }
+            if (fn.supersedes)
+              node.supersedes = fn.supersedes;
+            if (fn.supersededBy && fn.supersededBy.length > 0)
+              node.supersededBy = fn.supersededBy;
             changes.push(node);
           }
           changes.sort((a, b) => a.range.start - b.range.start);
@@ -14388,7 +14619,7 @@ ${JSON.stringify(message, null, 4)}`);
          *   `deletionSeamOffset` gives the byte offset within this span where the deletion occurred
          *   (equals contextBefore.length). The spec's Contextual Uniqueness Guarantee ensures this
          *   span appears exactly once on the target line (04-spec.md §"Contextual Embedding").
-         *   Zero-width ranges appear only as the {0,0} anchored:false sentinel (Invariant A).
+         *   Zero-width ranges appear only as the {0,0} resolved:false sentinel (Invariant A).
          *   This is deliberate — do NOT revert to zero-width seam without understanding
          *   the plan builder's ghost-text injection and accept-change.ts's seam-based removal.
          * - Substitution: search for newText (proposed/accepted) or oldText (rejected) on target line
@@ -14400,18 +14631,19 @@ ${JSON.stringify(message, null, 4)}`);
          *
          * Invariant A — Non-deletion ops (ins, sub, highlight) MUST resolve uniquely via
          * findUniqueMatch on the hash-resolved line. If the match fails (text not found or
-         * ambiguous), the node is marked anchored:false. There is NO fallback to line-start
-         * for non-deletion ops. Silent fallback produces wrong decoration placement.
+         * ambiguous), the node is marked resolved:false (with anchored:true). There is NO
+         * fallback to line-start for non-deletion ops. Silent fallback produces wrong
+         * decoration placement.
          *
          * Invariant B — Deletion ops resolve via @ctx:"before"||"after" ONLY. The deleted
          * text is absent from the body so there is nothing to search for. Line-start fallback
          * when @ctx is missing is acceptable degradation (not a silent error).
          *
-         * Invariant C — anchored:false is an error path, not a silent default. Consumers
-         * must not render anchored:false nodes as correctly placed decorations.
+         * Invariant C — resolved:false is an error path, not a silent default. Consumers
+         * must not render resolved:false nodes as correctly placed decorations.
          *
          * Task 3 enforced Invariant A by removing the fallbackRange branches for
-         * ins/sub/highlight and setting anchored:false + sentinel range {0,0} instead.
+         * ins/sub/highlight and setting resolved:false + sentinel range {0,0} instead.
          */
         resolveRangeAndContent(fn, parsedOp, ctxResult, changeType, status, bodyLines, lineOffsets) {
           let effectiveLineNumber = fn.lineNumber;
@@ -14436,7 +14668,12 @@ ${JSON.stringify(message, null, 4)}`);
           const lineContent = lineIdx >= 0 && lineIdx < bodyLines.length ? bodyLines[lineIdx] : "";
           const fallbackRange = { start: lineOffset, end: lineOffset };
           if (!parsedOp) {
-            return { range: fallbackRange, anchored: false, comment: fn.unknownBodyLines?.[0], resolutionPath: "rejected" };
+            this.pendingDiagnostics.push({
+              kind: "coordinate_failed",
+              changeId: fn.id,
+              message: `Footnote ${fn.id} has no parsedOp; cannot resolve position.`
+            });
+            return { range: fallbackRange, anchored: true, resolved: false, comment: fn.unknownBodyLines?.[0], resolutionPath: "rejected" };
           }
           const findOnLine = (searchText) => {
             if (!searchText || !lineContent)
@@ -14524,7 +14761,15 @@ ${JSON.stringify(message, null, 4)}`);
               }
               const match = findOnLine(text);
               if (!match) {
-                return { range: { start: 0, end: 0 }, modifiedText: text, anchored: false };
+                const targetLine = effectiveLineNumber ?? 1;
+                const matchCount = lineContent ? lineContent.split(text).length - 1 : 0;
+                this.pendingDiagnostics.push({
+                  kind: "coordinate_failed",
+                  changeId: fn.id,
+                  message: `Insertion text "${truncate(text, 40)}" not uniquely found on line ${targetLine} (found ${matchCount} match${matchCount === 1 ? "" : "es"}).`,
+                  evidence: { line: targetLine, expectedText: text, candidates: matchCount }
+                });
+                return { range: { start: 0, end: 0 }, modifiedText: text, anchored: true, resolved: false };
               }
               const range = {
                 start: lineOffset + match.index,
@@ -14565,7 +14810,15 @@ ${JSON.stringify(message, null, 4)}`);
               const searchText = newText;
               const match = searchText ? findOnLine(searchText) : null;
               if (!match) {
-                return { range: { start: 0, end: 0 }, originalText: oldText, modifiedText: newText, anchored: false };
+                const targetLine = effectiveLineNumber ?? 1;
+                const matchCount = newText && lineContent ? lineContent.split(newText).length - 1 : 0;
+                this.pendingDiagnostics.push({
+                  kind: "coordinate_failed",
+                  changeId: fn.id,
+                  message: `Substitution newText "${truncate(newText ?? "", 40)}" not uniquely found on line ${targetLine} (found ${matchCount} match${matchCount === 1 ? "" : "es"}).`,
+                  evidence: { line: targetLine, expectedText: newText ?? "", candidates: matchCount }
+                });
+                return { range: { start: 0, end: 0 }, originalText: oldText, modifiedText: newText, anchored: true, resolved: false };
               }
               const range = {
                 start: lineOffset + match.index,
@@ -14715,6 +14968,7 @@ ${JSON.stringify(message, null, 4)}`);
       var code_zones_js_1 = require_code_zones();
       var format_aware_parse_js_1 = require_format_aware_parse();
       var footnote_generator_js_1 = require_footnote_generator();
+      var document_js_1 = require_document();
       function computeCurrentReplace(change) {
         const rangeLength = change.range.end - change.range.start;
         if (change.type === types_js_1.ChangeType.Comment) {
@@ -14782,7 +15036,7 @@ ${JSON.stringify(message, null, 4)}`);
       function revertChangesInBody(body, changes) {
         const sorted = [...changes].sort((a, b) => b.range.start - a.range.start);
         for (const change of sorted) {
-          if (change.anchored === false)
+          if (change.resolved === false)
             continue;
           switch (change.type) {
             case types_js_1.ChangeType.Insertion:
@@ -14955,6 +15209,7 @@ ${JSON.stringify(message, null, 4)}`);
           return { currentContent: text, appliedIds: [] };
         }
         const doc = (0, format_aware_parse_js_1.parseForFormat)(text, { skipCodeBlocks: false });
+        (0, document_js_1.assertResolved)(doc);
         const accepted = doc.getChanges().filter((c) => c.status === types_js_1.ChangeStatus.Accepted);
         const appliedIds = accepted.map((c) => c.id);
         if (accepted.length === 0) {
@@ -15040,24 +15295,33 @@ ${JSON.stringify(message, null, 4)}`);
       function applyRejectedChanges(text) {
         if ((0, footnote_patterns_js_1.isL3Format)(text)) {
           const doc2 = (0, format_aware_parse_js_1.parseForFormat)(text);
+          (0, document_js_1.assertResolved)(doc2);
           const rejected2 = doc2.getChanges().filter((c) => c.status === types_js_1.ChangeStatus.Rejected);
-          const appliedIds2 = rejected2.map((c) => c.id);
           if (rejected2.length === 0)
             return { currentContent: text, appliedIds: [] };
           const { bodyLines, footnoteLines } = (0, footnote_patterns_js_1.splitBodyAndFootnotes)(text.split("\n"));
           const body = revertChangesInBody(bodyLines.join("\n"), rejected2);
+          const appliedIds2 = rejected2.filter((c) => c.resolved !== false).map((c) => c.id);
           const currentContent2 = footnoteLines.length > 0 ? body + "\n\n" + footnoteLines.join("\n") : body;
           return { currentContent: currentContent2, appliedIds: appliedIds2 };
         }
         const doc = (0, format_aware_parse_js_1.parseForFormat)(text, { skipCodeBlocks: false });
+        (0, document_js_1.assertResolved)(doc);
         const rejected = doc.getChanges().filter((c) => c.status === types_js_1.ChangeStatus.Rejected);
-        const appliedIds = rejected.map((c) => c.id);
         if (rejected.length === 0) {
           return { currentContent: text, appliedIds: [] };
         }
         const parts = [...rejected].sort((a, b) => a.range.start - b.range.start).map(accept_reject_js_1.computeRejectParts);
         const zones = (0, code_zones_js_1.findCodeZones)(text);
         const currentContent = buildSegmentsWithZoneAwareness(text, parts, zones);
+        const appliedIds = [];
+        for (const part of parts) {
+          if (!part.refId)
+            continue;
+          if (part.length === 0 && part.text === "")
+            continue;
+          appliedIds.push(part.refId);
+        }
         return { currentContent, appliedIds };
       }
       function computeCurrentViewL3(rawText) {
@@ -16234,6 +16498,7 @@ Hint: Re-read the file for current content, or use LINE:HASH addressing.`);
       Object.defineProperty(exports, "__esModule", { value: true });
       exports.computeAmendEdits = computeAmendEdits;
       var format_aware_parse_js_1 = require_format_aware_parse();
+      var document_js_1 = require_document();
       var types_js_1 = require_types();
       var footnote_utils_js_1 = require_footnote_utils();
       var timestamp_js_1 = require_timestamp();
@@ -16272,6 +16537,7 @@ Hint: Re-read the file for current content, or use LINE:HASH addressing.`);
           };
         }
         const doc = (0, format_aware_parse_js_1.parseForFormat)(text);
+        (0, document_js_1.assertResolved)(doc);
         const change = doc.getChanges().find((c) => c.id === changeId);
         if (!change) {
           return { isError: true, error: `Change ${changeId} not found in file` };
@@ -16416,6 +16682,7 @@ Hint: Re-read the file for current content, or use LINE:HASH addressing.`);
       var footnote_generator_js_1 = require_footnote_generator();
       var footnote_patterns_js_1 = require_footnote_patterns();
       var format_aware_parse_js_1 = require_format_aware_parse();
+      var document_js_1 = require_document();
       var accept_reject_js_1 = require_accept_reject();
       var types_js_1 = require_types();
       var timestamp_js_1 = require_timestamp();
@@ -16451,6 +16718,8 @@ Hint: Re-read the file for current content, or use LINE:HASH addressing.`);
             error: `Cannot supersede change "${changeId}": unexpected status "${header.status}". Only proposed changes can be superseded.`
           };
         }
+        const inputDoc = (0, format_aware_parse_js_1.parseForFormat)(text);
+        (0, document_js_1.assertResolved)(inputDoc);
         const rejectResult = (0, apply_review_js_1.applyReview)(text, changeId, "reject", reason ?? "Superseded by new change", author);
         if ("error" in rejectResult) {
           return { isError: true, error: `Failed to reject old change: ${rejectResult.error}` };
@@ -16749,6 +17018,10 @@ Hint: Re-read the file for current content, or use LINE:HASH addressing.`);
             const comment = metadata?.comment ?? "";
             return { replacement: `{>>${comment}<<}${ref}` };
           }
+          case types_js_1.ChangeType.Move: {
+            const bodySlice = bodyText.slice(range.start, range.end);
+            return { replacement: `{++${bodySlice}++}${ref}` };
+          }
         }
       }
       async function convertL3ToL2(text) {
@@ -16761,7 +17034,7 @@ Hint: Re-read the file for current content, or use LINE:HASH addressing.`);
         const hasProposed = changes.some((c) => c.status === types_js_1.ChangeStatus.Proposed);
         if (!hasProposed)
           return text;
-        const unresolvedIds = new Set(changes.filter((c) => c.anchored === false).map((c) => c.id));
+        const unresolvedIds = new Set(changes.filter((c) => c.resolved === false).map((c) => c.id));
         const { bodyLines, footnoteLines } = (0, footnote_patterns_js_1.splitBodyAndFootnotes)(text.split("\n"));
         const sortedDesc = [...changes].sort((a, b) => b.range.start - a.range.start);
         let body = bodyLines.join("\n");
@@ -16941,7 +17214,7 @@ Hint: Re-read the file for current content, or use LINE:HASH addressing.`);
           const rejectEdits = [];
           for (const id of proposedTargetIds) {
             const change = preRejectMap.get(id);
-            if (!change || !change.anchored)
+            if (!change)
               continue;
             const edit = (0, accept_reject_js_1.computeReject)(change);
             if (edit.length > 0 || edit.newText.length > 0) {
@@ -17260,7 +17533,8 @@ Hint: Re-read the file for current content, or use LINE:HASH addressing.`);
               range,
               contentRange: { ...range },
               level: 0,
-              anchored: false
+              anchored: false,
+              resolved: true
             };
             if (originalText !== void 0) {
               node.originalText = originalText;
@@ -17548,6 +17822,7 @@ Hint: Re-read the file for current content, or use LINE:HASH addressing.`);
       "use strict";
       Object.defineProperty(exports, "__esModule", { value: true });
       exports.Workspace = void 0;
+      var document_js_1 = require_document();
       var parser_js_1 = require_parser();
       var sidecar_parser_js_1 = require_sidecar_parser();
       var footnote_native_parser_js_1 = require_footnote_native_parser();
@@ -17668,6 +17943,7 @@ Hint: Re-read the file for current content, or use LINE:HASH addressing.`);
          * Returns TextEdits in reverse document order to preserve ranges when applied sequentially.
          */
         acceptGroup(doc, groupId, text) {
+          (0, document_js_1.assertResolved)(doc);
           const members = doc.getGroupMembers(groupId);
           const edits = [...members].sort((a, b) => b.range.start - a.range.start).map(accept_reject_js_1.computeAccept);
           if (text !== void 0) {
@@ -17681,6 +17957,7 @@ Hint: Re-read the file for current content, or use LINE:HASH addressing.`);
          * Returns TextEdits in reverse document order to preserve ranges when applied sequentially.
          */
         rejectGroup(doc, groupId, text) {
+          (0, document_js_1.assertResolved)(doc);
           const members = doc.getGroupMembers(groupId);
           const edits = [...members].sort((a, b) => b.range.start - a.range.start).map(accept_reject_js_1.computeReject);
           if (text !== void 0) {
@@ -18222,19 +18499,8 @@ ${sidecarSection}
           return "proposed";
         return info.status;
       }
-      function computeDecidedLine(line, footnotes) {
-        let result = line;
-        const changeIds = [];
-        let hasProposed = false;
-        let hasAccepted = false;
-        function trackStatus(status, changeId) {
-          if (changeId)
-            changeIds.push(changeId);
-          if (status === "proposed")
-            hasProposed = true;
-          else if (status === "accepted")
-            hasAccepted = true;
-        }
+      function applyDecidedReplacementsOnce(text, footnotes, trackStatus) {
+        let result = text;
         result = result.replace((0, critic_regex_js_1.multiLineSubstitution)(), (_match, old, newText, _refFull, refId) => {
           const status = resolveStatus(refId, footnotes);
           trackStatus(status, refId);
@@ -18255,6 +18521,27 @@ ${sidecarSection}
         });
         result = result.replace((0, critic_regex_js_1.multiLineComment)(), "");
         result = result.replace((0, footnote_patterns_js_1.footnoteRefGlobal)(), "");
+        return result;
+      }
+      var MAX_DECIDED_DEPTH = 3;
+      function computeDecidedLine(line, footnotes) {
+        let result = line;
+        const changeIds = [];
+        let hasProposed = false;
+        let hasAccepted = false;
+        function trackStatus(status, changeId) {
+          if (changeId)
+            changeIds.push(changeId);
+          if (status === "proposed")
+            hasProposed = true;
+          else if (status === "accepted")
+            hasAccepted = true;
+        }
+        let depth = 0;
+        while (depth < MAX_DECIDED_DEPTH && (0, critic_regex_js_1.hasCriticMarkup)(result)) {
+          result = applyDecidedReplacementsOnce(result, footnotes, trackStatus);
+          depth++;
+        }
         let flag = "";
         if (hasProposed)
           flag = "P";
@@ -18483,76 +18770,87 @@ ${sidecarSection}
       "use strict";
       Object.defineProperty(exports, "__esModule", { value: true });
       exports.formatPlainText = formatPlainText;
+      exports.formatMetadata = formatMetadata;
       function formatPlainText(doc) {
         const parts = [];
-        parts.push(formatHeader(doc.header, doc.view));
-        parts.push("");
+        const header = formatHeader(doc.header, doc.view);
+        if (header) {
+          parts.push(header);
+          parts.push("");
+        }
         const padWidth = doc.lines.length > 0 ? Math.max(String(doc.lines[doc.lines.length - 1].margin.lineNumber).length, 2) : 2;
         for (const line of doc.lines) {
           parts.push(formatLine(line, padWidth, doc.view));
         }
+        const footer = formatDecidedFooter(doc);
+        if (footer) {
+          parts.push(footer);
+        }
         return parts.join("\n");
       }
       function formatHeader(header, view) {
+        if (view === "decided" || view === "raw")
+          return "";
         const lines = [];
-        lines.push(`## ${header.filePath} | policy: ${header.protocolMode} | tracking: ${header.trackingStatus}`);
         const counts = `proposed: ${header.counts.proposed} | accepted: ${header.counts.accepted} | rejected: ${header.counts.rejected}`;
         const threads = header.threadCount > 0 ? ` | threads: ${header.threadCount}` : "";
         lines.push(`## ${counts}${threads}`);
         if (header.authors.length > 0) {
           lines.push(`## authors: ${header.authors.join(", ")}`);
         }
-        if (header.lineRange) {
-          lines.push(`## lines: ${header.lineRange.start}-${header.lineRange.end} of ${header.lineRange.total}`);
-        }
         lines.push("---");
         return lines.join("\n");
+      }
+      function formatDecidedFooter(doc) {
+        if (doc.view !== "decided")
+          return "";
+        const { counts, threadCount } = doc.header;
+        const anyCount = counts.proposed > 0 || counts.accepted > 0 || counts.rejected > 0 || threadCount > 0;
+        if (!anyCount)
+          return "";
+        return `\u2500\u2500 accepted ${counts.accepted} \xB7 rejected ${counts.rejected} \xB7 proposed ${counts.proposed} \xB7 threads ${threadCount} \u2500\u2500`;
       }
       function formatLine(line, padWidth, view) {
         const num = String(line.margin.lineNumber).padStart(padWidth, " ");
         const flag = line.margin.flags.length > 0 ? line.margin.flags[0] : " ";
         const margin = `${num}:${line.margin.hash} ${flag}|`;
         const content = line.content.map((s) => s.text).join("");
-        const meta = formatMetadata(line.metadata, view);
+        const meta = formatMetadata(line.metadata);
         return meta ? `${margin} ${content} ${meta}` : `${margin} ${content}`;
       }
-      function ensureAt(author, fallback = "") {
-        if (!author)
-          return fallback;
-        return author.startsWith("@") ? author : `@${author}`;
+      var MAX_TURN_CODE_POINTS = 60;
+      function truncateByCodePoints(text, max) {
+        if (text.length <= max)
+          return text;
+        const cps = [...text];
+        if (cps.length <= max)
+          return text;
+        return cps.slice(0, max).join("") + "\u2026";
       }
-      function formatMetadata(metadata, view) {
+      function withAtPrefix(handle) {
+        return handle.startsWith("@") ? handle : `@${handle}`;
+      }
+      function formatMetadata(metadata) {
         if (metadata.length === 0)
           return "";
         return metadata.map((m) => {
-          if (view === "simple") {
-            const author = ensureAt(m.author);
-            let block2 = `[${m.changeId}`;
-            if (author)
-              block2 += ` ${author}`;
-            if (m.type)
-              block2 += ` ${m.type}`;
-            if (m.status)
-              block2 += ` ${m.status}`;
-            if (m.reason)
-              block2 += `: ${m.reason}`;
-            if (m.latestThreadTurn) {
-              const turnAuthor = ensureAt(m.latestThreadTurn.author, "@?");
-              block2 += ` | ${turnAuthor}: ${m.latestThreadTurn.text}`;
-            }
-            block2 += "]";
-            return block2;
-          }
-          let block = `{>>${m.changeId}`;
+          const parts = [m.changeId];
           if (m.author)
-            block += ` ${m.author}:`;
-          if (m.reason)
-            block += ` ${m.reason}`;
-          if (m.replyCount && m.replyCount > 0) {
-            block += ` | ${m.replyCount} ${m.replyCount === 1 ? "reply" : "replies"}`;
+            parts.push(withAtPrefix(m.author));
+          if (m.type)
+            parts.push(m.type);
+          if (m.status)
+            parts.push(m.status);
+          let head = parts.join(" ");
+          if (m.reason) {
+            head += `: "${m.reason}"`;
           }
-          block += "<<}";
-          return block;
+          if (m.latestThreadTurn) {
+            const turnAuthor = m.latestThreadTurn.author ? `${withAtPrefix(m.latestThreadTurn.author)}: ` : "";
+            const turnText = truncateByCodePoints(m.latestThreadTurn.text, MAX_TURN_CODE_POINTS);
+            head += ` | ${turnAuthor}${turnText}`;
+          }
+          return `[${head}]`;
         }).join(" ");
       }
     }
@@ -19909,6 +20207,260 @@ ${sidecarSection}
     }
   });
 
+  // ../core/dist/operations/structural-integrity.js
+  var require_structural_integrity = __commonJS({
+    "../core/dist/operations/structural-integrity.js"(exports) {
+      "use strict";
+      Object.defineProperty(exports, "__esModule", { value: true });
+      exports.validateStructuralIntegrity = validateStructuralIntegrity;
+      var format_aware_parse_js_1 = require_format_aware_parse();
+      var code_zones_js_1 = require_code_zones();
+      var footnote_patterns_js_1 = require_footnote_patterns();
+      var types_js_1 = require_types();
+      var CM_DELIMITERS = [
+        ["{++", "++}"],
+        ["{--", "--}"],
+        ["{~~", "~~}"],
+        ["{==", "==}"],
+        ["{>>", "<<}"]
+      ];
+      var CM_CLOSE_TO_OPEN = /* @__PURE__ */ new Map([
+        ["++}", "{++"],
+        ["--}", "{--"],
+        ["~~}", "{~~"],
+        ["==}", "{=="],
+        ["<<}", "{>>"]
+      ]);
+      var CM_CLOSE_FIRST_CHARS = /* @__PURE__ */ new Set(["+", "-", "~", "=", "<"]);
+      function validateStructuralIntegrity(text) {
+        const violations = [];
+        let doc;
+        try {
+          doc = (0, format_aware_parse_js_1.parseForFormat)(text);
+        } catch (err) {
+          violations.push({
+            kind: "structural_invalid",
+            message: `Parser threw: ${err.message}`
+          });
+          return violations;
+        }
+        for (const d of doc.getDiagnostics()) {
+          violations.push(d);
+        }
+        violations.push(...detectNestedMarkup(text));
+        violations.push(...detectOrphans(text, doc));
+        return violations;
+      }
+      function detectNestedMarkup(text) {
+        const inCodeZone = (0, code_zones_js_1.buildCodeZoneMask)(text);
+        const violations = [];
+        let currentOpen = null;
+        let pos = 0;
+        while (pos < text.length) {
+          if (inCodeZone[pos]) {
+            pos++;
+            continue;
+          }
+          const ch = text[pos];
+          if (currentOpen !== null && CM_CLOSE_FIRST_CHARS.has(ch)) {
+            let closedSpan = false;
+            for (const [close, matchingOpen] of CM_CLOSE_TO_OPEN) {
+              if (currentOpen === matchingOpen && text.startsWith(close, pos)) {
+                currentOpen = null;
+                pos += close.length;
+                closedSpan = true;
+                break;
+              }
+            }
+            if (closedSpan)
+              continue;
+          }
+          if (ch === "{") {
+            for (const [open] of CM_DELIMITERS) {
+              if (text.startsWith(open, pos)) {
+                if (currentOpen !== null) {
+                  violations.push({
+                    kind: "structural_invalid",
+                    message: `Nested CriticMarkup: found '${open}' inside '${currentOpen}' (at offset ${pos}).`
+                  });
+                } else {
+                  currentOpen = open;
+                }
+                pos += open.length;
+                break;
+              }
+            }
+            if (text[pos] === "{")
+              pos++;
+            continue;
+          }
+          pos++;
+        }
+        return violations;
+      }
+      var INLINE_REF_GLOBAL = new RegExp(`\\[\\^(${footnote_patterns_js_1.FOOTNOTE_ID_PATTERN})\\]`, "g");
+      var FOOTNOTE_DEF_STATUS_GM = new RegExp(footnote_patterns_js_1.FOOTNOTE_DEF_STATUS.source, "gm");
+      var DECIDED_STATUSES = /* @__PURE__ */ new Set(["accepted", "rejected"]);
+      function detectOrphans(text, doc) {
+        const violations = [];
+        const { bodyLines, footnoteLines } = (0, footnote_patterns_js_1.splitBodyAndFootnotes)(text.split("\n"));
+        const bodyText = bodyLines.join("\n");
+        const footnoteText = footnoteLines.join("\n");
+        const bodyRefs = /* @__PURE__ */ new Set();
+        const bodyCodeZones = (0, code_zones_js_1.findCodeZones)(bodyText);
+        INLINE_REF_GLOBAL.lastIndex = 0;
+        let m;
+        while ((m = INLINE_REF_GLOBAL.exec(bodyText)) !== null) {
+          const refStart = m.index;
+          const inZone = bodyCodeZones.some((z) => refStart >= z.start && refStart < z.end);
+          if (!inZone) {
+            bodyRefs.add(m[1]);
+          }
+        }
+        const footnoteDefs = /* @__PURE__ */ new Map();
+        FOOTNOTE_DEF_STATUS_GM.lastIndex = 0;
+        while ((m = FOOTNOTE_DEF_STATUS_GM.exec(footnoteText)) !== null) {
+          footnoteDefs.set(m[1], m[2]);
+        }
+        for (const change of doc.getChanges()) {
+          if (!footnoteDefs.has(change.id)) {
+            const status = change.status === types_js_1.ChangeStatus.Accepted ? "accepted" : change.status === types_js_1.ChangeStatus.Rejected ? "rejected" : "proposed";
+            footnoteDefs.set(change.id, status);
+          }
+        }
+        for (const ref of bodyRefs) {
+          if (!footnoteDefs.has(ref)) {
+            violations.push({
+              kind: "record_orphaned",
+              changeId: ref,
+              message: `Inline ref [^${ref}] has no matching footnote definition.`
+            });
+          }
+        }
+        for (const [id, status] of footnoteDefs) {
+          if (DECIDED_STATUSES.has(status) && !bodyRefs.has(id)) {
+            violations.push({
+              kind: "surface_orphaned",
+              changeId: id,
+              message: `Footnote def [^${id}] is decided (${status}) but has no matching inline ref in the body.`
+            });
+          }
+        }
+        return violations;
+      }
+    }
+  });
+
+  // ../core/dist/operations/markup-by-id.js
+  var require_markup_by_id = __commonJS({
+    "../core/dist/operations/markup-by-id.js"(exports) {
+      "use strict";
+      Object.defineProperty(exports, "__esModule", { value: true });
+      exports.findMarkupRangeById = findMarkupRangeById;
+      exports.removeMarkupById = removeMarkupById;
+      var code_zones_js_1 = require_code_zones();
+      var OPEN_KINDS = {
+        "{~~": "sub",
+        "{++": "ins",
+        "{--": "del",
+        "{==": "highlight",
+        "{>>": "comment"
+      };
+      var CLOSE_KINDS = {
+        "~~}": "sub",
+        "++}": "ins",
+        "--}": "del",
+        "==}": "highlight",
+        "<<}": "comment"
+      };
+      var CLOSE_FIRST = /* @__PURE__ */ new Set(["+", "-", "~", "=", "<"]);
+      function scanPairs(text) {
+        const inCodeZone = (0, code_zones_js_1.buildCodeZoneMask)(text);
+        const pairs = [];
+        const stack = [];
+        let pos = 0;
+        while (pos < text.length) {
+          if (inCodeZone[pos]) {
+            pos++;
+            continue;
+          }
+          const ch = text[pos];
+          if (CLOSE_FIRST.has(ch) && stack.length > 0) {
+            let closeMatched = false;
+            for (const [closeDelim, closeKind] of Object.entries(CLOSE_KINDS)) {
+              if (text.startsWith(closeDelim, pos)) {
+                closeMatched = true;
+                let matchIdx = -1;
+                for (let i = stack.length - 1; i >= 0; i--) {
+                  if (stack[i].kind === closeKind) {
+                    matchIdx = i;
+                    break;
+                  }
+                }
+                if (matchIdx >= 0) {
+                  const entry = stack[matchIdx];
+                  pairs.push({
+                    kind: closeKind,
+                    open: entry.openOffset,
+                    close: pos
+                  });
+                  stack.splice(matchIdx, 1);
+                  pos += closeDelim.length;
+                } else {
+                  pos += closeDelim.length;
+                }
+                break;
+              }
+            }
+            if (!closeMatched) {
+              pos++;
+            }
+            continue;
+          }
+          if (ch === "{") {
+            let matched = false;
+            for (const [openDelim, openKind] of Object.entries(OPEN_KINDS)) {
+              if (text.startsWith(openDelim, pos)) {
+                stack.push({ kind: openKind, openOffset: pos });
+                pos += openDelim.length;
+                matched = true;
+                break;
+              }
+            }
+            if (!matched) {
+              pos++;
+            }
+            continue;
+          }
+          pos++;
+        }
+        return pairs;
+      }
+      function findMarkupRangeById(text, changeId) {
+        const pairs = scanPairs(text);
+        const refPattern = `[^${changeId}]`;
+        const closeDelimLen = 3;
+        for (const p of pairs) {
+          const afterClose = p.close + closeDelimLen;
+          if (text.startsWith(refPattern, afterClose)) {
+            return {
+              start: p.open,
+              end: afterClose + refPattern.length,
+              type: p.kind
+            };
+          }
+        }
+        return null;
+      }
+      function removeMarkupById(text, changeId) {
+        const range = findMarkupRangeById(text, changeId);
+        if (!range)
+          return text;
+        return text.slice(0, range.start) + text.slice(range.end);
+      }
+    }
+  });
+
   // ../core/dist/operations/parse-document.js
   var require_parse_document = __commonJS({
     "../core/dist/operations/parse-document.js"(exports) {
@@ -19957,16 +20509,321 @@ ${sidecarSection}
     }
   });
 
+  // ../core/dist/operations/changes-to-document.js
+  var require_changes_to_document = __commonJS({
+    "../core/dist/operations/changes-to-document.js"(exports) {
+      "use strict";
+      Object.defineProperty(exports, "__esModule", { value: true });
+      exports.changeNodesToL3Document = changeNodesToL3Document;
+      var types_js_1 = require_types();
+      var footnote_generator_js_1 = require_footnote_generator();
+      function normalizeAuthor(author) {
+        return author.startsWith("@") ? author : "@" + author;
+      }
+      function changeNodesToL3Document(body, changes) {
+        const footnotes = changes.map(buildFootnoteFromChange);
+        return { format: "L3", body, footnotes };
+      }
+      function buildFootnoteFromChange(change) {
+        const header = buildHeader(change);
+        const editOp = buildEditOp(change);
+        const bodyLines = buildBodyLines(change, editOp);
+        const meta = change.metadata;
+        const reason = meta?.comment ?? void 0;
+        const discussion = meta?.discussion ?? [];
+        const approvals = meta?.approvals ?? [];
+        const rejections = meta?.rejections ?? [];
+        const requestChanges = meta?.requestChanges ?? [];
+        const revisions = meta?.revisions ?? [];
+        const resolution = meta?.resolution ?? null;
+        const imageMetadata = meta?.imageMetadata ? Object.freeze({ ...meta.imageMetadata }) : void 0;
+        const equationMetadata = meta?.equationMetadata ? Object.freeze({ ...meta.equationMetadata }) : void 0;
+        return {
+          id: change.id,
+          header,
+          editOp,
+          bodyLines,
+          reason,
+          discussion,
+          approvals,
+          rejections,
+          requestChanges,
+          revisions,
+          resolution,
+          supersedes: change.supersedes,
+          supersededBy: change.supersededBy ?? [],
+          imageMetadata,
+          equationMetadata,
+          // Sentinel: constructed footnotes have no source location.
+          sourceRange: { startLine: -1, endLine: -1 }
+        };
+      }
+      function buildHeader(change) {
+        const meta = change.metadata;
+        const author = normalizeAuthor(meta?.author ?? "unknown");
+        const date = meta?.date ?? "";
+        const type = (0, types_js_1.changeTypeToShortCode)(change.type);
+        const status = narrowStatus((0, types_js_1.nodeStatus)(change));
+        return { author, date, type, status };
+      }
+      function narrowStatus(s) {
+        if (s === "proposed" || s === "accepted" || s === "rejected")
+          return s;
+        throw new Error(`changeNodesToL3Document: unsupported ChangeStatus "${s}"`);
+      }
+      function buildEditOp(change) {
+        const anchor = change.anchor;
+        if (!anchor || anchor.kind !== "line-hash")
+          return null;
+        if (!anchor.embedding)
+          return null;
+        const lineNumber = anchor.line;
+        const hash = anchor.hash;
+        const op = anchor.embedding;
+        return { resolutionPath: "hash", lineNumber, hash, op };
+      }
+      function buildBodyLines(change, editOp) {
+        const lines = [];
+        const meta = change.metadata;
+        if (editOp) {
+          const raw = (0, footnote_generator_js_1.formatL3EditOpLine)(editOp.lineNumber, editOp.hash, editOp.op);
+          lines.push({ kind: "edit-op", editOp, raw });
+        }
+        if (meta?.comment) {
+          lines.push(emitReasonLine(meta.comment));
+        }
+        if (meta?.revisions && meta.revisions.length > 0) {
+          lines.push({ kind: "revisions-header", raw: "    revisions:" });
+          for (const rev of meta.revisions) {
+            lines.push(emitRevisionLine(rev));
+          }
+        }
+        if (meta?.requestChanges) {
+          for (const rc of meta.requestChanges) {
+            lines.push(emitApprovalLikeLine("request-changes", rc));
+          }
+        }
+        if (meta?.approvals) {
+          for (const ap of meta.approvals) {
+            lines.push(emitApprovalLikeLine("approved", ap));
+          }
+        }
+        if (meta?.rejections) {
+          for (const rj of meta.rejections) {
+            lines.push(emitApprovalLikeLine("rejected", rj));
+          }
+        }
+        if (meta?.discussion) {
+          for (const dc of meta.discussion) {
+            lines.push(emitDiscussionLine(dc));
+          }
+        }
+        if (meta?.resolution) {
+          lines.push(emitResolutionLine(meta.resolution));
+        }
+        if (change.supersedes) {
+          const raw = `    supersedes: ${change.supersedes}`;
+          lines.push({ kind: "supersedes", target: change.supersedes, raw });
+        }
+        if (change.supersededBy) {
+          for (const target of change.supersededBy) {
+            const raw = `    superseded-by: ${target}`;
+            lines.push({ kind: "superseded-by", target, raw });
+          }
+        }
+        if (meta?.imageMetadata) {
+          for (const [key, value] of Object.entries(meta.imageMetadata)) {
+            const raw = `    ${key}: ${value}`;
+            lines.push({ kind: "image-meta", key, value, raw });
+          }
+        }
+        if (meta?.equationMetadata) {
+          for (const [key, value] of Object.entries(meta.equationMetadata)) {
+            const raw = `    ${key}: ${value}`;
+            lines.push({ kind: "equation-meta", key, value, raw });
+          }
+        }
+        return lines;
+      }
+      function emitReasonLine(comment) {
+        const raw = `    reason: ${comment}`;
+        return { kind: "reason", text: comment, raw };
+      }
+      function emitApprovalLikeLine(keyword, action) {
+        const dateStr = action.timestamp?.raw ?? action.date;
+        const authorStr = normalizeAuthor(action.author);
+        const reasonPart = action.reason ? ` "${action.reason}"` : "";
+        const raw = `    ${keyword}: ${authorStr} ${dateStr}${reasonPart}`;
+        if (keyword === "approved") {
+          return { kind: "approval", action, raw };
+        } else if (keyword === "rejected") {
+          return { kind: "rejection", action, raw };
+        } else {
+          return { kind: "request-changes", action, raw };
+        }
+      }
+      function emitRevisionLine(rev) {
+        const dateStr = rev.timestamp?.raw ?? rev.date;
+        const authorStr = normalizeAuthor(rev.author);
+        const raw = `    ${rev.label} ${authorStr} ${dateStr}: "${rev.text}"`;
+        return { kind: "revision", revision: rev, raw };
+      }
+      function emitDiscussionLine(dc) {
+        const dateStr = dc.timestamp?.raw ?? dc.date;
+        const authorStr = normalizeAuthor(dc.author);
+        const labelPart = dc.label ? ` [${dc.label}]` : "";
+        const raw = `    ${authorStr} ${dateStr}${labelPart}: ${dc.text}`;
+        return { kind: "discussion", reply: dc, raw };
+      }
+      function emitResolutionLine(res) {
+        if (res.type === "resolved") {
+          const dateStr = res.timestamp?.raw ?? res.date;
+          const authorStr = normalizeAuthor(res.author);
+          const reasonPart = res.reason ? ` "${res.reason}"` : "";
+          const raw = `    resolved: ${authorStr} ${dateStr}${reasonPart}`;
+          return { kind: "resolution", resolution: res, raw };
+        } else {
+          const raw = res.reason ? `    open -- ${res.reason}` : `    open`;
+          return { kind: "resolution", resolution: res, raw };
+        }
+      }
+    }
+  });
+
+  // ../core/dist/backend/types.js
+  var require_types3 = __commonJS({
+    "../core/dist/backend/types.js"(exports) {
+      "use strict";
+      Object.defineProperty(exports, "__esModule", { value: true });
+      exports.AGENTS_UPDATED_METHOD = void 0;
+      exports.wordSessionResourceName = wordSessionResourceName;
+      exports.parseUri = parseUri;
+      exports.AGENTS_UPDATED_METHOD = "agents_updated";
+      function wordSessionResourceName(sessionUri) {
+        return `Active Word Document (${sessionUri.split("/").pop() ?? sessionUri})`;
+      }
+      function parseUri(uri) {
+        const colonIdx = uri.indexOf(":");
+        if (!uri || colonIdx <= 0) {
+          throw new Error(`Invalid URI: "${uri}"`);
+        }
+        return {
+          scheme: uri.slice(0, colonIdx).toLowerCase(),
+          rest: uri.slice(colonIdx + 1)
+        };
+      }
+    }
+  });
+
+  // ../core/dist/backend/registry.js
+  var require_registry = __commonJS({
+    "../core/dist/backend/registry.js"(exports) {
+      "use strict";
+      Object.defineProperty(exports, "__esModule", { value: true });
+      exports.BackendRegistry = void 0;
+      var types_js_1 = require_types3();
+      var BackendRegistry = class {
+        constructor() {
+          this.backends = /* @__PURE__ */ new Map();
+          this.changeListeners = [];
+        }
+        /**
+         * Register a backend for all schemes it declares.
+         * If a scheme is already registered, the new backend replaces it and
+         * `onDidChange` fires.
+         */
+        register(backend) {
+          for (const scheme of backend.schemes) {
+            this.backends.set(scheme, backend);
+          }
+          this.fireChange();
+        }
+        /**
+         * Resolve a URI to its backend. Throws with
+         * "BackendNotFoundError: no backend for scheme '<scheme>'" when the scheme
+         * is not registered.
+         */
+        resolve(uri) {
+          const { scheme } = (0, types_js_1.parseUri)(uri);
+          const backend = this.backends.get(scheme);
+          if (!backend) {
+            throw new Error(`BackendNotFoundError: no backend for scheme '${scheme}'`);
+          }
+          return backend;
+        }
+        /**
+         * Snapshot of all registered backends as `{scheme, backend}` pairs.
+         * Used by diagnostics. See `listResources()` for the MCP-facing equivalent.
+         */
+        list() {
+          return Array.from(this.backends.entries()).map(([scheme, backend]) => ({
+            scheme,
+            backend
+          }));
+        }
+        /**
+         * Aggregate `DocumentResourceDescriptor[]` from every registered backend.
+         * Called by `ResourceLister` to build the `resources/list` response.
+         *
+         * Deduplicates by backend instance (not by scheme): when multiple scheme
+         * keys map to the same backend object, `list()` is called only once.
+         */
+        listResources() {
+          const seen = /* @__PURE__ */ new Set();
+          const result = [];
+          for (const backend of this.backends.values()) {
+            if (seen.has(backend))
+              continue;
+            seen.add(backend);
+            result.push(...backend.list());
+          }
+          return result;
+        }
+        /**
+         * Remove the backend registered for `scheme`. No-op if the scheme is not
+         * registered. Fires `onDidChange` when a backend is actually removed.
+         */
+        unregister(scheme) {
+          if (this.backends.delete(scheme)) {
+            this.fireChange();
+          }
+        }
+        /**
+         * Subscribe to change notifications. Fires whenever `register()` is called.
+         * Returns a disposal function.
+         */
+        onDidChange(listener) {
+          this.changeListeners.push(listener);
+          return () => {
+            const idx = this.changeListeners.indexOf(listener);
+            if (idx !== -1)
+              this.changeListeners.splice(idx, 1);
+          };
+        }
+        fireChange() {
+          for (const l of this.changeListeners) {
+            try {
+              l();
+            } catch (err) {
+              console.error("[BackendRegistry] change listener threw:", err instanceof Error ? err.message : err);
+            }
+          }
+        }
+      };
+      exports.BackendRegistry = BackendRegistry;
+    }
+  });
+
   // ../core/dist/index.js
   var require_dist = __commonJS({
     "../core/dist/index.js"(exports) {
       "use strict";
       Object.defineProperty(exports, "__esModule", { value: true });
-      exports.computeSupersedeResult = exports.computeAmendEdits = exports.VALID_DECISIONS = exports.applyReview = exports.ensureL2 = exports.buildContextualL3EditOp = exports.formatL3EditOpLine = exports.buildEditOpFromParts = exports.scanMaxCnId = exports.generateFootnoteDefinition = exports.insertComment = exports.wrapSubstitution = exports.wrapDeletion = exports.wrapInsertion = exports.previousChange = exports.nextChange = exports.computeReplyEdit = exports.computeUnresolveEdit = exports.computeResolutionEdit = exports.computeFootnoteArchiveLineEdit = exports.computeApprovalLineEdit = exports.computeFootnoteStatusEdits = exports.computeRejectParts = exports.computeAcceptParts = exports.computeReject = exports.computeAccept = exports.isFenceCloserLine = exports.skipInlineCode = exports.tryMatchFenceClose = exports.tryMatchFenceOpen = exports.findCodeZones = exports.CriticMarkupParser = exports.TokenType = exports.VirtualDocument = exports.nodeStatus = exports.consumptionLabel = exports.isGhostNode = exports.changeTypeToShortCode = exports.changeTypeToAbbrev = exports.ChangeStatus = exports.ChangeType = exports.formatTimestamp = exports.compareTimestamps = exports.nowTimestamp = exports.parseTimestamp = exports.canWithdraw = exports.canAccept = exports.reviewerType = exports.DEFAULT_CONFIG = exports.parseProjectConfig = void 0;
-      exports.computeCurrentView = exports.applyRejectedChanges = exports.applyAcceptedChanges = exports.computeOriginalText = exports.computeCurrentText = exports.computeCurrentReplace = exports.tryDiagnosticConfusableMatch = exports.unicodeName = exports.diagnosticConfusableNormalize = exports.whitespaceCollapsedIsAmbiguous = exports.whitespaceCollapsedFind = exports.buildWhitespaceCollapseMap = exports.collapseWhitespace = exports.normalizedIndexOf = exports.defaultNormalizer = exports.insertTrackingHeader = exports.generateTrackingHeader = exports.parseTrackingHeader = exports.computeSidecarResolveAll = exports.computeSidecarReject = exports.computeSidecarAccept = exports.parseContextualEditOp = exports.FootnoteNativeParser = exports.SidecarParser = exports.annotateSidecar = exports.annotateMarkdown = exports.lineOffset = exports.escapeRegex = exports.stripLineComment = exports.wrapLineComment = exports.getCommentSyntax = exports.Workspace = exports.resolveReplayFromParsedFootnotes = exports.traceDependencies = exports.resolve = exports.scrubForward = exports.scrubBackward = exports.convertL3ToL2 = exports.offsetToLineNumber = exports.buildLineStarts = exports.bodyReplacement = exports.convertL2ToL3 = exports.checkSupersedesIntegrity = exports.compactL2 = exports.compact = exports.analyzeCompactionCandidates = exports.compactToLevel0 = exports.compactToLevel1 = exports.promoteToLevel2 = exports.promoteToLevel1 = void 0;
-      exports.FOOTNOTE_THREAD_REPLY = exports.FOOTNOTE_CONTINUATION = exports.FOOTNOTE_DEF_STATUS_VALUE = exports.FOOTNOTE_DEF_STATUS = exports.FOOTNOTE_DEF_STRICT = exports.FOOTNOTE_DEF_LENIENT = exports.FOOTNOTE_DEF_START_QUICK = exports.FOOTNOTE_DEF_START = exports.footnoteRefNumericGlobal = exports.footnoteRefGlobal = exports.FOOTNOTE_REF_ANCHORED = exports.FOOTNOTE_ID_NUMERIC_PATTERN = exports.FOOTNOTE_ID_PATTERN = exports.markupWithRef = exports.inlineMarkupAll = exports.hasCriticMarkup = exports.HAS_CRITIC_MARKUP = exports.multiLineComment = exports.multiLineHighlight = exports.multiLineDeletion = exports.multiLineInsertion = exports.multiLineSubstitution = exports.singleLineComment = exports.singleLineHighlight = exports.singleLineInsertion = exports.singleLineDeletion = exports.singleLineSubstitution = exports.findSidecarBlockStart = exports.SIDECAR_BLOCK_MARKER = exports.formatDecidedOutput = exports.computeDecidedView = exports.computeDecidedLine = exports.parseFootnotes = exports.findFootnoteBlockStart = exports.stripBoundaryEcho = exports.relocateHashRefMulti = exports.relocateHashRef = exports.detectNoOp = exports.stripHashlinePrefixes = exports.formatTrackedHeader = exports.formatTrackedHashLines = exports.computeCurrentLineHash = exports.currentLine = exports.HashlineMismatchError = exports.validateLineRef = exports.parseLineRef = exports.formatHashLines = exports.computeLineHash = exports.ensureHashlineReady = exports.initHashline = void 0;
-      exports.extendBuffer = exports.bufferContainsOffset = exports.bufferEnd = exports.isBufferEmpty = exports.DEFAULT_EDIT_BOUNDARY_CONFIG = exports.computeContinuationLines = exports.findFootnoteSectionRange = exports.buildLineRefMap = exports.buildDeliberationHeader = exports.buildRawDocument = exports.buildDecidedDocument = exports.buildSimpleDocument = exports.buildReviewDocument = exports.buildViewDocument = exports.formatHtml = exports.formatAnsi = exports.formatPlainText = exports.formatDocument = exports.parseOp = exports.resolveAt = exports.parseAt = exports.extractFootnoteStatuses = exports.resolveChangeById = exports.findChildFootnoteIds = exports.findReviewInsertionIndex = exports.findDiscussionInsertionIndex = exports.parseFootnoteHeader = exports.findFootnoteBlock = exports.countFootnoteHeadersWithStatus = exports.contentZoneText = exports.resolveOverlapWithAuthor = exports.findAllProposedOverlaps = exports.stripRefsFromContent = exports.guardOverlap = exports.checkCriticMarkupOverlap = exports.stripCriticMarkupToCommittedWithMap = exports.stripCriticMarkup = exports.stripCriticMarkupWithMap = exports.replaceUnique = exports.extractLineRange = exports.appendFootnote = exports.applySingleOperation = exports.applyProposeChange = exports.tryFindUniqueMatch = exports.findUniqueMatch = exports.viewAwareFind = exports.buildViewSurfaceMap = exports.splitBodyAndFootnotes = exports.isL3Format = exports.FOOTNOTE_L3_EDIT_OP = void 0;
-      exports.serializeL3 = exports.serializeL2 = exports.parseL3 = exports.parseL2 = exports.buildSessionHashes = exports.stripFootnoteBlocks = exports.parseForFormat = exports.processEvent = exports.classifySignal = exports.createBuffer = exports.spliceDelete = exports.spliceInsert = exports.appendOriginal = exports.prependOriginal = void 0;
+      exports.VALID_DECISIONS = exports.applyReview = exports.ensureL2 = exports.buildContextualL3EditOp = exports.formatL3EditOpLine = exports.buildEditOpFromParts = exports.scanMaxCnId = exports.generateFootnoteDefinition = exports.insertComment = exports.wrapSubstitution = exports.wrapDeletion = exports.wrapInsertion = exports.previousChange = exports.nextChange = exports.computeReplyEdit = exports.computeUnresolveEdit = exports.computeResolutionEdit = exports.computeFootnoteArchiveLineEdit = exports.computeApprovalLineEdit = exports.computeFootnoteStatusEdits = exports.computeRejectParts = exports.computeAcceptParts = exports.computeReject = exports.computeAccept = exports.isFenceCloserLine = exports.skipInlineCode = exports.tryMatchFenceClose = exports.tryMatchFenceOpen = exports.buildCodeZoneMask = exports.findCodeZones = exports.CriticMarkupParser = exports.TokenType = exports.assertResolved = exports.VirtualDocument = exports.nodeStatus = exports.consumptionLabel = exports.isGhostNode = exports.changeTypeToShortCode = exports.changeTypeToAbbrev = exports.ChangeStatus = exports.ChangeType = exports.formatTimestamp = exports.compareTimestamps = exports.nowTimestamp = exports.parseTimestamp = exports.canWithdraw = exports.canAccept = exports.reviewerType = exports.DEFAULT_CONFIG = exports.parseProjectConfig = void 0;
+      exports.applyAcceptedChanges = exports.computeOriginalText = exports.computeCurrentText = exports.computeCurrentReplace = exports.tryDiagnosticConfusableMatch = exports.unicodeName = exports.diagnosticConfusableNormalize = exports.whitespaceCollapsedIsAmbiguous = exports.whitespaceCollapsedFind = exports.buildWhitespaceCollapseMap = exports.collapseWhitespace = exports.normalizedIndexOf = exports.defaultNormalizer = exports.insertTrackingHeader = exports.generateTrackingHeader = exports.parseTrackingHeader = exports.computeSidecarResolveAll = exports.computeSidecarReject = exports.computeSidecarAccept = exports.parseContextualEditOp = exports.FootnoteNativeParser = exports.SidecarParser = exports.annotateSidecar = exports.annotateMarkdown = exports.lineOffset = exports.escapeRegex = exports.stripLineComment = exports.wrapLineComment = exports.getCommentSyntax = exports.Workspace = exports.resolveReplayFromParsedFootnotes = exports.traceDependencies = exports.resolve = exports.scrubForward = exports.scrubBackward = exports.convertL3ToL2 = exports.offsetToLineNumber = exports.buildLineStarts = exports.bodyReplacement = exports.convertL2ToL3 = exports.checkSupersedesIntegrity = exports.compactL2 = exports.compact = exports.analyzeCompactionCandidates = exports.compactToLevel0 = exports.compactToLevel1 = exports.promoteToLevel2 = exports.promoteToLevel1 = exports.computeSupersedeResult = exports.computeAmendEdits = void 0;
+      exports.FOOTNOTE_DEF_STATUS_VALUE = exports.FOOTNOTE_DEF_STATUS = exports.FOOTNOTE_DEF_STRICT = exports.FOOTNOTE_DEF_LENIENT = exports.FOOTNOTE_DEF_START_QUICK = exports.FOOTNOTE_DEF_START = exports.footnoteRefNumericGlobal = exports.footnoteRefGlobal = exports.FOOTNOTE_REF_ANCHORED = exports.FOOTNOTE_ID_NUMERIC_PATTERN = exports.FOOTNOTE_ID_PATTERN = exports.markupWithRef = exports.inlineMarkupAll = exports.hasCriticMarkup = exports.HAS_CRITIC_MARKUP = exports.multiLineComment = exports.multiLineHighlight = exports.multiLineDeletion = exports.multiLineInsertion = exports.multiLineSubstitution = exports.singleLineComment = exports.singleLineHighlight = exports.singleLineInsertion = exports.singleLineDeletion = exports.singleLineSubstitution = exports.findSidecarBlockStart = exports.SIDECAR_BLOCK_MARKER = exports.formatDecidedOutput = exports.computeDecidedView = exports.computeDecidedLine = exports.parseFootnotes = exports.findFootnoteBlockStart = exports.stripBoundaryEcho = exports.relocateHashRefMulti = exports.relocateHashRef = exports.detectNoOp = exports.stripHashlinePrefixes = exports.formatTrackedHeader = exports.formatTrackedHashLines = exports.computeCurrentLineHash = exports.currentLine = exports.HashlineMismatchError = exports.validateLineRef = exports.parseLineRef = exports.formatHashLines = exports.computeLineHash = exports.ensureHashlineReady = exports.initHashline = exports.computeCurrentView = exports.applyRejectedChanges = void 0;
+      exports.bufferEnd = exports.isBufferEmpty = exports.DEFAULT_EDIT_BOUNDARY_CONFIG = exports.computeContinuationLines = exports.findFootnoteSectionRange = exports.buildLineRefMap = exports.buildDeliberationHeader = exports.buildRawDocument = exports.buildDecidedDocument = exports.buildSimpleDocument = exports.buildReviewDocument = exports.buildViewDocument = exports.formatHtml = exports.formatAnsi = exports.formatPlainText = exports.formatDocument = exports.parseOp = exports.resolveAt = exports.parseAt = exports.extractFootnoteStatuses = exports.resolveChangeById = exports.findChildFootnoteIds = exports.findReviewInsertionIndex = exports.findDiscussionInsertionIndex = exports.parseFootnoteHeader = exports.findFootnoteBlock = exports.countFootnoteHeadersWithStatus = exports.contentZoneText = exports.resolveOverlapWithAuthor = exports.findAllProposedOverlaps = exports.stripRefsFromContent = exports.guardOverlap = exports.checkCriticMarkupOverlap = exports.stripCriticMarkupToCommittedWithMap = exports.stripCriticMarkup = exports.stripCriticMarkupWithMap = exports.replaceUnique = exports.extractLineRange = exports.appendFootnote = exports.applySingleOperation = exports.applyProposeChange = exports.tryFindUniqueMatch = exports.findUniqueMatch = exports.viewAwareFind = exports.buildViewSurfaceMap = exports.splitBodyAndFootnotes = exports.isL3Format = exports.FOOTNOTE_L3_EDIT_OP = exports.FOOTNOTE_THREAD_REPLY = exports.FOOTNOTE_CONTINUATION = void 0;
+      exports.BackendRegistry = exports.parseUri = exports.StructuralIntegrityError = exports.UnresolvedChangesError = exports.changeNodesToL3Document = exports.serializeL3 = exports.serializeL2 = exports.parseL3 = exports.parseL2 = exports.buildSessionHashes = exports.stripFootnoteBlocks = exports.parseForFormat = exports.removeMarkupById = exports.findMarkupRangeById = exports.validateStructuralIntegrity = exports.processEvent = exports.classifySignal = exports.createBuffer = exports.spliceDelete = exports.spliceInsert = exports.appendOriginal = exports.prependOriginal = exports.extendBuffer = exports.bufferContainsOffset = void 0;
       var index_js_1 = require_config();
       Object.defineProperty(exports, "parseProjectConfig", { enumerable: true, get: function() {
         return index_js_1.parseProjectConfig;
@@ -20023,6 +20880,9 @@ ${sidecarSection}
       Object.defineProperty(exports, "VirtualDocument", { enumerable: true, get: function() {
         return document_js_1.VirtualDocument;
       } });
+      Object.defineProperty(exports, "assertResolved", { enumerable: true, get: function() {
+        return document_js_1.assertResolved;
+      } });
       var tokens_js_1 = require_tokens();
       Object.defineProperty(exports, "TokenType", { enumerable: true, get: function() {
         return tokens_js_1.TokenType;
@@ -20034,6 +20894,9 @@ ${sidecarSection}
       var code_zones_js_1 = require_code_zones();
       Object.defineProperty(exports, "findCodeZones", { enumerable: true, get: function() {
         return code_zones_js_1.findCodeZones;
+      } });
+      Object.defineProperty(exports, "buildCodeZoneMask", { enumerable: true, get: function() {
+        return code_zones_js_1.buildCodeZoneMask;
       } });
       Object.defineProperty(exports, "tryMatchFenceOpen", { enumerable: true, get: function() {
         return code_zones_js_1.tryMatchFenceOpen;
@@ -20643,6 +21506,17 @@ ${sidecarSection}
       Object.defineProperty(exports, "processEvent", { enumerable: true, get: function() {
         return index_js_6.processEvent;
       } });
+      var structural_integrity_js_1 = require_structural_integrity();
+      Object.defineProperty(exports, "validateStructuralIntegrity", { enumerable: true, get: function() {
+        return structural_integrity_js_1.validateStructuralIntegrity;
+      } });
+      var markup_by_id_js_1 = require_markup_by_id();
+      Object.defineProperty(exports, "findMarkupRangeById", { enumerable: true, get: function() {
+        return markup_by_id_js_1.findMarkupRangeById;
+      } });
+      Object.defineProperty(exports, "removeMarkupById", { enumerable: true, get: function() {
+        return markup_by_id_js_1.removeMarkupById;
+      } });
       var format_aware_parse_js_1 = require_format_aware_parse();
       Object.defineProperty(exports, "parseForFormat", { enumerable: true, get: function() {
         return format_aware_parse_js_1.parseForFormat;
@@ -20667,11 +21541,30 @@ ${sidecarSection}
       Object.defineProperty(exports, "serializeL3", { enumerable: true, get: function() {
         return parse_document_js_1.serializeL3;
       } });
+      var changes_to_document_js_1 = require_changes_to_document();
+      Object.defineProperty(exports, "changeNodesToL3Document", { enumerable: true, get: function() {
+        return changes_to_document_js_1.changeNodesToL3Document;
+      } });
+      var diagnostic_js_1 = require_diagnostic2();
+      Object.defineProperty(exports, "UnresolvedChangesError", { enumerable: true, get: function() {
+        return diagnostic_js_1.UnresolvedChangesError;
+      } });
+      Object.defineProperty(exports, "StructuralIntegrityError", { enumerable: true, get: function() {
+        return diagnostic_js_1.StructuralIntegrityError;
+      } });
+      var types_js_2 = require_types3();
+      Object.defineProperty(exports, "parseUri", { enumerable: true, get: function() {
+        return types_js_2.parseUri;
+      } });
+      var registry_js_1 = require_registry();
+      Object.defineProperty(exports, "BackendRegistry", { enumerable: true, get: function() {
+        return registry_js_1.BackendRegistry;
+      } });
     }
   });
 
   // ../core/dist/host/types.js
-  var require_types3 = __commonJS({
+  var require_types4 = __commonJS({
     "../core/dist/host/types.js"(exports) {
       "use strict";
       Object.defineProperty(exports, "__esModule", { value: true });
@@ -20941,7 +21834,7 @@ ${sidecarSection}
       "use strict";
       Object.defineProperty(exports, "__esModule", { value: true });
       exports.DocumentStateManager = void 0;
-      var types_js_1 = require_types3();
+      var types_js_1 = require_types4();
       var range_transform_js_1 = require_range_transform();
       var uri_js_1 = require_uri();
       var NOTIFY_CHANGES_DEBOUNCE_MS = 120;
@@ -21436,7 +22329,7 @@ ${sidecarSection}
       Object.defineProperty(exports, "__esModule", { value: true });
       exports.TrackingService = void 0;
       var pending_edit_manager_js_1 = require_pending_edit_manager();
-      var types_js_1 = require_types3();
+      var types_js_1 = require_types4();
       var TrackingService = class {
         constructor(config) {
           this.trackingState = /* @__PURE__ */ new Map();
@@ -21518,7 +22411,7 @@ ${sidecarSection}
       "use strict";
       Object.defineProperty(exports, "__esModule", { value: true });
       exports.NavigationService = void 0;
-      var types_js_1 = require_types3();
+      var types_js_1 = require_types4();
       var NavigationService = class {
         constructor(stateManager) {
           this.stateManager = stateManager;
@@ -21593,8 +22486,10 @@ ${sidecarSection}
       var resolution_js_1 = require_resolution();
       var current_text_js_1 = require_current_text();
       var format_aware_parse_js_1 = require_format_aware_parse();
+      var document_js_1 = require_document();
+      var diagnostic_js_1 = require_diagnostic2();
       var types_js_1 = require_types();
-      var types_js_2 = require_types3();
+      var types_js_2 = require_types4();
       var ReviewService = class {
         constructor(config) {
           this.config = config;
@@ -21718,6 +22613,21 @@ ${sidecarSection}
         }
         executeBatchReview(text, decision, changeIds, author) {
           const doc = (0, format_aware_parse_js_1.parseForFormat)(text);
+          try {
+            (0, document_js_1.assertResolved)(doc);
+          } catch (err) {
+            if (err instanceof diagnostic_js_1.UnresolvedChangesError) {
+              const summary = err.diagnostics.map((d) => d.message).join("; ");
+              const errorResult = {
+                updatedText: text,
+                affectedChangeIds: [],
+                error: `Cannot apply batch review: document has unresolved changes: ${summary}`
+              };
+              this._onReviewError.fire({ error: errorResult.error });
+              return errorResult;
+            }
+            throw err;
+          }
           let proposed = doc.getChanges().filter((c) => c.status === types_js_1.ChangeStatus.Proposed);
           if (changeIds && changeIds.length > 0) {
             const idSet = new Set(changeIds);
@@ -21827,7 +22737,7 @@ ${sidecarSection}
       "use strict";
       Object.defineProperty(exports, "__esModule", { value: true });
       exports.CoherenceService = void 0;
-      var types_js_1 = require_types3();
+      var types_js_1 = require_types4();
       var uri_keyed_store_js_1 = require_uri_keyed_store();
       var CoherenceService = class extends uri_keyed_store_js_1.UriKeyedStore {
         constructor() {
@@ -22809,7 +23719,7 @@ ${sidecarSection}
       "use strict";
       Object.defineProperty(exports, "__esModule", { value: true });
       exports.FormatService = void 0;
-      var types_js_1 = require_types3();
+      var types_js_1 = require_types4();
       var uri_keyed_store_js_1 = require_uri_keyed_store();
       var footnote_patterns_js_1 = require_footnote_patterns();
       var uri_js_1 = require_uri();
@@ -23047,7 +23957,7 @@ ${sidecarSection}
       "use strict";
       Object.defineProperty(exports, "__esModule", { value: true });
       exports.BaseController = void 0;
-      var types_js_1 = require_types3();
+      var types_js_1 = require_types4();
       var document_state_manager_js_1 = require_document_state_manager();
       var decoration_scheduler_js_1 = require_decoration_scheduler();
       var tracking_service_js_1 = require_tracking_service();
@@ -23647,6 +24557,8 @@ ${sidecarSection}
             return d.highlights !== "hide";
           case types_js_1.ChangeType.Comment:
             return d.comments !== "hide";
+          case types_js_1.ChangeType.Move:
+            return d.insertions !== "hide" || d.deletions !== "hide";
         }
       }
       function isChangeVisibleInView(change, view) {
@@ -23742,7 +24654,7 @@ ${sidecarSection}
       "use strict";
       Object.defineProperty(exports, "__esModule", { value: true });
       exports.PendingEditManager = exports.LocalFormatAdapter = exports.LocalParseAdapter = exports.LspFormatAdapter = exports.isTypeVisibleInView = exports.isChangeVisibleInView = exports.resolveView = exports.VIEW_LABELS = exports.VIEW_PRESETS = exports.NULL_LSP_CONNECTION = exports.FormatService = exports.LSP_METHOD = exports.UriKeyedStore = exports.BaseController = exports.UriSet = exports.UriMap = exports.normalizeUri = exports.transformRange = exports.NO_CURSOR = exports.TOKEN_MODIFIERS = exports.TOKEN_TYPES = exports.planToSemanticTokens = exports.applyPlan = exports.buildOverviewRulerPlan = exports.buildDecorationPlan = exports.hasInlineDelimiters = exports.hideOrGhostDelimiters = exports.getCharLevelRanges = exports.createEmptyPlan = exports.revealDelimiters = exports.hideDelimiters = exports.isOffsetInRange = exports.offsetToLine = exports.computeLineStarts = exports.AuthorColorMap = exports.AUTHOR_PALETTE = exports.OVERVIEW_RULER_COLORS = exports.DECORATION_STYLES = exports.CoherenceService = exports.ReviewService = exports.NavigationService = exports.TrackingService = exports.DecorationScheduler = exports.DocumentStateManager = exports.rangeToOffsetBatch = exports.rangeToOffset = exports.offsetToRange = exports.EventEmitter = void 0;
-      var types_js_1 = require_types3();
+      var types_js_1 = require_types4();
       Object.defineProperty(exports, "EventEmitter", { enumerable: true, get: function() {
         return types_js_1.EventEmitter;
       } });
@@ -23873,11 +24785,11 @@ ${sidecarSection}
       Object.defineProperty(exports, "FormatService", { enumerable: true, get: function() {
         return format_service_js_1.FormatService;
       } });
-      var types_js_2 = require_types3();
+      var types_js_2 = require_types4();
       Object.defineProperty(exports, "NULL_LSP_CONNECTION", { enumerable: true, get: function() {
         return types_js_2.NULL_LSP_CONNECTION;
       } });
-      var types_js_3 = require_types3();
+      var types_js_3 = require_types4();
       Object.defineProperty(exports, "VIEW_PRESETS", { enumerable: true, get: function() {
         return types_js_3.VIEW_PRESETS;
       } });
@@ -24691,7 +25603,7 @@ This change's visible effect was absorbed by a later edit. The change is preserv
           for (const change of changes) {
             if (change.type !== core_1.ChangeType.Deletion)
               continue;
-            if (change.decided)
+            if (change.decided || change.settled)
               continue;
             const startLine = offsetToLine(text, change.range.start);
             const endLine = offsetToLine(text, change.range.end);
@@ -25244,7 +26156,8 @@ This change's visible effect was absorbed by a later edit. The change is preserv
             contentRange: { start: overlay.range.start, end: overlay.range.end },
             modifiedText: overlay.text,
             level: 1,
-            anchored: false
+            anchored: false,
+            resolved: true
           };
           const merged = [...parseChanges, synthetic];
           merged.sort((a, b) => a.range.start - b.range.start);
@@ -25909,6 +26822,15 @@ This change's visible effect was absorbed by a later edit. The change is preserv
             }
             let insertAfter;
             const doc = (0, core_1.parseForFormat)(docText);
+            try {
+              (0, core_1.assertResolved)(doc);
+            } catch (err) {
+              if (err instanceof core_1.UnresolvedChangesError) {
+                const summary = err.diagnostics.map((d) => d.message).join("; ");
+                return { error: `Cannot amend change: document has unresolved changes: ${summary}` };
+              }
+              throw err;
+            }
             const change = doc.getChanges().find((c) => c.id === params.changeId);
             if (change && change.type === core_1.ChangeType.Insertion) {
               const start = change.range.start;
@@ -26107,6 +27029,15 @@ This change's visible effect was absorbed by a later edit. The change is preserv
             const author = this.reviewerIdentity ?? "";
             const languageId = this.docStates.get(params.uri)?.languageId;
             const doc = this.workspace.parse(text, languageId);
+            try {
+              (0, core_1.assertResolved)(doc);
+            } catch (err) {
+              if (err instanceof core_1.UnresolvedChangesError) {
+                const summary = err.diagnostics.map((d) => d.message).join("; ");
+                return { error: `Cannot apply review: document has unresolved changes: ${summary}` };
+              }
+              throw err;
+            }
             const allChanges = doc.getChanges();
             const idSet = params.changeIds ? new Set(params.changeIds) : null;
             const targets = allChanges.filter((c) => {
