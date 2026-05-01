@@ -15204,20 +15204,33 @@ ${JSON.stringify(message, null, 4)}`);
         }
         return { originalText: orig, currentText: cur };
       }
-      function applyAcceptedChanges(text) {
-        if ((0, footnote_patterns_js_1.isL3Format)(text)) {
-          return { currentContent: text, appliedIds: [] };
+      function settlementAnchorLength(change, projection, payload) {
+        if (projection === "accepted") {
+          switch (change.type) {
+            case types_js_1.ChangeType.Insertion:
+            case types_js_1.ChangeType.Substitution:
+              return payload.currentText.length;
+            case types_js_1.ChangeType.Deletion:
+              return 0;
+            case types_js_1.ChangeType.Highlight:
+              return payload.originalText.length;
+            default:
+              return 0;
+          }
         }
-        const doc = (0, format_aware_parse_js_1.parseForFormat)(text, { skipCodeBlocks: false });
-        (0, document_js_1.assertResolved)(doc);
-        const accepted = doc.getChanges().filter((c) => c.status === types_js_1.ChangeStatus.Accepted);
-        const appliedIds = accepted.map((c) => c.id);
-        if (accepted.length === 0) {
-          return { currentContent: text, appliedIds: [] };
+        switch (change.type) {
+          case types_js_1.ChangeType.Insertion:
+            return 0;
+          case types_js_1.ChangeType.Deletion:
+          case types_js_1.ChangeType.Substitution:
+          case types_js_1.ChangeType.Highlight:
+          case types_js_1.ChangeType.Move:
+            return payload.originalText.length;
+          default:
+            return 0;
         }
-        const parts = [...accepted].sort((a, b) => a.range.start - b.range.start).map(accept_reject_js_1.computeAcceptParts);
-        const zones = (0, code_zones_js_1.findCodeZones)(text);
-        const rawCurrentContent = buildSegmentsWithZoneAwareness(text, parts, zones);
+      }
+      function addL2SettlementEditOps(rawCurrentContent, changes, sourceText, projection) {
         const { bodyLines, footnoteLines } = (0, footnote_patterns_js_1.splitBodyAndFootnotes)(rawCurrentContent.split("\n"));
         const refRe = (0, footnote_patterns_js_1.footnoteRefGlobal)();
         const cleanBodyLines = bodyLines.map((line) => line.replace(refRe, ""));
@@ -15237,28 +15250,13 @@ ${JSON.stringify(message, null, 4)}`);
         }
         const scanRe = (0, footnote_patterns_js_1.footnoteRefGlobal)();
         const editOpInsertions = [];
-        for (const change of accepted) {
-          const { originalText: effOrig, currentText: effCur } = recoverL2EditOpPayload(change, text);
+        for (const change of changes) {
+          const payload = recoverL2EditOpPayload(change, sourceText);
           const refPos = refIndex.get(`[^${change.id}]`);
           if (!refPos)
             continue;
           const { lineIdx, col: refColInLine } = refPos;
-          let anchorLen;
-          switch (change.type) {
-            case types_js_1.ChangeType.Insertion:
-            case types_js_1.ChangeType.Substitution:
-              anchorLen = effCur.length;
-              break;
-            case types_js_1.ChangeType.Deletion:
-              anchorLen = 0;
-              break;
-            case types_js_1.ChangeType.Highlight:
-              anchorLen = (change.originalText ?? "").length;
-              break;
-            default:
-              anchorLen = 0;
-              break;
-          }
+          const anchorLen = settlementAnchorLength(change, projection, payload);
           scanRe.lastIndex = 0;
           let precedingRefBytes = 0;
           let m;
@@ -15272,8 +15270,8 @@ ${JSON.stringify(message, null, 4)}`);
           const hash = (0, hashline_js_1.computeLineHash)(lineIdx, cleanBodyLines[lineIdx], cleanBodyLines);
           const editOpLine = (0, footnote_generator_js_1.buildContextualL3EditOp)({
             changeType: change.type,
-            originalText: effOrig,
-            currentText: effCur,
+            originalText: payload.originalText,
+            currentText: payload.currentText,
             lineContent: cleanBodyLines[lineIdx],
             lineNumber,
             hash,
@@ -15289,7 +15287,23 @@ ${JSON.stringify(message, null, 4)}`);
         for (const { headerLine, editOpLine } of editOpInsertions) {
           footnoteLines.splice(headerLine + 1, 0, editOpLine);
         }
-        const currentContent = [...bodyLines, "", ...footnoteLines].join("\n");
+        return [...bodyLines, "", ...footnoteLines].join("\n");
+      }
+      function applyAcceptedChanges(text) {
+        if ((0, footnote_patterns_js_1.isL3Format)(text)) {
+          return { currentContent: text, appliedIds: [] };
+        }
+        const doc = (0, format_aware_parse_js_1.parseForFormat)(text, { skipCodeBlocks: false });
+        (0, document_js_1.assertResolved)(doc);
+        const accepted = doc.getChanges().filter((c) => c.status === types_js_1.ChangeStatus.Accepted);
+        const appliedIds = accepted.map((c) => c.id);
+        if (accepted.length === 0) {
+          return { currentContent: text, appliedIds: [] };
+        }
+        const parts = [...accepted].sort((a, b) => a.range.start - b.range.start).map(accept_reject_js_1.computeAcceptParts);
+        const zones = (0, code_zones_js_1.findCodeZones)(text);
+        const rawCurrentContent = buildSegmentsWithZoneAwareness(text, parts, zones);
+        const currentContent = addL2SettlementEditOps(rawCurrentContent, accepted, text, "accepted");
         return { currentContent, appliedIds };
       }
       function applyRejectedChanges(text) {
@@ -15313,7 +15327,8 @@ ${JSON.stringify(message, null, 4)}`);
         }
         const parts = [...rejected].sort((a, b) => a.range.start - b.range.start).map(accept_reject_js_1.computeRejectParts);
         const zones = (0, code_zones_js_1.findCodeZones)(text);
-        const currentContent = buildSegmentsWithZoneAwareness(text, parts, zones);
+        const rawCurrentContent = buildSegmentsWithZoneAwareness(text, parts, zones);
+        const currentContent = addL2SettlementEditOps(rawCurrentContent, rejected, text, "rejected");
         const appliedIds = [];
         for (const part of parts) {
           if (!part.refId)
