@@ -7,19 +7,19 @@
 
   <!-- Unique add-in ID — do not reuse across add-ins -->
   <Id>a3f7c142-84b2-4e9d-b031-cd2e7f85a301</Id>
-  <Version>1.0.0.0</Version>
+  <Version>1.0.1.0</Version>
   <ProviderName>ChangeDown</ProviderName>
   <DefaultLocale>en-US</DefaultLocale>
   <DisplayName DefaultValue="ChangeDown for Word"/>
   <Description DefaultValue="Bridge ChangeDown change-tracking annotations with Word&#39;s native Track Changes."/>
   <IconUrl DefaultValue="https://changedown.com/word/assets/icon-32.png"/>
   <HighResolutionIconUrl DefaultValue="https://changedown.com/word/assets/icon-64.png"/>
-  <SupportUrl DefaultValue="https://github.com/alexdisler/changetracks"/>
+  <SupportUrl DefaultValue="https://github.com/hackerbaradisler/changetracks"/>
   <!--
     AppDomains: origins the Word WebView is allowed to navigate to / load
     assets from.
       - https://changedown.com — hosted static task pane origin
-      - https://127.0.0.1:39990 — the changedown-mcp fixed-port HTTPS endpoint the
+      - https://127.0.0.1:39990 — the changedown-mcp fixed-port HTTPS loopback endpoint the
         pane registers with. See docs/superpowers/plans/2026-04-21-word-sidebar-03b-pane-backend-client.md.
   -->
   <AppDomains>
@@ -88,7 +88,7 @@
         <bt:Image id="Icon.80x80" DefaultValue="https://changedown.com/word/assets/icon-80.png"/>
       </bt:Images>
       <bt:Urls>
-        <bt:Url id="GetStarted.LearnMoreUrl" DefaultValue="https://github.com/alexdisler/changetracks"/>
+        <bt:Url id="GetStarted.LearnMoreUrl" DefaultValue="https://github.com/hackerbaradisler/changetracks"/>
         <bt:Url id="Commands.Url" DefaultValue="https://changedown.com/word/commands.html"/>
         <bt:Url id="Taskpane.Url" DefaultValue="https://changedown.com/word/taskpane.html"/>
       </bt:Urls>
@@ -170,7 +170,7 @@
           <bt:Image id="Icon.80x80" DefaultValue="https://changedown.com/word/assets/icon-80.png"/>
         </bt:Images>
         <bt:Urls>
-          <bt:Url id="GetStarted.LearnMoreUrl" DefaultValue="https://github.com/alexdisler/changetracks"/>
+          <bt:Url id="GetStarted.LearnMoreUrl" DefaultValue="https://github.com/hackerbaradisler/changetracks"/>
           <bt:Url id="Commands.Url" DefaultValue="https://changedown.com/word/commands.html"/>
           <bt:Url id="Taskpane.Url" DefaultValue="https://changedown.com/word/taskpane.html"/>
         </bt:Urls>

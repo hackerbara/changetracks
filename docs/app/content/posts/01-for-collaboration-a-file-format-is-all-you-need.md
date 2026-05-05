@@ -1,8 +1,8 @@
 <!-- changedown.com/v1: untracked -->
 
 # For collaboration, a file format is all you need
-**Date:** March 31st, 2026  
-**Author:** Hackerbara 
+**Date:** March 31st, 2026
+**Author:** Hackerbara
 
 ---
 
@@ -113,7 +113,7 @@ The result is diffable, mergeable, gittable, and human-readable. And when you ad
 
 # Collaboration is hard, but it can be crystallized
 
-Making truly rich, effective experiences for collaboration and review is a forest of messy questions. The answers keep multiplying. [Alex Clemmer](https://moment.dev/blog/lies-i-was-told-pt-1) at Moment.dev made the case that collaborative editing is a UX problem, not just an algorithms problem — and he's right. I think persistence and exchange is also a UX problem. [Can Bölük](https://blog.can.ac/2026/02/12/the-harness-problem/) showed that the tool interface shapes model performance more than model capability does. His hashline contribution made it possible for AI agents to cleanly speak to Changedown MCP tools and reason about proposal states. [Kevin Gu](https://x.com/gukevinr/status/2031889622385729730) pointed out that plain markdown lacks the provenance and governance that serious collaboration requires. Couldn't agree more! Projects like [Proof SDK](https://github.com/EveryInc/proof-sdk) are exploring provenance-tracked editing with agent bridges and beautiful UIs. 
+Making truly rich, effective experiences for collaboration and review is a forest of messy questions. The answers keep multiplying. [Hackerbara Clemmer](https://moment.dev/blog/lies-i-was-told-pt-1) at Moment.dev made the case that collaborative editing is a UX problem, not just an algorithms problem — and he's right. I think persistence and exchange is also a UX problem. [Can Bölük](https://blog.can.ac/2026/02/12/the-harness-problem/) showed that the tool interface shapes model performance more than model capability does. His hashline contribution made it possible for AI agents to cleanly speak to Changedown MCP tools and reason about proposal states. [Kevin Gu](https://x.com/gukevinr/status/2031889622385729730) pointed out that plain markdown lacks the provenance and governance that serious collaboration requires. Couldn't agree more! Projects like [Proof SDK](https://github.com/EveryInc/proof-sdk) are exploring provenance-tracked editing with agent bridges and beautiful UIs.
 
 But I do think every approach to collaboration produces the same outputs: changes to text, with discussion, provenance, and review. Microsoft docx is still here today in part because it can capture the breadth of those outputs, and I think Markdown workflows should be able to as well, inheriting all the complexity and consideration and physical "thingness" that comes from being a file that is real and shareable.
 

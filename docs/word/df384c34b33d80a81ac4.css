@@ -72,8 +72,8 @@ button {
   --cd-author-claude-dark:     #5b21b6;
   --cd-author-cursor-light:    #0ea5e9;
   --cd-author-cursor-dark:     #0369a1;
-  --cd-author-alex-light:      #475569;
-  --cd-author-alex-dark:       #1e293b;
+  --cd-author-hackerbara-light:      #475569;
+  --cd-author-hackerbara-dark:       #1e293b;
 
   /* Fallback author palette (for unknown identities, hash-stable index picks) */
   --cd-author-a0: #e11d48;
@@ -404,7 +404,7 @@ body.cd-body {
 
 .cd-session-strip__copy {
   font-family: var(--cd-font-mono);
-  font-size: 13px;
+  font-size: 11px;
   color: var(--cd-ink-5);
   padding: 2px 5px;
   border-radius: 3px;
@@ -683,8 +683,8 @@ body.cd-body {
   background: linear-gradient(135deg, var(--cd-author-cursor-light), var(--cd-author-cursor-dark));
 }
 
-[data-author*="alex"] {
-  background: linear-gradient(135deg, var(--cd-author-alex-light), var(--cd-author-alex-dark));
+[data-author*="hackerbara"] {
+  background: linear-gradient(135deg, var(--cd-author-hackerbara-light), var(--cd-author-hackerbara-dark));
 }
 
 /* Card line 1 layout */
@@ -1191,7 +1191,7 @@ body.cd-body {
 
 /* Human author tokens @name — slate */
 .cd-syn-author-human {
-  color: var(--cd-author-alex-light);
+  color: var(--cd-author-hackerbara-light);
 }
 
 /* Date tokens — muted gray */
@@ -1371,6 +1371,18 @@ body.cd-body {
   background: var(--cd-bg-muted);
   border-color: var(--cd-ink-4);
   color: var(--cd-ink);
+}
+
+.cd-connection-failed__command {
+  margin: 8px 0;
+  padding: 8px 10px;
+  overflow-x: auto;
+  border: 1px solid var(--cd-border-2);
+  border-radius: 6px;
+  background: var(--cd-bg-muted);
+  font-family: var(--cd-font-mono);
+  font-size: 12px;
+  color: var(--cd-ink-2);
 }
 
 .cd-cold-start__wait {

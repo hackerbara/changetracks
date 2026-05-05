@@ -8711,9 +8711,10 @@ ${JSON.stringify(message, null, 4)}`);
       var types_js_1 = require_types();
       var diagnostic_js_1 = require_diagnostic2();
       var VirtualDocument = class _VirtualDocument {
-        constructor(changes = [], coherenceRate = 100, unresolvedDiagnostics = [], resolvedText) {
+        constructor(changes = [], coherenceRate = 100, unresolvedDiagnostics = [], resolvedText, records = []) {
           this.diagnostics = [];
           this.changes = changes;
+          this.records = records;
           this.coherenceRate = coherenceRate;
           this.unresolvedDiagnostics = unresolvedDiagnostics;
           this.resolvedText = resolvedText;
@@ -8739,6 +8740,12 @@ ${JSON.stringify(message, null, 4)}`);
         }
         getChanges() {
           return this.changes;
+        }
+        getRecords() {
+          return this.records.slice();
+        }
+        getReviewableChanges() {
+          return this.changes.filter((change) => String(change.metadata?.status ?? change.inlineMetadata?.status ?? change.status).toLowerCase() === "proposed");
         }
         /** Returns L2+ ghost nodes that failed anchor resolution. L0/L1 unanchored nodes are excluded. */
         getUnresolvedChanges() {
@@ -9054,7 +9061,7 @@ ${JSON.stringify(message, null, 4)}`);
     "../core/dist/footnote-patterns.js"(exports) {
       "use strict";
       Object.defineProperty(exports, "__esModule", { value: true });
-      exports.FOOTNOTE_THREAD_REPLY = exports.FOOTNOTE_CONTINUATION = exports.CTX_RE = exports.IMAGE_DIMENSIONS_RE = exports.FOOTNOTE_L3_EDIT_OP = exports.FOOTNOTE_DEF_STATUS_VALUE = exports.FOOTNOTE_DEF_STATUS = exports.FOOTNOTE_DEF_STRICT = exports.FOOTNOTE_DEF_LENIENT = exports.FOOTNOTE_DEF_START_QUICK = exports.FOOTNOTE_DEF_START = exports.FOOTNOTE_REF_ANCHORED = exports.FOOTNOTE_ID_NUMERIC_PATTERN = exports.FOOTNOTE_ID_PATTERN = void 0;
+      exports.FOOTNOTE_THREAD_REPLY = exports.FOOTNOTE_CONTINUATION = exports.CTX_RE = exports.IMAGE_DIMENSIONS_RE = exports.FOOTNOTE_L3_HISTORY_HEADER = exports.FOOTNOTE_L3_EDIT_OP = exports.FOOTNOTE_DEF_STATUS_VALUE = exports.FOOTNOTE_DEF_STATUS = exports.FOOTNOTE_DEF_STRICT = exports.FOOTNOTE_DEF_LENIENT = exports.FOOTNOTE_DEF_START_QUICK = exports.FOOTNOTE_DEF_START = exports.FOOTNOTE_REF_ANCHORED = exports.FOOTNOTE_ID_NUMERIC_PATTERN = exports.FOOTNOTE_ID_PATTERN = void 0;
       exports.footnoteRefGlobal = footnoteRefGlobal;
       exports.footnoteRefNumericGlobal = footnoteRefNumericGlobal;
       exports.isL3Format = isL3Format;
@@ -9078,6 +9085,7 @@ ${JSON.stringify(message, null, 4)}`);
       exports.FOOTNOTE_DEF_STATUS = new RegExp(`^\\[\\^(${exports.FOOTNOTE_ID_PATTERN})\\]:\\s+(?:@\\S+\\s+\\|\\s+)?\\S+\\s+\\|\\s+\\S+\\s+\\|\\s+(\\S+)`);
       exports.FOOTNOTE_DEF_STATUS_VALUE = new RegExp(`^\\[\\^${exports.FOOTNOTE_ID_PATTERN}\\]:\\s.*\\|\\s*(proposed|accepted|rejected)`);
       exports.FOOTNOTE_L3_EDIT_OP = /^ {4}(\d+):([0-9a-fA-F]{2,}) (.*)/;
+      exports.FOOTNOTE_L3_HISTORY_HEADER = new RegExp(`^\\[\\^${exports.FOOTNOTE_ID_PATTERN}\\]:\\s.*\\|\\s*(?:ins|del|sub|format|equation|image|field|object)\\s*\\|\\s*accepted\\s*$`);
       function isL3Format(text) {
         const zones = (0, code_zones_js_1.findCodeZones)(text);
         const defRe = new RegExp(exports.FOOTNOTE_DEF_START.source, "gm");
@@ -9103,7 +9111,23 @@ ${JSON.stringify(message, null, 4)}`);
           }
         }
         const footnoteSection = text.slice(firstFootnote);
-        return footnoteSection.split("\n").some((line) => exports.FOOTNOTE_L3_EDIT_OP.test(line));
+        const footnoteLines = footnoteSection.split("\n");
+        if (footnoteLines.some((line) => exports.FOOTNOTE_L3_EDIT_OP.test(line)))
+          return true;
+        for (let i = 0; i < footnoteLines.length; i++) {
+          if (!exports.FOOTNOTE_L3_HISTORY_HEADER.test(footnoteLines[i]))
+            continue;
+          for (let j = i + 1; j < footnoteLines.length; j++) {
+            const line = footnoteLines[j];
+            if (exports.FOOTNOTE_DEF_START.test(line))
+              break;
+            if (/^ {4}source:\s*\S/.test(line))
+              return true;
+            if (line.trim() !== "" && !line.startsWith("    "))
+              break;
+          }
+        }
+        return false;
       }
       exports.IMAGE_DIMENSIONS_RE = /^([\d.]+)in\s*x\s*([\d.]+)in$/;
       exports.CTX_RE = /@ctx:"((?:[^"\\]|\\.)*)"\|\|"((?:[^"\\]|\\.)*)"/;
@@ -12323,6 +12347,9 @@ ${JSON.stringify(message, null, 4)}`);
         }
         return edits;
       }
+      function formatReviewAuthor(author) {
+        return author.startsWith("@") ? author : `@${author}`;
+      }
       function computeApprovalLineEdit(text, changeId, newStatus, opts) {
         const lines = text.split("\n");
         const block = (0, footnote_utils_js_1.findFootnoteBlock)(lines, changeId);
@@ -12331,7 +12358,7 @@ ${JSON.stringify(message, null, 4)}`);
         const keyword = newStatus === "accepted" ? "approved:" : newStatus === "rejected" ? "rejected:" : "request-changes:";
         const date = opts.date ?? (0, timestamp_js_1.nowTimestamp)().raw;
         const reasonPart = opts.reason !== void 0 && opts.reason !== "" ? ` "${opts.reason}"` : "";
-        const line = `    ${keyword} @${opts.author} ${date}${reasonPart}`;
+        const line = `    ${keyword} ${formatReviewAuthor(opts.author)} ${date}${reasonPart}`;
         const insertAfterIdx = (0, footnote_utils_js_1.findReviewInsertionIndex)(lines, block.headerLine, block.blockEnd);
         const offset = lines.slice(0, insertAfterIdx + 1).join("\n").length;
         return { offset, length: 0, newText: "\n" + line };
@@ -12584,6 +12611,9 @@ ${JSON.stringify(message, null, 4)}`);
         }
         return result.text;
       }
+      function formatReviewAuthor(author) {
+        return author.startsWith("@") ? author : `@${author}`;
+      }
       function applyReview(fileContent, changeId, decision, reasoning, author, config) {
         let lines = fileContent.split("\n");
         let block = (0, footnote_utils_js_1.findFootnoteBlock)(lines, changeId);
@@ -12632,7 +12662,7 @@ ${JSON.stringify(message, null, 4)}`);
         }
         const keyword = decisionToKeyword(decision);
         const ts = (0, timestamp_js_1.nowTimestamp)();
-        const reviewLine = `    ${keyword} @${author} ${ts.raw} "${reasoning}"`;
+        const reviewLine = `    ${keyword} ${formatReviewAuthor(author)} ${ts.raw} "${reasoning}"`;
         const insertAfterIdx = (0, footnote_utils_js_1.findReviewInsertionIndex)(lines, block.headerLine, block.blockEnd);
         lines.splice(insertAfterIdx + 1, 0, reviewLine);
         let statusUpdated = false;
@@ -12669,7 +12699,7 @@ ${JSON.stringify(message, null, 4)}`);
                 continue;
               lines[childBlock.headerLine] = lines[childBlock.headerLine].replace(/\|\s*proposed\s*$/, `| ${targetStatus}`);
               const childInsertIdx = (0, footnote_utils_js_1.findReviewInsertionIndex)(lines, childBlock.headerLine, childBlock.blockEnd);
-              const childReviewLine = `    ${keyword} @${author} ${ts.raw} "${reasoning}" (cascaded from ${changeId})`;
+              const childReviewLine = `    ${keyword} ${formatReviewAuthor(author)} ${ts.raw} "${reasoning}" (cascaded from ${changeId})`;
               lines.splice(childInsertIdx + 1, 0, childReviewLine);
               cascadedChildren.push(childId);
             }
@@ -14320,6 +14350,32 @@ ${JSON.stringify(message, null, 4)}`);
       Object.defineProperty(exports, "parseContextualEditOp", { enumerable: true, get: function() {
         return contextual_edit_op_js_1.parseContextualEditOp;
       } });
+      function metadataFromUnknownLines(lines) {
+        const result = {};
+        for (const line of lines) {
+          const match = /^\s*([^:]+):\s*(.*)$/.exec(line);
+          if (match)
+            result[match[1].trim()] = match[2].trim();
+        }
+        return result;
+      }
+      function isDocumentScopeAcceptedInsertion(fn) {
+        const metadata = metadataFromUnknownLines(fn.unknownBodyLines ?? []);
+        return fn.type === "ins" && fn.status === "accepted" && fn.author === "@base-document" && fn.lineNumber === void 0 && fn.hash === void 0 && fn.opString === void 0 && metadata.source === "initial-word-body" && metadata.scope === "document" && metadata["body-hash"] !== void 0;
+      }
+      function toChangeDownRecord(fn) {
+        const bodyLines = fn.unknownBodyLines ?? [];
+        return {
+          id: fn.id,
+          author: fn.author,
+          date: fn.date,
+          type: fn.type,
+          status: fn.status,
+          reviewable: false,
+          metadata: metadataFromUnknownLines(bodyLines),
+          bodyLines
+        };
+      }
       function parseDeletionContext(opString) {
         const closerIdx = opString.indexOf("--}");
         if (closerIdx < 0)
@@ -14348,12 +14404,15 @@ ${JSON.stringify(message, null, 4)}`);
               emptyDoc.addDiagnostic(d);
             return emptyDoc;
           }
-          const changes = this.resolveChanges(footnotes, bodyLines);
+          const records = footnotes.filter(isDocumentScopeAcceptedInsertion).map(toChangeDownRecord);
+          const recordIds = new Set(records.map((record) => record.id));
+          const reviewableFootnotes = footnotes.filter((fn) => !recordIds.has(fn.id));
+          const changes = this.resolveChanges(reviewableFootnotes, bodyLines);
           let freshAnchors = /* @__PURE__ */ new Map();
           if (changes.some((c) => c.resolved === false)) {
             try {
               const bodyText = bodyLines.join("\n");
-              const replayFootnotes = footnotes.map((fn) => ({
+              const replayFootnotes = reviewableFootnotes.map((fn) => ({
                 id: fn.id,
                 type: fn.type,
                 status: fn.status,
@@ -14436,7 +14495,7 @@ ${JSON.stringify(message, null, 4)}`);
               resolvedText = bodyLines.join("\n") + "\n\n" + rebuiltFootnotes.join("\n") + "\n";
             }
           }
-          const doc = new document_js_1.VirtualDocument(changes, coherenceRate, [], resolvedText);
+          const doc = new document_js_1.VirtualDocument(changes, coherenceRate, [], resolvedText, records);
           for (const d of this.pendingDiagnostics)
             doc.addDiagnostic(d);
           return doc;
@@ -14807,22 +14866,33 @@ ${JSON.stringify(message, null, 4)}`);
             case types_js_1.ChangeType.Substitution: {
               const oldText = parsedOp.oldText;
               const newText = parsedOp.newText;
-              const searchText = newText;
-              const match = searchText ? findOnLine(searchText) : null;
+              const searchTexts = status === types_js_1.ChangeStatus.Rejected ? [newText, oldText].filter((t) => Boolean(t)) : [newText].filter((t) => Boolean(t));
+              let match = null;
+              let matchedText = "";
+              for (const candidate of searchTexts) {
+                match = findOnLine(candidate);
+                if (match) {
+                  matchedText = candidate;
+                  break;
+                }
+              }
               if (!match) {
                 const targetLine = effectiveLineNumber ?? 1;
-                const matchCount = newText && lineContent ? lineContent.split(newText).length - 1 : 0;
+                const expectedText = searchTexts.join(" or ");
+                const matchCount = searchTexts.reduce((sum, candidate) => {
+                  return sum + (lineContent ? lineContent.split(candidate).length - 1 : 0);
+                }, 0);
                 this.pendingDiagnostics.push({
                   kind: "coordinate_failed",
                   changeId: fn.id,
-                  message: `Substitution newText "${truncate(newText ?? "", 40)}" not uniquely found on line ${targetLine} (found ${matchCount} match${matchCount === 1 ? "" : "es"}).`,
-                  evidence: { line: targetLine, expectedText: newText ?? "", candidates: matchCount }
+                  message: `Substitution text "${truncate(expectedText, 40)}" not uniquely found on line ${targetLine} (found ${matchCount} match${matchCount === 1 ? "" : "es"}).`,
+                  evidence: { line: targetLine, expectedText, candidates: matchCount }
                 });
                 return { range: { start: 0, end: 0 }, originalText: oldText, modifiedText: newText, anchored: true, resolved: false };
               }
               const range = {
                 start: lineOffset + match.index,
-                end: lineOffset + match.index + match.length
+                end: lineOffset + match.index + matchedText.length
               };
               return { range, originalText: oldText, modifiedText: newText, resolutionPath: hashMatched ? "hash" : void 0 };
             }
@@ -20519,7 +20589,8 @@ ${sidecarSection}
             footnoteLines.push(bl.raw);
           }
         }
-        return doc.body + "\n\n" + footnoteLines.join("\n") + "\n";
+        const footnoteSection = footnoteLines.join("\n");
+        return doc.body + "\n\n" + footnoteSection + (footnoteSection.endsWith("\n") ? "" : "\n");
       }
     }
   });
