@@ -2,15 +2,18 @@ import * as fs from 'node:fs/promises';
 import * as https from 'node:https';
 import { pathToFileURL } from 'node:url';
 import { ensureWordStateDir, WORD_MANIFEST_CACHE_PATH } from './state.js';
+import { PACKAGED_LOCAL_MANIFEST_PATH } from './pane-server.js';
 
 export const DEFAULT_HOSTED_MANIFEST_URL = 'https://changedown.com/word/manifest.hosted.xml';
 const DEV_PANE_URL = '127.0.0.1:3000';
 const HOSTED_TASKPANE_URL = 'https://changedown.com/word/taskpane.html';
+const LOCAL_TASKPANE_URL = 'https://127.0.0.1:3000/taskpane.html';
 const LOOPBACK_APP_DOMAIN = '<AppDomain>https://127.0.0.1:39990</AppDomain>';
 const HTTPS_LOOPBACK_APP_DOMAIN = '<AppDomain>https://127.0.0.1:39990</AppDomain>';
 
 interface ResolveManifestOptions {
   mcpScheme?: 'http' | 'https';
+  paneMode?: 'local' | 'hosted';
 }
 
 function download(url: string): Promise<string> {
@@ -41,6 +44,23 @@ export function validateHostedManifestText(manifest: string): void {
   }
 }
 
+export function validateLocalManifestText(manifest: string): void {
+  if (!manifest.includes(LOCAL_TASKPANE_URL)) {
+    throw new Error(`Local manifest missing ${LOCAL_TASKPANE_URL}`);
+  }
+  if (!manifest.includes(HTTPS_LOOPBACK_APP_DOMAIN)) {
+    throw new Error('Local manifest is missing the loopback MCP AppDomain for https://127.0.0.1:39990');
+  }
+}
+
+function validateManifestText(manifest: string): void {
+  if (manifest.includes(HOSTED_TASKPANE_URL)) {
+    validateHostedManifestText(manifest);
+    return;
+  }
+  validateLocalManifestText(manifest);
+}
+
 function manifestWithMcpScheme(manifest: string, scheme: 'http' | 'https' = 'https'): string {
   if (scheme === 'http') return manifest;
   const withHttpsDomain = manifest.includes(HTTPS_LOOPBACK_APP_DOMAIN)
@@ -58,12 +78,12 @@ export async function resolveManifest(input: string | undefined, dryRun = false,
       if (dryRun) return WORD_MANIFEST_CACHE_PATH;
       await ensureWordStateDir();
       const text = await download(input);
-      validateHostedManifestText(text);
+      validateManifestText(text);
       await fs.writeFile(WORD_MANIFEST_CACHE_PATH, manifestWithMcpScheme(text, options.mcpScheme), 'utf8');
       return WORD_MANIFEST_CACHE_PATH;
     }
     const text = await fs.readFile(input, 'utf8');
-    validateHostedManifestText(text);
+    validateManifestText(text);
     if (options.mcpScheme === 'https') {
       if (dryRun) return WORD_MANIFEST_CACHE_PATH;
       await ensureWordStateDir();
@@ -71,6 +91,14 @@ export async function resolveManifest(input: string | undefined, dryRun = false,
       return WORD_MANIFEST_CACHE_PATH;
     }
     return input;
+  }
+
+  if (options.paneMode === 'local') {
+    if (!dryRun) {
+      const text = await fs.readFile(PACKAGED_LOCAL_MANIFEST_PATH, 'utf8');
+      validateLocalManifestText(text);
+    }
+    return PACKAGED_LOCAL_MANIFEST_PATH;
   }
 
   if (dryRun) return WORD_MANIFEST_CACHE_PATH;

@@ -61,11 +61,11 @@ function printHelp(): void {
   Usage:
     changedown init [options]    Set up change tracking in the current project
     changedown agents setup      Configure ChangeDown integrations for installed agents
-    changedown word <command>    Run the hosted Word pane locally
+    changedown word <command>    Run the Word pane locally
     changedown --help            Show this help
 
   Word commands:
-    start                         Download/sideload hosted manifest and configure agent integrations
+    start                         Start/sideload the local pane and configure agent integrations
     stop                          Stop the sideload session
     doctor                        Check manifest/certs/MCP and agent readiness
 

@@ -85,6 +85,14 @@ for pkg in "${PACKAGES[@]}"; do
 done
 ok "All packages built"
 
+if [[ " ${PACKAGES[*]} " == *" packages/cli "* && ! -f "packages/cli/word-pane/manifest.xml" ]]; then
+  fail "packages/cli/word-pane/manifest.xml not found. Run: node scripts/build.mjs"
+  exit 1
+fi
+if [[ " ${PACKAGES[*]} " == *" packages/cli "* ]]; then
+  ok "CLI Word pane assets present"
+fi
+
 # Check LICENSE and README exist
 for pkg in "${PACKAGES[@]}"; do
   if [[ ! -f "$pkg/LICENSE" ]]; then

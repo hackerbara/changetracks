@@ -4,6 +4,7 @@ export interface WordCommandContext {
 
 export interface WordCommandOptions {
   manifest?: string;
+  paneMode?: 'local' | 'hosted';
   dryRun?: boolean;
   noValidate?: boolean;
   noSideload?: boolean;

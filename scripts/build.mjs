@@ -68,10 +68,11 @@ function cleanTsBuildInfo(dir) {
 const steps = [
   { name: '@changedown/core', dir: 'packages/core', cmd: 'npm run build' },
   { name: '@changedown/docx', dir: 'packages/docx', cmd: 'npx tsc' },
+  { name: 'changedown-word-add-in', dir: 'packages/word-add-in', cmd: 'npm run build' },
+  { name: 'cli Word pane assets', dir: '.', cmd: 'node scripts/copy-word-pane-to-cli.mjs' },
   { name: 'changedown', dir: 'packages/cli', cmd: 'npx tsc' },
   { name: '@changedown/lsp-server', dir: 'packages/lsp-server', cmd: 'npm run build' },
   { name: 'changedown-vscode', dir: 'packages/vscode-extension', cmd: 'npm run compile && npm run esbuild' },
-  { name: 'changedown-word-add-in', dir: 'packages/word-add-in', cmd: 'npm run build' },
   { name: '@changedown/mcp', dir: 'changedown-plugin/mcp-server', cmd: 'node esbuild.mjs' },
   { name: 'hooks-impl (plugin)', dir: 'changedown-plugin/hooks-impl', cmd: 'node esbuild.mjs' },
   { name: '@changedown/opencode-plugin', dir: 'packages/opencode-plugin', cmd: 'npm run build' },

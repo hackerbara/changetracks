@@ -23,10 +23,12 @@ packages/tests/vscode/journeys/evidence/
 # Worktrees
 .worktrees/
 
+# Generated npx-only Word pane bundle
+packages/cli/word-pane/
+
 # Private/local agent and prompt state
 .agents/
 .claude/
-.claude-plugin/
 .changedown/
 .changeset/
 .cursor/
@@ -34,6 +36,12 @@ packages/tests/vscode/journeys/evidence/
 .opencode/
 .vscode/
 .claude*.md
+
+# Public Claude Code marketplace entrypoint. The sync script generates exactly
+# this file; everything else under .claude-plugin stays ignored/private.
+.claude-plugin/*
+!.claude-plugin/
+!.claude-plugin/marketplace.json
 
 # Benchmark artifacts
 .bench-workspace/

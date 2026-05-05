@@ -5,15 +5,16 @@ import { runWordDoctor } from './doctor.js';
 
 function printHelp(): void {
   console.log(`
-  changedown word — run the hosted ChangeDown Word pane locally
+  changedown word — run the ChangeDown Word pane locally
 
   Usage:
-    changedown word start [options]   Download/sideload the hosted manifest and configure agents
+    changedown word start [options]   Sideload the Word pane and configure agents
     changedown word stop [options]    Stop the sideload session
     changedown word doctor [options]  Check manifest, tool, and MCP readiness
 
   Options:
-    --manifest PATH_OR_URL  Use a manifest path or HTTPS URL instead of changedown.com
+    --pane local|hosted     Pane distribution to sideload (default: local)
+    --manifest PATH_OR_URL  Use a manifest path or HTTPS URL instead of the default pane
     --dry-run               Print planned actions without launching Word
     --no-validate           Skip office-addin-manifest validation
     --no-sideload           Prepare without sideloading Word
@@ -32,6 +33,13 @@ function parseOptions(args: string[]): { command: string; options: WordCommandOp
   for (let i = 0; i < rest.length; i++) {
     const arg = rest[i];
     if (arg === '--manifest') options.manifest = rest[++i];
+    else if (arg === '--pane') {
+      const value = rest[++i];
+      if (value !== 'local' && value !== 'hosted') throw new Error(`--pane must be local or hosted, got: ${value}`);
+      options.paneMode = value;
+    }
+    else if (arg === '--local') options.paneMode = 'local';
+    else if (arg === '--hosted') options.paneMode = 'hosted';
     else if (arg === '--dry-run') options.dryRun = true;
     else if (arg === '--no-validate') options.noValidate = true;
     else if (arg === '--no-sideload') options.noSideload = true;

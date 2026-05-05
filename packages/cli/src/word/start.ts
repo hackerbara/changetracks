@@ -4,6 +4,7 @@ import { resolveManifest } from './manifest.js';
 import { runTool } from './office-tools.js';
 import { MCP_PORT, mcpStartGuidance, probeMcpHealth } from './mcp.js';
 import { clearWordSession, writeWordSession } from './state.js';
+import { startLocalPaneServer, type LocalPaneServerHandle } from './pane-server.js';
 
 function shouldUseDevCerts(options: WordCommandOptions): boolean {
   return options.noDevCerts ? false : true;
@@ -16,10 +17,12 @@ function mcpHealthUrl(useDevCerts: boolean): string {
 
 export async function runWordStart(ctx: WordCommandContext, options: WordCommandOptions): Promise<number> {
   const useDevCerts = shouldUseDevCerts(options);
+  const paneMode = options.paneMode ?? (options.manifest ? 'hosted' : 'local');
   const manifestPath = await resolveManifest(options.manifest, options.dryRun, {
     mcpScheme: useDevCerts ? 'https' : 'http',
+    paneMode,
   });
-  console.log(`Hosted Word manifest: ${manifestPath}`);
+  console.log(`${paneMode === 'local' ? 'Local' : 'Hosted'} Word manifest: ${manifestPath}`);
 
   if (!options.noValidate) {
     const validateCode = runTool('office-addin-manifest', ['validate', manifestPath], {
@@ -37,6 +40,17 @@ export async function runWordStart(ctx: WordCommandContext, options: WordCommand
     if (certCode !== 0) return certCode;
   } else {
     console.log('Skipping Office dev certificates; using diagnostic HTTP loopback mode. Hosted Word panes normally require HTTPS loopback.');
+  }
+
+  let paneServer: LocalPaneServerHandle | undefined;
+  if (paneMode === 'local' && !options.manifest) {
+    try {
+      paneServer = await startLocalPaneServer(options.dryRun);
+    } catch (err) {
+      console.error(`Failed to start local Word pane server: ${err instanceof Error ? err.message : String(err)}`);
+      console.error('Try the hosted pane fallback: npx @changedown/cli@latest word start --pane hosted');
+      return 1;
+    }
   }
 
   const healthUrl = mcpHealthUrl(useDevCerts);
@@ -105,6 +119,7 @@ export async function runWordStart(ctx: WordCommandContext, options: WordCommand
       if (!options.noSideload) {
         runTool('office-addin-debugging', ['stop', manifestPath], { cwd: ctx.cwd });
       }
+      if (paneServer) await paneServer.close();
       await clearWordSession();
     } finally {
       unregisterSignalHandlers();
