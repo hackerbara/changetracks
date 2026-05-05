@@ -1,6 +1,6 @@
 {
   "name": "@changedown/cli",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "Durable change tracking for editors and AI agents",
   "type": "module",
   "main": "dist/index.js",
@@ -26,6 +26,7 @@
     "./internals": "./dist/internals.js",
     "./commands/repair": "./dist/commands/repair.js",
     "./agents": "./dist/agents/index.js",
+    "./word/office-tools": "./dist/word/office-tools.js",
     "./word/mcp": "./dist/word/mcp.js"
   },
   "bin": {
@@ -56,10 +57,13 @@
     "url": "https://github.com/hackerbara/changedown.git"
   },
   "dependencies": {
-    "@clack/prompts": "^0.9.0",
     "@changedown/core": "file:../core",
     "@changedown/docx": "file:../docx",
+    "@clack/prompts": "^0.9.0",
     "commander": "^13.1.0",
+    "office-addin-debugging": "^6.0.7",
+    "office-addin-dev-certs": "^2.0.7",
+    "office-addin-manifest": "^2.1.3",
     "picomatch": "^4.0.0",
     "smol-toml": "^1.3.0"
   },
