@@ -1,6 +1,6 @@
 {
   "name": "@changedown/core",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "CriticMarkup parser and operations engine",
   "license": "MIT",
   "repository": {
@@ -12,6 +12,8 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
+    "clean": "rm -rf dist dist-esm tsconfig.tsbuildinfo tsconfig.esm.tsbuildinfo",
+    "prebuild": "npm run clean",
     "build": "npm run build:cjs && npm run build:esm",
     "build:cjs": "tsc -p ./tsconfig.json",
     "build:esm": "tsc -p ./tsconfig.esm.json && node -e \"require('fs').writeFileSync('dist-esm/package.json','{\\\"type\\\":\\\"module\\\"}')\""
@@ -51,6 +53,11 @@
       "types": "./dist/host/services/index.d.ts",
       "import": "./dist-esm/host/services/index.js",
       "require": "./dist/host/services/index.js"
+    },
+    "./backend": {
+      "types": "./dist/backend/index.d.ts",
+      "import": "./dist-esm/backend/index.js",
+      "require": "./dist/backend/index.js"
     }
   }
 }

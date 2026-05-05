@@ -37,4 +37,4 @@ export interface BatchResult {
 export type EditClass = 'creation' | 'insertion' | 'deletion' | 'substitution';
 
 // Re-export from shared config (backward compat for internal imports)
-export type { PolicyMode, CreationTracking } from 'changedown/config';
+export type { PolicyMode, CreationTracking } from '@changedown/cli/config';

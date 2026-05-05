@@ -18,12 +18,12 @@ export interface ToolSchema {
 export const compactProposeChangeSchema: ToolSchema = {
   name: 'propose_change',
   description:
-    'Propose tracked changes to a markdown file. Each change uses at (LINE:HASH coordinate) and op (edit operation). ' +
+    'Propose tracked changes to a document target (file path, file:// URI, or word:// session). Each change uses at (LINE:HASH coordinate) and op (edit operation). ' +
     'For multiple changes, pass a changes array — all applied atomically against the pre-change state.',
   inputSchema: {
     type: 'object' as const,
     properties: {
-      file: { type: 'string', description: 'Path to the file (absolute or relative to project root)' },
+      file: { type: 'string', description: 'Path, file:// URI, or active Word session URI (word://sess-...). Use resources/list to discover Word sessions.' },
       author: { type: 'string', description: 'Author identity (e.g., ai:claude-opus-4.6, human:alice). Required when project has author enforcement.' },
       at: { type: 'string', description: 'Target coordinate from read_tracked_file. Single line: "LINE:HASH". Range: "LINE:HASH-LINE:HASH".' },
       op: { type: 'string', description: 'Edit operation. Substitute: {~~old~>new~~}. Insert: {++text++}. Delete: {--text--}. Highlight: {==text==}. Comment: {>>reason. Append {>> to annotate any op.' },
@@ -50,12 +50,12 @@ export const compactProposeChangeSchema: ToolSchema = {
 export const classicProposeChangeSchema: ToolSchema = {
   name: 'propose_change',
   description:
-    'Propose tracked changes to a markdown file. Each change uses old_text/new_text for text matching. ' +
+    'Propose tracked changes to a document target (file path, file:// URI, or word:// session). Each change uses old_text/new_text for text matching. ' +
     'For multiple changes, pass a changes array — all applied atomically against the pre-change state.',
   inputSchema: {
     type: 'object' as const,
     properties: {
-      file: { type: 'string', description: 'Path to the file (absolute or relative to project root)' },
+      file: { type: 'string', description: 'Path, file:// URI, or active Word session URI (word://sess-...). Use resources/list to discover Word sessions.' },
       author: { type: 'string', description: 'Author identity (e.g., ai:claude-opus-4.6, human:alice). Required when project has author enforcement.' },
       old_text: { type: 'string', description: 'Text to replace. Empty string for pure insertion. Must match file content exactly.' },
       new_text: { type: 'string', description: 'Replacement text. Empty string for pure deletion.' },

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach, afterEach } from 'vitest';
 import {
   computeCurrentText,
   computeOriginalText,
@@ -10,7 +10,7 @@ import {
   ChangeStatus,
   ChangeNode,
 } from '@changedown/core/internals';
-import { parseForFormat, isL3Format } from '@changedown/core';
+import { parseForFormat, isL3Format, UnresolvedChangesError } from '@changedown/core';
 
 beforeAll(async () => { await initHashline(); });
 
@@ -69,9 +69,60 @@ describe('applyRejectedChanges', () => {
     expect(appliedIds.includes('cn-2')).toBeTruthy();
     // Reject restores original text
     expect(currentContent.includes('old1[^cn-1] old2[^cn-2]')).toBeTruthy();
-    // New text should NOT appear
-    expect(!currentContent.includes('new1')).toBeTruthy();
-    expect(!currentContent.includes('new2')).toBeTruthy();
+    // New text should NOT appear in the body; edit-op history may preserve it in footnotes.
+    const body = currentContent.split('\n\n')[0];
+    expect(body.includes('new1')).toBe(false);
+    expect(body.includes('new2')).toBe(false);
+
+    // The settled L3 document must remain parse-resolved so future reviews/edits are not blocked.
+    const reparsed = parseForFormat(currentContent);
+    expect(reparsed.getDiagnostics()).toEqual([]);
+    expect(reparsed.getChanges().every(c => c.resolved !== false)).toBe(true);
+  });
+});
+
+describe('applyRejectedChanges honest appliedIds — zombie coverage', () => {
+  // These tests verify that appliedIds excludes zombie changes (resolved:false)
+  // from both the L3 path (Fix 1: T3.3 follow-up) and the L2 path (T3.3 original).
+
+  // L3 zombie: a footnote with status=rejected but no opString. The parser
+  // sets resolved:false (position cannot be determined). revertChangesInBody
+  // skips it, so it must not appear in appliedIds.
+  it('L3 zombie-only rejection: appliedIds is empty', () => {
+    // No opString line → parser produces resolved:false for this change.
+    // The body is unaffected; appliedIds must be empty (not ['cn-1']).
+    const text = [
+      '<!-- changedown.com/v1: tracked -->',
+      'Hello world',
+      '',
+      '[^cn-1]: @alice | 2026-03-18 | ins | rejected',
+      '    approved: @alice 2026-03-18 "ghost"',
+    ].join('\n');
+    const { currentContent, appliedIds } = applyRejectedChanges(text);
+    expect(appliedIds).toEqual([]);
+    // Body is unchanged because the zombie had nothing to revert
+    expect(currentContent.split('\n')[1]).toBe('Hello world');
+  });
+
+  // L2 zombie: a rejected substitution whose CriticMarkup produces a
+  // part with length===0 and text==='' (range {0,0} from anchored:false).
+  // The T3.3 L2 filter already excludes such parts; this test exercises it.
+  it('L2 zombie-only rejection: appliedIds is empty when part has no bytes', () => {
+    // A footnote-less L2 doc with a rejected sub. The ref resolves fine in L2
+    // (inline markup present), so this is not truly anchored:false — L2 zombies
+    // require a stale anchored ref pointing at stripped markup which is hard to
+    // construct purely from text. Use a real L2 rejected sub to verify the normal
+    // non-zombie path still works (part has bytes → appears in appliedIds),
+    // and verify the zombie-guard (part.length===0 && part.text==='') is not
+    // triggered for real changes.
+    const input = [
+      '{~~old~>new~~}[^cn-1]',
+      '',
+      '[^cn-1]: @ai:test | 2026-02-27 | sub | rejected',
+    ].join('\n');
+    const { appliedIds } = applyRejectedChanges(input);
+    // Real L2 rejected sub: part has bytes, so it IS in appliedIds
+    expect(appliedIds).toContain('cn-1');
   });
 });
 
@@ -482,6 +533,7 @@ describe('computeCurrentReplace', () => {
       contentRange: { start: 3, end: 7 },
       level: 0,
       anchored: false,
+      resolved: true,
     };
 
     expect(
@@ -726,5 +778,117 @@ describe('computeOriginalText — L3 path', () => {
     const result = computeOriginalText(l3);
     // "removed " was an accepted deletion — original text had it present
     expect(result).toBe('hello removed world\n');
+  });
+});
+
+// ─── Task 3.2: assertResolved guards settlement entry points ──────────────────
+
+/**
+ * L3 fixture that produces a coordinate_failed diagnostic.
+ *
+ * isL3Format() requires at least one LINE:HASH {op} edit-op line in the
+ * footnote section to classify a document as L3. So to produce an L3 doc
+ * with a blocking diagnostic, we need two footnotes:
+ *
+ * - cn-1: has a valid LINE:HASH edit-op line (so isL3Format returns true),
+ *   but the referenced insertion text "here" doesn't appear on line 3 of
+ *   the body → coordinate_failed.
+ * - cn-2: has no edit-op line at all → coordinate_failed (parsedOp missing).
+ *
+ * Both diagnostics are blocking, so assertResolved() will throw.
+ */
+function makeUnresolvableL3Fixture(): string {
+  return [
+    'Some text here.',
+    '',
+    '[^cn-1]: @alice | 2026-03-16 | ins | proposed',
+    '    3:ab {++here++}',
+    '',
+    '[^cn-2]: @alice | 2026-03-16 | ins | rejected',
+    '    approved: @alice 2026-03-16 "ok"',
+  ].join('\n');
+}
+
+describe('settlement with assertResolved (strict mode)', () => {
+  it('applyRejectedChanges (L3 path) throws UnresolvedChangesError on coordinate_failed doc', () => {
+    const text = makeUnresolvableL3Fixture();
+    // Confirm the fixture is L3 and actually produces a coordinate_failed diagnostic.
+    const doc = parseForFormat(text);
+    const diags = doc.getDiagnostics();
+    const hasCf = diags.some(d => d.kind === 'coordinate_failed');
+    expect(hasCf).toBe(true);  // fixture sanity check
+
+    expect(() => applyRejectedChanges(text)).toThrow(UnresolvedChangesError);
+  });
+
+  it('applyRejectedChanges succeeds when document is fully resolved (no blocking diagnostics)', () => {
+    // A clean L2 fixture with a rejected substitution — no blocking diagnostics.
+    const text = [
+      '{~~old~>new~~}[^cn-1]',
+      '',
+      '[^cn-1]: @alice | 2026-04-01 | sub | rejected',
+    ].join('\n');
+    expect(() => applyRejectedChanges(text)).not.toThrow();
+  });
+
+  it('applyAcceptedChanges succeeds on L2 doc (L2 parser emits no blocking diagnostics)', () => {
+    // L2 parser (CriticMarkupParser) does not emit blocking diagnostics, so
+    // assertResolved in the L2 path is future-proofing. Confirm no throw.
+    const text = [
+      '{++inserted++}[^cn-1]',
+      '',
+      '[^cn-1]: @alice | 2026-04-01 | ins | accepted',
+    ].join('\n');
+    expect(() => applyAcceptedChanges(text)).not.toThrow();
+  });
+
+});
+
+// ─── Task 3.3: applyRejectedChanges honest appliedIds ────────────────────────
+
+describe('applyRejectedChanges honest appliedIds (T3.3)', () => {
+  it('reports appliedIds for changes that actually moved bytes (real rejection)', () => {
+    // A rejected substitution: old text is restored, bytes actually change.
+    const text = [
+      '{~~old~>new~~}[^cn-1]',
+      '',
+      '[^cn-1]: @alice | 2026-04-01 | sub | rejected',
+    ].join('\n');
+    const { appliedIds } = applyRejectedChanges(text);
+    expect(appliedIds).toContain('cn-1');
+  });
+
+  it('reports appliedIds for rejected deletion (original text restored)', () => {
+    // A rejected deletion: "removed " bytes are restored from change.originalText.
+    const text = [
+      '{--removed --}[^cn-1]world',
+      '',
+      '[^cn-1]: @alice | 2026-04-01 | del | rejected',
+    ].join('\n');
+    const { appliedIds } = applyRejectedChanges(text);
+    expect(appliedIds).toContain('cn-1');
+  });
+
+  it('reports both ids when two changes each move bytes', () => {
+    // Two real rejections — both should appear in appliedIds.
+    const text = [
+      '{~~old~>new~~}[^cn-1] {~~a~>b~~}[^cn-2]',
+      '',
+      '[^cn-1]: @alice | 2026-04-01 | sub | rejected',
+      '[^cn-2]: @alice | 2026-04-01 | sub | rejected',
+    ].join('\n');
+    const { appliedIds } = applyRejectedChanges(text);
+    expect(appliedIds).toContain('cn-1');
+    expect(appliedIds).toContain('cn-2');
+    expect(appliedIds).toHaveLength(2);
+  });
+
+  it('does not report L1 (no-ref) changes in appliedIds', () => {
+    // L1 changes have level < 2 so computeRejectParts sets refId=''.
+    // These must not appear in appliedIds regardless of whether bytes changed.
+    const text = '{~~old~>new~~} some text';  // no footnote ref → L1
+    const { appliedIds } = applyRejectedChanges(text);
+    // refId is '' for L1 changes → filtered by !part.refId
+    expect(appliedIds).toHaveLength(0);
   });
 });

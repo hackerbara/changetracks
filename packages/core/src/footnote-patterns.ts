@@ -177,13 +177,18 @@ export const FOOTNOTE_DEF_STATUS_VALUE = new RegExp(
  */
 export const FOOTNOTE_L3_EDIT_OP = /^ {4}(\d+):([0-9a-fA-F]{2,}) (.*)/;
 
+export const FOOTNOTE_L3_HISTORY_HEADER = new RegExp(
+  `^\\[\\^${FOOTNOTE_ID_PATTERN}\\]:\\s.*\\|\\s*(?:ins|del|sub|format|equation|image|field|object)\\s*\\|\\s*accepted\\s*$`
+);
+
 /**
  * Auto-detect whether text is in L3 (footnote-native) format.
  *
  * L3 format has:
  * 1. At least one `[^cn-N]:` footnote definition
  * 2. No inline CriticMarkup delimiters in the body (before footnotes)
- * 3. At least one footnote body line with LINE:HASH {edit-op} format
+ * 3. At least one footnote body line with LINE:HASH {edit-op} format, or
+ *    an accepted history footnote with indented `source:` metadata
  *
  * This is the single source of truth for L3 detection. Used by
  * Workspace.isFootnoteNative() and standalone functions like
@@ -222,9 +227,23 @@ export function isL3Format(text: string): boolean {
     }
   }
 
-  // Check footnote section for at least one LINE:HASH {op} body line
+  // Check footnote section for at least one LINE:HASH {op} body line, or an
+  // accepted history footnote with source metadata.
   const footnoteSection = text.slice(firstFootnote);
-  return footnoteSection.split('\n').some(line => FOOTNOTE_L3_EDIT_OP.test(line));
+  const footnoteLines = footnoteSection.split('\n');
+  if (footnoteLines.some(line => FOOTNOTE_L3_EDIT_OP.test(line))) return true;
+
+  for (let i = 0; i < footnoteLines.length; i++) {
+    if (!FOOTNOTE_L3_HISTORY_HEADER.test(footnoteLines[i])) continue;
+    for (let j = i + 1; j < footnoteLines.length; j++) {
+      const line = footnoteLines[j];
+      if (FOOTNOTE_DEF_START.test(line)) break;
+      if (/^ {4}source:\s*\S/.test(line)) return true;
+      if (line.trim() !== '' && !line.startsWith('    ')) break;
+    }
+  }
+
+  return false;
 }
 
 // ─── Image dimensions ────────────────────────────────────────────────────────
@@ -321,4 +340,4 @@ export const FOOTNOTE_CONTINUATION = /^\s+\S/;
  *
  * Non-global.
  */
-export const FOOTNOTE_THREAD_REPLY = /^\s+@\S+\s+\d{4}-\d{2}-\d{2}(?:[T ]\d{1,2}:\d{2}(?::\d{2})?(?:\s?[AaPp][Mm])?Z?)?:/;
+export const FOOTNOTE_THREAD_REPLY = /^\s+@\S+\s+\d{4}-\d{2}-\d{2}(?:[T ]\d{1,2}:\d{2}(?::\d{2})?(?:\s?[AaPp][Mm])?Z?)?(?:\s+\[[^\]]+\])?:/;

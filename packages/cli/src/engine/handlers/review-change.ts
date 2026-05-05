@@ -1,10 +1,11 @@
 import * as fs from 'node:fs/promises';
+import { writeTrackedFile } from '../write-tracked-file.js';
 import { errorResult } from '../shared/error-result.js';
 import { optionalStrArg } from '../args.js';
 import { resolveAuthor } from '../author.js';
 import { isFileInScope } from '../config.js';
 import { ConfigResolver } from '../config-resolver.js';
-import { applyReview, VALID_DECISIONS, type Decision, type ApplyReviewSuccess, type ApplyReviewError } from '@changedown/core';
+import { applyReview, VALID_DECISIONS, type Decision, type ApplyReviewSuccess, type ApplyReviewError, parseForFormat, assertResolved, UnresolvedChangesError } from '@changedown/core';
 import { applyBlockingAnnotation } from '../shared/blocking-annotation.js';
 import { SessionState } from '../state.js';
 import { rerecordState } from '../state-utils.js';
@@ -138,6 +139,18 @@ export async function handleReviewChange(
       return errorResult(authorError.message);
     }
 
+    // Assert no unresolved changes before any mutation (zombie-elimination spec §3.4).
+    try {
+      assertResolved(parseForFormat(fileContent));
+    } catch (err) {
+      if (err instanceof UnresolvedChangesError) {
+        return errorResult(
+          `Document has ${err.diagnostics.length} unresolved change(s); run 'cd repair' or amend the failing change. Diagnostics: ${JSON.stringify(err.diagnostics)}`,
+        );
+      }
+      throw err;
+    }
+
     // 6. Apply review (shared logic)
     const applied = applyReview(fileContent, changeId, typedDecision, reasoning, author, config);
     if ('error' in applied) {
@@ -158,14 +171,14 @@ export async function handleReviewChange(
     // 7. Write file back (only when content actually changed)
     if (applied.updatedContent !== fileContent) {
       fileContent = applied.updatedContent;
-      await fs.writeFile(filePath, fileContent, 'utf-8');
+      await writeTrackedFile(filePath, fileContent);
     }
 
     let settlementInfo: { appliedIds: string[] } | undefined;
     if (config.settlement.auto_on_approve && typedDecision === 'approve') {
       const { currentContent, appliedIds } = applyAcceptedChanges(fileContent);
       if (appliedIds.length > 0) {
-        await fs.writeFile(filePath, currentContent, 'utf-8');
+        await writeTrackedFile(filePath, currentContent);
         fileContent = currentContent;
         settlementInfo = { appliedIds };
       }
@@ -174,7 +187,7 @@ export async function handleReviewChange(
     if (config.settlement.auto_on_reject && typedDecision === 'reject') {
       const { currentContent, appliedIds } = applyRejectedChanges(fileContent);
       if (appliedIds.length > 0) {
-        await fs.writeFile(filePath, currentContent, 'utf-8');
+        await writeTrackedFile(filePath, currentContent);
         fileContent = currentContent;
         settlementInfo = { appliedIds };
       }

@@ -78,6 +78,7 @@ export function colorClassForType(type: ChangeType): string {
         case ChangeType.Substitution: return 'substitution';
         case ChangeType.Highlight: return 'highlight';
         case ChangeType.Comment: return 'comment';
+        case ChangeType.Move: return 'move';
     }
 }
 

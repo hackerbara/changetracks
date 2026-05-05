@@ -57,6 +57,35 @@ describe('resolveCoordinates — basic coordinate resolution', () => {
     expect(result.op).toBe(op);
   });
 
+  it('prefers a direct raw LINE:HASH match over stale view-memory translation', () => {
+    const fileLines = [
+      '{++Paragraph one sentence one: public compact writes the first paragraph.',
+      '',
+      'Paragraph two sentence one: public compact writes the second paragraph.++}[^cn-2]',
+      '',
+      '[^cn-2]: @ai:codex | 2026-05-04 | ins | proposed',
+    ];
+    const fileContent = fileLines.join('\n');
+    const hash = computeLineHash(0, fileLines[0], fileLines);
+    const op = makeOp(`1:${hash}`, {
+      type: 'sub',
+      oldText: 'Paragraph one sentence one: public compact writes the first paragraph.',
+      newText: 'Paragraph one sentence one: public compact updates the first paragraph.',
+    });
+    const state = new SessionState();
+    state.resolveHash = (() => ({
+      match: true,
+      rawLineNum: 5,
+      view: 'working',
+    })) as SessionState['resolveHash'];
+
+    const result = resolveCoordinates(op, fileContent, fileLines, state, FILE_PATH, config);
+
+    expect(result.rawStartLine).toBe(1);
+    expect(result.content).toBe(fileLines[0]);
+    expect(result.viewResolved).toBeUndefined();
+  });
+
   it('computes correct character offsets for a single-line target', () => {
     const fileLines = ['abc', 'defg', 'hi'];
     const fileContent = fileLines.join('\n');

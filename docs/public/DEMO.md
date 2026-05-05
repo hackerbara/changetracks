@@ -41,7 +41,7 @@ This is what ChangeDown is for: the file carries its own deliberation history. A
 ### Quick start
 
 ```
-npx changedown init
+npx @changedown/cli init
 ```
 
 Interactive setup: detects your editors and agents, creates `.changedown/config.toml`, and installs everything.

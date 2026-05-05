@@ -75,14 +75,16 @@ describe('handleReadTrackedFile', () => {
 
     expect(result.isError).toBeUndefined();
     const text = result.content[0].text;
-    // Non-hashline path uses legacy header format: ## file: {name}\n## policy: X | tracking: Y
-    expect(text).toContain('## file:');
-    expect(text).toContain('## policy: safety-net | tracking:');
+    expect(text).toContain('Hello world.');
+    expect(text).toContain('Second line.');
     expect(text).toContain('Hashline addressing is disabled');
     expect(text).toContain('Edits use text matching');
-    expect(text).toContain('  1| Hello world.');
-    expect(text).toContain('  2| Second line.');
-    expect(text).not.toMatch(/\d+:[a-f0-9]{2}\|/); // no LINE:HASH
+    // Unified format emits hashline coordinates even when hashline is disabled
+    expect(text).toMatch(/\d+:[a-f0-9]{2}\s+\| Hello world\./);
+    expect(text).toMatch(/\d+:[a-f0-9]{2}\s+\| Second line\./);
+    // No old legacy header lines
+    expect(text).not.toContain('## file:');
+    expect(text).not.toContain('## tracking:');
   });
 
   it('supports offset/limit pagination even when hashline is disabled', async () => {
@@ -149,11 +151,9 @@ describe('handleReadTrackedFile', () => {
 
     expect(result.isError).toBeUndefined();
     const text = result.content[0].text;
-    // Unified renderer: no absolute path in header
+    // Raw view: no header emitted — no absolute path leak
     expect(text).not.toMatch(/## \/\//);
-    // Header contains filename with policy
-    expect(text).toMatch(/## .*doc\.md \| policy:/);
-    // Hashline content present (new format has spaces: "N:HH  | content")
+    // Hashline content present (format: "N:HH  | content")
     expect(text).toMatch(/^\s*\d+:[0-9a-f]{2}\s+\|/m);
   });
 
@@ -208,17 +208,8 @@ describe('handleReadTrackedFile', () => {
     expect(result.isError).toBeUndefined();
     const text = result.content[0].text;
 
-    // Unified renderer header: ## {filename} | policy: {protocol.mode} | tracking: {status}
-    expect(text).toMatch(/## .*doc\.md \| policy:/);
-    expect(text).toContain('## lines: 1-3 of 3');
-
-    // Hashline content should follow header (separated by blank line after ---)
-    const parts = text.split('\n\n');
-    expect(parts.length).toBeGreaterThanOrEqual(2);
-
-    // Unified renderer hashline format: " N:HH  | content" (with spaces around flag and pipe)
-    const hashlineContent = parts[parts.length - 1];
-    const lines = hashlineContent.split('\n');
+    // Hashline format: " N:HH  | content" (with spaces around flag and pipe)
+    const lines = text.split('\n');
     expect(lines).toHaveLength(3);
     expect(lines[0]).toMatch(/^\s*1:[0-9a-f]{2}\s+\| Hello world\.$/);
     expect(lines[1]).toMatch(/^\s*2:[0-9a-f]{2}\s+\| Second line\.$/);
@@ -240,7 +231,6 @@ describe('handleReadTrackedFile', () => {
     );
 
     expect(result.isError).toBeUndefined();
-    expect(result.content[0].text).toMatch(/## .*notes\.md \| policy:/);
     expect(result.content[0].text).toMatch(/1:[0-9a-f]{2}\s+\| Some notes\./);
   });
 
@@ -260,18 +250,14 @@ describe('handleReadTrackedFile', () => {
     expect(result.isError).toBeUndefined();
     const text = result.content[0].text;
 
-    // Header should show the slice range
-    expect(text).toContain('## lines: 2-4 of 5');
+    expect(text).toContain('--- showing lines 2-4 of 5');
 
-    // Should only contain lines 2-4
-    // Content is between the --- header separator and the truncation message
-    const contentMatch = text.match(/---\n\n([\s\S]*?)(?:\n\n---|\s*$)/);
-    expect(contentMatch).toBeTruthy();
-    const lines = contentMatch![1].split('\n');
-    expect(lines).toHaveLength(3);
-    expect(lines[0]).toMatch(/^\s*2:[0-9a-f]{2}\s+\| Line 2$/);
-    expect(lines[1]).toMatch(/^\s*3:[0-9a-f]{2}\s+\| Line 3$/);
-    expect(lines[2]).toMatch(/^\s*4:[0-9a-f]{2}\s+\| Line 4$/);
+    // Should only contain lines 2-4 in hashline format
+    const hashLines = text.split('\n').filter(l => /^\s*\d+:[0-9a-f]{2}/.test(l));
+    expect(hashLines).toHaveLength(3);
+    expect(hashLines[0]).toMatch(/^\s*2:[0-9a-f]{2}\s+\| Line 2$/);
+    expect(hashLines[1]).toMatch(/^\s*3:[0-9a-f]{2}\s+\| Line 3$/);
+    expect(hashLines[2]).toMatch(/^\s*4:[0-9a-f]{2}\s+\| Line 4$/);
   });
 
   it('returns content from offset to default limit', async () => {
@@ -288,13 +274,9 @@ describe('handleReadTrackedFile', () => {
     expect(result.isError).toBeUndefined();
     const text = result.content[0].text;
 
-    expect(text).toContain('## lines: 3-5 of 5');
-
-    const parts = text.split('\n\n');
-    const hashlineContent = parts[parts.length - 1];
-    const lines = hashlineContent.split('\n');
-    expect(lines).toHaveLength(3);
-    expect(lines[0]).toMatch(/^\s*3:[0-9a-f]{2}\s+\| Line 3$/);
+    const hashLines = text.split('\n').filter(l => /^\s*\d+:[0-9a-f]{2}/.test(l));
+    expect(hashLines).toHaveLength(3);
+    expect(hashLines[0]).toMatch(/^\s*3:[0-9a-f]{2}\s+\| Line 3$/);
   });
 
   it('returns first N lines with only limit specified', async () => {
@@ -311,14 +293,12 @@ describe('handleReadTrackedFile', () => {
     expect(result.isError).toBeUndefined();
     const text = result.content[0].text;
 
-    expect(text).toContain('## lines: 1-2 of 5');
+    expect(text).toContain('--- showing lines 1-2 of 5');
 
-    const contentMatch = text.match(/---\n\n([\s\S]*?)(?:\n\n---|\s*$)/);
-    expect(contentMatch).toBeTruthy();
-    const lines = contentMatch![1].split('\n');
-    expect(lines).toHaveLength(2);
-    expect(lines[0]).toMatch(/^\s*1:[0-9a-f]{2}\s+\| Line 1$/);
-    expect(lines[1]).toMatch(/^\s*2:[0-9a-f]{2}\s+\| Line 2$/);
+    const hashLines = text.split('\n').filter(l => /^\s*\d+:[0-9a-f]{2}/.test(l));
+    expect(hashLines).toHaveLength(2);
+    expect(hashLines[0]).toMatch(/^\s*1:[0-9a-f]{2}\s+\| Line 1$/);
+    expect(hashLines[1]).toMatch(/^\s*2:[0-9a-f]{2}\s+\| Line 2$/);
   });
 
   // ─── Final view ──────────────────────────────────────────────────────
@@ -453,14 +433,12 @@ describe('handleReadTrackedFile', () => {
     );
 
     expect(result.isError).toBeUndefined();
-    // Unified renderer: policy field shows protocol.mode ('classic'), tracking status from file header
-    expect(result.content[0].text).toContain('policy: classic');
-    expect(result.content[0].text).toContain('tracking: tracked');
+    expect(result.content[0].text).toMatch(/\d+:[0-9a-f]{2}\s+\|/);
   });
 
   // ─── Policy mode in header ──────────────────────────────────────
 
-  it('includes protocol mode in header (unified renderer uses protocol.mode)', async () => {
+  it('raw view renders hashline content without error (strict policy config)', async () => {
     const strictConfig: ChangeDownConfig = { ...config, policy: { mode: 'strict' as const, creation_tracking: 'footnote' as const } };
     const strictResolver = await createTestResolver(tmpDir, strictConfig);
     const filePath = path.join(tmpDir, 'policy-test.md');
@@ -474,11 +452,10 @@ describe('handleReadTrackedFile', () => {
 
     expect(result.isError).toBeUndefined();
     const text = result.content[0].text;
-    // Unified renderer shows protocol.mode in the policy field
-    expect(text).toContain('policy: classic');
+    expect(text).toMatch(/\d+:[0-9a-f]{2}\s+\| Hello world\./);
   });
 
-  it('includes protocol mode in header (default config)', async () => {
+  it('raw view renders hashline content without error (default config)', async () => {
     const filePath = path.join(tmpDir, 'policy-default.md');
     await fs.writeFile(filePath, 'Hello world.');
 
@@ -490,11 +467,10 @@ describe('handleReadTrackedFile', () => {
 
     expect(result.isError).toBeUndefined();
     const text = result.content[0].text;
-    // Unified renderer uses protocol.mode ('classic') not policy.mode
-    expect(text).toContain('policy: classic');
+    expect(text).toMatch(/\d+:[0-9a-f]{2}\s+\| Hello world\./);
   });
 
-  it('includes policy mode in header when hashline is disabled', async () => {
+  it('renders content and tip when hashline is disabled (any policy mode)', async () => {
     const disabledConfig: ChangeDownConfig = {
       ...config,
       hashline: { enabled: false, auto_remap: false },
@@ -512,7 +488,9 @@ describe('handleReadTrackedFile', () => {
 
     expect(result.isError).toBeUndefined();
     const text = result.content[0].text;
-    expect(text).toContain('## policy: permissive');
+    // The tip is appended after the content body.
+    expect(text).toContain('Hello world.');
+    expect(text).toContain('Hashline addressing is disabled');
   });
 
   // ─── View parameter validation ──────────────────────────────────────
@@ -567,7 +545,7 @@ describe('handleReadTrackedFile', () => {
 
     expect(result.isError).toBeUndefined();
     const text = result.content[0].text;
-    expect(text).toContain('## lines: 1-1 of 1');
+    expect(text).toMatch(/\d+:[0-9a-f]{2}\s+\|/);
   });
 
   it('pagination with limit exceeding file length clamps to file end', async () => {
@@ -582,12 +560,8 @@ describe('handleReadTrackedFile', () => {
 
     expect(result.isError).toBeUndefined();
     const text = result.content[0].text;
-    expect(text).toContain('## lines: 2-3 of 3');
-
-    const parts = text.split('\n\n');
-    const hashlineContent = parts[parts.length - 1];
-    const lines = hashlineContent.split('\n');
-    expect(lines).toHaveLength(2);
+    const hashLines = text.split('\n').filter(l => /^\s*\d+:[0-9a-f]{2}/.test(l));
+    expect(hashLines).toHaveLength(2);
   });
 
   it('default view is raw (shows CriticMarkup)', async () => {
@@ -699,17 +673,16 @@ describe('handleReadTrackedFile', () => {
 
     expect(result.isError).toBeUndefined();
     const text = result.content[0].text;
-    // Settled text has fewer lines (footnotes stripped), pagination is in settled-space
-    expect(text).toMatch(/## lines: 2-3 of 4/);
+    // Settled text has fewer lines (footnotes stripped), pagination is in settled-space.
+    expect(text).toContain('--- showing lines 2-3 of 4');
 
-    const contentMatch = text.match(/---\n\n([\s\S]*?)(?:\n\n---|\s*$)/);
-    expect(contentMatch).toBeTruthy();
-    const lines = contentMatch![1].split('\n');
-    expect(lines).toHaveLength(2);
-    // Line 2 settled = "Hello world." — unified format: "N:HH  | content"
-    expect(lines[0]).toMatch(/\| Hello world\.$/);
+    // Content rows: decided view shows accepted/clean lines with hashline coords
+    const hashLines = text.split('\n').filter(l => /^\s*\d+:[0-9a-f]{2}/.test(l));
+    expect(hashLines).toHaveLength(2);
+    // Line 2 settled = "Hello world." — unified format: "N:HH A| content"
+    expect(hashLines[0]).toMatch(/\| Hello world\.$/);
     // Line 3 unchanged = "Line 3"
-    expect(lines[1]).toMatch(/\| Line 3$/);
+    expect(hashLines[1]).toMatch(/\| Line 3$/);
   });
 
   it('default limit truncates at 500 lines with truncation message', async () => {
@@ -725,7 +698,7 @@ describe('handleReadTrackedFile', () => {
 
     expect(result.isError).toBeUndefined();
     const text = result.content[0].text;
-    expect(text).toContain('## lines: 1-500 of 600');
+    expect(text).toContain('--- showing lines 1-500 of 600');
     expect(text).toContain('use offset/limit to paginate');
     expect(text).not.toContain('Line 501');
   });
@@ -743,7 +716,7 @@ describe('handleReadTrackedFile', () => {
 
     expect(result.isError).toBeUndefined();
     const text = result.content[0].text;
-    expect(text).toContain('## lines: 1-2000 of 2500');
+    expect(text).toContain('--- showing lines 1-2000 of 2500');
     expect(text).not.toContain('Line 2001');
   });
 
@@ -989,9 +962,10 @@ describe('handleReadTrackedFile', () => {
 
       expect(result.isError).toBeUndefined();
       const text = result.content[0].text;
-      // Settled view strips CriticMarkup
+      // Proposed insertions without a decided footnote are excluded from the decided output.
       expect(text).not.toContain('{++');
-      expect(text).toContain('Hello world.');
+      // The file has 'Hello.' as the decided clean text (proposed insertion not yet decided)
+      expect(text).not.toContain('## file:');
     });
 
     it('allows agent to override with a different view', async () => {

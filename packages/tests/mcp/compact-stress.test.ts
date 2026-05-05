@@ -868,7 +868,7 @@ describe('compact error handling', () => {
     expect(result.isError).toBe(true);
   });
 
-  it('batch error: invalid at in second operation — partial success applies valid ops', async () => {
+  it('batch error: invalid at in second operation — partial success applies valid ops (partial:true)', async () => {
     const content = 'line one\nline two';
     const filePath = path.join(tmpDir, 'doc.md');
     await fs.writeFile(filePath, content);
@@ -879,6 +879,7 @@ describe('compact error handling', () => {
       {
         file: filePath,
         reason: 'partial success',
+        partial: true,
         changes: [
           { at: `1:${h1}`, op: '{~~one~>ONE~~}' },
           { at: '99:ab', op: '{++text++}' },       // bad line number — fails
@@ -898,7 +899,7 @@ describe('compact error handling', () => {
     expect(fileAfter).toContain('ONE');
   });
 
-  it('batch error: wrong hash in first operation — partial success applies valid ops', async () => {
+  it('batch error: wrong hash in first operation — partial success applies valid ops (partial:true)', async () => {
     const content = 'line one\nline two';
     const filePath = path.join(tmpDir, 'doc.md');
     await fs.writeFile(filePath, content);
@@ -907,6 +908,7 @@ describe('compact error handling', () => {
       {
         file: filePath,
         reason: 'partial success',
+        partial: true,
         changes: [
           // Use an insertion with a wrong valid hex hash ('ff') so Stage 3.5a is skipped
           // (insertion ops have empty oldText) and Stage 3.5b can't find 'ff' in any view.

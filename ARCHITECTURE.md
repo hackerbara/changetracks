@@ -518,4 +518,135 @@ These must remain true across all changes:
 8. `isL3Format()` is O(n). Use `FormatService.getDetectedFormat()` to centralize detection.
 9. All `OperationResult.requiredEdits` must be applied atomically.
 
+## Multi-agent collaboration invariants (Tranche 6)
+
+These invariants govern concurrent use of the MCP server by multiple AI agents
+operating on the same document or session simultaneously. They apply to the
+file-backend path exercised by MCP tool handlers; the same contracts hold for the
+Word (StreamableHTTP) backend because all writes flow through the same engine
+handlers.
+
+### Ordering
+
+Changes are recorded in **arrival order**: each successful `propose_change` call
+receives the next available `cn-N` ID from `SessionState.getNextId()`. Because
+individual tool calls are processed serially within a single MCP stdio session,
+the `cn-N` sequence is a total order on proposal arrival time. Concurrent agents
+sharing one session see the same document state after each write; agents on
+separate sessions observe whichever state was written to disk when they issue
+their next `read_tracked_file`.
+
+### Visibility
+
+File-backend subscriptions (and `resources/subscribe` for Word sessions) fire a
+`document_changed` (or `notifications/resources/updated`) event after each
+`propose_change` write completes. Notifications are debounced by 50ms (the `ReconcileScheduler` default) to
+coalesce rapid writes from the same agent. A subscribing agent is guaranteed to
+observe the notification before issuing its next read, provided it waits for the
+debounce window to flush.
+
+### Conflict handling
+
+When two agents propose a change targeting the same `old_text`:
+
+- **Same author** — the engine auto-supersedes the earlier proposal: the old
+  change is rejected in-memory, its markup is removed, and the new change lands.
+  The success response includes a `superseded: [cn-N, ...]` array naming the
+  retired IDs.
+- **Different authors** — the engine throws the overlap guard
+  (`resolveOverlapWithAuthor` → `guardOverlap`), returning an `isError: true`
+  result to the second agent. The first agent's change is preserved intact on
+  disk.
+
+In neither case is the first-arrived change silently overwritten. The invariant
+is: **no proposal is ever lost without an explicit audit trail** (supersede record
+or error return).
+
+### Author attribution
+
+When `propose_change` or `review_changes` is called, the author identity is
+resolved through a five-tier precedence chain:
+
+1. **Explicit `author` argument** — highest priority; always wins when present
+2. **`clientInfo` header** — MCP initialize request; `synthesizeAuthorFromClientInfo()` maps client name to `ai:<id>`
+3. **`CHANGEDOWN_AUTHOR` environment variable** — set in MCP server config (e.g. Cursor `mcp.json`)
+4. **`config.author.default`** in `.changedown/config.toml`
+5. **`"unknown"`** — system fallback when all other sources are absent
+
+Author strings must match `/^[a-z][a-z0-9]*:[a-zA-Z0-9_.-]+$/` (e.g.
+`ai:claude-opus-4-6`, `human:alice`). The `"unknown"` fallback is exempt from
+format validation.
+
+### Review permissions (PERMISSIVE default)
+
+By default, **any agent may review any change regardless of who authored it**.
+The `review_changes` handler resolves the reviewer's author identity and writes a
+review line to the footnote, but it does not check whether the reviewer matches
+the original proposer. There is no `author-mismatch` error in the current
+implementation.
+
+> **Open Question #1 (deferred):** A future `config.review.may_review_own_only`
+> flag could restrict agents to reviewing only their own changes. This deferred
+> variant is not implemented; all current callers rely on the PERMISSIVE behavior
+> documented here.
+
+### Backpressure
+
+When a subscribed session's send queue exceeds `maxQueuedNotificationsPerSession`
+(default: configurable in `SubscriptionManager`), the **oldest queued
+notification is dropped** to make room for the newest. The session is resumed
+when its consumer drains the queue. A `onDrop` callback can be registered for
+observability. Notifications are never blocked synchronously — the tool call that
+triggers the fan-out always completes, regardless of how slow subscribers are.
+
 [^ct-1.2]: @unknown | 2026-04-13 | sub | proposed
+
+## Resolved/Anchored Split (ChangeNode)
+
+`ChangeNode` carries two boolean fields that govern position safety:
+
+- **`anchored: boolean`** — true when a `[^cn-N]` footnote ref exists in the file for this node. Set by both parsers. Always true for L3 nodes by construction (they are created from footnotes). Always meaningful for L0/L1/L2 inline nodes (false means the node has no identity link).
+- **`resolved: boolean`** — true when the node's position was deterministically located during parsing. Set only by `FootnoteNativeParser` (L3). When the op text search fails, `resolved: false` is set with a sentinel range `{0,0}`. Callers must check `resolved` before using a node's offsets.
+
+Prior to this split, `FootnoteNativeParser` expressed resolution failure by setting `anchored: false`. This dual use of one field (documented in `docs/findings/2026-03-17-anchored-dual-semantics.md`) required consumers to guard with `anchored === false && level >= 2`. The split removes the compound guard: all mutation consumers now check `resolved === false` directly.
+
+See: ADR-062 (`docs/decisions/062-anchored-resolved-split-and-zombie-elimination.md`)
+
+## assertResolved Chokepoint
+
+`assertResolved(doc: Document)` is called at every mutation site before any byte-splice:
+
+- Settlement operations (`packages/core/src/operations/settlement.ts`)
+- MCP handlers (`packages/cli/src/mcp/handlers.ts`)
+- LSP server document-mutation paths
+- Host services write-back
+- DOCX export (`packages/docx/src/export.ts`)
+- CLI commands that mutate file content
+
+If the document contains any `ChangeNode` with `resolved: false`, `assertResolved` throws `UnresolvedChangesError` carrying the full `Diagnostic[]` array (per the ADR-034 failure taxonomy). The error includes structured `evidence` fields so agents can identify exactly which changes are unresolved before retrying (ADR-061 informed-retry principle).
+
+The chokepoint is guarded by the feature flag `CHANGEDOWN_ASSERT_RESOLVED` (default on since Tranche 4). The flag and its opt-out path are scheduled for removal in Tranche 10.
+
+## writeTrackedFile Integrity Gate
+
+All byte-writes to tracked files go through `writeTrackedFile(path, doc, fs)`. Before calling `fs.writeFile`, the function runs `validateStructuralIntegrity(doc)`:
+
+- No nested markup (ADR-028 no-nesting, ADR-049 §3 no-stacking)
+- No orphaned footnote refs (unmatched refs or footnote blocks)
+- No parser-emitted diagnostics of blocking severity
+
+If validation fails, the function throws without touching the file. The existing content is left intact.
+
+Direct calls to `fs.writeFile` / `fs.promises.writeFile` on tracked-file paths are prohibited by the ESLint rule `no-direct-tracked-file-write` (Tranche 5). This prevents regressions: the rule fires if any `fs` import is followed by a `writeFile` call with a path passing through the tracked-file registry.
+
+See: ADR-062, Tranche 5 implementation.
+
+## Batch Atomicity (propose_batch)
+
+`propose_batch` is **atomic by default**: either all changes succeed or none are applied. Callers that need partial application must opt in with `{ partial: true }`.
+
+This restores the intent of ADR-036 §4, which specified atomic-default but shipped with the default inverted (partial-by-default). The upstream defect was an original path enabling partially-written batches to leave `anchored: false` changes silently in documents.
+
+**Migration:** Callers that relied on partial-by-default behavior (old default) must add `partial: true` to their batch request. Callers that did not depend on partial behavior are unaffected.
+
+See: ADR-036 §4, ADR-062.

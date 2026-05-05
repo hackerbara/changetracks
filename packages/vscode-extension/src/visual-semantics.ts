@@ -28,6 +28,7 @@ export function typeLabel(type: ChangeType): string {
         case ChangeType.Substitution: return 'substitution';
         case ChangeType.Highlight: return 'highlight';
         case ChangeType.Comment: return 'comment';
+        case ChangeType.Move: return 'move';
     }
 }
 
@@ -39,6 +40,7 @@ export function typeLabelCapitalized(type: ChangeType): string {
         case ChangeType.Substitution: return 'Substitution';
         case ChangeType.Highlight: return 'Highlight';
         case ChangeType.Comment: return 'Comment';
+        case ChangeType.Move: return 'Move';
     }
 }
 
@@ -50,5 +52,6 @@ export function iconForType(type: ChangeType): vscode.ThemeIcon {
         case ChangeType.Substitution: return new vscode.ThemeIcon('diff-modified');
         case ChangeType.Highlight: return new vscode.ThemeIcon('symbol-color');
         case ChangeType.Comment: return new vscode.ThemeIcon('comment');
+        case ChangeType.Move: return new vscode.ThemeIcon('arrow-swap');
     }
 }

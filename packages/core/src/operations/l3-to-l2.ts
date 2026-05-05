@@ -75,6 +75,12 @@ function buildInlineMarkup(change: ChangeNode, bodyText: string): {
       const comment = metadata?.comment ?? '';
       return { replacement: `{>>${comment}<<}${ref}` };
     }
+
+    case ChangeType.Move: {
+      // Treat like insertion for L2 representation purposes.
+      const bodySlice = bodyText.slice(range.start, range.end);
+      return { replacement: `{++${bodySlice}++}${ref}` };
+    }
   }
 }
 
@@ -110,11 +116,11 @@ export async function convertL3ToL2(text: string): Promise<string> {
   if (!hasProposed) return text;
 
   // Partition changes into resolved and unresolved.
-  // Unresolved changes have anchored:false (sentinel range {0,0}) — they could not
+  // Unresolved changes have resolved:false (sentinel range {0,0}) — they could not
   // be placed in the body. Inserting CriticMarkup at position 0 for these is a
   // data-loss bug; instead, preserve their footnote blocks verbatim.
   const unresolvedIds = new Set<string>(
-    changes.filter(c => c.anchored === false).map(c => c.id)
+    changes.filter(c => c.resolved === false).map(c => c.id)
   );
 
   // ── Step 1: Split body from footnote section ──────────────────────────────
@@ -137,7 +143,7 @@ export async function convertL3ToL2(text: string): Promise<string> {
     // Decided changes (accepted/rejected) keep their L3 edit-op representation.
     if (change.status !== ChangeStatus.Proposed) continue;
 
-    // Unresolved changes (anchored:false) cannot be placed in the body — skip them.
+    // Unresolved changes (resolved:false) cannot be placed in the body — skip them.
     // Their footnote blocks are preserved verbatim in Step 3.
     if (unresolvedIds.has(change.id)) continue;
 

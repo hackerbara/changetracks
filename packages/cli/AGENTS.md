@@ -20,11 +20,11 @@ The `cdown` entry routes at startup:
 
 ## Engine Layer (`src/engine/`)
 
-Exported as `changedown/engine`. Consumed by: MCP server (`changedown-plugin/mcp-server/`), LSP server (config only via `changedown/config`).
+Exported as `@changedown/cli/engine`. Consumed by: MCP server (`changedown-plugin/mcp-server/`), LSP server (config only via `@changedown/cli/config`).
 
 ### Key components
 
-**`ConfigResolver`** (`engine/config-resolver.ts`) — Session-scoped, lazy per-file config loader. Walks up from each file path to find `.changedown/config.toml`, caches by project root, file-watches for live reload. In MCP: one instance per stdio session. In `cdown` CLI: one instance per command invocation, disposed after via `resolver.dispose()`.
+**`ConfigResolver`** (`engine/config-resolver.ts`) — Session-scoped, lazy per-file config loader. Walks up from each file path to find `.@changedown/cli/config.toml`, caches by project root, file-watches for live reload. In MCP: one instance per stdio session. In `cdown` CLI: one instance per command invocation, disposed after via `resolver.dispose()`.
 
 **`SessionState`** (`engine/state.ts`) — Per-session ID counter and hash registry. Tracks `ct-N` ID allocation per file, manages change groups (`ct-N.M`), records per-line hashes for staleness detection, tracks last-read view for coordinate validation. Note: a stripped-down fork lives at `packages/opencode-plugin/src/state.ts`; a comment in `state.ts` explains the divergence.
 
@@ -37,7 +37,7 @@ Exported as `changedown/engine`. Consumed by: MCP server (`changedown-plugin/mcp
 
 This is the MCP tool result format. The CLI wraps results via `handlerToCliResult()` in `cli-output.ts`.
 
-**Tool schemas** (`engine/tool-schemas.ts`) — Two `propose_change` schemas, selected based on protocol mode from `.changedown/config.toml`:
+**Tool schemas** (`engine/tool-schemas.ts`) — Two `propose_change` schemas, selected based on protocol mode from `.@changedown/cli/config.toml`:
 - `classicProposeChangeSchema` — `old_text`/`new_text` text matching
 - `compactProposeChangeSchema` — `at` (LINE:HASH coordinate) + `op` (CriticMarkup expression)
 
@@ -78,12 +78,12 @@ The `schema-executor.ts` layer builds Commander commands at runtime from declara
 | `src/engine/listed-tools.ts` | 6-tool MCP surface; protocol-mode schema selection |
 | `src/engine/tool-schemas.ts` | classic + compact propose_change schemas |
 | `src/engine/handlers/` | 16 handler functions + 4 utilities |
-| `src/config/` | Config TOML parsing (`changedown/config` export) |
+| `src/config/` | Config TOML parsing (`@changedown/cli/config` export) |
 | `src/init/` | Setup wizard logic (`changedown init`) |
 
 ## Config System (`src/config/`)
 
-Reads `.changedown/config.toml`. Exported as `changedown/config`. The LSP server imports only `parseConfigToml` and `DEFAULT_CONFIG` from this path — it does not use the engine handlers.
+Reads `.@changedown/cli/config.toml`. Exported as `@changedown/cli/config`. The LSP server imports only `parseConfigToml` and `DEFAULT_CONFIG` from this path — it does not use the engine handlers.
 
 ## Init System (`src/init/`)
 

@@ -291,6 +291,14 @@ export class SessionState {
   }
 
   /**
+   * Returns all absolute paths that have been read via `read_tracked_file`
+   * in this session. Used by `FileBackend.list()` to enumerate resources.
+   */
+  getAccessedPaths(): string[] {
+    return Array.from(this.fileRecords.keys());
+  }
+
+  /**
    * Returns the view name from the last read_tracked_file call for this file,
    * or undefined if the file has not been read in this session.
    */
@@ -468,6 +476,13 @@ export class SessionState {
    * and appends remaining segments.
    */
   private normalizePath(filePath: string): string {
+    // Opaque backend URIs (word://sess-..., file://..., etc.) are not
+    // filesystem paths. Preserve them exactly so read/write session hashes use
+    // the same key the backend registry routes on. Filesystem callers still use
+    // ordinary absolute/relative paths and go through the realpath path below.
+    if (/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(filePath)) {
+      return filePath;
+    }
     const resolved = path.resolve(filePath);
     try {
       return realpathSync(resolved);

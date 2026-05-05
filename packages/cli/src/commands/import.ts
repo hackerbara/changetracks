@@ -2,6 +2,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { importDocx } from '@changedown/docx';
 import type { ImportOptions } from '@changedown/docx';
+import { writeTrackedFile } from '../engine/write-tracked-file.js';
 
 export interface ImportCliOptions {
   output?: string;
@@ -25,7 +26,7 @@ export async function handleImport(
   const baseName = path.basename(file, path.extname(file));
   const outputPath = opts.output ?? `${baseName}-changedown.md`;
 
-  fs.writeFileSync(outputPath, markdown, 'utf-8');
+  await writeTrackedFile(outputPath, markdown);
 
   const totalChanges = stats.insertions + stats.deletions + stats.substitutions;
   console.log(`Imported: ${file} -> ${outputPath}`);

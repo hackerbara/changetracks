@@ -40,6 +40,9 @@ Packages consume each other in a strict dependency chain:
 
     benchmarks      LLM quality harness — tests AI agents against MCP surface via OpenCode
 
+    changedown-plugin/mcp-server   Fixed-port leader-election MCP server; serves Word pane over HTTPS
+    changedown-plugin/word-add-in  Word task pane (Observer, WordBackendImpl, PaneBackendClient)
+
     Other packages (cursor-preview, changedown-sublime, neovim-plugin,
     opencode-plugin) exist but are less actively developed.
     They inherit from root and get their own AGENTS.md when needed.
@@ -54,6 +57,16 @@ AGENTS.md with package-specific build, test, and architecture guidance.
 Core exports platform-agnostic interfaces from `packages/core/src/host/`. The
 website-v2 package is both a product and the reference implementation of the port
 architecture. The VS Code extension uses the same pattern via BaseController.
+
+## Word Add-In Transport (post-Tranche-5)
+
+`changedown-plugin/mcp-server` uses a fixed-port leader-election model:
+- First `changedown-mcp` instance to spawn binds `127.0.0.1:39990` HTTPS (host mode), serving the dev-cert chain from `~/.office-addin-dev-certs/`.
+- Later spawns detect the held port and proxy their parent harness's stdio MCP traffic to the host over HTTPS (client mode).
+- Word task pane connects once to `https://127.0.0.1:39990` via `fetch` + `EventSource`.
+- Pane disconnect (SSE close) clears the `RemoteBackend` from `BackendRegistry` after a 5s grace window; reconnect re-registers automatically.
+- Port frees when every harness-spawned `mcp-server` instance exits — no persistent service.
+- `bridge-daemon` (`changedown-plugin/bridge-daemon/`) was deleted in Tranche 5.
 
 ## Architecture (Summary)
 

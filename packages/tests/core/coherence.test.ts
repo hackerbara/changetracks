@@ -27,10 +27,10 @@ describe('VirtualDocument coherence', () => {
     const changes = [
       { id: 'cn-1', type: ChangeType.Insertion, status: ChangeStatus.Proposed,
         range: { start: 10, end: 20 }, contentRange: { start: 10, end: 20 },
-        level: 2 as const, anchored: true },
+        level: 2 as const, anchored: true, resolved: true },
       { id: 'cn-2', type: ChangeType.Deletion, status: ChangeStatus.Proposed,
         range: { start: 0, end: 0 }, contentRange: { start: 0, end: 0 },
-        level: 2 as const, anchored: false },
+        level: 2 as const, anchored: false, resolved: false },
     ];
     const doc = new VirtualDocument(changes, 50, []);
     expect(doc.coherenceRate).toBe(50);
@@ -42,7 +42,7 @@ describe('VirtualDocument coherence', () => {
     const changes = [
       { id: 'cn-1', type: ChangeType.Insertion, status: ChangeStatus.Proposed,
         range: { start: 0, end: 5 }, contentRange: { start: 0, end: 5 },
-        level: 0 as const, anchored: false },
+        level: 0 as const, anchored: false, resolved: true },
     ];
     const doc = new VirtualDocument(changes, 100, []);
     expect(doc.getUnresolvedChanges()).toHaveLength(0);
@@ -52,7 +52,7 @@ describe('VirtualDocument coherence', () => {
     const changes = [
       { id: 'cn-pending', type: ChangeType.Insertion, status: ChangeStatus.Proposed,
         range: { start: 0, end: 5 }, contentRange: { start: 0, end: 5 },
-        level: 1 as const, anchored: false },
+        level: 1 as const, anchored: false, resolved: true },
     ];
     const doc = new VirtualDocument(changes, 100, []);
     expect(doc.getUnresolvedChanges()).toHaveLength(0);

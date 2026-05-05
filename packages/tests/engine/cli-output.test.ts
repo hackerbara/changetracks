@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { handlerToCliResult, formatResult, type CliResult } from 'changedown/cli-output';
+import { handlerToCliResult, formatResult, type CliResult } from '@changedown/cli/cli-output';
 
 /* ---------- shared test fixtures ---------- */
 

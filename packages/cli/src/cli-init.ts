@@ -32,6 +32,20 @@ if (command === 'init') {
     console.error(err);
     process.exit(1);
   });
+} else if (command === 'agents') {
+  import('./agents/index.js').then(({ runAgentsCommand }) => {
+    return runAgentsCommand(args.slice(1), { cwd: process.cwd() });
+  }).catch((err) => {
+    console.error(err);
+    process.exit(1);
+  });
+} else if (command === 'word') {
+  import('./word/index.js').then(({ runWordCommand }) => {
+    return runWordCommand(args.slice(1), { cwd: process.cwd() });
+  }).catch((err) => {
+    console.error(err);
+    process.exit(1);
+  });
 } else if (!command || command === '--help' || command === '-h') {
   printHelp();
 } else {
@@ -46,7 +60,14 @@ function printHelp(): void {
 
   Usage:
     changedown init [options]    Set up change tracking in the current project
+    changedown agents setup      Configure ChangeDown integrations for installed agents
+    changedown word <command>    Run the hosted Word pane locally
     changedown --help            Show this help
+
+  Word commands:
+    start                         Download/sideload hosted manifest and configure agent integrations
+    stop                          Stop the sideload session
+    doctor                        Check manifest/certs/MCP and agent readiness
 
   Init options:
     --author=NAME                  Set author identity (default: git config user.name)

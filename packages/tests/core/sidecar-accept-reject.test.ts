@@ -472,6 +472,7 @@ describe('computeSidecarResolveAll', () => {
       contentRange: { start: 0, end: 10 },
       level: 0,
       anchored: false,
+      resolved: true,
     };
   }
 

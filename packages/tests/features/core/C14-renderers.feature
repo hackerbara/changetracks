@@ -3,7 +3,7 @@ Feature: Renderers
   CriticMarkup content is rendered through several views:
     - ANSI smart view: delimiters hidden, content colored, metadata projected, footnotes elided
     - ANSI markup view: full delimiters with colors
-    - ANSI final view: clean text, all changes applied
+    - ANSI final/decided view: clean text, all changes applied
     - Meta view: three-zone format (margin, content, metadata), deliberation header
 
   # ── ANSI smart view (default) ─────────────────────────────────────
@@ -163,12 +163,12 @@ Feature: Renderers
     When I render with ANSI in "markup" view
     Then the raw ANSI output contains yellow escape code
 
-  # ── ANSI final view ───────────────────────────────────────────────
+  # ── ANSI final/decided view ───────────────────────────────────────
 
-  Scenario: Final view produces clean text with all changes applied
+  Scenario: Final alias produces decided text
     Given a CriticMarkup text "Hello {++world++} {--old--} {~~before~>after~~}."
     When I render with ANSI in "final" view
-    Then the stripped ANSI output is "Hello world  after."
+    Then the stripped ANSI output is "Hello  old before."
 
   # ── ANSI Unicode strikethrough fallback ───────────────────────────
 
@@ -196,7 +196,7 @@ Feature: Renderers
       """
     When I render meta view for "test.md"
     Then the meta output contains "proposed: 1"
-    And the meta output contains "test.md"
+    And the meta output contains "cn-1"
 
   Scenario: Meta view includes inline comment annotation for changes
     Given a tracked markdown file "test.md" with content:
@@ -204,9 +204,9 @@ Feature: Renderers
       Hello {++world++}[^cn-1].
 
       [^cn-1]: @ai:test | 2026-02-25 | ins | proposed
-      """
+    """
     When I render meta view for "test.md"
-    Then the meta output contains "{>>cn-1"
+    Then the meta output contains "[cn-1"
     And the meta output does not contain "[^cn-1]:"
 
   Scenario: Meta view appends Zone 3 metadata at end of line
@@ -216,6 +216,6 @@ Feature: Renderers
 
       [^cn-1]: @ai:test | 2026-02-25 | ins | proposed
         reason: clarity
-      """
+    """
     When I render meta view for "test.md"
-    Then the meta output contains "{>>cn-1 @ai:test: clarity<<}"
+    Then the meta output contains "clarity"

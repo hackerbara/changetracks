@@ -6,11 +6,11 @@ Feature: E1 - Config Resolution
 
   Scenario: Default config when no config.toml exists
     When I load config from an empty directory
-    Then the config tracking.include equals JSON ["**/*.md"]
+    Then the config tracking.include equals JSON []
     And the config tracking.exclude contains "node_modules/**"
     And the config tracking.exclude contains "dist/**"
-    And the config tracking.default is "tracked"
-    And the config tracking.auto_header is true
+    And the config tracking.default is "untracked"
+    And the config tracking.auto_header is false
     And the config author.default is ""
     And the config author.enforcement is "optional"
     And the config hooks.enforcement is "warn"

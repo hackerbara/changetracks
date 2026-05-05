@@ -56,7 +56,7 @@ describe('batch error granularity — operation_index in error responses', () =>
     await fs.rm(tmpDir, { recursive: true, force: true });
   });
 
-  it('partial success: bad op reported in failed[], good ops in applied[]', async () => {
+  it('partial success: bad op reported in failed[], good ops in applied[] (partial:true)', async () => {
     const filePath = path.join(tmpDir, 'doc.md');
     await fs.writeFile(filePath, 'First line.\n\nSecond line.\n\nThird line.\n');
 
@@ -65,6 +65,7 @@ describe('batch error granularity — operation_index in error responses', () =>
       {
         file: filePath,
         reason: 'Test batch',
+        partial: true,
         changes: [
           { old_text: 'First line.', new_text: 'Heading' },           // Good
           { old_text: 'NONEXISTENT', new_text: 'Replacement' },       // BAD — text not found
@@ -84,7 +85,7 @@ describe('batch error granularity — operation_index in error responses', () =>
     expect(data.failed[0].index).toBe(1); // 0-indexed, 2nd operation
   });
 
-  it('partial success: first op fails, second succeeds', async () => {
+  it('partial success: first op fails, second succeeds (partial:true)', async () => {
     const filePath = path.join(tmpDir, 'doc.md');
     await fs.writeFile(filePath, 'Hello world.\n');
 
@@ -92,6 +93,7 @@ describe('batch error granularity — operation_index in error responses', () =>
       {
         file: filePath,
         reason: 'First op fails',
+        partial: true,
         changes: [
           { old_text: 'MISSING_TEXT', new_text: 'Replacement' },   // BAD — index 0
           { old_text: 'Hello world.', new_text: 'Hi world.' },      // Good
@@ -110,7 +112,7 @@ describe('batch error granularity — operation_index in error responses', () =>
     expect(data.failed[0].index).toBe(0);
   });
 
-  it('partial success: empty old_text+new_text fails, good op succeeds', async () => {
+  it('partial success: empty old_text+new_text fails, good op succeeds (partial:true)', async () => {
     const filePath = path.join(tmpDir, 'doc.md');
     await fs.writeFile(filePath, 'Some content.\n');
 
@@ -118,6 +120,7 @@ describe('batch error granularity — operation_index in error responses', () =>
       {
         file: filePath,
         reason: 'Empty op',
+        partial: true,
         changes: [
           { old_text: 'Some content.', new_text: 'New content.' },    // Good
           { old_text: '', new_text: '' },                              // BAD — both empty
@@ -192,7 +195,7 @@ describe('batch error granularity — operation_index in error responses', () =>
     expect(data.error.total_operations).toBe(3);
   });
 
-  it('partial success writes only successful changes to disk', async () => {
+  it('partial:true writes only successful changes to disk', async () => {
     const filePath = path.join(tmpDir, 'doc.md');
     const original = 'First line.\n\nSecond line.\n\nThird line.\n';
     await fs.writeFile(filePath, original);
@@ -201,6 +204,7 @@ describe('batch error granularity — operation_index in error responses', () =>
       {
         file: filePath,
         reason: 'Test batch',
+        partial: true,
         changes: [
           { old_text: 'First line.', new_text: 'Heading' },
           { old_text: 'NONEXISTENT', new_text: 'Replacement' },
@@ -268,7 +272,7 @@ describe('batch error granularity — operation_index in error responses', () =>
     expect(message).not.toMatch(/Batch operation/i);
   });
 
-  it('partial success reports failure reasons with "Operation N:" format', async () => {
+  it('partial:true reports failure reasons with "Operation N:" format', async () => {
     const filePath = path.join(tmpDir, 'doc.md');
     await fs.writeFile(filePath, 'Line one.\nLine two.\n');
 
@@ -276,6 +280,7 @@ describe('batch error granularity — operation_index in error responses', () =>
       {
         file: filePath,
         reason: 'Format check',
+        partial: true,
         changes: [
           { old_text: 'Line one.', new_text: 'L1.' },
           { old_text: '', new_text: '' },  // BAD — both empty

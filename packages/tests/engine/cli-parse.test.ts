@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseGlobalArgs } from 'changedown/cli-parse';
+import { parseGlobalArgs } from '@changedown/cli/cli-parse';
 
 describe('parseGlobalArgs', () => {
   it('extracts command and subargs from argv', () => {

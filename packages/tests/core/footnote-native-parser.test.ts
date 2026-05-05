@@ -48,6 +48,60 @@ describe('FootnoteNativeParser (line-hash + edit-op format)', () => {
     expect(ins!.range.end).toBeGreaterThan(ins!.range.start);
   });
 
+  it('classifies document-scope accepted insertion as a durable record, not a reviewable change', () => {
+    const genesisL3 = [
+      'Fresh visible seed.',
+      'Codec garden live seed.',
+      '',
+      '[^cn-1]: @base-document | 2026-05-04 | ins | accepted',
+      '    source: initial-word-body',
+      '    scope: document',
+      '    body-hash: test-body-hash',
+      '',
+    ].join('\n');
+
+    const doc = parser.parse(genesisL3);
+
+    expect(doc.getChanges()).toEqual([]);
+    expect(doc.getDiagnostics()).toEqual([]);
+    expect(doc.getRecords()).toContainEqual(expect.objectContaining({
+      id: 'cn-1',
+      type: 'ins',
+      status: 'accepted',
+      reviewable: false,
+      metadata: expect.objectContaining({
+        source: 'initial-word-body',
+        scope: 'document',
+        'body-hash': 'test-body-hash',
+      }),
+    }));
+  });
+
+  it('keeps accepted insertion with edit-op reviewable even when it has genesis-like metadata', () => {
+    const l3 = [
+      'Fresh visible seed.',
+      'Codec garden live seed.',
+      '',
+      '[^cn-1]: @base-document | 2026-05-04 | ins | accepted',
+      '    1:00 {++Fresh ++}visible seed.',
+      '    source: initial-word-body',
+      '    scope: document',
+      '    body-hash: test-body-hash',
+      '',
+    ].join('\n');
+
+    const doc = parser.parse(l3);
+    const changes = doc.getChanges();
+
+    expect(changes).toHaveLength(1);
+    expect(changes[0]!).toMatchObject({
+      id: 'cn-1',
+      type: ChangeType.Insertion,
+      status: ChangeStatus.Accepted,
+    });
+    expect(doc.getRecords()).toEqual([]);
+  });
+
   it('parses deletion with contextual anchor span and deletionSeamOffset', () => {
     // After the bug 5 fix (Plan 1 Task 2), deletion ranges cover the full
     // contextual anchor span (contextBefore + contextAfter) rather than being
@@ -284,10 +338,12 @@ describe('deletion context parsing (@ctx:)', () => {
     expect(del!.range.start).toBeGreaterThan(8);
   });
 
-  it('signals anchored:false (not line-start fallback) when findUniqueMatch is ambiguous', () => {
+  it('signals resolved:false (not line-start fallback) when findUniqueMatch is ambiguous', () => {
     // "the" appears twice on the line — findUniqueMatch returns null (ambiguous).
-    // Updated per Task 3: ambiguous non-deletion ops now signal anchored:false rather
+    // Updated per Task 3: ambiguous non-deletion ops now signal resolved:false rather
     // than silently falling back to line-start. This aligns with Invariant A.
+    // Per spec §3.2 (Task 2.2): anchored is always true for L3 nodes (ref by construction);
+    // resolved carries the position-resolution result.
     const l3 = [
       '# Test',
       '',
@@ -299,8 +355,10 @@ describe('deletion context parsing (@ctx:)', () => {
     const doc = parser.parse(l3);
     const ins = doc.getChanges().find(c => c.id === 'cn-1');
     expect(ins).toBeDefined();
-    // Should signal unresolved, not silently fall back to line start
-    expect(ins!.anchored).toBe(false);
+    // L3 nodes always have anchored:true (footnote ref by construction)
+    expect(ins!.anchored).toBe(true);
+    // Should signal unresolved via resolved:false, not silently fall back to line start
+    expect(ins!.resolved).toBe(false);
   });
 });
 
@@ -385,9 +443,11 @@ describe('Protocol overview title-case regression', () => {
     expect(sub!.anchored).toBe(true);
   });
 
-  it('ambiguous text near Protocol signals anchored:false to prevent wrong decoration', () => {
+  it('ambiguous text near Protocol signals resolved:false to prevent wrong decoration', () => {
     // Pathological case: two identical tokens on same line as "Protocol".
-    // The op text "AI" appears twice → findUniqueMatch returns null → anchored:false.
+    // The op text "AI" appears twice → findUniqueMatch returns null → resolved:false.
+    // Per spec §3.2 (Task 2.2): anchored is always true for L3 nodes; resolved carries
+    // the position-resolution result.
     const l3 = [
       '# Title',
       '',
@@ -399,8 +459,10 @@ describe('Protocol overview title-case regression', () => {
     const doc = parser.parse(l3);
     const sub = doc.getChanges().find(c => c.id === 'cn-1');
     expect(sub).toBeDefined();
-    // "AI" appears at "Protocol AI" and "Google AI" → ambiguous → anchored:false
-    expect(sub!.anchored).toBe(false);
+    // L3 nodes always have anchored:true (footnote ref by construction)
+    expect(sub!.anchored).toBe(true);
+    // "AI" appears at "Protocol AI" and "Google AI" → ambiguous → resolved:false
+    expect(sub!.resolved).toBe(false);
   });
 });
 
@@ -457,7 +519,8 @@ describe('L2→L3 expansion prevents title-case ambiguity (Task 4 integration)',
 });
 
 // Task 3 GREEN: These tests assert the behavior after Task 3 removes silent fallback.
-// Ambiguous/not-found non-deletion ops now signal anchored:false (Invariant A).
+// Task 2.2 UPDATE: anchored is now always true for L3 nodes (footnote ref by construction);
+// resolved carries the position-resolution result (false when text not found/ambiguous).
 describe('deterministic anchor resolution — no silent fallback for non-deletion ops', () => {
   beforeAll(async () => { await initHashline(); });
 
@@ -466,7 +529,7 @@ describe('deterministic anchor resolution — no silent fallback for non-deletio
   // Line 3 offset: "# Test\n\n".length = 8
   const lineOffset = 8;
 
-  it('ambiguous insertion text → anchored:false, not line-start', () => {
+  it('ambiguous insertion text → resolved:false, not line-start', () => {
     // "the" appears twice — findUniqueMatch returns null (ambiguous)
     const l3 = [
       '# Test',
@@ -479,13 +542,15 @@ describe('deterministic anchor resolution — no silent fallback for non-deletio
     const doc = parser.parse(l3);
     const ins = doc.getChanges().find(c => c.id === 'cn-1');
     expect(ins).toBeDefined();
-    // DESIRED: anchored:false (not silently placed at line start)
-    expect(ins!.anchored).toBe(false);
+    // L3 nodes always have anchored:true (footnote ref by construction)
+    expect(ins!.anchored).toBe(true);
+    // DESIRED: resolved:false (not silently placed at line start)
+    expect(ins!.resolved).toBe(false);
     // DESIRED: range is NOT at line-start (no meaningful position was assigned)
     expect(ins!.range.start).not.toBe(lineOffset);
   });
 
-  it('insertion text not found on line → anchored:false', () => {
+  it('insertion text not found on line → resolved:false', () => {
     // "missing" does not appear in "the cat and the dog."
     const l3 = [
       '# Test',
@@ -498,11 +563,13 @@ describe('deterministic anchor resolution — no silent fallback for non-deletio
     const doc = parser.parse(l3);
     const ins = doc.getChanges().find(c => c.id === 'cn-1');
     expect(ins).toBeDefined();
-    // DESIRED: anchored:false (text is genuinely missing from body)
-    expect(ins!.anchored).toBe(false);
+    // L3 nodes always have anchored:true (footnote ref by construction)
+    expect(ins!.anchored).toBe(true);
+    // DESIRED: resolved:false (text is genuinely missing from body)
+    expect(ins!.resolved).toBe(false);
   });
 
-  it('ambiguous substitution target → anchored:false, not line-start', () => {
+  it('ambiguous substitution target → resolved:false, not line-start', () => {
     // "can" appears twice — proposed sub newText is ambiguous
     const l3 = [
       '# Test',
@@ -515,8 +582,10 @@ describe('deterministic anchor resolution — no silent fallback for non-deletio
     const doc = parser.parse(l3);
     const sub = doc.getChanges().find(c => c.id === 'cn-1');
     expect(sub).toBeDefined();
-    // DESIRED: anchored:false (newText "can" is ambiguous on this line)
-    expect(sub!.anchored).toBe(false);
+    // L3 nodes always have anchored:true (footnote ref by construction)
+    expect(sub!.anchored).toBe(true);
+    // DESIRED: resolved:false (newText "can" is ambiguous on this line)
+    expect(sub!.resolved).toBe(false);
     expect(sub!.range.start).not.toBe(lineOffset);
   });
 
@@ -645,14 +714,18 @@ describe('discussion text preservation in footnotes', () => {
 });
 
 // ─── Ghost node / settled footnote handling (Task 4) ─────────────────────────
+// Task 2.2 UPDATE: anchored is now always true for L3 nodes (footnote ref by construction).
+// Settled/ghost nodes (no opString) have resolved:false — position cannot be determined.
 describe('ghost nodes — settled footnotes without opString', () => {
   beforeAll(async () => { await initHashline(); });
 
   const parser = new FootnoteNativeParser();
 
-  it('footnote without opString → node has anchored:false', () => {
+  it('footnote without opString → node has anchored:true, resolved:false', () => {
     // Settled/compacted footnote: the opString has been removed after accept/reject.
-    // The parser must mark these nodes anchored:false so consumers can filter them.
+    // Per spec §3.2: anchored is always true (footnote ref exists by construction).
+    // resolved:false signals that position cannot be determined — consumers use this
+    // to filter ghost nodes from rendering.
     const l3 = [
       '# Test',
       '',
@@ -664,12 +737,13 @@ describe('ghost nodes — settled footnotes without opString', () => {
     const doc = parser.parse(l3);
     const ins = doc.getChanges().find(c => c.id === 'cn-1');
     expect(ins).toBeDefined();
-    expect(ins!.anchored).toBe(false);
+    expect(ins!.anchored).toBe(true);
+    expect(ins!.resolved).toBe(false);
   });
 
   it('footnote without opString → range does not stray to {0,0} falsely — still uses fallbackRange', () => {
     // The range will be the line-start fallback (not a meaningful position),
-    // but anchored:false prevents consumers from rendering it as a real decoration.
+    // but resolved:false prevents consumers from rendering it as a real decoration.
     const l3 = [
       '# Test',
       '',
@@ -681,11 +755,12 @@ describe('ghost nodes — settled footnotes without opString', () => {
     const doc = parser.parse(l3);
     const ins = doc.getChanges().find(c => c.id === 'cn-1');
     expect(ins).toBeDefined();
-    // anchored:false is the key signal — the range value is not meaningful
-    expect(ins!.anchored).toBe(false);
+    // resolved:false is the key signal — the range value is not meaningful
+    expect(ins!.anchored).toBe(true);
+    expect(ins!.resolved).toBe(false);
   });
 
-  it('settled deletion without opString → anchored:false', () => {
+  it('settled deletion without opString → resolved:false', () => {
     const l3 = [
       '# Test',
       '',
@@ -697,10 +772,11 @@ describe('ghost nodes — settled footnotes without opString', () => {
     const doc = parser.parse(l3);
     const del = doc.getChanges().find(c => c.id === 'cn-1');
     expect(del).toBeDefined();
-    expect(del!.anchored).toBe(false);
+    expect(del!.anchored).toBe(true);
+    expect(del!.resolved).toBe(false);
   });
 
-  it('settled substitution without opString → anchored:false', () => {
+  it('settled substitution without opString → resolved:false', () => {
     const l3 = [
       '# Test',
       '',
@@ -712,11 +788,12 @@ describe('ghost nodes — settled footnotes without opString', () => {
     const doc = parser.parse(l3);
     const sub = doc.getChanges().find(c => c.id === 'cn-1');
     expect(sub).toBeDefined();
-    expect(sub!.anchored).toBe(false);
+    expect(sub!.anchored).toBe(true);
+    expect(sub!.resolved).toBe(false);
   });
 
-  it('discussion text still accessible on anchored:false ghost node', () => {
-    // Even when anchored:false, the discussion text (if any) should be available
+  it('discussion text still accessible on resolved:false ghost node', () => {
+    // Even when resolved:false, the discussion text (if any) should be available
     // so the node can still surface comment/review information.
     const l3 = [
       '# Test',
@@ -729,7 +806,8 @@ describe('ghost nodes — settled footnotes without opString', () => {
     const doc = parser.parse(l3);
     const ins = doc.getChanges().find(c => c.id === 'cn-1');
     expect(ins).toBeDefined();
-    expect(ins!.anchored).toBe(false);
+    expect(ins!.anchored).toBe(true);
+    expect(ins!.resolved).toBe(false);
     expect(ins!.metadata?.comment).toContain('reasoning for the accepted change');
   });
 });
@@ -1036,7 +1114,7 @@ describe('long-form footnote type names', () => {
       '',
       'Hello beautiful world.',
       '',
-      '[^cn-1]: @alex | 2026-03-19 | insertion | proposed',
+      '[^cn-1]: @hackerbara | 2026-03-19 | insertion | proposed',
       '    3:ab {++beautiful ++}',
     ].join('\n');
     const doc = parser.parse(l3);
@@ -1053,7 +1131,7 @@ describe('long-form footnote type names', () => {
       '',
       'Hello world.',
       '',
-      '[^cn-1]: @alex | 2026-03-19 | deletion | proposed',
+      '[^cn-1]: @hackerbara | 2026-03-19 | deletion | proposed',
       '    3:ab {--old --} @ctx:"Hello "||"world."',
     ].join('\n');
     const doc = parser.parse(l3);
@@ -1068,7 +1146,7 @@ describe('long-form footnote type names', () => {
       '',
       'Hello new world.',
       '',
-      '[^cn-1]: @alex | 2026-03-19 | substitution | proposed',
+      '[^cn-1]: @hackerbara | 2026-03-19 | substitution | proposed',
       '    3:ab {~~old~>new~~}',
     ].join('\n');
     const doc = parser.parse(l3);
@@ -1086,7 +1164,7 @@ describe('long-form footnote type names', () => {
       '[^cn-1]: @jennifer | 2026-02-20 | ins | proposed',
       '    3:ab {++beautiful ++}',
       '',
-      '[^cn-2]: @alex | 2026-03-19 | substitution | proposed',
+      '[^cn-2]: @hackerbara | 2026-03-19 | substitution | proposed',
       '    3:ab {~~old~>new~~}',
     ].join('\n');
     const doc = parser.parse(l3);
@@ -1112,38 +1190,37 @@ describe('edit-over-edit resolution', () => {
     // cn-2 deletes "very " from "The very lazy dog" → "The lazy dog"
     // Current body is "The lazy dog" — cn-1's text is consumed and absent.
     // The parser's single-pass cannot find "very " in the body.
-    // The resolution protocol replay confirms cn-1 is valid.
+    // Per spec §3.2 (Task 2.2): L3 nodes always have anchored:true (footnote ref by
+    // construction). Consumed ops stay resolved:false; consumedBy is set by the
+    // protocol replay (covered by scrub.test.ts Task 6 coverage).
     const l3 = [
-      '<!-- changedown.com/v1: tracked -->',
       'The lazy dog',
       '',
       '[^cn-1]: @alice | 2026-03-20 | ins | proposed',
-      '    2:a1 The {++very ++}lazy dog',
-      '',
+      '    1:ab The {++very ++}lazy dog',
       '[^cn-2]: @alice | 2026-03-20 | del | proposed',
-      '    2:b1 The {--very --}lazy dog',
+      '    1:cd The {--very --}lazy dog',
     ].join('\n');
 
     const doc = parser.parse(l3);
     const changes = doc.getChanges();
 
-    // cn-1 is consumed — its text ("very ") is absent from the current body.
-    // The protocol confirms it's valid, but without a body range it stays
-    // anchored:false so the ghost node filter (A-4) keeps it from rendering
-    // at offset 0.
     const ct1 = changes.find(c => c.id === 'cn-1');
     expect(ct1).toBeDefined();
-    expect(ct1!.anchored).toBe(false);
+    expect(ct1!.anchored).toBe(true);    // always true for L3 nodes (Task 2.2)
+    expect(ct1!.resolved).toBe(false);   // text absent from body — position unresolved
 
-    // cn-2 should be resolved (contextual match on "The lazy dog")
+    // cn-2 should also have anchored:true (L3 node by construction)
     const ct2 = changes.find(c => c.id === 'cn-2');
     expect(ct2).toBeDefined();
     expect(ct2!.anchored).toBe(true);
   });
 
-  it('leaves genuinely unresolvable operations as anchored:false', () => {
+  it('leaves genuinely unresolvable operations as anchored:true, resolved:false', () => {
     // cn-1 references text that has never existed in any body state.
-    // The resolution protocol should NOT mark it as anchored.
+    // The resolution protocol cannot locate it — resolved stays false.
+    // Per spec §3.2 (Task 2.2): anchored is always true for L3 nodes (ref by construction);
+    // resolved:false signals that the position could not be determined.
     const l3 = [
       '<!-- changedown.com/v1: tracked -->',
       'The lazy dog',
@@ -1156,6 +1233,404 @@ describe('edit-over-edit resolution', () => {
     const changes = doc.getChanges();
     const ct1 = changes.find(c => c.id === 'cn-1');
     expect(ct1).toBeDefined();
-    expect(ct1!.anchored).toBe(false);
+    expect(ct1!.anchored).toBe(true);   // always true for L3 nodes (footnote ref exists)
+    expect(ct1!.resolved).toBe(false);  // text not found in body — position unresolved
+  });
+});
+
+// ─── Task 2.2: anchored/resolved split at the construction site ───────────────
+// Spec §3.2: L3 nodes always have anchored:true (footnote ref by construction).
+// The separate resolved axis carries the position-resolution result.
+describe('L3 parser anchored/resolved split (Task 2.2)', () => {
+  beforeAll(async () => { await initHashline(); });
+
+  const parser = new FootnoteNativeParser();
+
+  it('sets anchored:true, resolved:false when insertion text not found in body', () => {
+    // "missing" does not appear on body line 3 — position cannot be resolved.
+    // The footnote ref exists (anchored:true) but the edit-op text is absent (resolved:false).
+    const l3 = [
+      'body line one',
+      'body line two',
+      '',
+      '[^cn-1]: @human:test | 2026-01-01 | ins | proposed',
+      '    1:ab {++missing++}',
+    ].join('\n');
+    const doc = parser.parse(l3);
+    const change = doc.getChanges().find(c => c.id === 'cn-1');
+    expect(change).toBeDefined();
+    expect(change!.anchored).toBe(true);   // ref exists in footnote block
+    expect(change!.resolved).toBe(false);  // position unresolved — text not in body
+  });
+
+  it('sets anchored:true, resolved:true when insertion text found uniquely', () => {
+    // "original" appears exactly once on body line 1 — position resolves deterministically.
+    const l3 = [
+      'original text here',
+      '',
+      '[^cn-1]: @human:test | 2026-01-01 | ins | proposed',
+      '    1:ab {++original++}',
+    ].join('\n');
+    const doc = parser.parse(l3);
+    const change = doc.getChanges().find(c => c.id === 'cn-1');
+    expect(change).toBeDefined();
+    expect(change!.anchored).toBe(true);  // ref exists in footnote block
+    expect(change!.resolved).toBe(true);  // "original" found uniquely on line 1
+  });
+});
+
+// ─── Task 2.3: coordinate_failed diagnostic for missing parsedOp ──────────────
+// Spec §3.2 Sites 2-4: when a footnote has no edit-op (settled/ghost), the parser
+// emits a coordinate_failed diagnostic on Document.diagnostics in addition to
+// setting resolved:false on the ChangeNode.
+describe('L3 parser emits coordinate_failed diagnostic for missing parsedOp (Task 2.3)', () => {
+  beforeAll(async () => { await initHashline(); });
+
+  const parser = new FootnoteNativeParser();
+
+  it('emits coordinate_failed diagnostic when footnote has no edit-op line', () => {
+    // Settled/compacted footnote: the edit-op line has been removed after acceptance.
+    // Only the header and approval metadata remain — no `    N:HASH op` line.
+    const l3 = [
+      '# Test',
+      '',
+      'Some settled text here.',
+      '',
+      '[^cn-1]: @alice | 2026-03-16 | ins | accepted',
+      '    approved: @alice 2026-03-16 "looks good"',
+    ].join('\n');
+    const doc = parser.parse(l3);
+    const diags = doc.getDiagnostics();
+    const found = diags.find(d => d.kind === 'coordinate_failed' && d.changeId === 'cn-1');
+    expect(found).toBeDefined();
+    expect(found!.message).toContain('cn-1');
+    expect(found!.message).toContain('parsedOp');
+  });
+
+  it('does NOT emit coordinate_failed when footnote has a valid edit-op', () => {
+    // Normal footnote with an edit-op line — no diagnostic expected.
+    const l3 = [
+      '# Test',
+      '',
+      'Hello world.',
+      '',
+      '[^cn-1]: @alice | 2026-03-16 | ins | proposed',
+      '    3:ab {++world++}',
+    ].join('\n');
+    const doc = parser.parse(l3);
+    const diags = doc.getDiagnostics();
+    const found = diags.find(d => d.kind === 'coordinate_failed' && d.changeId === 'cn-1');
+    expect(found).toBeUndefined();
+  });
+
+  it('emits one coordinate_failed per missing-op footnote in a multi-footnote document', () => {
+    // Two settled footnotes, both missing edit-ops → two diagnostics.
+    const l3 = [
+      '# Test',
+      '',
+      'Some text.',
+      '',
+      '[^cn-1]: @alice | 2026-03-16 | ins | accepted',
+      '    approved: @alice 2026-03-16 "ok"',
+      '',
+      '[^cn-2]: @alice | 2026-03-16 | del | accepted',
+      '    approved: @alice 2026-03-16 "ok"',
+    ].join('\n');
+    const doc = parser.parse(l3);
+    const diags = doc.getDiagnostics().filter(d => d.kind === 'coordinate_failed');
+    expect(diags.length).toBe(2);
+    expect(diags.find(d => d.changeId === 'cn-1')).toBeDefined();
+    expect(diags.find(d => d.changeId === 'cn-2')).toBeDefined();
+  });
+
+  it('node has anchored:true, resolved:false — not anchored:false', () => {
+    // coordinate_failed goes with anchored:true/resolved:false (ref exists, position unknown),
+    // not anchored:false (which would mean no footnote ref at all).
+    const l3 = [
+      '# Test',
+      '',
+      'Some settled text here.',
+      '',
+      '[^cn-1]: @alice | 2026-03-16 | ins | accepted',
+      '    approved: @alice 2026-03-16 "looks good"',
+    ].join('\n');
+    const doc = parser.parse(l3);
+    const change = doc.getChanges().find(c => c.id === 'cn-1');
+    expect(change).toBeDefined();
+    expect(change!.anchored).toBe(true);
+    expect(change!.resolved).toBe(false);
+  });
+
+  it('diagnostics persist across multiple parse() calls on same parser instance', () => {
+    // Parser instances are reused (e.g. via l3Parser singleton in workspace.ts).
+    // Each call must have a fresh diagnostics slate — previous run's diagnostics
+    // must not bleed into the next run.
+    const settled = [
+      '# Test',
+      '',
+      'Text.',
+      '',
+      '[^cn-1]: @alice | 2026-03-16 | ins | accepted',
+      '    approved: @alice 2026-03-16 "ok"',
+    ].join('\n');
+    const normal = [
+      '# Test',
+      '',
+      'Hello world.',
+      '',
+      '[^cn-1]: @alice | 2026-03-16 | ins | proposed',
+      '    3:ab {++world++}',
+    ].join('\n');
+
+    // First call: settled footnote → should have diagnostic
+    const doc1 = parser.parse(settled);
+    expect(doc1.getDiagnostics().filter(d => d.kind === 'coordinate_failed').length).toBe(1);
+
+    // Second call: normal footnote → no diagnostic (no bleed from first call)
+    const doc2 = parser.parse(normal);
+    expect(doc2.getDiagnostics().filter(d => d.kind === 'coordinate_failed').length).toBe(0);
+  });
+});
+
+// ─── Task 2.4: coordinate_failed diagnostic for unfound insertion text ─────────
+// Spec §3.2 Sites 2-4: when the insertion text cannot be uniquely located on the
+// target line, the parser emits a coordinate_failed diagnostic and returns
+// anchored:true / resolved:false (the footnote ref exists but position is unknown).
+describe('L3 parser emits coordinate_failed diagnostic for unfound insertion text (Task 2.4)', () => {
+  beforeAll(async () => { await initHashline(); });
+
+  const parser = new FootnoteNativeParser();
+
+  it('emits coordinate_failed when insertion text is absent from the target line', () => {
+    // "missing-anchor-text" does not appear on body line 1 → coordinate_failed.
+    const l3 = [
+      'body line one',
+      'body line two',
+      '',
+      '[^cn-1]: @human:test | 2026-01-01 | ins | proposed',
+      '    1:ab {++missing-anchor-text++}',
+    ].join('\n');
+    const doc = parser.parse(l3);
+    const diags = doc.getDiagnostics();
+    const found = diags.find(d => d.kind === 'coordinate_failed' && d.changeId === 'cn-1');
+    expect(found).toBeDefined();
+    expect(found!.message).toContain('missing-anchor-text');
+    expect(found!.message).toContain('line 1');
+  });
+
+  it('sets anchored:true, resolved:false on the ChangeNode (not anchored:false)', () => {
+    // The node must use anchored:true/resolved:false — not the old anchored:false sentinel.
+    const l3 = [
+      'body line one',
+      '',
+      '[^cn-1]: @human:test | 2026-01-01 | ins | proposed',
+      '    1:ab {++not-here++}',
+    ].join('\n');
+    const doc = parser.parse(l3);
+    const change = doc.getChanges().find(c => c.id === 'cn-1');
+    expect(change).toBeDefined();
+    expect(change!.anchored).toBe(true);
+    expect(change!.resolved).toBe(false);
+  });
+
+  it('does NOT emit coordinate_failed when insertion text is found on the line', () => {
+    // "original" appears on line 1 → no diagnostic.
+    const l3 = [
+      'original text here',
+      '',
+      '[^cn-1]: @human:test | 2026-01-01 | ins | proposed',
+      '    1:ab {++original++}',
+    ].join('\n');
+    const doc = parser.parse(l3);
+    const diags = doc.getDiagnostics();
+    const found = diags.find(d => d.kind === 'coordinate_failed' && d.changeId === 'cn-1');
+    expect(found).toBeUndefined();
+  });
+
+  it('diagnostic evidence carries line number, expectedText, and candidates count', () => {
+    const l3 = [
+      'body line one',
+      '',
+      '[^cn-1]: @human:test | 2026-01-01 | ins | proposed',
+      '    1:ab {++absent-text++}',
+    ].join('\n');
+    const doc = parser.parse(l3);
+    const found = doc.getDiagnostics().find(d => d.kind === 'coordinate_failed' && d.changeId === 'cn-1');
+    expect(found).toBeDefined();
+    expect(found!.evidence).toBeDefined();
+    expect(found!.evidence!.line).toBe(1);
+    expect(found!.evidence!.expectedText).toBe('absent-text');
+    expect(typeof found!.evidence!.candidates).toBe('number');
+  });
+});
+
+// ─── Task 2.5: coordinate_failed diagnostic for unfound substitution newText ──
+// Spec §3.2 Sites 2-4: when the substitution newText cannot be uniquely located
+// on the target line, the parser emits a coordinate_failed diagnostic and returns
+// anchored:true / resolved:false (the footnote ref exists but position is unknown).
+describe('L3 parser emits coordinate_failed diagnostic for unfound substitution newText (Task 2.5)', () => {
+  beforeAll(async () => { await initHashline(); });
+
+  const parser = new FootnoteNativeParser();
+
+  it('emits coordinate_failed when substitution newText is absent from the target line', () => {
+    // "replacement-text" does not appear on body line 1 → coordinate_failed.
+    const l3 = [
+      'body line one',
+      'body line two',
+      '',
+      '[^cn-1]: @human:test | 2026-01-01 | sub | proposed',
+      '    1:ab {~~original~>replacement-text~~}',
+    ].join('\n');
+    const doc = parser.parse(l3);
+    const diags = doc.getDiagnostics();
+    const found = diags.find(d => d.kind === 'coordinate_failed' && d.changeId === 'cn-1');
+    expect(found).toBeDefined();
+    expect(found!.message).toContain('Substitution text');
+    expect(found!.message).toContain('replacement-text');
+    expect(found!.message).toContain('line 1');
+  });
+
+  it('sets anchored:true, resolved:false on the ChangeNode (not anchored:false)', () => {
+    // The node must use anchored:true/resolved:false — not the old anchored:false sentinel.
+    const l3 = [
+      'body line one',
+      '',
+      '[^cn-1]: @human:test | 2026-01-01 | sub | proposed',
+      '    1:ab {~~original~>not-here~~}',
+    ].join('\n');
+    const doc = parser.parse(l3);
+    const change = doc.getChanges().find(c => c.id === 'cn-1');
+    expect(change).toBeDefined();
+    expect(change!.anchored).toBe(true);
+    expect(change!.resolved).toBe(false);
+  });
+
+  it('does NOT emit coordinate_failed when substitution newText is found on the line', () => {
+    // "newword" appears on line 1 → no diagnostic.
+    const l3 = [
+      'the newword is here',
+      '',
+      '[^cn-1]: @human:test | 2026-01-01 | sub | proposed',
+      '    1:ab {~~oldword~>newword~~}',
+    ].join('\n');
+    const doc = parser.parse(l3);
+    const diags = doc.getDiagnostics();
+    const found = diags.find(d => d.kind === 'coordinate_failed' && d.changeId === 'cn-1');
+    expect(found).toBeUndefined();
+  });
+
+  it('diagnostic evidence carries line number, expectedText, and candidates count', () => {
+    const l3 = [
+      'body line one',
+      '',
+      '[^cn-1]: @human:test | 2026-01-01 | sub | proposed',
+      '    1:ab {~~old~>absent-new-text~~}',
+    ].join('\n');
+    const doc = parser.parse(l3);
+    const found = doc.getDiagnostics().find(d => d.kind === 'coordinate_failed' && d.changeId === 'cn-1');
+    expect(found).toBeDefined();
+    expect(found!.evidence).toBeDefined();
+    expect(found!.evidence!.line).toBe(1);
+    expect(found!.evidence!.expectedText).toBe('absent-new-text');
+    expect(typeof found!.evidence!.candidates).toBe('number');
+  });
+});
+
+// ─── Task 2.6: replay protocol clears diagnostics on successful recovery ──────
+// Spec §3.2: when the replay protocol successfully recovers a node that the
+// initial parse couldn't anchor (e.g. ambiguous text match), the diagnostic
+// emitted during the initial pass must be removed. The document must not carry
+// a stale coordinate_failed record after recovery.
+describe('L3 parser replay recovery clears coordinate_failed diagnostic (Task 2.6)', () => {
+  beforeAll(async () => { await initHashline(); });
+
+  const parser = new FootnoteNativeParser();
+
+  it('removes coordinate_failed diagnostic when replay resolves the node', () => {
+    // cn-1 inserts "very " — the body has "very " twice, so the initial text
+    // search finds 2 matches (ambiguous) and emits coordinate_failed + resolved:false.
+    // cn-2 substitutes "lazy"→"sleepy". The replay protocol traces the edit
+    // history and resolves cn-1's position → resolved:true, resolutionPath:'replay'.
+    // After replay, the coordinate_failed diagnostic for cn-1 must be gone.
+    const l3 = [
+      'The very very sleepy dog.',
+      '',
+      '[^cn-1]: @alice | 2026-03-20 | ins | proposed',
+      '    1:ff The {++very ++}very lazy dog.',
+      '',
+      '[^cn-2]: @bob | 2026-03-21 | sub | proposed',
+      '    1:ee The very very {~~lazy~>sleepy~~} dog.',
+    ].join('\n');
+
+    const doc = parser.parse(l3);
+
+    // Replay must have recovered cn-1.
+    const cn1 = doc.getChanges().find(c => c.id === 'cn-1');
+    expect(cn1).toBeDefined();
+    expect(cn1!.resolved).toBe(true);
+    expect(cn1!.resolutionPath).toBe('replay');
+
+    // The coordinate_failed diagnostic emitted for cn-1 during the initial pass
+    // must have been removed from the document.
+    const diag = doc.getDiagnostics().find(
+      d => d.kind === 'coordinate_failed' && d.changeId === 'cn-1',
+    );
+    expect(diag).toBeUndefined();
+  });
+
+  it('retains coordinate_failed diagnostic for a node the replay cannot recover', () => {
+    // cn-1 references text that never appears in any body state — replay cannot
+    // locate it. The diagnostic must remain on the document.
+    const l3 = [
+      'The lazy dog',
+      '',
+      '[^cn-1]: @alice | 2026-03-20 | ins | proposed',
+      '    1:a1 {++nonexistent-phrase++}',
+    ].join('\n');
+
+    const doc = parser.parse(l3);
+
+    const cn1 = doc.getChanges().find(c => c.id === 'cn-1');
+    expect(cn1).toBeDefined();
+    expect(cn1!.resolved).toBe(false);
+
+    // Diagnostic must still be present — replay didn't fix it.
+    const diag = doc.getDiagnostics().find(
+      d => d.kind === 'coordinate_failed' && d.changeId === 'cn-1',
+    );
+    expect(diag).toBeDefined();
+  });
+
+  it('only removes diagnostics for recovered nodes, not for still-unresolved ones', () => {
+    // cn-1 inserts ambiguous "very " → recovered by replay (diagnostic removed).
+    // cn-2 inserts "phantom-word" that never appears → stays unresolved (diagnostic kept).
+    // cn-3 substitutes "lazy"→"sleepy" — gives replay context to resolve cn-1.
+    const l3 = [
+      'The very very sleepy dog.',
+      '',
+      '[^cn-1]: @alice | 2026-03-20 | ins | proposed',
+      '    1:ff The {++very ++}very lazy dog.',
+      '',
+      '[^cn-2]: @alice | 2026-03-20 | ins | proposed',
+      '    1:gg {++phantom-word++}',
+      '',
+      '[^cn-3]: @bob | 2026-03-21 | sub | proposed',
+      '    1:ee The very very {~~lazy~>sleepy~~} dog.',
+    ].join('\n');
+
+    const doc = parser.parse(l3);
+
+    // cn-1 recovered — no diagnostic.
+    const diag1 = doc.getDiagnostics().find(
+      d => d.kind === 'coordinate_failed' && d.changeId === 'cn-1',
+    );
+    expect(diag1).toBeUndefined();
+
+    // cn-2 still unresolved — diagnostic present.
+    const diag2 = doc.getDiagnostics().find(
+      d => d.kind === 'coordinate_failed' && d.changeId === 'cn-2',
+    );
+    expect(diag2).toBeDefined();
   });
 });

@@ -1,15 +1,19 @@
 import { describe, it, expect } from 'vitest';
 import { applyRejectedChanges } from '@changedown/mcp/internals';
 
+function bodyOf(text: string): string {
+  return text.split('\n\n')[0];
+}
+
 describe('applyRejectedChanges', () => {
   it('settles rejected insertion by removing inline markup, preserving footnote ref and definition', () => {
     const input =
       'Hello {++ beautiful ++}[^cn-1]world\n\n[^cn-1]: @alice | 2026-02-11 | ins | rejected';
     const { currentContent, appliedIds } = applyRejectedChanges(input);
     // Rejected insertion: {++ beautiful ++} removed, footnote ref [^cn-1] stays
-    expect(currentContent).toBe(
-      'Hello [^cn-1]world\n\n[^cn-1]: @alice | 2026-02-11 | ins | rejected'
-    );
+    expect(bodyOf(currentContent)).toBe('Hello [^cn-1]world');
+    expect(currentContent).toContain('[^cn-1]: @alice | 2026-02-11 | ins | rejected');
+    expect(currentContent).toContain('{++ beautiful ++}world');
     expect(appliedIds).toEqual(['cn-1']);
   });
 
@@ -18,9 +22,9 @@ describe('applyRejectedChanges', () => {
       'Hello {-- beautiful --}[^cn-1]world\n\n[^cn-1]: @alice | 2026-02-11 | del | rejected';
     const { currentContent, appliedIds } = applyRejectedChanges(input);
     // Rejected deletion: original text restored with footnote ref
-    expect(currentContent).toBe(
-      'Hello  beautiful [^cn-1]world\n\n[^cn-1]: @alice | 2026-02-11 | del | rejected'
-    );
+    expect(bodyOf(currentContent)).toBe('Hello  beautiful [^cn-1]world');
+    expect(currentContent).toContain('[^cn-1]: @alice | 2026-02-11 | del | rejected');
+    expect(currentContent).toContain('{-- beautiful --}world');
     expect(appliedIds).toEqual(['cn-1']);
   });
 
@@ -29,9 +33,10 @@ describe('applyRejectedChanges', () => {
       'Hello {~~beautiful~>ugly~~}[^cn-1]world\n\n[^cn-1]: @alice | 2026-02-11 | sub | rejected';
     const { currentContent, appliedIds } = applyRejectedChanges(input);
     // Rejected substitution: original text (before ~>) restored with footnote ref
-    expect(currentContent).toContain('beautiful[^cn-1]');
-    expect(currentContent).not.toContain('ugly');
-    expect(currentContent).not.toContain('{~~');
+    expect(bodyOf(currentContent)).toContain('beautiful[^cn-1]');
+    expect(bodyOf(currentContent)).not.toContain('ugly');
+    expect(bodyOf(currentContent)).not.toContain('{~~');
+    expect(currentContent).toContain('{~~beautiful~>ugly~~}world');
     expect(currentContent).toContain('[^cn-1]:');
     expect(appliedIds).toEqual(['cn-1']);
   });
@@ -66,7 +71,7 @@ describe('applyRejectedChanges', () => {
     expect(appliedIds).toEqual(['cn-1']);
     // cn-1 rejected insertion removed, footnote ref kept
     expect(currentContent).toContain('[^cn-1]');
-    expect(currentContent).not.toContain('{++rejected++}');
+    expect(bodyOf(currentContent)).not.toContain('{++rejected++}');
     // cn-2 proposed: untouched
     expect(currentContent).toContain('{++proposed++}[^cn-2]');
     // Both footnote definitions preserved
@@ -87,7 +92,7 @@ describe('applyRejectedChanges', () => {
     expect(currentContent).toContain('{++accepted++}[^cn-1]');
     // cn-2 rejected insertion removed, footnote ref kept
     expect(currentContent).toContain('[^cn-2]');
-    expect(currentContent).not.toContain('{++rejected++}');
+    expect(bodyOf(currentContent)).not.toContain('{++rejected++}');
     // Both footnote definitions preserved
     expect(currentContent).toContain('[^cn-1]:');
     expect(currentContent).toContain('[^cn-2]:');
@@ -100,6 +105,7 @@ describe('applyRejectedChanges', () => {
     // Layer 1: footnote definition and inline ref preserved for audit trail
     expect(currentContent).toContain('[^cn-1]:');
     expect(currentContent).toContain('[^cn-1] Z');
-    expect(currentContent).not.toContain('{++');
+    expect(bodyOf(currentContent)).not.toContain('{++');
+    expect(currentContent).toContain('{++y++} Z');
   });
 });

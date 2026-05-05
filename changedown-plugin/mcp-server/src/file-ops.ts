@@ -11,7 +11,7 @@ export {
   stripCriticMarkup,
   checkCriticMarkupOverlap,
   guardOverlap,
-} from 'changedown/engine';
+} from '@changedown/cli/engine';
 export type {
   UniqueMatch,
   ProposeChangeParams,
@@ -19,5 +19,5 @@ export type {
   LineRangeResult,
   ApplySingleOperationParams,
   ApplySingleOperationResult,
-} from 'changedown/engine';
-export type { CoreProposeChangeResult as ProposeChangeResult } from 'changedown/engine';
+} from '@changedown/cli/engine';
+export type { CoreProposeChangeResult as ProposeChangeResult } from '@changedown/cli/engine';

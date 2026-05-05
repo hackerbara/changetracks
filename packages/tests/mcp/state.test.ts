@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { SessionState } from '@changedown/mcp/internals';
-import { rerecordState } from 'changedown/engine';
+import { rerecordState } from '@changedown/cli/engine';
 import { initHashline } from '@changedown/core';
 import type { ChangeDownConfig } from '@changedown/mcp/internals';
 

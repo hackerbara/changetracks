@@ -62,32 +62,23 @@ function resolveStatus(
 }
 
 /**
- * Compute the committed view of a single line.
+ * Apply one pass of the six CriticMarkup replacement steps.
  *
- * Processes CriticMarkup in this order:
- * 1. Substitutions (contain ~> separator)
- * 2. Insertions
- * 3. Deletions
- * 4. Highlights
- * 5. Comments
- * 6. Standalone footnote refs
+ * Extracted from computeDecidedLine to support bounded recursion: the caller
+ * may invoke this multiple times when residual markup survives the first pass
+ * (e.g., pre-existing nested CriticMarkup in documents written before the
+ * assertResolved chokepoints landed).
+ *
+ * The trackStatus callback is owned by the outer computeDecidedLine frame and
+ * accumulates change IDs and flag state across all passes. Nested constructs
+ * carry distinct cn-N IDs, so repeated calls do not produce duplicate entries.
  */
-export function computeDecidedLine(
-  line: string,
+function applyDecidedReplacementsOnce(
+  text: string,
   footnotes: Map<string, FootnoteStatus>,
-): DecidedLineResult {
-  let result = line;
-  const changeIds: string[] = [];
-  let hasProposed = false;
-  let hasAccepted = false;
-
-  // Track status for flag computation (rejected changes don't set flags)
-  function trackStatus(status: 'proposed' | 'accepted' | 'rejected', changeId: string | undefined): void {
-    if (changeId) changeIds.push(changeId);
-    if (status === 'proposed') hasProposed = true;
-    else if (status === 'accepted') hasAccepted = true;
-    // rejected: neither flag
-  }
+  trackStatus: (status: 'proposed' | 'accepted' | 'rejected', changeId: string | undefined) => void,
+): string {
+  let result = text;
 
   // 1. Substitutions: {~~old~>new~~}[^cn-N]?
   result = result.replace(multiLineSubstitution(), (_match, old: string, newText: string, _refFull: string | undefined, refId: string | undefined) => {
@@ -123,6 +114,55 @@ export function computeDecidedLine(
 
   // 6. Standalone footnote refs: [^cn-N] — always removed
   result = result.replace(footnoteRefGlobal(), '');
+
+  return result;
+}
+
+/** Maximum number of replacement passes in computeDecidedLine. */
+const MAX_DECIDED_DEPTH = 3;
+
+/**
+ * Compute the committed view of a single line.
+ *
+ * Processes CriticMarkup in this order:
+ * 1. Substitutions (contain ~> separator)
+ * 2. Insertions
+ * 3. Deletions
+ * 4. Highlights
+ * 5. Comments
+ * 6. Standalone footnote refs
+ *
+ * Bounded recursion (depth ≤ MAX_DECIDED_DEPTH): if a replacement produces
+ * residual CriticMarkup (possible in pre-existing files with nested constructs),
+ * up to MAX_DECIDED_DEPTH passes are applied. Healthy documents with no markup
+ * skip the loop entirely (depth=0). Documents with one level of markup resolve
+ * in one pass. Beyond MAX_DECIDED_DEPTH, residual markup is left as-is for
+ * `cd repair` (Tranche 8) to address.
+ */
+export function computeDecidedLine(
+  line: string,
+  footnotes: Map<string, FootnoteStatus>,
+): DecidedLineResult {
+  let result = line;
+  const changeIds: string[] = [];
+  let hasProposed = false;
+  let hasAccepted = false;
+
+  // Track status for flag computation (rejected changes don't set flags).
+  // This closure is passed into applyDecidedReplacementsOnce across all passes;
+  // nested constructs carry distinct cn-N IDs so no duplicates arise.
+  function trackStatus(status: 'proposed' | 'accepted' | 'rejected', changeId: string | undefined): void {
+    if (changeId) changeIds.push(changeId);
+    if (status === 'proposed') hasProposed = true;
+    else if (status === 'accepted') hasAccepted = true;
+    // rejected: neither flag
+  }
+
+  let depth = 0;
+  while (depth < MAX_DECIDED_DEPTH && hasCriticMarkup(result)) {
+    result = applyDecidedReplacementsOnce(result, footnotes, trackStatus);
+    depth++;
+  }
 
   // Compute flag: P takes priority over A
   let flag: '' | 'P' | 'A' = '';

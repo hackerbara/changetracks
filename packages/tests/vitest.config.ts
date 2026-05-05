@@ -16,6 +16,10 @@ export default defineConfig({
     },
   },
   test: {
+    // The Word add-in real-mode harness owns fixed local ports (3001 and 39990).
+    // Running test files in parallel lets one worker kill another worker's
+    // harness server during readiness checks, producing false launch failures.
+    fileParallelism: false,
     setupFiles: ['./vitest-setup.ts'],
     include: [
       'core/**/*.test.ts',
@@ -26,6 +30,8 @@ export default defineConfig({
       'lsp/**/*.test.ts',
       'preview/**/*.test.ts',
       'vienna/**/*.test.ts',
+      'word-add-in/**/*.test.ts',
+      'word-addin/**/*.test.ts',
     ],
     server: {
       deps: {

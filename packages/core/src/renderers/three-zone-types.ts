@@ -28,7 +28,7 @@ export interface ContentSpan {
 export interface LineMetadata {
   changeId: string;
   author?: string;
-  type?: 'ins' | 'del' | 'sub' | 'hl' | 'com';
+  type?: 'ins' | 'del' | 'sub' | 'hl' | 'com' | 'mov';
   status?: 'proposed' | 'accepted' | 'rejected';
   reason?: string;
   replyCount?: number;

@@ -14,6 +14,25 @@ export interface CodeZone {
 }
 
 /**
+ * Build a Uint8Array bitmask where mask[i] = 1 iff offset i is inside a
+ * code zone. O(text.length + zones.length) build, O(1) lookup.
+ *
+ * Use this when scanning code-zone-aware logic over the whole text in
+ * a tight loop. For sparse point-queries, prefer
+ * `zones.some(z => offset >= z.start && offset < z.end)`.
+ */
+export function buildCodeZoneMask(text: string): Uint8Array {
+  const mask = new Uint8Array(text.length);
+  for (const zone of findCodeZones(text)) {
+    const end = Math.min(zone.end, text.length);
+    for (let i = zone.start; i < end; i++) {
+      mask[i] = 1;
+    }
+  }
+  return mask;
+}
+
+/**
  * Scans `text` and returns all code zones (fenced code blocks and inline code
  * spans) in document order. The algorithm is O(n) single-pass.
  *

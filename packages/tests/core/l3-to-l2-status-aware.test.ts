@@ -99,4 +99,28 @@ describe('status-aware L3→L2 demotion', () => {
     // Still valid L3
     expect(isL3Format(l2)).toBe(true);
   });
+
+  it('preserves cn-1 accepted genesis record while demoting proposed cn-2 to L2', async () => {
+    const l3 = [
+      'Hello new world.',
+      '',
+      '[^cn-1]: @base-document | 2026-05-04 | ins | accepted',
+      '    source: initial-word-body',
+      '    scope: document',
+      '    body-hash: test-body-hash',
+      '',
+      '[^cn-2]: @ai:codex | 2026-05-04 | ins | proposed',
+      '    1:00 Hello {++new ++}world.',
+      '',
+    ].join('\n');
+
+    const l2 = await convertL3ToL2(l3);
+    expect(l2).toContain('Hello {++new ++}[^cn-2]world.');
+    expect(l2).toContain('[^cn-1]: @base-document | 2026-05-04 | ins | accepted');
+    expect(l2).toContain('    source: initial-word-body');
+    expect(l2).toContain('    scope: document');
+    expect(l2).toContain('    body-hash: test-body-hash');
+    expect(l2).toContain('[^cn-2]: @ai:codex | 2026-05-04 | ins | proposed');
+    expect(l2).not.toContain('1:00 Hello {++new ++}world.');
+  });
 });

@@ -3,5 +3,5 @@
 export {
   compactProposeChangeSchema,
   classicProposeChangeSchema,
-} from 'changedown/engine';
-export type { ToolSchema } from 'changedown/engine';
+} from '@changedown/cli/engine';
+export type { ToolSchema } from '@changedown/cli/engine';

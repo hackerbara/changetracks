@@ -10,6 +10,7 @@ describe('semantic tokens with unanchored changes', () => {
       id: 'cn-1', type: ChangeType.Insertion, status: ChangeStatus.Proposed,
       range: { start: 0, end: 0 }, contentRange: { start: 0, end: 0 },
       level: 2, anchored: false,
+      resolved: true,
     }];
     const result = buildSemanticTokens(changes, text);
     expect(result.data).toHaveLength(0);
@@ -21,6 +22,7 @@ describe('semantic tokens with unanchored changes', () => {
       id: 'cn-1', type: ChangeType.Insertion, status: ChangeStatus.Proposed,
       range: { start: 0, end: 5 }, contentRange: { start: 0, end: 5 },
       level: 2, anchored: true,
+      resolved: true,
     }];
     const result = buildSemanticTokens(changes, text);
     expect(result.data.length).toBeGreaterThan(0);

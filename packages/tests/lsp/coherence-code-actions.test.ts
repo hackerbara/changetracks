@@ -81,6 +81,7 @@ describe('code actions for unresolved changes', () => {
       id: 'cn-1', type: ChangeType.Insertion, status: ChangeStatus.Proposed,
       range: { start: 0, end: 5 }, contentRange: { start: 0, end: 5 },
       level: 2, anchored: true,
+      resolved: true,
     }];
     const diagnostic = {
       range: { start: { line: 0, character: 0 }, end: { line: 0, character: 5 } },

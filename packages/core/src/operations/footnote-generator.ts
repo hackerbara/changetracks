@@ -57,6 +57,7 @@ const CHANGE_TYPE_KEY: Record<ChangeType, string> = {
   [ChangeType.Substitution]: 'substitution',
   [ChangeType.Highlight]: 'highlight',
   [ChangeType.Comment]: 'comment',
+  [ChangeType.Move]: 'move',
 };
 
 export interface ContextualEditOpParams {

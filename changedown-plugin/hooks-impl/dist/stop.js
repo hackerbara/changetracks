@@ -99,6 +99,7 @@ var ChangeType;
   ChangeType2["Substitution"] = "Substitution";
   ChangeType2["Highlight"] = "Highlight";
   ChangeType2["Comment"] = "Comment";
+  ChangeType2["Move"] = "Move";
 })(ChangeType || (ChangeType = {}));
 var ChangeStatus;
 (function(ChangeStatus2) {
@@ -106,14 +107,16 @@ var ChangeStatus;
   ChangeStatus2["Accepted"] = "Accepted";
   ChangeStatus2["Rejected"] = "Rejected";
 })(ChangeStatus || (ChangeStatus = {}));
-function isGhostNode(change) {
-  return change.anchored === false && change.level >= 2 && !change.consumedBy;
+function isGhostNode(node) {
+  return node.resolved === false && !node.consumedBy;
 }
 
 // ../../packages/core/dist-esm/model/document.js
 var VirtualDocument = class _VirtualDocument {
-  constructor(changes = [], coherenceRate = 100, unresolvedDiagnostics = [], resolvedText) {
+  constructor(changes = [], coherenceRate = 100, unresolvedDiagnostics = [], resolvedText, records = []) {
+    this.diagnostics = [];
     this.changes = changes;
+    this.records = records;
     this.coherenceRate = coherenceRate;
     this.unresolvedDiagnostics = unresolvedDiagnostics;
     this.resolvedText = resolvedText;
@@ -132,12 +135,19 @@ var VirtualDocument = class _VirtualDocument {
       contentRange: overlay.range,
       modifiedText: overlay.text,
       level: 1,
-      anchored: false
+      anchored: false,
+      resolved: true
     };
     return new _VirtualDocument([change]);
   }
   getChanges() {
     return this.changes;
+  }
+  getRecords() {
+    return this.records.slice();
+  }
+  getReviewableChanges() {
+    return this.changes.filter((change) => String(change.metadata?.status ?? change.inlineMetadata?.status ?? change.status).toLowerCase() === "proposed");
   }
   /** Returns L2+ ghost nodes that failed anchor resolution. L0/L1 unanchored nodes are excluded. */
   getUnresolvedChanges() {
@@ -169,6 +179,30 @@ var VirtualDocument = class _VirtualDocument {
    */
   getGroupMembers(groupId) {
     return this.changes.filter((c) => c.groupId === groupId);
+  }
+  /**
+   * Returns a readonly view of diagnostics emitted during parsing or
+   * subsequent operations on this document. Diagnostics live on the
+   * document, not on individual ChangeNodes — see model/diagnostic.ts.
+   */
+  getDiagnostics() {
+    return this.diagnostics;
+  }
+  /**
+   * Append a diagnostic. Called by parsers during construction and by
+   * recovery paths that detect new issues. Not part of the read API
+   * surface for ordinary consumers.
+   */
+  addDiagnostic(d) {
+    this.diagnostics.push(d);
+  }
+  /**
+   * Remove all diagnostics whose changeId matches. Used by the replay
+   * protocol in footnote-native-parser when a previously-failed change
+   * is recovered, and by review-changes when a change settles.
+   */
+  removeDiagnosticsForChange(changeId) {
+    this.diagnostics = this.diagnostics.filter((d) => d.changeId !== changeId);
   }
 };
 
@@ -366,6 +400,7 @@ var FOOTNOTE_DEF_STRICT = new RegExp(`^\\[\\^(${FOOTNOTE_ID_PATTERN})\\]:\\s+(?:
 var FOOTNOTE_DEF_STATUS = new RegExp(`^\\[\\^(${FOOTNOTE_ID_PATTERN})\\]:\\s+(?:@\\S+\\s+\\|\\s+)?\\S+\\s+\\|\\s+\\S+\\s+\\|\\s+(\\S+)`);
 var FOOTNOTE_DEF_STATUS_VALUE = new RegExp(`^\\[\\^${FOOTNOTE_ID_PATTERN}\\]:\\s.*\\|\\s*(proposed|accepted|rejected)`);
 var FOOTNOTE_L3_EDIT_OP = /^ {4}(\d+):([0-9a-fA-F]{2,}) (.*)/;
+var FOOTNOTE_L3_HISTORY_HEADER = new RegExp(`^\\[\\^${FOOTNOTE_ID_PATTERN}\\]:\\s.*\\|\\s*(?:ins|del|sub|format|equation|image|field|object)\\s*\\|\\s*accepted\\s*$`);
 var IMAGE_DIMENSIONS_RE = /^([\d.]+)in\s*x\s*([\d.]+)in$/;
 var CTX_RE = /@ctx:"((?:[^"\\]|\\.)*)"\|\|"((?:[^"\\]|\\.)*)"/;
 function unescapeCtxString(s) {
@@ -394,7 +429,7 @@ function splitBodyAndFootnotes(lines) {
     bodyEndIndex: bodyEnd
   };
 }
-var FOOTNOTE_THREAD_REPLY = /^\s+@\S+\s+\d{4}-\d{2}-\d{2}(?:[T ]\d{1,2}:\d{2}(?::\d{2})?(?:\s?[AaPp][Mm])?Z?)?:/;
+var FOOTNOTE_THREAD_REPLY = /^\s+@\S+\s+\d{4}-\d{2}-\d{2}(?:[T ]\d{1,2}:\d{2}(?::\d{2})?(?:\s?[AaPp][Mm])?Z?)?(?:\s+\[[^\]]+\])?:/;
 
 // ../../packages/core/dist-esm/operations/footnote-generator.js
 function generateFootnoteDefinition(id, type, author, date) {
@@ -426,7 +461,8 @@ var CHANGE_TYPE_KEY = {
   [ChangeType.Deletion]: "deletion",
   [ChangeType.Substitution]: "substitution",
   [ChangeType.Highlight]: "highlight",
-  [ChangeType.Comment]: "comment"
+  [ChangeType.Comment]: "comment",
+  [ChangeType.Move]: "move"
 };
 var UNKNOWN_PRIOR_SUB = "\u2026";
 function buildContextualL3EditOp(params) {
@@ -711,7 +747,8 @@ var CriticMarkupParser = class _CriticMarkupParser {
       contentRange: { start: contentStart, end: closePos },
       modifiedText: content,
       level: 0,
-      anchored: false
+      anchored: false,
+      resolved: true
     };
   }
   parseDeletion(text, startPos, counter) {
@@ -730,7 +767,8 @@ var CriticMarkupParser = class _CriticMarkupParser {
       contentRange: { start: contentStart, end: closePos },
       originalText: content,
       level: 0,
-      anchored: false
+      anchored: false,
+      resolved: true
     };
   }
   /**
@@ -776,7 +814,8 @@ var CriticMarkupParser = class _CriticMarkupParser {
       originalText,
       modifiedText,
       level: 0,
-      anchored: false
+      anchored: false,
+      resolved: true
     };
   }
   parseHighlight(text, startPos, counter) {
@@ -805,7 +844,8 @@ var CriticMarkupParser = class _CriticMarkupParser {
       originalText: highlightedText,
       metadata: comment !== void 0 ? { comment } : void 0,
       level: 0,
-      anchored: false
+      anchored: false,
+      resolved: true
     };
   }
   parseComment(text, startPos, counter) {
@@ -824,7 +864,8 @@ var CriticMarkupParser = class _CriticMarkupParser {
       contentRange: { start: contentStart, end: closePos },
       metadata: { comment },
       level: 0,
-      anchored: false
+      anchored: false,
+      resolved: true
     };
   }
   parseFootnoteDefinitions(text) {
@@ -977,6 +1018,21 @@ var CriticMarkupParser = class _CriticMarkupParser {
         lastDiscussionComment = comment;
         continue;
       }
+      const supersedesMatch = trimmed.match(_CriticMarkupParser.SUPERSEDES_RE);
+      if (supersedesMatch) {
+        if (!currentDef.supersedes)
+          currentDef.supersedes = supersedesMatch[1];
+        lastDiscussionComment = null;
+        continue;
+      }
+      const supersededByMatch = trimmed.match(_CriticMarkupParser.SUPERSEDED_BY_RE);
+      if (supersededByMatch) {
+        if (!currentDef.supersededBy)
+          currentDef.supersededBy = [];
+        currentDef.supersededBy.push(supersededByMatch[1]);
+        lastDiscussionComment = null;
+        continue;
+      }
       const discMatch = trimmed.match(_CriticMarkupParser.DISCUSSION_RE);
       if (discMatch) {
         const depth = Math.max(0, Math.floor((rawIndent - 4) / 2));
@@ -1055,6 +1111,10 @@ var CriticMarkupParser = class _CriticMarkupParser {
       }
       applyImageExtraMetadata(def, node.metadata);
       applyEquationExtraMetadata(def, node.metadata);
+      if (def.supersedes)
+        node.supersedes = def.supersedes;
+      if (def.supersededBy && def.supersededBy.length > 0)
+        node.supersededBy = def.supersededBy;
       if (def.startLine !== void 0) {
         node.footnoteLineRange = { startLine: def.startLine, endLine: def.endLine ?? def.startLine };
       }
@@ -1095,6 +1155,7 @@ var CriticMarkupParser = class _CriticMarkupParser {
           level: 2,
           decided: true,
           anchored: true,
+          resolved: true,
           metadata: {
             author: def.author,
             date: def.date,
@@ -1118,6 +1179,10 @@ var CriticMarkupParser = class _CriticMarkupParser {
           node.metadata.resolution = def.resolution;
         applyImageExtraMetadata(def, node.metadata);
         applyEquationExtraMetadata(def, node.metadata);
+        if (def.supersedes)
+          node.supersedes = def.supersedes;
+        if (def.supersededBy && def.supersededBy.length > 0)
+          node.supersededBy = def.supersededBy;
         if (def.startLine !== void 0) {
           node.footnoteLineRange = { startLine: def.startLine, endLine: def.endLine ?? def.startLine };
         }
@@ -1170,6 +1235,7 @@ var CriticMarkupParser = class _CriticMarkupParser {
       node.range = { start: node.range.start, end: node.range.end + match[0].length };
       node.level = 2;
       node.anchored = true;
+      node.resolved = true;
     }
   }
   matchesAt(text, position, delimiter) {
@@ -1182,6 +1248,8 @@ var CriticMarkupParser = class _CriticMarkupParser {
 CriticMarkupParser.FOOTNOTE_REF = FOOTNOTE_REF_ANCHORED;
 CriticMarkupParser.FOOTNOTE_DEF = FOOTNOTE_DEF_STRICT;
 CriticMarkupParser.APPROVAL_RE = /^(approved|rejected|request-changes):\s+(@\S+)\s+(\S+)(?:\s+"([^"]*)")?$/;
+CriticMarkupParser.SUPERSEDES_RE = /^supersedes:\s+(\S+)\s*$/;
+CriticMarkupParser.SUPERSEDED_BY_RE = /^superseded-by:\s+(\S+)\s*$/;
 CriticMarkupParser.DISCUSSION_RE = /^(@\S+)\s+(\S+)(?:\s+\[([^\]]+)\])?:\s*(.*)$/;
 CriticMarkupParser.RESOLVED_RE = /^resolved:?\s+(@\S+)\s+(\S+)(?::\s*(.*))?$/;
 CriticMarkupParser.OPEN_RE = /^open(?:\s+--\s+(.*))?$/;
@@ -1450,6 +1518,8 @@ function parseContextualEditOp(opString) {
 // ../../packages/core/dist-esm/parser/footnote-block-parser.js
 var APPROVED_RE = /^ {4}approved:\s+(\S+)\s+(\S+)(?:\s+"([^"]*)")?/;
 var REJECTED_RE = /^ {4}rejected:\s+(\S+)\s+(\S+)(?:\s+"([^"]*)")?/;
+var REQUEST_CHANGES_RE = /^ {4}request-changes:\s+(\S+)\s+(\S+)(?:\s+"([^"]*)")?/;
+var REVISION_RE = /^ {4,}(r\d+)\s+(@?\S+)\s+(\S+):\s+"([^"]*)"$/;
 function parseApprovalLine(match) {
   return {
     author: match[1],
@@ -1462,6 +1532,8 @@ var REASON_RE = /^ {4}reason:\s+(.*)$/;
 var CONTEXT_RE = /^ {4}context:\s+(.*)$/;
 var RESOLVED_RE = /^ {4}resolved:\s+(\S+)\s+(\S+)(?:\s+"([^"]*)")?/;
 var OPEN_RE = /^ {4}open(?:\s+--\s+(.*))?$/;
+var SUPERSEDES_RE = /^ {4}supersedes:\s+(\S+)\s*$/;
+var SUPERSEDED_BY_RE = /^ {4}superseded-by:\s+(\S+)\s*$/;
 var IMAGE_META_RE = /^ {4}(image-[\w-]+):\s*(.*)$/;
 var EQUATION_META_RE = /^ {4}(equation-[\w-]+):\s*(.*)$/;
 function parseFootnoteBlock(lines, startLineOffset = 0) {
@@ -1495,9 +1567,14 @@ function parseFootnoteBlock(lines, startLineOffset = 0) {
     const discussion = [];
     const approvals = [];
     const rejections = [];
+    const requestChanges = [];
+    const revisions = [];
+    let inRevisions = false;
     let resolution = null;
     let imageMetadata;
     let equationMetadata;
+    let supersedesTarget;
+    const supersededByTargets = [];
     while (i < lines.length) {
       const body = lines[i];
       if (FOOTNOTE_DEF_START.test(body))
@@ -1554,13 +1631,16 @@ function parseFootnoteBlock(lines, startLineOffset = 0) {
         continue;
       }
       if (FOOTNOTE_THREAD_REPLY.test(body)) {
-        const replyMatch = body.match(/^\s+@(\S+)\s+(\S+):\s*(.*)$/);
+        const replyMatch = body.match(/^\s+@(\S+)\s+(\S+)(?:\s+\[([^\]]+)\])?:\s*(.*)$/);
         if (replyMatch) {
           const reply = {
             author: replyMatch[1],
             date: replyMatch[2],
+            label: replyMatch[3] ?? void 0,
+            // group 3: optional [label]
             timestamp: parseTimestamp(replyMatch[2]),
-            text: replyMatch[3],
+            text: replyMatch[4],
+            // group 4: text (shifted from group 3)
             depth: 0
           };
           discussion.push(reply);
@@ -1585,6 +1665,37 @@ function parseFootnoteBlock(lines, startLineOffset = 0) {
         i++;
         continue;
       }
+      const requestChangesMatch = body.match(REQUEST_CHANGES_RE);
+      if (requestChangesMatch) {
+        const action = parseApprovalLine(requestChangesMatch);
+        requestChanges.push(action);
+        bodyLines.push({ kind: "request-changes", action, raw: body });
+        i++;
+        continue;
+      }
+      if (body.trim() === "revisions:") {
+        inRevisions = true;
+        bodyLines.push({ kind: "revisions-header", raw: body });
+        i++;
+        continue;
+      }
+      if (inRevisions) {
+        const revMatch = body.match(REVISION_RE);
+        if (revMatch) {
+          const rev = {
+            label: revMatch[1],
+            author: revMatch[2],
+            date: revMatch[3],
+            timestamp: parseTimestamp(revMatch[3]),
+            text: revMatch[4]
+          };
+          revisions.push(rev);
+          bodyLines.push({ kind: "revision", revision: rev, raw: body });
+          i++;
+          continue;
+        }
+        inRevisions = false;
+      }
       const resolvedMatch = body.match(RESOLVED_RE);
       if (resolvedMatch) {
         const res = {
@@ -1606,6 +1717,23 @@ function parseFootnoteBlock(lines, startLineOffset = 0) {
         if (!resolution)
           resolution = res;
         bodyLines.push({ kind: "resolution", resolution: res, raw: body });
+        i++;
+        continue;
+      }
+      const supersedesMatch = body.match(SUPERSEDES_RE);
+      if (supersedesMatch) {
+        const target = supersedesMatch[1];
+        if (supersedesTarget === void 0)
+          supersedesTarget = target;
+        bodyLines.push({ kind: "supersedes", target, raw: body });
+        i++;
+        continue;
+      }
+      const supersededByMatch = body.match(SUPERSEDED_BY_RE);
+      if (supersededByMatch) {
+        const target = supersededByMatch[1];
+        supersededByTargets.push(target);
+        bodyLines.push({ kind: "superseded-by", target, raw: body });
         i++;
         continue;
       }
@@ -1639,9 +1767,13 @@ function parseFootnoteBlock(lines, startLineOffset = 0) {
       discussion,
       approvals,
       rejections,
+      requestChanges,
+      revisions,
       resolution,
       imageMetadata: imageMetadata ? Object.freeze(imageMetadata) : void 0,
       equationMetadata: equationMetadata ? Object.freeze(equationMetadata) : void 0,
+      supersedes: supersedesTarget,
+      supersededBy: Object.freeze(supersededByTargets),
       sourceRange: { startLine: startLineOffset + startLine, endLine: startLineOffset + endLine }
     });
   }
@@ -2011,6 +2143,32 @@ function lineOffset(lines, lineIndex) {
 }
 
 // ../../packages/core/dist-esm/parser/footnote-native-parser.js
+function metadataFromUnknownLines(lines) {
+  const result = {};
+  for (const line of lines) {
+    const match = /^\s*([^:]+):\s*(.*)$/.exec(line);
+    if (match)
+      result[match[1].trim()] = match[2].trim();
+  }
+  return result;
+}
+function isDocumentScopeAcceptedInsertion(fn) {
+  const metadata = metadataFromUnknownLines(fn.unknownBodyLines ?? []);
+  return fn.type === "ins" && fn.status === "accepted" && fn.author === "@base-document" && fn.lineNumber === void 0 && fn.hash === void 0 && fn.opString === void 0 && metadata.source === "initial-word-body" && metadata.scope === "document" && metadata["body-hash"] !== void 0;
+}
+function toChangeDownRecord(fn) {
+  const bodyLines = fn.unknownBodyLines ?? [];
+  return {
+    id: fn.id,
+    author: fn.author,
+    date: fn.date,
+    type: fn.type,
+    status: fn.status,
+    reviewable: false,
+    metadata: metadataFromUnknownLines(bodyLines),
+    bodyLines
+  };
+}
 function parseDeletionContext(opString) {
   const closerIdx = opString.indexOf("--}");
   if (closerIdx < 0)
@@ -2021,20 +2179,33 @@ function parseDeletionContext(opString) {
     return null;
   return { before: unescapeCtxString(match[1]), after: unescapeCtxString(match[2]) };
 }
+function truncate(s, n) {
+  return s.length > n ? s.slice(0, n) + "\u2026" : s;
+}
 var FootnoteNativeParser = class {
+  constructor() {
+    this.pendingDiagnostics = [];
+  }
   parse(text) {
+    this.pendingDiagnostics = [];
     const lines = text.split("\n");
     const { bodyLines, footnoteLines } = splitBodyAndFootnotes(lines);
     const footnotes = this.parseFootnotes(lines);
     if (footnotes.length === 0) {
-      return new VirtualDocument([]);
+      const emptyDoc = new VirtualDocument([]);
+      for (const d of this.pendingDiagnostics)
+        emptyDoc.addDiagnostic(d);
+      return emptyDoc;
     }
-    const changes = this.resolveChanges(footnotes, bodyLines);
+    const records = footnotes.filter(isDocumentScopeAcceptedInsertion).map(toChangeDownRecord);
+    const recordIds = new Set(records.map((record) => record.id));
+    const reviewableFootnotes = footnotes.filter((fn) => !recordIds.has(fn.id));
+    const changes = this.resolveChanges(reviewableFootnotes, bodyLines);
     let freshAnchors = /* @__PURE__ */ new Map();
-    if (changes.some((c) => !c.anchored)) {
+    if (changes.some((c) => c.resolved === false)) {
       try {
         const bodyText = bodyLines.join("\n");
-        const replayFootnotes = footnotes.map((fn) => ({
+        const replayFootnotes = reviewableFootnotes.map((fn) => ({
           id: fn.id,
           type: fn.type,
           status: fn.status,
@@ -2045,15 +2216,16 @@ var FootnoteNativeParser = class {
         }));
         const replay = resolveReplayFromParsedFootnotes(bodyText, replayFootnotes);
         for (const node of changes) {
-          if (node.anchored)
+          if (node.resolved !== false)
             continue;
           const finalPos = replay.finalPositions.get(node.id);
           const isConsumed = replay.consumption.has(node.id);
           if (finalPos && !isConsumed) {
-            node.anchored = true;
+            node.resolved = true;
             node.range = { start: finalPos.start, end: finalPos.end };
             node.contentRange = { ...node.range };
             node.resolutionPath = "replay";
+            this.pendingDiagnostics = this.pendingDiagnostics.filter((d) => d.changeId !== node.id);
           }
           const freshAnchor = replay.freshAnchors.get(node.id);
           if (freshAnchor)
@@ -2075,7 +2247,7 @@ var FootnoteNativeParser = class {
       }
     }
     const resolvableCount = changes.length;
-    const resolvedCount = changes.filter((c) => c.anchored || !!c.consumedBy).length;
+    const resolvedCount = changes.filter((c) => c.resolved !== false || !!c.consumedBy).length;
     const coherenceRate = resolvableCount > 0 ? Math.round(resolvedCount / resolvableCount * 100) : 100;
     let resolvedText;
     if (freshAnchors.size > 0) {
@@ -2116,7 +2288,10 @@ var FootnoteNativeParser = class {
         resolvedText = bodyLines.join("\n") + "\n\n" + rebuiltFootnotes.join("\n") + "\n";
       }
     }
-    return new VirtualDocument(changes, coherenceRate, [], resolvedText);
+    const doc = new VirtualDocument(changes, coherenceRate, [], resolvedText, records);
+    for (const d of this.pendingDiagnostics)
+      doc.addDiagnostic(d);
+    return doc;
   }
   /**
    * Test-only hook: run just the footnote-scanning phase and return the raw
@@ -2164,6 +2339,12 @@ var FootnoteNativeParser = class {
       imageDimensions,
       imageMetadata: f.imageMetadata ? { ...f.imageMetadata } : void 0,
       equationMetadata: f.equationMetadata ? { ...f.equationMetadata } : void 0,
+      discussion: f.discussion.length > 0 ? [...f.discussion] : void 0,
+      requestChanges: f.requestChanges.length > 0 ? f.requestChanges.map((a) => ({ author: a.author, date: a.date, reason: a.reason ?? "" })) : void 0,
+      revisions: f.revisions.length > 0 ? [...f.revisions] : void 0,
+      resolution: f.resolution ?? void 0,
+      supersedes: f.supersedes,
+      supersededBy: f.supersededBy.length > 0 ? [...f.supersededBy] : void 0,
       unknownBodyLines: f.bodyLines.filter((l) => l.kind === "unknown").map((l) => l.raw.trim())
     };
   }
@@ -2197,7 +2378,7 @@ var FootnoteNativeParser = class {
         }
       }
       const rangeResult = this.resolveRangeAndContent(fn, parsedOp, ctxResult, changeType, status, bodyLines, lineOffsets);
-      const { range, originalText, modifiedText, comment, anchored, resolutionPath } = rangeResult;
+      const { range, originalText, modifiedText, comment, anchored: positionResolved, resolved: rangeResolved, resolutionPath } = rangeResult;
       const node = {
         id: fn.id,
         type: changeType,
@@ -2206,9 +2387,10 @@ var FootnoteNativeParser = class {
         contentRange: { ...range },
         // L3: range === contentRange (no delimiters in body)
         level: 2,
-        // anchored:false means position could not be deterministically resolved (Invariant A).
-        // anchored:true (default) means either resolved uniquely or explicitly OK (deletion line-start).
-        anchored: anchored !== false,
+        anchored: true,
+        // L3 nodes always have a footnote ref by construction
+        resolved: rangeResolved !== void 0 ? rangeResolved : positionResolved !== false,
+        // false only when edit-op text could not be located
         metadata: {
           author: fn.author,
           date: fn.date,
@@ -2254,6 +2436,27 @@ var FootnoteNativeParser = class {
           reason: r.reason || void 0
         }));
       }
+      if (fn.discussion && fn.discussion.length > 0) {
+        node.metadata.discussion = fn.discussion;
+      }
+      if (fn.requestChanges && fn.requestChanges.length > 0) {
+        node.metadata.requestChanges = fn.requestChanges.map((a) => ({
+          author: a.author,
+          date: a.date,
+          timestamp: parseTimestamp(a.date),
+          reason: a.reason || void 0
+        }));
+      }
+      if (fn.revisions && fn.revisions.length > 0) {
+        node.metadata.revisions = fn.revisions;
+      }
+      if (fn.resolution) {
+        node.metadata.resolution = fn.resolution;
+      }
+      if (fn.supersedes)
+        node.supersedes = fn.supersedes;
+      if (fn.supersededBy && fn.supersededBy.length > 0)
+        node.supersededBy = fn.supersededBy;
       changes.push(node);
     }
     changes.sort((a, b) => a.range.start - b.range.start);
@@ -2268,7 +2471,7 @@ var FootnoteNativeParser = class {
    *   `deletionSeamOffset` gives the byte offset within this span where the deletion occurred
    *   (equals contextBefore.length). The spec's Contextual Uniqueness Guarantee ensures this
    *   span appears exactly once on the target line (04-spec.md §"Contextual Embedding").
-   *   Zero-width ranges appear only as the {0,0} anchored:false sentinel (Invariant A).
+   *   Zero-width ranges appear only as the {0,0} resolved:false sentinel (Invariant A).
    *   This is deliberate — do NOT revert to zero-width seam without understanding
    *   the plan builder's ghost-text injection and accept-change.ts's seam-based removal.
    * - Substitution: search for newText (proposed/accepted) or oldText (rejected) on target line
@@ -2280,18 +2483,19 @@ var FootnoteNativeParser = class {
    *
    * Invariant A — Non-deletion ops (ins, sub, highlight) MUST resolve uniquely via
    * findUniqueMatch on the hash-resolved line. If the match fails (text not found or
-   * ambiguous), the node is marked anchored:false. There is NO fallback to line-start
-   * for non-deletion ops. Silent fallback produces wrong decoration placement.
+   * ambiguous), the node is marked resolved:false (with anchored:true). There is NO
+   * fallback to line-start for non-deletion ops. Silent fallback produces wrong
+   * decoration placement.
    *
    * Invariant B — Deletion ops resolve via @ctx:"before"||"after" ONLY. The deleted
    * text is absent from the body so there is nothing to search for. Line-start fallback
    * when @ctx is missing is acceptable degradation (not a silent error).
    *
-   * Invariant C — anchored:false is an error path, not a silent default. Consumers
-   * must not render anchored:false nodes as correctly placed decorations.
+   * Invariant C — resolved:false is an error path, not a silent default. Consumers
+   * must not render resolved:false nodes as correctly placed decorations.
    *
    * Task 3 enforced Invariant A by removing the fallbackRange branches for
-   * ins/sub/highlight and setting anchored:false + sentinel range {0,0} instead.
+   * ins/sub/highlight and setting resolved:false + sentinel range {0,0} instead.
    */
   resolveRangeAndContent(fn, parsedOp, ctxResult, changeType, status, bodyLines, lineOffsets) {
     let effectiveLineNumber = fn.lineNumber;
@@ -2316,7 +2520,12 @@ var FootnoteNativeParser = class {
     const lineContent = lineIdx >= 0 && lineIdx < bodyLines.length ? bodyLines[lineIdx] : "";
     const fallbackRange = { start: lineOffset2, end: lineOffset2 };
     if (!parsedOp) {
-      return { range: fallbackRange, anchored: false, comment: fn.unknownBodyLines?.[0], resolutionPath: "rejected" };
+      this.pendingDiagnostics.push({
+        kind: "coordinate_failed",
+        changeId: fn.id,
+        message: `Footnote ${fn.id} has no parsedOp; cannot resolve position.`
+      });
+      return { range: fallbackRange, anchored: true, resolved: false, comment: fn.unknownBodyLines?.[0], resolutionPath: "rejected" };
     }
     const findOnLine = (searchText) => {
       if (!searchText || !lineContent)
@@ -2404,7 +2613,15 @@ var FootnoteNativeParser = class {
         }
         const match = findOnLine(text);
         if (!match) {
-          return { range: { start: 0, end: 0 }, modifiedText: text, anchored: false };
+          const targetLine = effectiveLineNumber ?? 1;
+          const matchCount = lineContent ? lineContent.split(text).length - 1 : 0;
+          this.pendingDiagnostics.push({
+            kind: "coordinate_failed",
+            changeId: fn.id,
+            message: `Insertion text "${truncate(text, 40)}" not uniquely found on line ${targetLine} (found ${matchCount} match${matchCount === 1 ? "" : "es"}).`,
+            evidence: { line: targetLine, expectedText: text, candidates: matchCount }
+          });
+          return { range: { start: 0, end: 0 }, modifiedText: text, anchored: true, resolved: false };
         }
         const range = {
           start: lineOffset2 + match.index,
@@ -2442,14 +2659,33 @@ var FootnoteNativeParser = class {
       case ChangeType.Substitution: {
         const oldText = parsedOp.oldText;
         const newText = parsedOp.newText;
-        const searchText = newText;
-        const match = searchText ? findOnLine(searchText) : null;
+        const searchTexts = status === ChangeStatus.Rejected ? [newText, oldText].filter((t2) => Boolean(t2)) : [newText].filter((t2) => Boolean(t2));
+        let match = null;
+        let matchedText = "";
+        for (const candidate of searchTexts) {
+          match = findOnLine(candidate);
+          if (match) {
+            matchedText = candidate;
+            break;
+          }
+        }
         if (!match) {
-          return { range: { start: 0, end: 0 }, originalText: oldText, modifiedText: newText, anchored: false };
+          const targetLine = effectiveLineNumber ?? 1;
+          const expectedText = searchTexts.join(" or ");
+          const matchCount = searchTexts.reduce((sum, candidate) => {
+            return sum + (lineContent ? lineContent.split(candidate).length - 1 : 0);
+          }, 0);
+          this.pendingDiagnostics.push({
+            kind: "coordinate_failed",
+            changeId: fn.id,
+            message: `Substitution text "${truncate(expectedText, 40)}" not uniquely found on line ${targetLine} (found ${matchCount} match${matchCount === 1 ? "" : "es"}).`,
+            evidence: { line: targetLine, expectedText, candidates: matchCount }
+          });
+          return { range: { start: 0, end: 0 }, originalText: oldText, modifiedText: newText, anchored: true, resolved: false };
         }
         const range = {
           start: lineOffset2 + match.index,
-          end: lineOffset2 + match.index + match.length
+          end: lineOffset2 + match.index + matchedText.length
         };
         return { range, originalText: oldText, modifiedText: newText, resolutionPath: hashMatched ? "hash" : void 0 };
       }
@@ -3025,6 +3261,10 @@ function insertTrackingHeader(text) {
 
 // ../../packages/core/dist-esm/edit-boundary/state-machine.js
 var cmParser = new CriticMarkupParser();
+
+// ../../packages/core/dist-esm/operations/structural-integrity.js
+var INLINE_REF_GLOBAL = new RegExp(`\\[\\^(${FOOTNOTE_ID_PATTERN})\\]`, "g");
+var FOOTNOTE_DEF_STATUS_GM = new RegExp(FOOTNOTE_DEF_STATUS.source, "gm");
 
 // ../../node_modules/smol-toml/dist/error.js
 function getLineColFromPtr(string, ptr) {
@@ -3947,7 +4187,7 @@ async function loadConfig(projectDir) {
   const configPath = await findConfigFile(projectDir);
   if (!configPath) {
     console.error(`changedown: no .changedown/config.toml found (searched from ${projectDir} to /), using defaults`);
-    return structuredClone(DEFAULT_CONFIG2);
+    return structuredClone(DEFAULT_UNCONFIGURED_CONFIG);
   }
   let raw;
   try {
@@ -3979,6 +4219,26 @@ var DEFAULT_CONFIG2 = {
     level: 2,
     reasoning: "optional",
     batch_reasoning: "optional"
+  }
+};
+var DEFAULT_UNCONFIGURED_CONFIG = {
+  ...DEFAULT_CONFIG2,
+  tracking: {
+    ...DEFAULT_CONFIG2.tracking,
+    include: [],
+    include_absolute: [],
+    default: "untracked",
+    auto_header: false
+  },
+  hooks: {
+    ...DEFAULT_CONFIG2.hooks,
+    intercept_tools: false,
+    intercept_bash: false,
+    patch_wrap_experimental: false
+  },
+  policy: {
+    ...DEFAULT_CONFIG2.policy,
+    creation_tracking: "none"
   }
 };
 

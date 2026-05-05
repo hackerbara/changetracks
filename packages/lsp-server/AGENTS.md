@@ -137,7 +137,7 @@ request/notification tables. Key handlers:
 
 Imports `@changedown/core` directly. Imports `PendingEditManager` from
 `@changedown/core/host`. Uses `vscode-languageserver` (^9.0.1).
-Narrow import from CLI: only `parseConfigToml` and `DEFAULT_CONFIG` from `changedown/config`.
+Narrow import from CLI: only `parseConfigToml` and `DEFAULT_CONFIG` from `@changedown/cli/config`.
 
 `promotionPolicy` no longer exists — promotion behavior is determined by document
 format detection via `FormatService`, not a separate policy object.

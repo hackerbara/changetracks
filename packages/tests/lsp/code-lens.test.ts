@@ -20,7 +20,8 @@ describe('Code Lens', () => {
           status: ChangeStatus.Proposed,
           range: { start: 0, end: 15 }, // {++added text++}
           contentRange: { start: 3, end: 13 }, // added text,
-          level: 0, anchored: false
+          level: 0, anchored: false,
+          resolved: true,
         }
       ];
       const text = '{++added text++}';
@@ -54,7 +55,8 @@ describe('Code Lens', () => {
           status: ChangeStatus.Proposed,
           range: { start: 0, end: 17 }, // {--removed text--}
           contentRange: { start: 3, end: 15 }, // removed text,
-          level: 0, anchored: false
+          level: 0, anchored: false,
+          resolved: true,
         }
       ];
       const text = '{--removed text--}';
@@ -80,7 +82,8 @@ describe('Code Lens', () => {
           status: ChangeStatus.Proposed,
           range: { start: 6, end: 30 }, // Starts at offset 6 (line 1)
           contentRange: { start: 9, end: 26 },
-          level: 0, anchored: false
+          level: 0, anchored: false,
+          resolved: true,
         }
       ];
       const text = 'line1\n{++multi-line\ntext++}';
@@ -104,7 +107,8 @@ describe('Code Lens', () => {
           status: ChangeStatus.Proposed,
           range: { start: 0, end: 15 },
           contentRange: { start: 3, end: 13 },
-          level: 0, anchored: false
+          level: 0, anchored: false,
+          resolved: true,
         },
         {
           id: 'change-2',
@@ -112,7 +116,8 @@ describe('Code Lens', () => {
           status: ChangeStatus.Proposed,
           range: { start: 16, end: 33 },
           contentRange: { start: 19, end: 31 },
-          level: 0, anchored: false
+          level: 0, anchored: false,
+          resolved: true,
         }
       ];
       const text = '{++added text++} {--removed text--}';
@@ -144,7 +149,8 @@ describe('Code Lens', () => {
           status: ChangeStatus.Proposed,
           range: { start: 0, end: 10 }, // Line 0
           contentRange: { start: 3, end: 8 },
-          level: 0, anchored: false
+          level: 0, anchored: false,
+          resolved: true,
         },
         {
           id: 'change-2',
@@ -152,7 +158,8 @@ describe('Code Lens', () => {
           status: ChangeStatus.Proposed,
           range: { start: 11, end: 21 }, // Line 1
           contentRange: { start: 14, end: 19 },
-          level: 0, anchored: false
+          level: 0, anchored: false,
+          resolved: true,
         },
         {
           id: 'change-3',
@@ -162,7 +169,8 @@ describe('Code Lens', () => {
           contentRange: { start: 25, end: 36 },
           originalRange: { start: 25, end: 29 },
           modifiedRange: { start: 31, end: 36 },
-          level: 0, anchored: false
+          level: 0, anchored: false,
+          resolved: true,
         }
       ];
       const text = '{++text++}\n{--text--}\n{~~old~>new~~}';
@@ -199,7 +207,8 @@ describe('Code Lens', () => {
           status: ChangeStatus.Proposed,
           range: { start: 0, end: 10 },
           contentRange: { start: 3, end: 8 },
-          level: 0, anchored: false
+          level: 0, anchored: false,
+          resolved: true,
         }
       ];
       const text = '{++text++}';
@@ -216,7 +225,8 @@ describe('Code Lens', () => {
           status: ChangeStatus.Proposed,
           range: { start: 0, end: 10 },
           contentRange: { start: 3, end: 8 },
-          level: 0, anchored: false
+          level: 0, anchored: false,
+          resolved: true,
         }
       ];
       const text = '{++text++}';
@@ -240,6 +250,7 @@ describe('Code Lens', () => {
           contentRange: { start: 3, end: 13 },
           level: 2,
           anchored: true,
+          resolved: true,
         },
         {
           id: 'cn-2',
@@ -249,6 +260,7 @@ describe('Code Lens', () => {
           contentRange: { start: 19, end: 29 },
           level: 2,
           anchored: true,
+          resolved: true,
           consumedBy: 'cn-3',
         },
         {
@@ -259,6 +271,7 @@ describe('Code Lens', () => {
           contentRange: { start: 35, end: 45 },
           level: 2,
           anchored: true,
+          resolved: true,
         },
       ];
       const text = '{++first change++} {++consumed op++} {++third change++}';

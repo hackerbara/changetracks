@@ -5,10 +5,13 @@
   "description": "ChangeDown monorepo - CriticMarkup for editors",
   "workspaces": [
     "packages/core",
+    "packages/docx",
     "packages/cli",
     "packages/lsp-server",
     "packages/vscode-extension",
     "packages/opencode-plugin",
+    "changedown-plugin/mcp-server",
+    "changedown-plugin/hooks-impl",
     "packages/tests",
     "packages/tests/vscode",
     "packages/benchmarks",

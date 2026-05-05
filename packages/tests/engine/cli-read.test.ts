@@ -3,7 +3,7 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import { initHashline } from '@changedown/core';
-import { runCommand } from 'changedown/cli-runner';
+import { runCommand } from '@changedown/cli/cli-runner';
 
 describe('sc read', () => {
   let tmpDir: string;

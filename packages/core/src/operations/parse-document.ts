@@ -68,5 +68,6 @@ export function serializeL3(doc: L3Document): string {
       footnoteLines.push(bl.raw);
     }
   }
-  return doc.body + '\n\n' + footnoteLines.join('\n') + '\n';
+  const footnoteSection = footnoteLines.join('\n');
+  return doc.body + '\n\n' + footnoteSection + (footnoteSection.endsWith('\n') ? '' : '\n');
 }

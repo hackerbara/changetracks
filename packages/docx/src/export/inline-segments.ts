@@ -1,3 +1,8 @@
+import {
+  parseInlineSegments as parseInlineSegmentsCanonical,
+  type InlineSegment as CanonicalInlineSegment,
+} from '../inline-codec/index.js';
+
 export type TextSegment = {
   kind: 'text';
   text: string;
@@ -41,157 +46,24 @@ export type InlineSegment = TextSegment | LinkSegment | ImageSegment | MathSegme
  * Link/image detection uses regex lookahead at [ and ![ positions.
  */
 export function parseInlineSegments(text: string): InlineSegment[] {
-  if (!text) return [];
-
-  const segments: InlineSegment[] = [];
-  let pos = 0;
-  let acc = ''; // text accumulator
-
-  // Formatting state
-  let bold = false;
-  let italics = false;
-  let strikethrough = false;
-  let underline = false;
-  let code = false;
-
-  function flush(): void {
-    if (acc) {
-      const seg: TextSegment = { kind: 'text', text: acc };
-      if (bold) seg.bold = true;
-      if (italics) seg.italics = true;
-      if (strikethrough) seg.strikethrough = true;
-      if (underline) seg.underline = true;
-      if (code) seg.code = true;
-      segments.push(seg);
-      acc = '';
+  return parseInlineSegmentsCanonical(text).map((seg: CanonicalInlineSegment) => {
+    if (seg.kind === 'text') {
+      const out: TextSegment = { kind: 'text', text: seg.text };
+      if (seg.bold) out.bold = true;
+      if (seg.italic) out.italics = true;
+      if (seg.strikethrough) out.strikethrough = true;
+      if (seg.underline) out.underline = true;
+      if (seg.code) out.code = true;
+      return out;
     }
-  }
-
-  while (pos < text.length) {
-    // Inside code span — only look for closing backtick
-    if (code) {
-      if (text[pos] === '`') {
-        flush();
-        code = false;
-        pos++;
-      } else {
-        acc += text[pos];
-        pos++;
-      }
-      continue;
+    if (seg.kind === 'link') {
+      const out: LinkSegment = { kind: 'link', text: seg.text, url: seg.url };
+      if (seg.bold) out.bold = true;
+      if (seg.italic) out.italics = true;
+      if (seg.strikethrough) out.strikethrough = true;
+      if (seg.underline) out.underline = true;
+      return out;
     }
-
-    // Display math: $$...$$ (check before inline $ to match longest first)
-    if (text[pos] === '$' && text[pos + 1] === '$') {
-      const end = text.indexOf('$$', pos + 2);
-      if (end !== -1) {
-        flush();
-        segments.push({ kind: 'math', latex: text.slice(pos + 2, end), displayMode: true });
-        pos = end + 2;
-        continue;
-      }
-    }
-
-    // Inline math: $...$ (require non-space, non-$ after opening $ to disambiguate from literal $)
-    if (text[pos] === '$' && text[pos + 1] !== '$' && text[pos + 1] !== ' ' && text[pos + 1] !== undefined) {
-      const end = text.indexOf('$', pos + 1);
-      if (end !== -1 && text[end - 1] !== ' ') {
-        flush();
-        segments.push({ kind: 'math', latex: text.slice(pos + 1, end), displayMode: false });
-        pos = end + 1;
-        continue;
-      }
-    }
-
-    // *** — toggle bold + italics
-    if (text.startsWith('***', pos)) {
-      flush();
-      bold = !bold;
-      italics = !italics;
-      pos += 3;
-      continue;
-    }
-
-    // ** — toggle bold
-    if (text.startsWith('**', pos)) {
-      flush();
-      bold = !bold;
-      pos += 2;
-      continue;
-    }
-
-    // * — toggle italics (already ruled out ** and ***)
-    if (text[pos] === '*') {
-      flush();
-      italics = !italics;
-      pos++;
-      continue;
-    }
-
-    // ~~ — toggle strikethrough
-    if (text.startsWith('~~', pos)) {
-      flush();
-      strikethrough = !strikethrough;
-      pos += 2;
-      continue;
-    }
-
-    // </u> — end underline (check before <u> for longest match)
-    if (text.startsWith('</u>', pos)) {
-      flush();
-      underline = false;
-      pos += 4;
-      continue;
-    }
-
-    // <u> — start underline
-    if (text.startsWith('<u>', pos)) {
-      flush();
-      underline = true;
-      pos += 3;
-      continue;
-    }
-
-    // ` — start code span
-    if (text[pos] === '`') {
-      flush();
-      code = true;
-      pos++;
-      continue;
-    }
-
-    // ![alt](path) — image (check before [ to avoid matching as link)
-    if (text[pos] === '!' && text[pos + 1] === '[') {
-      const imgMatch = text.slice(pos).match(/^!\[([^\]]*)\]\(([^)]+)\)/);
-      if (imgMatch) {
-        flush();
-        segments.push({ kind: 'image', altText: imgMatch[1], path: imgMatch[2] });
-        pos += imgMatch[0].length;
-        continue;
-      }
-    }
-
-    // [text](url) — link
-    if (text[pos] === '[') {
-      const linkMatch = text.slice(pos).match(/^\[([^\]]+)\]\(([^)]+)\)/);
-      if (linkMatch) {
-        flush();
-        const seg: LinkSegment = { kind: 'link', text: linkMatch[1], url: linkMatch[2] };
-        if (bold) seg.bold = true;
-        if (italics) seg.italics = true;
-        if (strikethrough) seg.strikethrough = true;
-        if (underline) seg.underline = true;
-        segments.push(seg);
-        pos += linkMatch[0].length;
-        continue;
-      }
-    }
-
-    // Default: accumulate character
-    acc += text[pos];
-    pos++;
-  }
-
-  flush();
-  return segments;
+    return seg;
+  });
 }

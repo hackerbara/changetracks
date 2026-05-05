@@ -50,9 +50,20 @@ echo ""
 #
 # Fallback: if no main worktree is found, clear any stale nested package
 # node_modules first (they're the vector for the corruption), then npm ci.
-MAIN_REPO="$(git rev-parse --show-superproject-working-tree 2>/dev/null || echo "")"
+MAIN_REPO=""
+# Use git's own knowledge of the shared .git dir to locate the main worktree.
+# git rev-parse --git-common-dir returns the shared .git path regardless of
+# where on disk the worktree lives (e.g. sibling directories like
+# changetracks-worktrees/<name>/).  dirname of that path is the main repo root.
+GIT_COMMON="$(cd "$WORKTREE" && git rev-parse --git-common-dir 2>/dev/null || echo "")"
+if [ -n "$GIT_COMMON" ]; then
+  CANDIDATE="$(cd "$WORKTREE" && cd "$GIT_COMMON/.." && pwd)"
+  if [ -f "$CANDIDATE/package.json" ] && [ -d "$CANDIDATE/node_modules" ]; then
+    MAIN_REPO="$CANDIDATE"
+  fi
+fi
 if [ -z "$MAIN_REPO" ]; then
-  # Try two common worktree layouts:
+  # Fallback: try two common worktree layouts relative to the worktree path:
   #   .worktrees/<name>/          → ../.. is the main repo root  (two levels deep)
   #   .claude/worktrees/<name>/   → ../../.. is the main repo root (three levels deep)
   for CANDIDATE in \

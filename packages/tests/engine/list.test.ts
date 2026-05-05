@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { computeChangeList } from 'changedown/internals';
+import { computeChangeList } from '@changedown/cli/internals';
 
 describe('computeChangeList', () => {
   it('returns empty array for clean text', () => {

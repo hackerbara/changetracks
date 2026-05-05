@@ -50,6 +50,7 @@ async function confirm(msg) {
 
 const PACKAGES = [
   'packages/core',
+  'packages/docx',
   'packages/cli',
   'packages/lsp-server',
   'packages/vscode-extension',
@@ -70,13 +71,19 @@ function buildNameVersionMap() {
   return map;
 }
 
-/** Update dependency versions for sibling packages (including file: refs for publish) */
+/** Update dependency versions for sibling packages.
+ *
+ * Keep local file: workspace refs intact in the repository. npm publishing goes
+ * through scripts/publish-npm.sh, which temporarily rewrites file: refs inside
+ * packed tarballs only. This keeps the dev workspace easy to use while making
+ * the published artifacts registry-safe.
+ */
 function updateCrossPackageDeps(pkgJson, nameVersionMap) {
-  for (const depField of ['dependencies', 'devDependencies', 'peerDependencies']) {
+  for (const depField of ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies']) {
     const deps = pkgJson[depField];
     if (!deps) continue;
     for (const [name, current] of Object.entries(deps)) {
-      if (nameVersionMap[name]) {
+      if (nameVersionMap[name] && typeof current === 'string' && !current.startsWith('file:')) {
         deps[name] = nameVersionMap[name];
       }
     }
@@ -100,12 +107,20 @@ async function main() {
     bumpedFiles.push(pkgJsonPath);
     console.log(`  ${pkgJson.name} → ${version}`);
   }
+  console.log('  Updating package-lock.json...');
+  run('npm install --package-lock-only --ignore-scripts');
+  bumpedFiles.push(path.join(repoRoot, 'package-lock.json'));
 
   // 2. Build
   console.log('\nStep 2: Building all packages...');
   run('node scripts/build.mjs');
 
-  // 2b. Package .app bundle
+  // 2a. Hosted Word pane assets
+  console.log('\nStep 2a: Building hosted Word pane assets...');
+  run('node scripts/build-word-pane-for-website.mjs');
+
+  // 2b. Package .app bundle (build.mjs also attempts this; keep this explicit
+  // legacy release artifact step so the release checklist remains populated).
   console.log('\nStep 2b: Packaging .app bundle...');
   run('node scripts/package-app.mjs --version=' + version);
 
@@ -118,9 +133,10 @@ async function main() {
     process.exit(1);
   }
 
-  // 4. npm publish (scoped — needs --access public on first publish)
-  if (await confirm('\nStep 4: Publish changedown to npm?')) {
-    run('npm publish --access public', { cwd: path.join(repoRoot, 'packages/cli') });
+  // 4. npm publish. Use the pack/rewrite script so file: workspace deps are
+  // rewritten to semver in tarballs before publishing.
+  if (await confirm('\nStep 4: Publish npm packages?')) {
+    run('bash scripts/publish-npm.sh --allow-dirty-package-json --include-mcp');
   }
 
   // 5. VS Code Marketplace
@@ -154,7 +170,7 @@ async function main() {
       Attach: packages/vscode-extension/changedown-vscode-${version}.vsix
       Attach: packages/mac-wrapper/ChangeDown-arm64.zip
       Attach: packages/mac-wrapper/ChangeDown-arm64.zip.sha256
-  [ ] Verify: npx changedown init (in a fresh directory)
+  [ ] Verify: npx @changedown/cli init (in a fresh directory)
   [ ] Verify: /plugin marketplace add hackerbara/changedown (Claude Code)
   [ ] Verify: curl -fsSL .../install-viewer.sh | sh (from a clean machine)
 `);

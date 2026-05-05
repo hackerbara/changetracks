@@ -2,12 +2,10 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import {
   initHashline,
-  computeCurrentText,
   CriticMarkupParser,
-  formatTrackedHeader,
   buildViewDocument,
   formatPlainText,
-  computeContinuationLines,
+  parseForFormat,
   type ThreeZoneDocument,
   type ThreeZoneLine,
 } from '@changedown/core';
@@ -27,6 +25,12 @@ const DEFAULT_LIMIT = 500;
 /** Hard ceiling — even explicit requests are capped at this. */
 const MAX_LIMIT = 2000;
 
+const HASHLINE_DISABLED_TIP_DEFAULT =
+  '## tip: Hashline addressing is disabled. Edits use text matching; re-read for current content if propose_change fails.';
+
+const HASHLINE_DISABLED_TIP_COMPACT =
+  '## tip: Hashline addressing is disabled but compact mode requires it. Enable in .changedown/config.toml: [hashline] enabled = true';
+
 /**
  * Tool definition for the read_tracked_file MCP tool.
  * Raw JSON Schema — used when registering the tool with the MCP server.
@@ -34,13 +38,13 @@ const MAX_LIMIT = 2000;
 export const readTrackedFileTool = {
   name: 'read_tracked_file',
   description:
-    'Read a tracked file with deliberation-aware projection. Default view (working) shows inline metadata annotations at point of contact with a deliberation summary header. Use view=simple for text with P/A flags, view=decided for clean decided text, view=raw for literal file bytes.',
+    'Read a tracked document: file path, file:// URI, or word:// session from resources/list. Default working view shows inline metadata plus LINE:HASH coordinates usable by propose_change. Other views: simple, decided, raw. Response carries diagnostics[] for coordinate failures.',
   inputSchema: {
     type: 'object' as const,
     properties: {
       file: {
         type: 'string',
-        description: 'Path to the file (absolute or relative to project root)',
+        description: 'Path, file:// URI, or active Word session URI (word://sess-...). Use resources/list to discover Word sessions.',
       },
       offset: {
         type: 'number',
@@ -70,29 +74,15 @@ export const readTrackedFileTool = {
   },
 };
 
+import type { Diagnostic } from '@changedown/core';
+
 export interface ReadTrackedFileResult {
   content: Array<{ type: 'text'; text: string }>;
   isError?: boolean;
-}
-
-/**
- * Handles a `read_tracked_file` tool call.
- *
- * Reads a file from disk, formats it with hashline coordinates, prepends
- * a tracked header, optionally slices to a line range, and records per-line
- * hashes in session state for staleness detection.
- */
-/**
- * Format content with line numbers but no hashes (used when hashline is disabled).
- */
-function formatLineNumberedContent(lines: string[], startLine: number): string {
-  return lines
-    .map((line, i) => {
-      const n = startLine + i;
-      const pad = n < 10 ? '  ' : n < 100 ? ' ' : '';
-      return `${pad}${n}| ${line}`;
-    })
-    .join('\n');
+  /** Diagnostics emitted during parsing (e.g., coordinate_failed for zombie changes).
+   *  Present on success responses only; absent (undefined) on error returns.
+   *  Agents can use this to detect unresolvable changes before attempting mutations. */
+  diagnostics?: readonly Diagnostic[];
 }
 
 /**
@@ -165,20 +155,57 @@ function findSafePaginationEnd(lines: ThreeZoneLine[], effectiveEnd: number): nu
   return end;
 }
 
+interface PipelineResult {
+  output: string;
+  paginatedDoc: ThreeZoneDocument;
+  effectiveStart: number;
+  adjustedEnd: number;
+  totalLines: number;
+}
+
 /**
- * Fallback for code paths without a ThreeZoneDocument (non-hashline settled/raw).
- * Uses computeContinuationLines from the parser — same correctness guarantees.
+ * Shared pipeline: build view document, record session hashes, apply pagination,
+ * and format plain text. Both hashline-enabled and hashline-disabled branches use this.
  */
-function findSafePaginationEndFromText(contentLines: string[], effectiveEnd: number, totalLines: number): number {
-  const continuations = computeContinuationLines(contentLines.join('\n'));
-  let end = effectiveEnd;
-  // effectiveEnd is 1-indexed; continuations uses 0-indexed line numbers.
-  // continuations.has(end) checks 0-indexed line `end`, which is 1-indexed line `end+1`
-  // — the first line AFTER the included slice.
-  while (end < totalLines && continuations.has(end)) {
-    end++;
-  }
-  return end;
+function buildAndFormatPaginatedDoc(
+  fileContent: string,
+  canonicalView: BuiltinView,
+  opts: { filePath: string; trackingStatus: 'tracked' | 'untracked'; protocolMode: string; defaultView: BuiltinView; viewPolicy: string },
+  pagination: { offset: number; requestedLimit: number | undefined },
+  state: SessionState,
+  absolutePath: string,
+): PipelineResult {
+  const doc = buildViewDocument(fileContent, canonicalView, opts);
+
+  const sessionHashes = doc.lines.map(l => ({
+    line: l.margin.lineNumber,
+    raw: l.sessionHashes.raw,
+    committed: l.sessionHashes.committed,
+    currentView: l.sessionHashes.currentView,
+    rawLineNum: l.rawLineNumber,
+  }));
+  state.recordAfterRead(absolutePath, canonicalView, sessionHashes, fileContent);
+
+  const totalLines = doc.lines.length;
+  const { effectiveStart, effectiveEnd } = computeEffectiveRange(pagination.offset, pagination.requestedLimit, totalLines);
+  const adjustedEnd = findSafePaginationEnd(doc.lines, effectiveEnd);
+
+  const paginatedDoc: ThreeZoneDocument = {
+    ...doc,
+    lines: doc.lines.slice(effectiveStart - 1, adjustedEnd),
+    header: {
+      ...doc.header,
+      lineRange: { start: effectiveStart, end: adjustedEnd, total: totalLines },
+    },
+  };
+
+  return {
+    output: formatPlainText(paginatedDoc),
+    paginatedDoc,
+    effectiveStart,
+    adjustedEnd,
+    totalLines,
+  };
 }
 
 export async function handleReadTrackedFile(
@@ -248,8 +275,11 @@ export async function handleReadTrackedFile(
     // 5. Resolve tracking status for the header
     const trackingStatus = await resolveTrackingStatus(filePath, config, projectDir);
 
+    // 5a. Parse for diagnostics (zombie detection). Independent of view pipeline.
+    const parsedDoc = parseForFormat(fileContent);
+    const fileDiagnostics = parsedDoc.getDiagnostics();
+
     // 5b. When hashline is disabled, return full-file content with line numbers only (no hashes).
-    // Working view uses the unified pipeline (which computes hashes internally).
     const displayPath = path.relative(projectDir, filePath);
     if (!config.hashline.enabled) {
       // Simple view requires hashline for coordinate-based addressing
@@ -259,133 +289,38 @@ export async function handleReadTrackedFile(
         );
       }
 
-      // Working mode: use the unified three-zone pipeline (computes hashes internally)
-      if (canonicalView === 'working') {
-        const protocolMode = resolveProtocolMode(config.protocol.mode);
-        const doc = buildViewDocument(fileContent, canonicalView, {
-          filePath: displayPath,
-          trackingStatus: trackingStatus.status,
-          protocolMode,
-          defaultView: 'working',
-          viewPolicy: config.policy.view_policy ?? 'suggest',
-        });
-
-        const sessionHashes = doc.lines.map(l => ({
-          line: l.margin.lineNumber,
-          raw: l.sessionHashes.raw,
-          committed: l.sessionHashes.committed,
-          currentView: l.sessionHashes.currentView,
-          rawLineNum: l.rawLineNumber,
-        }));
-        state.recordAfterRead(filePath, canonicalView, sessionHashes, fileContent);
-
-        const totalLines = doc.lines.length;
-        const { effectiveStart, effectiveEnd } = computeEffectiveRange(offset, requestedLimit, totalLines);
-        const adjustedEnd = findSafePaginationEnd(doc.lines, effectiveEnd);
-
-        const paginatedDoc: ThreeZoneDocument = {
-          ...doc,
-          lines: doc.lines.slice(effectiveStart - 1, adjustedEnd),
-          header: {
-            ...doc.header,
-            lineRange: { start: effectiveStart, end: adjustedEnd, total: totalLines },
-          },
-        };
-
-        const metaOutput = formatPlainText(paginatedDoc);
-        const guide = maybeComposeGuide(state, config, includeGuide);
-        const content: Array<{ type: 'text'; text: string }> = [{ type: 'text', text: metaOutput }];
-        const truncation = buildTruncationMessage(effectiveStart, adjustedEnd, totalLines);
-        if (truncation) {
-          content[content.length - 1].text += truncation;
-        }
-        if (guide) content.unshift({ type: 'text', text: guide });
-        return { content };
-      }
-
-      let header = formatTrackedHeader(displayPath, fileContent, trackingStatus.status);
-      if (includeMeta) {
-        const levelsLine = formatChangeLevelsLine(fileContent);
-        if (levelsLine) header = header + '\n' + levelsLine;
-      }
-      // Add policy mode to header
-      header = header.replace(
-        /## tracking: (tracked|untracked)/,
-        `## policy: ${config.policy.mode} | tracking: $1`,
+      const protocolMode = resolveProtocolMode(config.protocol.mode);
+      const { output: rawOutput, effectiveStart, adjustedEnd, totalLines } = buildAndFormatPaginatedDoc(
+        fileContent, canonicalView,
+        { filePath: displayPath, trackingStatus: trackingStatus.status, protocolMode, defaultView: 'working', viewPolicy: config.policy.view_policy ?? 'suggest' },
+        { offset, requestedLimit },
+        state, filePath,
       );
-      let headerWithoutHashlineTip = header.replace(
-        /## tip:.*/,
-        '## tip: Hashline addressing is disabled. Edits use text matching; re-read for current content if propose_change fails.',
-      );
-      // Append protocol mode label for non-hashline path
-      const nonHashProtocolMode = resolveProtocolMode(config.protocol.mode);
-      if (nonHashProtocolMode === 'compact') {
-        headerWithoutHashlineTip = headerWithoutHashlineTip.replace(
-          /## tip:.*/,
-          '## tip: Hashline addressing is disabled but compact mode requires it. Enable in .changedown/config.toml: [hashline] enabled = true',
-        );
-      }
-      const contentToShow =
-        canonicalView === 'decided' ? computeCurrentText(fileContent) : fileContent;
-      const allContentLines = contentToShow.split('\n');
-      const totalContentLines = allContentLines.length;
 
-      // Apply pagination
-      const { effectiveStart: effStart, effectiveEnd: effEnd } = computeEffectiveRange(offset, requestedLimit, totalContentLines);
-      const adjustedEnd = findSafePaginationEndFromText(allContentLines, effEnd, totalContentLines);
-      const slicedLines = allContentLines.slice(effStart - 1, adjustedEnd);
+      let output = rawOutput;
+      const truncation = buildTruncationMessage(effectiveStart, adjustedEnd, totalLines);
+      if (truncation) output += truncation;
 
-      const lineNumbered = formatLineNumberedContent(slicedLines, effStart);
-      const output = `${headerWithoutHashlineTip}\n\n${lineNumbered}`;
-      state.recordAfterRead(filePath, canonicalView, [], fileContent);
+      const hashlineTip = protocolMode === 'compact' ? HASHLINE_DISABLED_TIP_COMPACT : HASHLINE_DISABLED_TIP_DEFAULT;
+      output = output + '\n' + hashlineTip;
+
       const guide = maybeComposeGuide(state, config, includeGuide);
       const content: Array<{ type: 'text'; text: string }> = [{ type: 'text', text: output }];
-      const truncation = buildTruncationMessage(effStart, adjustedEnd, totalContentLines);
-      if (truncation) {
-        content[content.length - 1].text += truncation;
-      }
       if (guide) content.unshift({ type: 'text', text: guide });
-      return { content };
+      return { content, diagnostics: fileDiagnostics };
     }
 
-    // 6. Build ThreeZoneDocument via the unified pipeline
+    // 6. Build ThreeZoneDocument via the unified pipeline, apply pagination and format
     const protocolMode = resolveProtocolMode(config.protocol.mode);
-    const doc = buildViewDocument(fileContent, canonicalView, {
-      filePath: displayPath,
-      trackingStatus: trackingStatus.status,
-      protocolMode,
-      defaultView: 'working',
-      viewPolicy: config.policy.view_policy ?? 'suggest',
-    });
+    const { output: rawOutput, effectiveStart, adjustedEnd, totalLines } = buildAndFormatPaginatedDoc(
+      fileContent, canonicalView,
+      { filePath: displayPath, trackingStatus: trackingStatus.status, protocolMode, defaultView: 'working', viewPolicy: config.policy.view_policy ?? 'suggest' },
+      { offset, requestedLimit },
+      state, filePath,
+    );
 
-    // 7. Extract session hashes from the IR for staleness detection
-    const sessionHashes = doc.lines.map(l => ({
-      line: l.margin.lineNumber,
-      raw: l.sessionHashes.raw,
-      committed: l.sessionHashes.committed,
-      currentView: l.sessionHashes.currentView,
-      rawLineNum: l.rawLineNumber,
-    }));
-    state.recordAfterRead(filePath, canonicalView, sessionHashes, fileContent);
-
-    // 8. Apply pagination by slicing doc.lines
-    const totalLines = doc.lines.length;
-    const { effectiveStart, effectiveEnd } = computeEffectiveRange(offset, requestedLimit, totalLines);
-    const adjustedEnd = findSafePaginationEnd(doc.lines, effectiveEnd);
-
-    const paginatedDoc: ThreeZoneDocument = {
-      ...doc,
-      lines: doc.lines.slice(effectiveStart - 1, adjustedEnd),
-      header: {
-        ...doc.header,
-        lineRange: { start: effectiveStart, end: adjustedEnd, total: totalLines },
-      },
-    };
-
-    // 9. Format output via the plain text formatter
-    let output = formatPlainText(paginatedDoc);
-
-    // 9b. Inject change levels line when include_meta is requested
+    // 7. Inject change levels line when include_meta is requested (before truncation message)
+    let output = rawOutput;
     if (includeMeta) {
       const levelsLine = formatChangeLevelsLine(fileContent);
       if (levelsLine) {
@@ -400,7 +335,7 @@ export async function handleReadTrackedFile(
       content[content.length - 1].text += truncation;
     }
     if (guide) content.unshift({ type: 'text', text: guide });
-    return { content };
+    return { content, diagnostics: fileDiagnostics };
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     return errorResult(msg);

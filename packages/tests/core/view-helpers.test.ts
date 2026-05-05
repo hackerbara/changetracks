@@ -46,6 +46,7 @@ describe('isChangeVisibleInView', () => {
       contentRange: { start: 0, end: 5 },
       level: 1,
       anchored: true,
+      resolved: true,
       ...overrides,
     };
   }

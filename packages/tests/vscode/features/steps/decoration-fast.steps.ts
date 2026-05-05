@@ -182,7 +182,7 @@ Given('a change of type {string} by {string} at offset {int} to {int}', function
         range: { start, end },
         contentRange: { start, end },
         metadata: { author },
-        level: 0, anchored: false,
+        level: 0, anchored: false, resolved: true,
     });
 });
 
@@ -205,7 +205,7 @@ Given('a change of type {string} with no author at offset {int} to {int}', funct
         status: 'Pending' as any,
         range: { start, end },
         contentRange: { start, end },
-        level: 0, anchored: false,
+        level: 0, anchored: false, resolved: true,
     });
 });
 
@@ -225,7 +225,7 @@ Given('a substitution by {string} at offset {int} to {int} with originalRange {i
         originalRange: { start: origStart, end: origEnd },
         modifiedRange: { start: modStart, end: modEnd },
         metadata: { author },
-        level: 0, anchored: false,
+        level: 0, anchored: false, resolved: true,
     });
 });
 
@@ -241,7 +241,7 @@ Given('a move-from change at offset {int} to {int} with content {int} to {int}',
         contentRange: { start: contentStart, end: contentEnd },
         moveRole: 'from',
         groupId: 'cn-1',
-        level: 0, anchored: false,
+        level: 0, anchored: false, resolved: true,
     });
 });
 
@@ -257,7 +257,7 @@ Given('a move-to change at offset {int} to {int} with content {int} to {int}', f
         contentRange: { start: contentStart, end: contentEnd },
         moveRole: 'to',
         groupId: 'cn-1',
-        level: 0, anchored: false,
+        level: 0, anchored: false, resolved: true,
     });
 });
 
@@ -274,7 +274,7 @@ Given('a move-from change by {string} at offset {int} to {int} with content {int
         moveRole: 'from',
         groupId: 'cn-1',
         metadata: { author },
-        level: 0, anchored: false,
+        level: 0, anchored: false, resolved: true,
     });
 });
 
@@ -291,7 +291,7 @@ Given('a move-to change by {string} at offset {int} to {int} with content {int} 
         moveRole: 'to',
         groupId: 'cn-1',
         metadata: { author },
-        level: 0, anchored: false,
+        level: 0, anchored: false, resolved: true,
     });
 });
 
@@ -305,7 +305,7 @@ Given('a normal deletion at offset {int} to {int} with content {int} to {int}', 
         status: 'Pending' as any,
         range: { start, end },
         contentRange: { start: contentStart, end: contentEnd },
-        level: 0, anchored: false,
+        level: 0, anchored: false, resolved: true,
     });
 });
 
@@ -325,7 +325,7 @@ Given('a sidecar substitution with original {string} modified {string} at offset
         contentRange: { start: startOffset, end: startOffset + contentLength },
         originalText,
         modifiedText,
-        level: 0, anchored: false,
+        level: 0, anchored: false, resolved: true,
     });
 });
 
@@ -340,7 +340,7 @@ Given('a sidecar substitution with only modifiedText {string} at offset {int} to
         range: { start, end },
         contentRange: { start, end },
         modifiedText,
-        level: 0, anchored: false,
+        level: 0, anchored: false, resolved: true,
     });
 });
 
@@ -355,7 +355,7 @@ Given('a sidecar substitution with only originalText {string} at offset {int} to
         range: { start, end },
         contentRange: { start, end },
         originalText,
-        level: 0, anchored: false,
+        level: 0, anchored: false, resolved: true,
     });
 });
 
@@ -370,7 +370,7 @@ Given('a sidecar insertion with modifiedText {string} at offset {int} to {int}',
         range: { start, end },
         contentRange: { start, end },
         modifiedText,
-        level: 0, anchored: false,
+        level: 0, anchored: false, resolved: true,
     });
 });
 
@@ -385,7 +385,7 @@ Given('a sidecar deletion with originalText {string} at offset {int} to {int}', 
         range: { start, end },
         contentRange: { start, end },
         originalText,
-        level: 0, anchored: false,
+        level: 0, anchored: false, resolved: true,
     });
 });
 

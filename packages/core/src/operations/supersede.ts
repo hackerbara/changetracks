@@ -14,6 +14,7 @@ import { applyProposeChange, appendFootnote } from '../file-ops.js';
 import { scanMaxCnId, generateFootnoteDefinition } from './footnote-generator.js';
 import { isL3Format } from '../footnote-patterns.js';
 import { parseForFormat } from '../format-aware-parse.js';
+import { assertResolved } from '../model/document.js';
 import { computeReject } from './accept-reject.js';
 import { ChangeType } from '../model/types.js';
 import { nowTimestamp } from '../timestamp.js';
@@ -105,6 +106,10 @@ export async function computeSupersedeResult(
       error: `Cannot supersede change "${changeId}": unexpected status "${header.status}". Only proposed changes can be superseded.`,
     };
   }
+
+  // T3.9: guard — refuse to supersede on a document with unresolved changes
+  const inputDoc = parseForFormat(text);
+  assertResolved(inputDoc);  // flag-gated; throws UnresolvedChangesError on unresolved input
 
   // --- 2. Reject the original change ---
   const rejectResult = applyReview(

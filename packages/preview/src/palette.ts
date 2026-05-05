@@ -92,5 +92,11 @@ export function getChangeStyle(
                 htmlTag: 'span',
                 strikethrough: false,
             };
+        case ChangeType.Move:
+            return {
+                cssClass: `cn-move cn-${statusClass}`,
+                htmlTag: 'span',
+                strikethrough: false,
+            };
     }
 }

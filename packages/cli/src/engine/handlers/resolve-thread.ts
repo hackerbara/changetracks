@@ -1,10 +1,11 @@
 import * as fs from 'node:fs/promises';
+import { writeTrackedFile } from '../write-tracked-file.js';
 import { errorResult } from '../shared/error-result.js';
 import { optionalStrArg } from '../args.js';
 import { resolveAuthor } from '../author.js';
 import { isFileInScope } from '../config.js';
 import { ConfigResolver } from '../config-resolver.js';
-import { computeResolutionEdit, computeUnresolveEdit, type TextEdit } from '@changedown/core';
+import { computeResolutionEdit, computeUnresolveEdit, type TextEdit, parseForFormat, assertResolved, UnresolvedChangesError } from '@changedown/core';
 import { SessionState } from '../state.js';
 import { rerecordState } from '../state-utils.js';
 
@@ -20,7 +21,7 @@ export const resolveThreadTool = {
     properties: {
       file: {
         type: 'string',
-        description: 'Path to the file (absolute or relative to project root)',
+        description: 'Path, file:// URI, or active Word session URI (word://sess-...). Use resources/list to discover Word sessions.',
       },
       change_id: {
         type: 'string',
@@ -112,6 +113,18 @@ export async function handleResolveThread(
       return errorResult(authorError.message);
     }
 
+    // Assert no unresolved changes before any mutation (zombie-elimination spec §3.4).
+    try {
+      assertResolved(parseForFormat(fileContent));
+    } catch (err) {
+      if (err instanceof UnresolvedChangesError) {
+        return errorResult(
+          `Document has ${err.diagnostics.length} unresolved change(s); run 'cd repair' or amend the failing change. Diagnostics: ${JSON.stringify(err.diagnostics)}`,
+        );
+      }
+      throw err;
+    }
+
     // 6. Apply the appropriate edit
     let edit: TextEdit | null;
     if (action === 'resolve') {
@@ -142,7 +155,7 @@ export async function handleResolveThread(
 
     // 7. Apply edit and write back to disk
     const updatedContent = applyTextEdit(fileContent, edit);
-    await fs.writeFile(filePath, updatedContent, 'utf-8');
+    await writeTrackedFile(filePath, updatedContent);
     await rerecordState(state, filePath, updatedContent, config);
 
     // 8. Return success

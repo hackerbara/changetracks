@@ -50,7 +50,7 @@ export const getChangeTool = {
 export interface GetChangeResponse {
   change_id: string;
   file: string;
-  type: 'ins' | 'del' | 'sub' | 'highlight' | 'comment';
+  type: 'ins' | 'del' | 'sub' | 'highlight' | 'comment' | 'move';
   status: 'proposed' | 'accepted' | 'rejected';
 
   inline: {

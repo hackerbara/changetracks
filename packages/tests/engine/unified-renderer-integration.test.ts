@@ -28,16 +28,13 @@ describe('unified renderer CLI integration', () => {
     const doc = buildViewDocument(FIXTURE_CONTENT, 'working', VIEW_OPTIONS);
     const output = formatPlainText(doc);
 
-    // Header present with counts
-    expect(output).toContain('## test.md | policy: classic | tracking: tracked');
-    expect(output).toContain('proposed: 1');
+    expect(output).toContain('## proposed: 1 | accepted: 0 | rejected: 0');
     expect(output).toContain('---');
 
     // Hashline coordinates: LINE:HASH FLAG| content
     expect(output).toMatch(/\d+:[0-9a-f]{2}\s+\w?\|/);
 
-    // Zone 3 metadata inline
-    expect(output).toContain('{>>cn-1');
+    expect(output).toContain('[cn-1');
   });
 
   it('simple view output contains P/A flags and change IDs', () => {

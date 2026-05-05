@@ -47,6 +47,8 @@ interface FootnoteDefinition {
   replyCount?: number;
   /** Unrecognized key: value body lines (ADR-A 1b extension surface) */
   extraMetadata?: Record<string, string>;
+  supersedes?: string;
+  supersededBy?: string[];
 }
 
 /** Propagate extraMetadata image fields from a FootnoteDefinition to ChangeNode.metadata. */
@@ -104,6 +106,8 @@ export class CriticMarkupParser {
 
   // Level 2 line patterns
   private static readonly APPROVAL_RE = /^(approved|rejected|request-changes):\s+(@\S+)\s+(\S+)(?:\s+"([^"]*)")?$/;
+  private static readonly SUPERSEDES_RE = /^supersedes:\s+(\S+)\s*$/;
+  private static readonly SUPERSEDED_BY_RE = /^superseded-by:\s+(\S+)\s*$/;
   private static readonly DISCUSSION_RE = /^(@\S+)\s+(\S+)(?:\s+\[([^\]]+)\])?:\s*(.*)$/;
   private static readonly RESOLVED_RE = /^resolved:?\s+(@\S+)\s+(\S+)(?::\s*(.*))?$/;
   private static readonly OPEN_RE = /^open(?:\s+--\s+(.*))?$/;
@@ -281,6 +285,7 @@ export class CriticMarkupParser {
       modifiedText: content,
       level: 0,
       anchored: false,
+      resolved: true,
     };
   }
 
@@ -302,6 +307,7 @@ export class CriticMarkupParser {
       originalText: content,
       level: 0,
       anchored: false,
+      resolved: true,
     };
   }
 
@@ -350,6 +356,7 @@ export class CriticMarkupParser {
       modifiedText,
       level: 0,
       anchored: false,
+      resolved: true,
     };
   }
 
@@ -383,6 +390,7 @@ export class CriticMarkupParser {
       metadata: comment !== undefined ? { comment } : undefined,
       level: 0,
       anchored: false,
+      resolved: true,
     };
   }
 
@@ -404,6 +412,7 @@ export class CriticMarkupParser {
       metadata: { comment },
       level: 0,
       anchored: false,
+      resolved: true,
     };
   }
 
@@ -585,6 +594,23 @@ export class CriticMarkupParser {
         continue;
       }
 
+      // supersedes: cn-X
+      const supersedesMatch = trimmed.match(CriticMarkupParser.SUPERSEDES_RE);
+      if (supersedesMatch) {
+        if (!currentDef.supersedes) currentDef.supersedes = supersedesMatch[1];
+        lastDiscussionComment = null;
+        continue;
+      }
+
+      // superseded-by: cn-X
+      const supersededByMatch = trimmed.match(CriticMarkupParser.SUPERSEDED_BY_RE);
+      if (supersededByMatch) {
+        if (!currentDef.supersededBy) currentDef.supersededBy = [];
+        currentDef.supersededBy.push(supersededByMatch[1]);
+        lastDiscussionComment = null;
+        continue;
+      }
+
       // @author date [label]: text — discussion comment (counts as thread reply)
       const discMatch = trimmed.match(CriticMarkupParser.DISCUSSION_RE);
       if (discMatch) {
@@ -685,6 +711,10 @@ export class CriticMarkupParser {
       applyImageExtraMetadata(def, node.metadata);
       applyEquationExtraMetadata(def, node.metadata);
 
+      // Supersedes / superseded-by
+      if (def.supersedes) node.supersedes = def.supersedes;
+      if (def.supersededBy && def.supersededBy.length > 0) node.supersededBy = def.supersededBy;
+
       // Propagate footnote line range and reply count
       if (def.startLine !== undefined) {
         node.footnoteLineRange = { startLine: def.startLine, endLine: def.endLine ?? def.startLine };
@@ -726,6 +756,7 @@ export class CriticMarkupParser {
           level: 2,
           decided: true,
           anchored: true,
+          resolved: true,
           metadata: {
             author: def.author,
             date: def.date,
@@ -745,6 +776,10 @@ export class CriticMarkupParser {
 
         applyImageExtraMetadata(def, node.metadata!);
         applyEquationExtraMetadata(def, node.metadata!);
+
+        // Supersedes / superseded-by
+        if (def.supersedes) node.supersedes = def.supersedes;
+        if (def.supersededBy && def.supersededBy.length > 0) node.supersededBy = def.supersededBy;
 
         // Propagate footnote line range and reply count
         if (def.startLine !== undefined) {
@@ -804,6 +839,7 @@ export class CriticMarkupParser {
       node.range = { start: node.range.start, end: node.range.end + match[0].length };
       node.level = 2;
       node.anchored = true;
+      node.resolved = true;
     }
   }
 

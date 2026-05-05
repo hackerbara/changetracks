@@ -53,6 +53,7 @@ describe('buildDecorationPlan without format parameter', () => {
       contentRange: { start: 9, end: 14 },
       level: 1,
       anchored: true,
+      resolved: true,
       modifiedText: 'world',
     }];
     const text = 'hello {++world++}';
@@ -71,6 +72,7 @@ describe('buildDecorationPlan without format parameter', () => {
       contentRange: { start: 6, end: 11 },
       level: 2,
       anchored: true,
+      resolved: true,
       modifiedText: 'world',
     }];
     const text = 'hello world';
@@ -83,12 +85,12 @@ describe('buildDecorationPlan without format parameter', () => {
     const l2Change: ChangeNode = {
       id: 'cn-1', type: ChangeType.Insertion, status: ChangeStatus.Proposed,
       range: { start: 6, end: 17 }, contentRange: { start: 9, end: 14 },
-      level: 1, anchored: true, modifiedText: 'world',
+      level: 1, anchored: true, resolved: true, modifiedText: 'world',
     };
     const l3Change: ChangeNode = {
       id: 'cn-1', type: ChangeType.Insertion, status: ChangeStatus.Proposed,
       range: { start: 6, end: 11 }, contentRange: { start: 6, end: 11 },
-      level: 2, anchored: true, modifiedText: 'world',
+      level: 2, anchored: true, resolved: true, modifiedText: 'world',
     };
     const l2Text = 'hello {++world++}';
     const l3Text = 'hello world';
@@ -113,7 +115,7 @@ describe('buildDecorationPlan structural equivalence across formats', () => {
       id: 'cn-1', type: ChangeType.Insertion, status: ChangeStatus.Proposed,
       range: { start: fullStart, end: fullEnd },
       contentRange: { start: fullStart + 3, end: fullEnd - 3 },
-      level: 1, anchored: true, modifiedText: insertText,
+      level: 1, anchored: true, resolved: true, modifiedText: insertText,
     };
     return { change, text };
   }
@@ -128,7 +130,7 @@ describe('buildDecorationPlan structural equivalence across formats', () => {
       id: 'cn-1', type: ChangeType.Insertion, status: ChangeStatus.Proposed,
       range: { start: fullStart, end: fullEnd },
       contentRange: { start: fullStart, end: fullEnd },
-      level: 2, anchored: true, modifiedText: insertText,
+      level: 2, anchored: true, resolved: true, modifiedText: insertText,
     };
     return { change, text };
   }

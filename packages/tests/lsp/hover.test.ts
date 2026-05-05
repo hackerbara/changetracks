@@ -13,7 +13,8 @@ describe('Hover Capability', () => {
           status: ChangeStatus.Proposed,
           range: { start: 6, end: 17 },
           contentRange: { start: 9, end: 14 },
-          level: 0, anchored: false
+          level: 0, anchored: false,
+          resolved: true,
         }
       ];
 
@@ -33,7 +34,8 @@ describe('Hover Capability', () => {
           status: ChangeStatus.Proposed,
           range: { start: 6, end: 17 },
           contentRange: { start: 9, end: 14 },
-          level: 0, anchored: false
+          level: 0, anchored: false,
+          resolved: true,
         }
       ];
 
@@ -53,7 +55,8 @@ describe('Hover Capability', () => {
           status: ChangeStatus.Proposed,
           range: { start: 6, end: 17 },
           contentRange: { start: 9, end: 14 },
-          level: 0, anchored: false
+          level: 0, anchored: false,
+          resolved: true,
         }
       ];
 
@@ -75,7 +78,8 @@ describe('Hover Capability', () => {
           contentRange: { start: 9, end: 17 },
           originalRange: { start: 9, end: 12 },
           modifiedRange: { start: 14, end: 17 },
-          level: 0, anchored: false
+          level: 0, anchored: false,
+          resolved: true,
         }
       ];
 
@@ -98,7 +102,8 @@ describe('Hover Capability', () => {
           metadata: {
             comment: 'This is a comment'
           },
-          level: 0, anchored: false
+          level: 0, anchored: false,
+          resolved: true,
         }
       ];
 
@@ -125,7 +130,8 @@ describe('Hover Capability', () => {
           metadata: {
             comment: 'note'
           },
-          level: 0, anchored: false
+          level: 0, anchored: false,
+          resolved: true,
         },
         {
           id: '2',
@@ -136,7 +142,8 @@ describe('Hover Capability', () => {
           metadata: {
             comment: 'note'
           },
-          level: 0, anchored: false
+          level: 0, anchored: false,
+          resolved: true,
         }
       ];
 
@@ -160,7 +167,8 @@ describe('Hover Capability', () => {
           status: ChangeStatus.Proposed,
           range: { start: 6, end: 17 },
           contentRange: { start: 9, end: 14 },
-          level: 0, anchored: false
+          level: 0, anchored: false,
+          resolved: true,
         }
       ];
 
@@ -184,7 +192,8 @@ describe('Hover Capability', () => {
           metadata: {
             comment: 'This is a\nmulti-line\ncomment'
           },
-          level: 0, anchored: false
+          level: 0, anchored: false,
+          resolved: true,
         }
       ];
 
@@ -212,7 +221,8 @@ describe('Hover Capability', () => {
           metadata: {
             comment: 'comment'
           },
-          level: 0, anchored: false
+          level: 0, anchored: false,
+          resolved: true,
         }
       ];
 
@@ -249,7 +259,8 @@ describe('Hover Capability', () => {
           metadata: {
             comment: ''
           },
-          level: 0, anchored: false
+          level: 0, anchored: false,
+          resolved: true,
         }
       ];
 

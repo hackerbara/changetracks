@@ -13,7 +13,8 @@ describe('Diagnostics', () => {
           status: ChangeStatus.Proposed,
           range: { start: 6, end: 17 }, // {++world++}
           contentRange: { start: 9, end: 14 }, // world,
-          level: 0, anchored: true
+          level: 0, anchored: true,
+          resolved: true,
         }
       ];
 
@@ -44,7 +45,8 @@ describe('Diagnostics', () => {
           status: ChangeStatus.Proposed,
           range: { start: 6, end: 17 },
           contentRange: { start: 9, end: 14 },
-          level: 0, anchored: true
+          level: 0, anchored: true,
+          resolved: true,
         }
       ];
 
@@ -70,7 +72,8 @@ describe('Diagnostics', () => {
           modifiedRange: { start: 16, end: 24 }, // universe
           originalText: 'world',
           modifiedText: 'universe',
-          level: 0, anchored: true
+          level: 0, anchored: true,
+          resolved: true,
         }
       ];
 
@@ -92,7 +95,8 @@ describe('Diagnostics', () => {
           status: ChangeStatus.Proposed,
           range: { start: 6, end: 17 },
           contentRange: { start: 9, end: 14 },
-          level: 0, anchored: true
+          level: 0, anchored: true,
+          resolved: true,
         }
       ];
 
@@ -114,7 +118,8 @@ describe('Diagnostics', () => {
           status: ChangeStatus.Proposed,
           range: { start: 6, end: 26 },
           contentRange: { start: 9, end: 23 },
-          level: 0, anchored: true
+          level: 0, anchored: true,
+          resolved: true,
         }
       ];
 
@@ -139,7 +144,8 @@ describe('Diagnostics', () => {
           metadata: {
             comment: 'note'
           },
-          level: 0, anchored: true
+          level: 0, anchored: true,
+          resolved: true,
         }
       ];
 
@@ -160,7 +166,8 @@ describe('Diagnostics', () => {
           status: ChangeStatus.Proposed,
           range: { start: 7, end: 26 },
           contentRange: { start: 10, end: 23 },
-          level: 0, anchored: true
+          level: 0, anchored: true,
+          resolved: true,
         }
       ];
 
@@ -187,7 +194,8 @@ describe('Diagnostics', () => {
           status: ChangeStatus.Proposed,
           range: { start: 0, end: 12 },
           contentRange: { start: 3, end: 9 },
-          level: 0, anchored: true
+          level: 0, anchored: true,
+          resolved: true,
         },
         {
           id: 'change-9',
@@ -195,7 +203,8 @@ describe('Diagnostics', () => {
           status: ChangeStatus.Proposed,
           range: { start: 23, end: 35 },
           contentRange: { start: 26, end: 32 },
-          level: 0, anchored: true
+          level: 0, anchored: true,
+          resolved: true,
         }
       ];
 
@@ -225,7 +234,8 @@ describe('Diagnostics', () => {
           status: ChangeStatus.Proposed,
           range: { start: 0, end: text.length },
           contentRange: { start: 3, end: text.length - 3 },
-          level: 0, anchored: true
+          level: 0, anchored: true,
+          resolved: true,
         }
       ];
 
@@ -248,7 +258,8 @@ describe('Diagnostics', () => {
           status: ChangeStatus.Proposed,
           range: { start: 8, end: 20 },
           contentRange: { start: 11, end: 17 },
-          level: 0, anchored: true
+          level: 0, anchored: true,
+          resolved: true,
         }
       ];
 
@@ -270,6 +281,7 @@ describe('Diagnostics', () => {
           type: ChangeType.Insertion,
           status: ChangeStatus.Proposed,
           anchored: false,
+          resolved: true,
           level: 2,
           consumedBy: 'cn-5',
           range: { start: 21, end: 49 }, // footnote block range
@@ -293,6 +305,7 @@ describe('Diagnostics', () => {
           type: ChangeType.Insertion,
           status: ChangeStatus.Proposed,
           anchored: false,
+          resolved: true,
           level: 2,
           consumedBy: 'cn-9',
           consumptionType: 'partial',

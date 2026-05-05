@@ -78,6 +78,10 @@ export function isTypeVisibleInView(type: ChangeType, view: View): boolean {
       return d.highlights !== 'hide';
     case ChangeType.Comment:
       return d.comments !== 'hide';
+    case ChangeType.Move:
+      // Move spans both halves (from = deletion-like, to = insertion-like) — visible
+      // if either side is shown. Mirrors Substitution's pattern.
+      return d.insertions !== 'hide' || d.deletions !== 'hide';
   }
 }
 

@@ -1,10 +1,11 @@
 import * as fs from 'node:fs/promises';
+import { writeTrackedFile } from '../write-tracked-file.js';
 import { errorResult } from '../shared/error-result.js';
 import { optionalStrArg, strArg } from '../args.js';
 import { resolveAuthor } from '../author.js';
 import { isFileInScope } from '../config.js';
 import { ConfigResolver } from '../config-resolver.js';
-import { computeSupersedeResult, countFootnoteHeadersWithStatus } from '@changedown/core';
+import { computeSupersedeResult, countFootnoteHeadersWithStatus, parseForFormat, assertResolved, UnresolvedChangesError } from '@changedown/core';
 import { toRelativePath } from '../path-utils.js';
 import { SessionState } from '../state.js';
 import { rerecordState } from '../state-utils.js';
@@ -25,7 +26,7 @@ export const supersedeChangeTool = {
     properties: {
       file: {
         type: 'string',
-        description: 'Path to the file (absolute or relative to project root)',
+        description: 'Path, file:// URI, or active Word session URI (word://sess-...). Use resources/list to discover Word sessions.',
       },
       change_id: {
         type: 'string',
@@ -129,6 +130,18 @@ export async function handleSupersedeChange(
       return errorResult(authorError.message);
     }
 
+    // Assert no unresolved changes before any mutation (zombie-elimination spec §3.4).
+    try {
+      assertResolved(parseForFormat(fileContent));
+    } catch (err) {
+      if (err instanceof UnresolvedChangesError) {
+        return errorResult(
+          `Document has ${err.diagnostics.length} unresolved change(s); run 'cd repair' or amend the failing change. Diagnostics: ${JSON.stringify(err.diagnostics)}`,
+        );
+      }
+      throw err;
+    }
+
     // 5. Delegate pure computation to core (reject + propose + cross-link)
     const result = await computeSupersedeResult(fileContent, changeId, {
       newText,
@@ -151,7 +164,7 @@ export async function handleSupersedeChange(
     }
 
     // 7. Write back to disk
-    await fs.writeFile(filePath, fileContent, 'utf-8');
+    await writeTrackedFile(filePath, fileContent);
     await rerecordState(state, filePath, fileContent, config);
 
     // 8. Build response

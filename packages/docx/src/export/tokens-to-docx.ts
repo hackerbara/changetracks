@@ -34,6 +34,8 @@ import { basename } from '../shared/basename.js';
 
 import {
   parseForFormat,
+  assertResolved,
+  UnresolvedChangesError,
   ChangeType,
   ChangeStatus,
   computeCurrentText,
@@ -879,6 +881,10 @@ export async function changesToDocxParagraphs(
 
   // Step 2: Parse with core parser
   const doc = parseForFormat(text);
+
+  // T3.8: guard — refuse to export a document with unresolved changes
+  assertResolved(doc);  // throws UnresolvedChangesError if flag enabled and blocking diagnostics exist
+
   const changes = doc.getChanges();
 
   const includeComments = options.comments !== 'none';

@@ -6,9 +6,9 @@
 
 import * as path from 'node:path';
 import picomatch from 'picomatch';
-import type { ChangeDownConfig } from 'changedown/config';
+import type { ChangeDownConfig } from '@changedown/cli/config';
 
-export type { ChangeDownConfig, PolicyMode, CreationTracking } from 'changedown/config';
+export type { ChangeDownConfig, PolicyMode, CreationTracking } from '@changedown/cli/config';
 export {
   DEFAULT_CONFIG,
   loadConfig,
@@ -20,7 +20,7 @@ export {
   resolveProtocolMode,
   derivePolicyMode,
   asStringArray,
-} from 'changedown/config';
+} from '@changedown/cli/config';
 
 // ---------------------------------------------------------------------------
 // hooks-specific scope check (not part of the shared cli/config module)

@@ -10,12 +10,12 @@ import {
   computeChangeList,
   handleDiff,
   isGitDiffDriverInvocation,
-} from 'changedown/internals';
+} from '@changedown/cli/internals';
 import type {
   StatusResult,
   SettlementResult,
   ChangeListEntry,
-} from 'changedown/internals';
+} from '@changedown/cli/internals';
 
 // =============================================================================
 // World extensions for CLI command steps

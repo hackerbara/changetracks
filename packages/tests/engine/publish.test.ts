@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { publishSettled } from 'changedown/internals';
+import { publishSettled } from '@changedown/cli/internals';
 
 describe('publishSettled', () => {
   it('produces clean output with all changes applied', () => {

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { executeCommand, ParseError, type CommandDef, type ToolHandler } from 'changedown/schema-executor';
-import { ConfigResolver } from 'changedown/engine';
-import { SessionState } from 'changedown/engine';
+import { executeCommand, ParseError, type CommandDef, type ToolHandler } from '@changedown/cli/schema-executor';
+import { ConfigResolver } from '@changedown/cli/engine';
+import { SessionState } from '@changedown/cli/engine';
 
 /* Minimal stubs — the executor never touches resolver/state directly. */
 const resolver = {} as ConfigResolver;

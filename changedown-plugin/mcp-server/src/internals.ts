@@ -62,7 +62,8 @@ export {
   guardOverlap,
 } from './file-ops.js';
 
-export { resolveAuthor } from './author.js';
+export { resolveAuthor, synthesizeAuthorFromClientInfo } from './author.js';
+export type { ClientInfo } from './author.js';
 export { resolveTrackingStatus } from './scope.js';
 export { countFootnoteHeadersWithStatus } from './footnote-utils.js';
 export { composeGuide } from './guide-composer.js';
@@ -74,5 +75,14 @@ export {
 } from './tool-schemas.js';
 
 // ── Coordinate Pipeline ──────────────────────────────────────────────
-export { resolveCoordinates, applyCompactOp, resolveAndApply } from 'changedown/engine';
-export type { NormalizedCompactOp, ResolvedCoordinates, ApplyResult } from 'changedown/engine';
+export { resolveCoordinates, applyCompactOp, resolveAndApply } from '@changedown/cli/engine';
+export type { NormalizedCompactOp, ResolvedCoordinates, ApplyResult } from '@changedown/cli/engine';
+
+// ── MCP Resources ───────────────────────────────────────────────────
+export { ResourceLister, ResourceReader, SubscriptionManager } from './resources/index.js';
+export type { ReadResourceResult, ResourceNotification, SubscriptionManagerOptions } from './resources/index.js';
+export { normalizeDocumentTarget } from './document-target.js';
+export type { NormalizedDocumentTarget } from './document-target.js';
+// ── Word backend adapters ─────────────────────────────────────────
+export { prepareWordReviewChanges, applyWordReviewChanges } from './word-review.js';
+export type { PreparedWordReviewChanges, WordReviewOperation, WordReviewValidationError } from './word-review.js';

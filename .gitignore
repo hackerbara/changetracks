@@ -23,6 +23,18 @@ packages/tests/vscode/journeys/evidence/
 # Worktrees
 .worktrees/
 
+# Private/local agent and prompt state
+.agents/
+.claude/
+.claude-plugin/
+.changedown/
+.changeset/
+.cursor/
+.cursor-plugin/
+.opencode/
+.vscode/
+.claude*.md
+
 # Benchmark artifacts
 .bench-workspace/
 benchmark-logs/

@@ -1,6 +1,6 @@
 {
   "name": "@changedown/lsp-server",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Language Server Protocol server for CriticMarkup editing",
   "license": "MIT",
   "repository": {
@@ -38,7 +38,7 @@
     "vscode-languageserver": "^9.0.1",
     "vscode-languageserver-textdocument": "^1.0.11",
     "@changedown/core": "file:../core",
-    "changedown": "file:../cli"
+    "@changedown/cli": "file:../cli"
   },
   "devDependencies": {
     "@types/node": "20.2.5",

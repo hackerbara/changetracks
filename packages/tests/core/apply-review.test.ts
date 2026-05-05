@@ -34,6 +34,15 @@ describe('applyReview (core)', () => {
     }
   });
 
+  it('does not double-prefix already-prefixed reviewer handles', () => {
+    const result = applyReview(baseDoc, 'cn-1', 'reject', 'Not needed', '@ai:opus');
+    expect('error' in result && result.error).toBeFalsy();
+    if ('updatedContent' in result) {
+      expect(result.updatedContent).toContain('rejected: @ai:opus');
+      expect(result.updatedContent).not.toContain('@@ai:opus');
+    }
+  });
+
   it('request_changes does not change status', () => {
     const result = applyReview(baseDoc, 'cn-1', 'request_changes', 'Needs work', 'bob');
     expect('error' in result && result.error).toBeFalsy();

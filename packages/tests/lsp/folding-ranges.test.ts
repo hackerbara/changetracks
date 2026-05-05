@@ -17,7 +17,8 @@ describe('createFoldingRanges', () => {
       const changes: ChangeNode[] = [{
         id: 'c1', type: ChangeType.Deletion, status: ChangeStatus.Proposed,
         range: { start: 6, end: 24 }, contentRange: { start: 9, end: 21 },
-        level: 0, anchored: false
+        level: 0, anchored: false,
+        resolved: true,
       }];
       const result = createFoldingRanges(changes, text, 'simple', null);
       expect(result).toHaveLength(1);
@@ -30,7 +31,8 @@ describe('createFoldingRanges', () => {
       const changes: ChangeNode[] = [{
         id: 'c1', type: ChangeType.Deletion, status: ChangeStatus.Proposed,
         range: { start: 6, end: 19 }, contentRange: { start: 9, end: 17 },
-        level: 0, anchored: false
+        level: 0, anchored: false,
+        resolved: true,
       }];
       const result = createFoldingRanges(changes, text, 'simple', null);
       expect(result).toEqual([]);
@@ -41,7 +43,8 @@ describe('createFoldingRanges', () => {
       const changes: ChangeNode[] = [{
         id: 'c1', type: ChangeType.Deletion, status: ChangeStatus.Proposed,
         range: { start: 6, end: 24 }, contentRange: { start: 9, end: 21 },
-        level: 0, anchored: false, settled: true
+        level: 0, anchored: false, settled: true,
+        resolved: true,
       }];
       const result = createFoldingRanges(changes, text, 'simple', null);
       expect(result).toEqual([]);
@@ -52,7 +55,8 @@ describe('createFoldingRanges', () => {
       const changes: ChangeNode[] = [{
         id: 'c1', type: ChangeType.Deletion, status: ChangeStatus.Proposed,
         range: { start: 6, end: 24 }, contentRange: { start: 9, end: 21 },
-        level: 0, anchored: false
+        level: 0, anchored: false,
+        resolved: true,
       }];
       const cursor = { line: 2 };
       const result = createFoldingRanges(changes, text, 'simple', cursor);
@@ -64,7 +68,8 @@ describe('createFoldingRanges', () => {
       const changes: ChangeNode[] = [{
         id: 'c1', type: ChangeType.Deletion, status: ChangeStatus.Proposed,
         range: { start: 6, end: 24 }, contentRange: { start: 9, end: 21 },
-        level: 0, anchored: false
+        level: 0, anchored: false,
+        resolved: true,
       }];
       const result = createFoldingRanges(changes, text, 'working', null);
       expect(result).toEqual([]);

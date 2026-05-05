@@ -123,9 +123,12 @@ describe('ReviewService', () => {
       const result = service.rejectChange(L2_DOC, 'cn-1', 'bob');
 
       expect(result.error).toBeUndefined();
-      // After rejection settlement, the insertion should be removed
-      expect(result.updatedText).not.toContain('{++');
-      expect(result.updatedText).not.toContain('world');
+      // After rejection settlement, the insertion should be removed from the body;
+      // edit-op history may preserve it in footnotes.
+      const body = result.updatedText.split('\n\n')[0];
+      expect(body).not.toContain('{++');
+      expect(body).not.toContain('world');
+      expect(parseForFormat(result.updatedText).getDiagnostics()).toEqual([]);
     });
 
     it('does NOT settle when status was not actually updated (idempotent review)', () => {
@@ -187,10 +190,13 @@ describe('ReviewService', () => {
       const result = service.rejectAll(L2_DOC_TWO, undefined, 'bob');
 
       expect(result.error).toBeUndefined();
-      // After rejection settlement, insertions removed
-      expect(result.updatedText).not.toContain('{++');
-      expect(result.updatedText).not.toContain('world');
-      expect(result.updatedText).not.toContain('goodbye');
+      // After rejection settlement, insertions removed from the body;
+      // edit-op history may preserve them in footnotes.
+      const body = result.updatedText.split('\n\n')[0];
+      expect(body).not.toContain('{++');
+      expect(body).not.toContain('world');
+      expect(body).not.toContain('goodbye');
+      expect(parseForFormat(result.updatedText).getDiagnostics()).toEqual([]);
     });
   });
 

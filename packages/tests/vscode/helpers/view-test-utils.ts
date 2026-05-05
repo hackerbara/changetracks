@@ -6,7 +6,8 @@ const LEGACY_MODE_TO_PRESET: Record<string, keyof typeof VIEW_PRESETS> = {
     working: 'working',
     review: 'working',
     changes: 'simple',
-    settled: 'final',
+    settled: 'decided',
+    final: 'decided',
 };
 
 export function makeView(mode: string, overrides?: { projection?: Projection; display?: Partial<DisplayOptions> }): View {

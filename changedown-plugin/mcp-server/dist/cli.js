@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { createRequire } from "node:module"; var require = createRequire(import.meta.url);
 var __create = Object.create;
 var __defProp = Object.defineProperty;
 var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
@@ -163,6 +164,8 @@ function changeTypeToAbbrev(type) {
       return "hig";
     case ChangeType.Comment:
       return "com";
+    case ChangeType.Move:
+      return "mov";
   }
 }
 function changeTypeToShortCode(type) {
@@ -177,10 +180,12 @@ function changeTypeToShortCode(type) {
       return "hl";
     case ChangeType.Comment:
       return "com";
+    case ChangeType.Move:
+      return "mov";
   }
 }
-function isGhostNode(change) {
-  return change.anchored === false && change.level >= 2 && !change.consumedBy;
+function isGhostNode(node) {
+  return node.resolved === false && !node.consumedBy;
 }
 function nodeStatus(node) {
   return (node.metadata?.status ?? node.inlineMetadata?.status ?? node.status).toString().toLowerCase();
@@ -195,6 +200,7 @@ var init_types = __esm({
       ChangeType2["Substitution"] = "Substitution";
       ChangeType2["Highlight"] = "Highlight";
       ChangeType2["Comment"] = "Comment";
+      ChangeType2["Move"] = "Move";
     })(ChangeType || (ChangeType = {}));
     (function(ChangeStatus2) {
       ChangeStatus2["Proposed"] = "Proposed";
@@ -204,15 +210,46 @@ var init_types = __esm({
   }
 });
 
+// ../../packages/core/dist-esm/model/diagnostic.js
+var UnresolvedChangesError, StructuralIntegrityError;
+var init_diagnostic = __esm({
+  "../../packages/core/dist-esm/model/diagnostic.js"() {
+    "use strict";
+    UnresolvedChangesError = class extends Error {
+      constructor(diagnostics) {
+        super(`Document has ${diagnostics.length} unresolved change(s); cannot mutate.`);
+        this.name = "UnresolvedChangesError";
+        this.diagnostics = diagnostics;
+      }
+    };
+    StructuralIntegrityError = class extends Error {
+      constructor(violations) {
+        super(`Structural integrity violated: ${violations.map((v) => v.kind).join(", ")}.`);
+        this.name = "StructuralIntegrityError";
+        this.violations = violations;
+      }
+    };
+  }
+});
+
 // ../../packages/core/dist-esm/model/document.js
-var VirtualDocument;
+function assertResolved(doc, options) {
+  const allowed = new Set(options?.allow ?? []);
+  const violations = doc.getDiagnostics().filter((d) => BLOCKING_KINDS.has(d.kind) && !allowed.has(d.kind));
+  if (violations.length > 0)
+    throw new UnresolvedChangesError(violations);
+}
+var VirtualDocument, BLOCKING_KINDS;
 var init_document = __esm({
   "../../packages/core/dist-esm/model/document.js"() {
     "use strict";
     init_types();
+    init_diagnostic();
     VirtualDocument = class _VirtualDocument {
-      constructor(changes = [], coherenceRate = 100, unresolvedDiagnostics = [], resolvedText) {
+      constructor(changes = [], coherenceRate = 100, unresolvedDiagnostics = [], resolvedText, records = []) {
+        this.diagnostics = [];
         this.changes = changes;
+        this.records = records;
         this.coherenceRate = coherenceRate;
         this.unresolvedDiagnostics = unresolvedDiagnostics;
         this.resolvedText = resolvedText;
@@ -231,12 +268,19 @@ var init_document = __esm({
           contentRange: overlay.range,
           modifiedText: overlay.text,
           level: 1,
-          anchored: false
+          anchored: false,
+          resolved: true
         };
         return new _VirtualDocument([change]);
       }
       getChanges() {
         return this.changes;
+      }
+      getRecords() {
+        return this.records.slice();
+      }
+      getReviewableChanges() {
+        return this.changes.filter((change) => String(change.metadata?.status ?? change.inlineMetadata?.status ?? change.status).toLowerCase() === "proposed");
       }
       /** Returns L2+ ghost nodes that failed anchor resolution. L0/L1 unanchored nodes are excluded. */
       getUnresolvedChanges() {
@@ -269,7 +313,37 @@ var init_document = __esm({
       getGroupMembers(groupId) {
         return this.changes.filter((c) => c.groupId === groupId);
       }
+      /**
+       * Returns a readonly view of diagnostics emitted during parsing or
+       * subsequent operations on this document. Diagnostics live on the
+       * document, not on individual ChangeNodes — see model/diagnostic.ts.
+       */
+      getDiagnostics() {
+        return this.diagnostics;
+      }
+      /**
+       * Append a diagnostic. Called by parsers during construction and by
+       * recovery paths that detect new issues. Not part of the read API
+       * surface for ordinary consumers.
+       */
+      addDiagnostic(d) {
+        this.diagnostics.push(d);
+      }
+      /**
+       * Remove all diagnostics whose changeId matches. Used by the replay
+       * protocol in footnote-native-parser when a previously-failed change
+       * is recovered, and by review-changes when a change settles.
+       */
+      removeDiagnosticsForChange(changeId) {
+        this.diagnostics = this.diagnostics.filter((d) => d.changeId !== changeId);
+      }
     };
+    BLOCKING_KINDS = /* @__PURE__ */ new Set([
+      "coordinate_failed",
+      "anchor_ambiguous",
+      "anchor_missing",
+      "structural_invalid"
+    ]);
   }
 });
 
@@ -295,6 +369,16 @@ var init_tokens = __esm({
 });
 
 // ../../packages/core/dist-esm/parser/code-zones.js
+function buildCodeZoneMask(text) {
+  const mask = new Uint8Array(text.length);
+  for (const zone of findCodeZones(text)) {
+    const end = Math.min(zone.end, text.length);
+    for (let i = zone.start; i < end; i++) {
+      mask[i] = 1;
+    }
+  }
+  return mask;
+}
 function findCodeZones(text) {
   const zones = [];
   let position = 0;
@@ -523,7 +607,23 @@ function isL3Format(text) {
     }
   }
   const footnoteSection = text.slice(firstFootnote);
-  return footnoteSection.split("\n").some((line) => FOOTNOTE_L3_EDIT_OP.test(line));
+  const footnoteLines = footnoteSection.split("\n");
+  if (footnoteLines.some((line) => FOOTNOTE_L3_EDIT_OP.test(line)))
+    return true;
+  for (let i = 0; i < footnoteLines.length; i++) {
+    if (!FOOTNOTE_L3_HISTORY_HEADER.test(footnoteLines[i]))
+      continue;
+    for (let j = i + 1; j < footnoteLines.length; j++) {
+      const line = footnoteLines[j];
+      if (FOOTNOTE_DEF_START.test(line))
+        break;
+      if (/^ {4}source:\s*\S/.test(line))
+        return true;
+      if (line.trim() !== "" && !line.startsWith("    "))
+        break;
+    }
+  }
+  return false;
 }
 function unescapeCtxString(s) {
   return s.replace(/\\"/g, '"').replace(/\\\\/g, "\\");
@@ -551,7 +651,7 @@ function splitBodyAndFootnotes(lines) {
     bodyEndIndex: bodyEnd
   };
 }
-var FOOTNOTE_ID_PATTERN, FOOTNOTE_ID_NUMERIC_PATTERN, FOOTNOTE_REF_ANCHORED, FOOTNOTE_DEF_START, FOOTNOTE_DEF_START_QUICK, FOOTNOTE_DEF_LENIENT, FOOTNOTE_DEF_STRICT, FOOTNOTE_DEF_STATUS, FOOTNOTE_DEF_STATUS_VALUE, FOOTNOTE_L3_EDIT_OP, IMAGE_DIMENSIONS_RE, CTX_RE, FOOTNOTE_CONTINUATION, FOOTNOTE_THREAD_REPLY;
+var FOOTNOTE_ID_PATTERN, FOOTNOTE_ID_NUMERIC_PATTERN, FOOTNOTE_REF_ANCHORED, FOOTNOTE_DEF_START, FOOTNOTE_DEF_START_QUICK, FOOTNOTE_DEF_LENIENT, FOOTNOTE_DEF_STRICT, FOOTNOTE_DEF_STATUS, FOOTNOTE_DEF_STATUS_VALUE, FOOTNOTE_L3_EDIT_OP, FOOTNOTE_L3_HISTORY_HEADER, IMAGE_DIMENSIONS_RE, CTX_RE, FOOTNOTE_CONTINUATION, FOOTNOTE_THREAD_REPLY;
 var init_footnote_patterns = __esm({
   "../../packages/core/dist-esm/footnote-patterns.js"() {
     "use strict";
@@ -566,10 +666,11 @@ var init_footnote_patterns = __esm({
     FOOTNOTE_DEF_STATUS = new RegExp(`^\\[\\^(${FOOTNOTE_ID_PATTERN})\\]:\\s+(?:@\\S+\\s+\\|\\s+)?\\S+\\s+\\|\\s+\\S+\\s+\\|\\s+(\\S+)`);
     FOOTNOTE_DEF_STATUS_VALUE = new RegExp(`^\\[\\^${FOOTNOTE_ID_PATTERN}\\]:\\s.*\\|\\s*(proposed|accepted|rejected)`);
     FOOTNOTE_L3_EDIT_OP = /^ {4}(\d+):([0-9a-fA-F]{2,}) (.*)/;
+    FOOTNOTE_L3_HISTORY_HEADER = new RegExp(`^\\[\\^${FOOTNOTE_ID_PATTERN}\\]:\\s.*\\|\\s*(?:ins|del|sub|format|equation|image|field|object)\\s*\\|\\s*accepted\\s*$`);
     IMAGE_DIMENSIONS_RE = /^([\d.]+)in\s*x\s*([\d.]+)in$/;
     CTX_RE = /@ctx:"((?:[^"\\]|\\.)*)"\|\|"((?:[^"\\]|\\.)*)"/;
     FOOTNOTE_CONTINUATION = /^\s+\S/;
-    FOOTNOTE_THREAD_REPLY = /^\s+@\S+\s+\d{4}-\d{2}-\d{2}(?:[T ]\d{1,2}:\d{2}(?::\d{2})?(?:\s?[AaPp][Mm])?Z?)?:/;
+    FOOTNOTE_THREAD_REPLY = /^\s+@\S+\s+\d{4}-\d{2}-\d{2}(?:[T ]\d{1,2}:\d{2}(?::\d{2})?(?:\s?[AaPp][Mm])?Z?)?(?:\s+\[[^\]]+\])?:/;
   }
 });
 
@@ -688,7 +789,8 @@ var init_footnote_generator = __esm({
       [ChangeType.Deletion]: "deletion",
       [ChangeType.Substitution]: "substitution",
       [ChangeType.Highlight]: "highlight",
-      [ChangeType.Comment]: "comment"
+      [ChangeType.Comment]: "comment",
+      [ChangeType.Move]: "move"
     };
     UNKNOWN_PRIOR_SUB = "\u2026";
   }
@@ -908,7 +1010,8 @@ var init_parser = __esm({
           contentRange: { start: contentStart, end: closePos },
           modifiedText: content,
           level: 0,
-          anchored: false
+          anchored: false,
+          resolved: true
         };
       }
       parseDeletion(text, startPos, counter) {
@@ -927,7 +1030,8 @@ var init_parser = __esm({
           contentRange: { start: contentStart, end: closePos },
           originalText: content,
           level: 0,
-          anchored: false
+          anchored: false,
+          resolved: true
         };
       }
       /**
@@ -973,7 +1077,8 @@ var init_parser = __esm({
           originalText,
           modifiedText,
           level: 0,
-          anchored: false
+          anchored: false,
+          resolved: true
         };
       }
       parseHighlight(text, startPos, counter) {
@@ -1002,7 +1107,8 @@ var init_parser = __esm({
           originalText: highlightedText,
           metadata: comment !== void 0 ? { comment } : void 0,
           level: 0,
-          anchored: false
+          anchored: false,
+          resolved: true
         };
       }
       parseComment(text, startPos, counter) {
@@ -1021,7 +1127,8 @@ var init_parser = __esm({
           contentRange: { start: contentStart, end: closePos },
           metadata: { comment },
           level: 0,
-          anchored: false
+          anchored: false,
+          resolved: true
         };
       }
       parseFootnoteDefinitions(text) {
@@ -1174,6 +1281,21 @@ var init_parser = __esm({
             lastDiscussionComment = comment;
             continue;
           }
+          const supersedesMatch = trimmed.match(_CriticMarkupParser.SUPERSEDES_RE);
+          if (supersedesMatch) {
+            if (!currentDef.supersedes)
+              currentDef.supersedes = supersedesMatch[1];
+            lastDiscussionComment = null;
+            continue;
+          }
+          const supersededByMatch = trimmed.match(_CriticMarkupParser.SUPERSEDED_BY_RE);
+          if (supersededByMatch) {
+            if (!currentDef.supersededBy)
+              currentDef.supersededBy = [];
+            currentDef.supersededBy.push(supersededByMatch[1]);
+            lastDiscussionComment = null;
+            continue;
+          }
           const discMatch = trimmed.match(_CriticMarkupParser.DISCUSSION_RE);
           if (discMatch) {
             const depth = Math.max(0, Math.floor((rawIndent - 4) / 2));
@@ -1252,6 +1374,10 @@ var init_parser = __esm({
           }
           applyImageExtraMetadata(def, node.metadata);
           applyEquationExtraMetadata(def, node.metadata);
+          if (def.supersedes)
+            node.supersedes = def.supersedes;
+          if (def.supersededBy && def.supersededBy.length > 0)
+            node.supersededBy = def.supersededBy;
           if (def.startLine !== void 0) {
             node.footnoteLineRange = { startLine: def.startLine, endLine: def.endLine ?? def.startLine };
           }
@@ -1292,6 +1418,7 @@ var init_parser = __esm({
               level: 2,
               decided: true,
               anchored: true,
+              resolved: true,
               metadata: {
                 author: def.author,
                 date: def.date,
@@ -1315,6 +1442,10 @@ var init_parser = __esm({
               node.metadata.resolution = def.resolution;
             applyImageExtraMetadata(def, node.metadata);
             applyEquationExtraMetadata(def, node.metadata);
+            if (def.supersedes)
+              node.supersedes = def.supersedes;
+            if (def.supersededBy && def.supersededBy.length > 0)
+              node.supersededBy = def.supersededBy;
             if (def.startLine !== void 0) {
               node.footnoteLineRange = { startLine: def.startLine, endLine: def.endLine ?? def.startLine };
             }
@@ -1367,6 +1498,7 @@ var init_parser = __esm({
           node.range = { start: node.range.start, end: node.range.end + match[0].length };
           node.level = 2;
           node.anchored = true;
+          node.resolved = true;
         }
       }
       matchesAt(text, position, delimiter) {
@@ -1379,6 +1511,8 @@ var init_parser = __esm({
     CriticMarkupParser.FOOTNOTE_REF = FOOTNOTE_REF_ANCHORED;
     CriticMarkupParser.FOOTNOTE_DEF = FOOTNOTE_DEF_STRICT;
     CriticMarkupParser.APPROVAL_RE = /^(approved|rejected|request-changes):\s+(@\S+)\s+(\S+)(?:\s+"([^"]*)")?$/;
+    CriticMarkupParser.SUPERSEDES_RE = /^supersedes:\s+(\S+)\s*$/;
+    CriticMarkupParser.SUPERSEDED_BY_RE = /^superseded-by:\s+(\S+)\s*$/;
     CriticMarkupParser.DISCUSSION_RE = /^(@\S+)\s+(\S+)(?:\s+\[([^\]]+)\])?:\s*(.*)$/;
     CriticMarkupParser.RESOLVED_RE = /^resolved:?\s+(@\S+)\s+(\S+)(?::\s*(.*))?$/;
     CriticMarkupParser.OPEN_RE = /^open(?:\s+--\s+(.*))?$/;
@@ -1604,6 +1738,8 @@ function computeAcceptParts(change) {
       return { offset: change.range.start, length: rangeLength, text: change.originalText ?? "", refId };
     case ChangeType.Comment:
       return { offset: change.range.start, length: rangeLength, text: "", refId: "" };
+    case ChangeType.Move:
+      return { offset: change.range.start, length: rangeLength, text: change.modifiedText ?? "", refId };
   }
 }
 function computeRejectParts(change) {
@@ -1620,6 +1756,8 @@ function computeRejectParts(change) {
       return { offset: change.range.start, length: rangeLength, text: change.originalText ?? "", refId };
     case ChangeType.Comment:
       return { offset: change.range.start, length: rangeLength, text: "", refId: "" };
+    case ChangeType.Move:
+      return { offset: change.range.start, length: rangeLength, text: change.originalText ?? "", refId };
   }
 }
 function computeReject(change) {
@@ -1635,6 +1773,8 @@ function computeReject(change) {
         return { offset: change.range.start, length: 0, newText: "" };
       case ChangeType.Comment:
         return { offset: change.range.start, length: 0, newText: "" };
+      case ChangeType.Move:
+        return { offset: change.range.start, length: change.range.end - change.range.start, newText: "" };
     }
   }
   const parts = computeRejectParts(change);
@@ -1765,6 +1905,9 @@ function promoteLevel0ToLevel2(fileContent, changeId, author) {
   }
   return result.text;
 }
+function formatReviewAuthor(author) {
+  return author.startsWith("@") ? author : `@${author}`;
+}
 function applyReview(fileContent, changeId, decision, reasoning, author, config) {
   let lines = fileContent.split("\n");
   let block = findFootnoteBlock(lines, changeId);
@@ -1813,7 +1956,7 @@ function applyReview(fileContent, changeId, decision, reasoning, author, config)
   }
   const keyword = decisionToKeyword(decision);
   const ts = nowTimestamp();
-  const reviewLine = `    ${keyword} @${author} ${ts.raw} "${reasoning}"`;
+  const reviewLine = `    ${keyword} ${formatReviewAuthor(author)} ${ts.raw} "${reasoning}"`;
   const insertAfterIdx = findReviewInsertionIndex(lines, block.headerLine, block.blockEnd);
   lines.splice(insertAfterIdx + 1, 0, reviewLine);
   let statusUpdated = false;
@@ -1850,7 +1993,7 @@ function applyReview(fileContent, changeId, decision, reasoning, author, config)
           continue;
         lines[childBlock.headerLine] = lines[childBlock.headerLine].replace(/\|\s*proposed\s*$/, `| ${targetStatus}`);
         const childInsertIdx = findReviewInsertionIndex(lines, childBlock.headerLine, childBlock.blockEnd);
-        const childReviewLine = `    ${keyword} @${author} ${ts.raw} "${reasoning}" (cascaded from ${changeId})`;
+        const childReviewLine = `    ${keyword} ${formatReviewAuthor(author)} ${ts.raw} "${reasoning}" (cascaded from ${changeId})`;
         lines.splice(childInsertIdx + 1, 0, childReviewLine);
         cascadedChildren.push(childId);
       }
@@ -2344,9 +2487,14 @@ function parseFootnoteBlock(lines, startLineOffset = 0) {
     const discussion = [];
     const approvals = [];
     const rejections = [];
+    const requestChanges = [];
+    const revisions = [];
+    let inRevisions = false;
     let resolution = null;
     let imageMetadata;
     let equationMetadata;
+    let supersedesTarget;
+    const supersededByTargets = [];
     while (i < lines.length) {
       const body = lines[i];
       if (FOOTNOTE_DEF_START.test(body))
@@ -2403,13 +2551,16 @@ function parseFootnoteBlock(lines, startLineOffset = 0) {
         continue;
       }
       if (FOOTNOTE_THREAD_REPLY.test(body)) {
-        const replyMatch = body.match(/^\s+@(\S+)\s+(\S+):\s*(.*)$/);
+        const replyMatch = body.match(/^\s+@(\S+)\s+(\S+)(?:\s+\[([^\]]+)\])?:\s*(.*)$/);
         if (replyMatch) {
           const reply = {
             author: replyMatch[1],
             date: replyMatch[2],
+            label: replyMatch[3] ?? void 0,
+            // group 3: optional [label]
             timestamp: parseTimestamp(replyMatch[2]),
-            text: replyMatch[3],
+            text: replyMatch[4],
+            // group 4: text (shifted from group 3)
             depth: 0
           };
           discussion.push(reply);
@@ -2434,6 +2585,37 @@ function parseFootnoteBlock(lines, startLineOffset = 0) {
         i++;
         continue;
       }
+      const requestChangesMatch = body.match(REQUEST_CHANGES_RE);
+      if (requestChangesMatch) {
+        const action = parseApprovalLine(requestChangesMatch);
+        requestChanges.push(action);
+        bodyLines.push({ kind: "request-changes", action, raw: body });
+        i++;
+        continue;
+      }
+      if (body.trim() === "revisions:") {
+        inRevisions = true;
+        bodyLines.push({ kind: "revisions-header", raw: body });
+        i++;
+        continue;
+      }
+      if (inRevisions) {
+        const revMatch = body.match(REVISION_RE);
+        if (revMatch) {
+          const rev = {
+            label: revMatch[1],
+            author: revMatch[2],
+            date: revMatch[3],
+            timestamp: parseTimestamp(revMatch[3]),
+            text: revMatch[4]
+          };
+          revisions.push(rev);
+          bodyLines.push({ kind: "revision", revision: rev, raw: body });
+          i++;
+          continue;
+        }
+        inRevisions = false;
+      }
       const resolvedMatch = body.match(RESOLVED_RE);
       if (resolvedMatch) {
         const res = {
@@ -2455,6 +2637,23 @@ function parseFootnoteBlock(lines, startLineOffset = 0) {
         if (!resolution)
           resolution = res;
         bodyLines.push({ kind: "resolution", resolution: res, raw: body });
+        i++;
+        continue;
+      }
+      const supersedesMatch = body.match(SUPERSEDES_RE);
+      if (supersedesMatch) {
+        const target = supersedesMatch[1];
+        if (supersedesTarget === void 0)
+          supersedesTarget = target;
+        bodyLines.push({ kind: "supersedes", target, raw: body });
+        i++;
+        continue;
+      }
+      const supersededByMatch = body.match(SUPERSEDED_BY_RE);
+      if (supersededByMatch) {
+        const target = supersededByMatch[1];
+        supersededByTargets.push(target);
+        bodyLines.push({ kind: "superseded-by", target, raw: body });
         i++;
         continue;
       }
@@ -2488,15 +2687,19 @@ function parseFootnoteBlock(lines, startLineOffset = 0) {
       discussion,
       approvals,
       rejections,
+      requestChanges,
+      revisions,
       resolution,
       imageMetadata: imageMetadata ? Object.freeze(imageMetadata) : void 0,
       equationMetadata: equationMetadata ? Object.freeze(equationMetadata) : void 0,
+      supersedes: supersedesTarget,
+      supersededBy: Object.freeze(supersededByTargets),
       sourceRange: { startLine: startLineOffset + startLine, endLine: startLineOffset + endLine }
     });
   }
   return footnotes;
 }
-var APPROVED_RE, REJECTED_RE, REASON_RE, CONTEXT_RE, RESOLVED_RE, OPEN_RE, IMAGE_META_RE, EQUATION_META_RE;
+var APPROVED_RE, REJECTED_RE, REQUEST_CHANGES_RE, REVISION_RE, REASON_RE, CONTEXT_RE, RESOLVED_RE, OPEN_RE, SUPERSEDES_RE, SUPERSEDED_BY_RE, IMAGE_META_RE, EQUATION_META_RE;
 var init_footnote_block_parser = __esm({
   "../../packages/core/dist-esm/parser/footnote-block-parser.js"() {
     "use strict";
@@ -2506,10 +2709,14 @@ var init_footnote_block_parser = __esm({
     init_contextual_edit_op();
     APPROVED_RE = /^ {4}approved:\s+(\S+)\s+(\S+)(?:\s+"([^"]*)")?/;
     REJECTED_RE = /^ {4}rejected:\s+(\S+)\s+(\S+)(?:\s+"([^"]*)")?/;
+    REQUEST_CHANGES_RE = /^ {4}request-changes:\s+(\S+)\s+(\S+)(?:\s+"([^"]*)")?/;
+    REVISION_RE = /^ {4,}(r\d+)\s+(@?\S+)\s+(\S+):\s+"([^"]*)"$/;
     REASON_RE = /^ {4}reason:\s+(.*)$/;
     CONTEXT_RE = /^ {4}context:\s+(.*)$/;
     RESOLVED_RE = /^ {4}resolved:\s+(\S+)\s+(\S+)(?:\s+"([^"]*)")?/;
     OPEN_RE = /^ {4}open(?:\s+--\s+(.*))?$/;
+    SUPERSEDES_RE = /^ {4}supersedes:\s+(\S+)\s*$/;
+    SUPERSEDED_BY_RE = /^ {4}superseded-by:\s+(\S+)\s*$/;
     IMAGE_META_RE = /^ {4}(image-[\w-]+):\s*(.*)$/;
     EQUATION_META_RE = /^ {4}(equation-[\w-]+):\s*(.*)$/;
   }
@@ -2673,6 +2880,8 @@ function bodyReplacement(change) {
       return change.originalText ?? "";
     case ChangeType.Comment:
       return "";
+    case ChangeType.Move:
+      return change.modifiedText ?? "";
   }
 }
 function buildLineStarts(text) {
@@ -2747,7 +2956,10 @@ async function convertL2ToL3(text) {
       case ChangeType.Highlight:
         anchorLen = (change.originalText ?? "").length;
         break;
-      default:
+      case ChangeType.Move:
+        anchorLen = change.status === ChangeStatus.Rejected ? 0 : (change.modifiedText ?? "").length;
+        break;
+      case ChangeType.Comment:
         anchorLen = 0;
         break;
     }
@@ -3027,15 +3239,15 @@ function resolve(l3Text) {
       };
     }
     const isConsumed = !!node.consumedBy;
-    const isResolved = node.anchored || isConsumed;
+    const isResolved = node.resolved !== false || isConsumed;
     const result = {
       id: node.id,
       resolved: isResolved,
       resolutionPath: node.resolutionPath ?? (isResolved ? "replay" : "rejected"),
       freshAnchor: node.freshAnchor,
-      // Only provide resolvedRange for non-consumed, anchored nodes.
+      // Only provide resolvedRange for non-consumed, resolved nodes.
       // Consumed ops' text is absent from the current body, so a body range is invalid.
-      resolvedRange: node.anchored && !isConsumed ? { start: node.range.start, end: node.range.end } : void 0
+      resolvedRange: node.resolved !== false && !isConsumed ? { start: node.range.start, end: node.range.end } : void 0
     };
     if (node.consumedBy) {
       result.consumedBy = node.consumedBy;
@@ -3137,6 +3349,32 @@ var init_comment_syntax = __esm({
 });
 
 // ../../packages/core/dist-esm/parser/footnote-native-parser.js
+function metadataFromUnknownLines(lines) {
+  const result = {};
+  for (const line of lines) {
+    const match = /^\s*([^:]+):\s*(.*)$/.exec(line);
+    if (match)
+      result[match[1].trim()] = match[2].trim();
+  }
+  return result;
+}
+function isDocumentScopeAcceptedInsertion(fn) {
+  const metadata = metadataFromUnknownLines(fn.unknownBodyLines ?? []);
+  return fn.type === "ins" && fn.status === "accepted" && fn.author === "@base-document" && fn.lineNumber === void 0 && fn.hash === void 0 && fn.opString === void 0 && metadata.source === "initial-word-body" && metadata.scope === "document" && metadata["body-hash"] !== void 0;
+}
+function toChangeDownRecord(fn) {
+  const bodyLines = fn.unknownBodyLines ?? [];
+  return {
+    id: fn.id,
+    author: fn.author,
+    date: fn.date,
+    type: fn.type,
+    status: fn.status,
+    reviewable: false,
+    metadata: metadataFromUnknownLines(bodyLines),
+    bodyLines
+  };
+}
 function parseDeletionContext(opString) {
   const closerIdx = opString.indexOf("--}");
   if (closerIdx < 0)
@@ -3146,6 +3384,9 @@ function parseDeletionContext(opString) {
   if (!match)
     return null;
   return { before: unescapeCtxString(match[1]), after: unescapeCtxString(match[2]) };
+}
+function truncate(s, n) {
+  return s.length > n ? s.slice(0, n) + "\u2026" : s;
 }
 var FootnoteNativeParser;
 var init_footnote_native_parser = __esm({
@@ -3165,19 +3406,29 @@ var init_footnote_native_parser = __esm({
     init_comment_syntax();
     init_contextual_edit_op();
     FootnoteNativeParser = class {
+      constructor() {
+        this.pendingDiagnostics = [];
+      }
       parse(text) {
+        this.pendingDiagnostics = [];
         const lines = text.split("\n");
         const { bodyLines, footnoteLines } = splitBodyAndFootnotes(lines);
         const footnotes = this.parseFootnotes(lines);
         if (footnotes.length === 0) {
-          return new VirtualDocument([]);
+          const emptyDoc = new VirtualDocument([]);
+          for (const d of this.pendingDiagnostics)
+            emptyDoc.addDiagnostic(d);
+          return emptyDoc;
         }
-        const changes = this.resolveChanges(footnotes, bodyLines);
+        const records = footnotes.filter(isDocumentScopeAcceptedInsertion).map(toChangeDownRecord);
+        const recordIds = new Set(records.map((record) => record.id));
+        const reviewableFootnotes = footnotes.filter((fn) => !recordIds.has(fn.id));
+        const changes = this.resolveChanges(reviewableFootnotes, bodyLines);
         let freshAnchors = /* @__PURE__ */ new Map();
-        if (changes.some((c) => !c.anchored)) {
+        if (changes.some((c) => c.resolved === false)) {
           try {
             const bodyText = bodyLines.join("\n");
-            const replayFootnotes = footnotes.map((fn) => ({
+            const replayFootnotes = reviewableFootnotes.map((fn) => ({
               id: fn.id,
               type: fn.type,
               status: fn.status,
@@ -3188,15 +3439,16 @@ var init_footnote_native_parser = __esm({
             }));
             const replay = resolveReplayFromParsedFootnotes(bodyText, replayFootnotes);
             for (const node of changes) {
-              if (node.anchored)
+              if (node.resolved !== false)
                 continue;
               const finalPos = replay.finalPositions.get(node.id);
               const isConsumed = replay.consumption.has(node.id);
               if (finalPos && !isConsumed) {
-                node.anchored = true;
+                node.resolved = true;
                 node.range = { start: finalPos.start, end: finalPos.end };
                 node.contentRange = { ...node.range };
                 node.resolutionPath = "replay";
+                this.pendingDiagnostics = this.pendingDiagnostics.filter((d) => d.changeId !== node.id);
               }
               const freshAnchor = replay.freshAnchors.get(node.id);
               if (freshAnchor)
@@ -3218,7 +3470,7 @@ var init_footnote_native_parser = __esm({
           }
         }
         const resolvableCount = changes.length;
-        const resolvedCount = changes.filter((c) => c.anchored || !!c.consumedBy).length;
+        const resolvedCount = changes.filter((c) => c.resolved !== false || !!c.consumedBy).length;
         const coherenceRate = resolvableCount > 0 ? Math.round(resolvedCount / resolvableCount * 100) : 100;
         let resolvedText;
         if (freshAnchors.size > 0) {
@@ -3259,7 +3511,10 @@ var init_footnote_native_parser = __esm({
             resolvedText = bodyLines.join("\n") + "\n\n" + rebuiltFootnotes.join("\n") + "\n";
           }
         }
-        return new VirtualDocument(changes, coherenceRate, [], resolvedText);
+        const doc = new VirtualDocument(changes, coherenceRate, [], resolvedText, records);
+        for (const d of this.pendingDiagnostics)
+          doc.addDiagnostic(d);
+        return doc;
       }
       /**
        * Test-only hook: run just the footnote-scanning phase and return the raw
@@ -3307,6 +3562,12 @@ var init_footnote_native_parser = __esm({
           imageDimensions,
           imageMetadata: f.imageMetadata ? { ...f.imageMetadata } : void 0,
           equationMetadata: f.equationMetadata ? { ...f.equationMetadata } : void 0,
+          discussion: f.discussion.length > 0 ? [...f.discussion] : void 0,
+          requestChanges: f.requestChanges.length > 0 ? f.requestChanges.map((a) => ({ author: a.author, date: a.date, reason: a.reason ?? "" })) : void 0,
+          revisions: f.revisions.length > 0 ? [...f.revisions] : void 0,
+          resolution: f.resolution ?? void 0,
+          supersedes: f.supersedes,
+          supersededBy: f.supersededBy.length > 0 ? [...f.supersededBy] : void 0,
           unknownBodyLines: f.bodyLines.filter((l) => l.kind === "unknown").map((l) => l.raw.trim())
         };
       }
@@ -3340,7 +3601,7 @@ var init_footnote_native_parser = __esm({
             }
           }
           const rangeResult = this.resolveRangeAndContent(fn, parsedOp, ctxResult, changeType, status, bodyLines, lineOffsets);
-          const { range, originalText, modifiedText, comment, anchored, resolutionPath } = rangeResult;
+          const { range, originalText, modifiedText, comment, anchored: positionResolved, resolved: rangeResolved, resolutionPath } = rangeResult;
           const node = {
             id: fn.id,
             type: changeType,
@@ -3349,9 +3610,10 @@ var init_footnote_native_parser = __esm({
             contentRange: { ...range },
             // L3: range === contentRange (no delimiters in body)
             level: 2,
-            // anchored:false means position could not be deterministically resolved (Invariant A).
-            // anchored:true (default) means either resolved uniquely or explicitly OK (deletion line-start).
-            anchored: anchored !== false,
+            anchored: true,
+            // L3 nodes always have a footnote ref by construction
+            resolved: rangeResolved !== void 0 ? rangeResolved : positionResolved !== false,
+            // false only when edit-op text could not be located
             metadata: {
               author: fn.author,
               date: fn.date,
@@ -3397,6 +3659,27 @@ var init_footnote_native_parser = __esm({
               reason: r.reason || void 0
             }));
           }
+          if (fn.discussion && fn.discussion.length > 0) {
+            node.metadata.discussion = fn.discussion;
+          }
+          if (fn.requestChanges && fn.requestChanges.length > 0) {
+            node.metadata.requestChanges = fn.requestChanges.map((a) => ({
+              author: a.author,
+              date: a.date,
+              timestamp: parseTimestamp(a.date),
+              reason: a.reason || void 0
+            }));
+          }
+          if (fn.revisions && fn.revisions.length > 0) {
+            node.metadata.revisions = fn.revisions;
+          }
+          if (fn.resolution) {
+            node.metadata.resolution = fn.resolution;
+          }
+          if (fn.supersedes)
+            node.supersedes = fn.supersedes;
+          if (fn.supersededBy && fn.supersededBy.length > 0)
+            node.supersededBy = fn.supersededBy;
           changes.push(node);
         }
         changes.sort((a, b) => a.range.start - b.range.start);
@@ -3411,7 +3694,7 @@ var init_footnote_native_parser = __esm({
        *   `deletionSeamOffset` gives the byte offset within this span where the deletion occurred
        *   (equals contextBefore.length). The spec's Contextual Uniqueness Guarantee ensures this
        *   span appears exactly once on the target line (04-spec.md §"Contextual Embedding").
-       *   Zero-width ranges appear only as the {0,0} anchored:false sentinel (Invariant A).
+       *   Zero-width ranges appear only as the {0,0} resolved:false sentinel (Invariant A).
        *   This is deliberate — do NOT revert to zero-width seam without understanding
        *   the plan builder's ghost-text injection and accept-change.ts's seam-based removal.
        * - Substitution: search for newText (proposed/accepted) or oldText (rejected) on target line
@@ -3423,18 +3706,19 @@ var init_footnote_native_parser = __esm({
        *
        * Invariant A — Non-deletion ops (ins, sub, highlight) MUST resolve uniquely via
        * findUniqueMatch on the hash-resolved line. If the match fails (text not found or
-       * ambiguous), the node is marked anchored:false. There is NO fallback to line-start
-       * for non-deletion ops. Silent fallback produces wrong decoration placement.
+       * ambiguous), the node is marked resolved:false (with anchored:true). There is NO
+       * fallback to line-start for non-deletion ops. Silent fallback produces wrong
+       * decoration placement.
        *
        * Invariant B — Deletion ops resolve via @ctx:"before"||"after" ONLY. The deleted
        * text is absent from the body so there is nothing to search for. Line-start fallback
        * when @ctx is missing is acceptable degradation (not a silent error).
        *
-       * Invariant C — anchored:false is an error path, not a silent default. Consumers
-       * must not render anchored:false nodes as correctly placed decorations.
+       * Invariant C — resolved:false is an error path, not a silent default. Consumers
+       * must not render resolved:false nodes as correctly placed decorations.
        *
        * Task 3 enforced Invariant A by removing the fallbackRange branches for
-       * ins/sub/highlight and setting anchored:false + sentinel range {0,0} instead.
+       * ins/sub/highlight and setting resolved:false + sentinel range {0,0} instead.
        */
       resolveRangeAndContent(fn, parsedOp, ctxResult, changeType, status, bodyLines, lineOffsets) {
         let effectiveLineNumber = fn.lineNumber;
@@ -3459,7 +3743,12 @@ var init_footnote_native_parser = __esm({
         const lineContent = lineIdx >= 0 && lineIdx < bodyLines.length ? bodyLines[lineIdx] : "";
         const fallbackRange = { start: lineOffset2, end: lineOffset2 };
         if (!parsedOp) {
-          return { range: fallbackRange, anchored: false, comment: fn.unknownBodyLines?.[0], resolutionPath: "rejected" };
+          this.pendingDiagnostics.push({
+            kind: "coordinate_failed",
+            changeId: fn.id,
+            message: `Footnote ${fn.id} has no parsedOp; cannot resolve position.`
+          });
+          return { range: fallbackRange, anchored: true, resolved: false, comment: fn.unknownBodyLines?.[0], resolutionPath: "rejected" };
         }
         const findOnLine = (searchText) => {
           if (!searchText || !lineContent)
@@ -3547,7 +3836,15 @@ var init_footnote_native_parser = __esm({
             }
             const match = findOnLine(text);
             if (!match) {
-              return { range: { start: 0, end: 0 }, modifiedText: text, anchored: false };
+              const targetLine = effectiveLineNumber ?? 1;
+              const matchCount = lineContent ? lineContent.split(text).length - 1 : 0;
+              this.pendingDiagnostics.push({
+                kind: "coordinate_failed",
+                changeId: fn.id,
+                message: `Insertion text "${truncate(text, 40)}" not uniquely found on line ${targetLine} (found ${matchCount} match${matchCount === 1 ? "" : "es"}).`,
+                evidence: { line: targetLine, expectedText: text, candidates: matchCount }
+              });
+              return { range: { start: 0, end: 0 }, modifiedText: text, anchored: true, resolved: false };
             }
             const range = {
               start: lineOffset2 + match.index,
@@ -3585,14 +3882,33 @@ var init_footnote_native_parser = __esm({
           case ChangeType.Substitution: {
             const oldText = parsedOp.oldText;
             const newText = parsedOp.newText;
-            const searchText = newText;
-            const match = searchText ? findOnLine(searchText) : null;
+            const searchTexts = status === ChangeStatus.Rejected ? [newText, oldText].filter((t2) => Boolean(t2)) : [newText].filter((t2) => Boolean(t2));
+            let match = null;
+            let matchedText = "";
+            for (const candidate of searchTexts) {
+              match = findOnLine(candidate);
+              if (match) {
+                matchedText = candidate;
+                break;
+              }
+            }
             if (!match) {
-              return { range: { start: 0, end: 0 }, originalText: oldText, modifiedText: newText, anchored: false };
+              const targetLine = effectiveLineNumber ?? 1;
+              const expectedText = searchTexts.join(" or ");
+              const matchCount = searchTexts.reduce((sum, candidate) => {
+                return sum + (lineContent ? lineContent.split(candidate).length - 1 : 0);
+              }, 0);
+              this.pendingDiagnostics.push({
+                kind: "coordinate_failed",
+                changeId: fn.id,
+                message: `Substitution text "${truncate(expectedText, 40)}" not uniquely found on line ${targetLine} (found ${matchCount} match${matchCount === 1 ? "" : "es"}).`,
+                evidence: { line: targetLine, expectedText, candidates: matchCount }
+              });
+              return { range: { start: 0, end: 0 }, originalText: oldText, modifiedText: newText, anchored: true, resolved: false };
             }
             const range = {
               start: lineOffset2 + match.index,
-              end: lineOffset2 + match.index + match.length
+              end: lineOffset2 + match.index + matchedText.length
             };
             return { range, originalText: oldText, modifiedText: newText, resolutionPath: hashMatched ? "hash" : void 0 };
           }
@@ -3742,7 +4058,7 @@ function computeCurrentTextL3(text) {
 function revertChangesInBody(body, changes) {
   const sorted = [...changes].sort((a, b) => b.range.start - a.range.start);
   for (const change of sorted) {
-    if (change.anchored === false)
+    if (change.resolved === false)
       continue;
     switch (change.type) {
       case ChangeType.Insertion:
@@ -3878,19 +4194,33 @@ function recoverL2EditOpPayload(change, sourceText) {
   }
   return { originalText: orig, currentText: cur };
 }
-function applyAcceptedChanges(text) {
-  if (isL3Format(text)) {
-    return { currentContent: text, appliedIds: [] };
+function settlementAnchorLength(change, projection, payload) {
+  if (projection === "accepted") {
+    switch (change.type) {
+      case ChangeType.Insertion:
+      case ChangeType.Substitution:
+        return payload.currentText.length;
+      case ChangeType.Deletion:
+        return 0;
+      case ChangeType.Highlight:
+        return payload.originalText.length;
+      default:
+        return 0;
+    }
   }
-  const doc = parseForFormat(text, { skipCodeBlocks: false });
-  const accepted = doc.getChanges().filter((c) => c.status === ChangeStatus.Accepted);
-  const appliedIds = accepted.map((c) => c.id);
-  if (accepted.length === 0) {
-    return { currentContent: text, appliedIds: [] };
+  switch (change.type) {
+    case ChangeType.Insertion:
+      return 0;
+    case ChangeType.Deletion:
+    case ChangeType.Substitution:
+    case ChangeType.Highlight:
+    case ChangeType.Move:
+      return payload.originalText.length;
+    default:
+      return 0;
   }
-  const parts = [...accepted].sort((a, b) => a.range.start - b.range.start).map(computeAcceptParts);
-  const zones = findCodeZones(text);
-  const rawCurrentContent = buildSegmentsWithZoneAwareness(text, parts, zones);
+}
+function addL2SettlementEditOps(rawCurrentContent, changes, sourceText, projection) {
   const { bodyLines, footnoteLines } = splitBodyAndFootnotes(rawCurrentContent.split("\n"));
   const refRe = footnoteRefGlobal();
   const cleanBodyLines = bodyLines.map((line) => line.replace(refRe, ""));
@@ -3910,28 +4240,13 @@ function applyAcceptedChanges(text) {
   }
   const scanRe = footnoteRefGlobal();
   const editOpInsertions = [];
-  for (const change of accepted) {
-    const { originalText: effOrig, currentText: effCur } = recoverL2EditOpPayload(change, text);
+  for (const change of changes) {
+    const payload = recoverL2EditOpPayload(change, sourceText);
     const refPos = refIndex.get(`[^${change.id}]`);
     if (!refPos)
       continue;
     const { lineIdx, col: refColInLine } = refPos;
-    let anchorLen;
-    switch (change.type) {
-      case ChangeType.Insertion:
-      case ChangeType.Substitution:
-        anchorLen = effCur.length;
-        break;
-      case ChangeType.Deletion:
-        anchorLen = 0;
-        break;
-      case ChangeType.Highlight:
-        anchorLen = (change.originalText ?? "").length;
-        break;
-      default:
-        anchorLen = 0;
-        break;
-    }
+    const anchorLen = settlementAnchorLength(change, projection, payload);
     scanRe.lastIndex = 0;
     let precedingRefBytes = 0;
     let m;
@@ -3945,8 +4260,8 @@ function applyAcceptedChanges(text) {
     const hash = computeLineHash(lineIdx, cleanBodyLines[lineIdx], cleanBodyLines);
     const editOpLine = buildContextualL3EditOp({
       changeType: change.type,
-      originalText: effOrig,
-      currentText: effCur,
+      originalText: payload.originalText,
+      currentText: payload.currentText,
       lineContent: cleanBodyLines[lineIdx],
       lineNumber,
       hash,
@@ -3962,30 +4277,56 @@ function applyAcceptedChanges(text) {
   for (const { headerLine, editOpLine } of editOpInsertions) {
     footnoteLines.splice(headerLine + 1, 0, editOpLine);
   }
-  const currentContent = [...bodyLines, "", ...footnoteLines].join("\n");
+  return [...bodyLines, "", ...footnoteLines].join("\n");
+}
+function applyAcceptedChanges(text) {
+  if (isL3Format(text)) {
+    return { currentContent: text, appliedIds: [] };
+  }
+  const doc = parseForFormat(text, { skipCodeBlocks: false });
+  assertResolved(doc);
+  const accepted = doc.getChanges().filter((c) => c.status === ChangeStatus.Accepted);
+  const appliedIds = accepted.map((c) => c.id);
+  if (accepted.length === 0) {
+    return { currentContent: text, appliedIds: [] };
+  }
+  const parts = [...accepted].sort((a, b) => a.range.start - b.range.start).map(computeAcceptParts);
+  const zones = findCodeZones(text);
+  const rawCurrentContent = buildSegmentsWithZoneAwareness(text, parts, zones);
+  const currentContent = addL2SettlementEditOps(rawCurrentContent, accepted, text, "accepted");
   return { currentContent, appliedIds };
 }
 function applyRejectedChanges(text) {
   if (isL3Format(text)) {
     const doc2 = parseForFormat(text);
+    assertResolved(doc2);
     const rejected2 = doc2.getChanges().filter((c) => c.status === ChangeStatus.Rejected);
-    const appliedIds2 = rejected2.map((c) => c.id);
     if (rejected2.length === 0)
       return { currentContent: text, appliedIds: [] };
     const { bodyLines, footnoteLines } = splitBodyAndFootnotes(text.split("\n"));
     const body = revertChangesInBody(bodyLines.join("\n"), rejected2);
+    const appliedIds2 = rejected2.filter((c) => c.resolved !== false).map((c) => c.id);
     const currentContent2 = footnoteLines.length > 0 ? body + "\n\n" + footnoteLines.join("\n") : body;
     return { currentContent: currentContent2, appliedIds: appliedIds2 };
   }
   const doc = parseForFormat(text, { skipCodeBlocks: false });
+  assertResolved(doc);
   const rejected = doc.getChanges().filter((c) => c.status === ChangeStatus.Rejected);
-  const appliedIds = rejected.map((c) => c.id);
   if (rejected.length === 0) {
     return { currentContent: text, appliedIds: [] };
   }
   const parts = [...rejected].sort((a, b) => a.range.start - b.range.start).map(computeRejectParts);
   const zones = findCodeZones(text);
-  const currentContent = buildSegmentsWithZoneAwareness(text, parts, zones);
+  const rawCurrentContent = buildSegmentsWithZoneAwareness(text, parts, zones);
+  const currentContent = addL2SettlementEditOps(rawCurrentContent, rejected, text, "rejected");
+  const appliedIds = [];
+  for (const part of parts) {
+    if (!part.refId)
+      continue;
+    if (part.length === 0 && part.text === "")
+      continue;
+    appliedIds.push(part.refId);
+  }
   return { currentContent, appliedIds };
 }
 function computeCurrentViewL3(rawText) {
@@ -4100,6 +4441,7 @@ var init_current_text = __esm({
     init_code_zones();
     init_format_aware_parse();
     init_footnote_generator();
+    init_document();
   }
 });
 
@@ -5148,6 +5490,7 @@ var init_amend = __esm({
   "../../packages/core/dist-esm/operations/amend.js"() {
     "use strict";
     init_format_aware_parse();
+    init_document();
     init_types();
     init_footnote_utils();
     init_timestamp();
@@ -5187,6 +5530,8 @@ async function computeSupersedeResult(text, changeId, opts) {
       error: `Cannot supersede change "${changeId}": unexpected status "${header.status}". Only proposed changes can be superseded.`
     };
   }
+  const inputDoc = parseForFormat(text);
+  assertResolved(inputDoc);
   const rejectResult = applyReview(text, changeId, "reject", reason ?? "Superseded by new change", author);
   if ("error" in rejectResult) {
     return { isError: true, error: `Failed to reject old change: ${rejectResult.error}` };
@@ -5296,6 +5641,7 @@ var init_supersede = __esm({
     init_footnote_generator();
     init_footnote_patterns();
     init_format_aware_parse();
+    init_document();
     init_accept_reject();
     init_types();
     init_timestamp();
@@ -5354,6 +5700,10 @@ function buildInlineMarkup(change, bodyText) {
       const comment = metadata?.comment ?? "";
       return { replacement: `{>>${comment}<<}${ref}` };
     }
+    case ChangeType.Move: {
+      const bodySlice = bodyText.slice(range.start, range.end);
+      return { replacement: `{++${bodySlice}++}${ref}` };
+    }
   }
 }
 async function convertL3ToL2(text) {
@@ -5366,7 +5716,7 @@ async function convertL3ToL2(text) {
   const hasProposed = changes.some((c) => c.status === ChangeStatus.Proposed);
   if (!hasProposed)
     return text;
-  const unresolvedIds = new Set(changes.filter((c) => c.anchored === false).map((c) => c.id));
+  const unresolvedIds = new Set(changes.filter((c) => c.resolved === false).map((c) => c.id));
   const { bodyLines, footnoteLines } = splitBodyAndFootnotes(text.split("\n"));
   const sortedDesc = [...changes].sort((a, b) => b.range.start - a.range.start);
   let body = bodyLines.join("\n");
@@ -5534,7 +5884,7 @@ async function compact(l3Text, request) {
     const rejectEdits = [];
     for (const id of proposedTargetIds) {
       const change = preRejectMap.get(id);
-      if (!change || !change.anchored)
+      if (!change)
         continue;
       const edit = computeReject(change);
       if (edit.length > 0 || edit.newText.length > 0) {
@@ -5685,6 +6035,7 @@ var init_sidecar_accept_reject = __esm({
 var init_workspace = __esm({
   "../../packages/core/dist-esm/workspace.js"() {
     "use strict";
+    init_document();
     init_parser();
     init_sidecar_parser();
     init_footnote_native_parser();
@@ -5791,12 +6142,6 @@ function multiLineComment() {
 function hasCriticMarkup(line) {
   return HAS_CRITIC_MARKUP.test(line);
 }
-function inlineMarkupAll() {
-  return /\{\+\+[^]*?\+\+\}|\{--[^]*?--\}|\{~~[^]*?~~\}|\{==[^]*?==\}|\{>>[^]*?<<\}/g;
-}
-function markupWithRef() {
-  return /(?:\+\+\}|-{2}\}|~~\}|==\}|<<\})\[\^cn-\d+(?:\.\d+)?\]/g;
-}
 var HAS_CRITIC_MARKUP;
 var init_critic_regex = __esm({
   "../../packages/core/dist-esm/critic-regex.js"() {
@@ -5806,44 +6151,6 @@ var init_critic_regex = __esm({
 });
 
 // ../../packages/core/dist-esm/hashline-tracked.js
-function countChanges(content) {
-  const counts = { proposed: 0, accepted: 0, rejected: 0 };
-  const lines = content.split("\n");
-  for (const line of lines) {
-    const match = line.match(FOOTNOTE_DEF_STATUS_VALUE);
-    if (match) {
-      const status = match[1];
-      counts[status]++;
-    }
-  }
-  const allMarkup = content.match(inlineMarkupAll()) || [];
-  const markupWithRefs = content.match(markupWithRef()) || [];
-  const level0Count = allMarkup.length - markupWithRefs.length;
-  if (level0Count > 0) {
-    counts.proposed += level0Count;
-  }
-  return counts;
-}
-function formatTrackedHeader(filePath, content, trackingStatus) {
-  const status = trackingStatus ?? "tracked";
-  const lineCount = content.split("\n").length;
-  const changes = countChanges(content);
-  const changeParts = [];
-  if (changes.proposed > 0)
-    changeParts.push(`${changes.proposed} proposed`);
-  if (changes.accepted > 0)
-    changeParts.push(`${changes.accepted} accepted`);
-  if (changes.rejected > 0)
-    changeParts.push(`${changes.rejected} rejected`);
-  const changeSummary = changeParts.length > 0 ? ` (${changeParts.join(", ")})` : "";
-  const headerLines = [
-    `## file: ${filePath}`,
-    `## tracking: ${status}${changeSummary}`,
-    `## lines: 1-${lineCount} of ${lineCount}`,
-    `## tip: Use LINE:HASH refs in propose_change for precise edits`
-  ];
-  return headerLines.join("\n");
-}
 var init_hashline_tracked = __esm({
   "../../packages/core/dist-esm/hashline-tracked.js"() {
     "use strict";
@@ -5872,19 +6179,8 @@ function resolveStatus(changeId, footnotes) {
     return "proposed";
   return info.status;
 }
-function computeDecidedLine(line, footnotes) {
-  let result = line;
-  const changeIds = [];
-  let hasProposed = false;
-  let hasAccepted = false;
-  function trackStatus(status, changeId) {
-    if (changeId)
-      changeIds.push(changeId);
-    if (status === "proposed")
-      hasProposed = true;
-    else if (status === "accepted")
-      hasAccepted = true;
-  }
+function applyDecidedReplacementsOnce(text, footnotes, trackStatus) {
+  let result = text;
   result = result.replace(multiLineSubstitution(), (_match, old, newText, _refFull, refId) => {
     const status = resolveStatus(refId, footnotes);
     trackStatus(status, refId);
@@ -5905,6 +6201,26 @@ function computeDecidedLine(line, footnotes) {
   });
   result = result.replace(multiLineComment(), "");
   result = result.replace(footnoteRefGlobal(), "");
+  return result;
+}
+function computeDecidedLine(line, footnotes) {
+  let result = line;
+  const changeIds = [];
+  let hasProposed = false;
+  let hasAccepted = false;
+  function trackStatus(status, changeId) {
+    if (changeId)
+      changeIds.push(changeId);
+    if (status === "proposed")
+      hasProposed = true;
+    else if (status === "accepted")
+      hasAccepted = true;
+  }
+  let depth = 0;
+  while (depth < MAX_DECIDED_DEPTH && hasCriticMarkup(result)) {
+    result = applyDecidedReplacementsOnce(result, footnotes, trackStatus);
+    depth++;
+  }
   let flag = "";
   if (hasProposed)
     flag = "P";
@@ -6009,6 +6325,7 @@ function computeDecidedView(rawText, preParsed) {
   }
   return { lines: decidedLines, summary, decidedToRaw, rawToDecided, changes };
 }
+var MAX_DECIDED_DEPTH;
 var init_decided_text = __esm({
   "../../packages/core/dist-esm/decided-text.js"() {
     "use strict";
@@ -6018,6 +6335,7 @@ var init_decided_text = __esm({
     init_hashline();
     init_critic_regex();
     init_footnote_patterns();
+    MAX_DECIDED_DEPTH = 3;
   }
 });
 
@@ -6110,79 +6428,90 @@ var init_at_resolver = __esm({
 // ../../packages/core/dist-esm/renderers/formatters/plain-text.js
 function formatPlainText(doc) {
   const parts = [];
-  parts.push(formatHeader(doc.header, doc.view));
-  parts.push("");
+  const header = formatHeader(doc.header, doc.view);
+  if (header) {
+    parts.push(header);
+    parts.push("");
+  }
   const padWidth = doc.lines.length > 0 ? Math.max(String(doc.lines[doc.lines.length - 1].margin.lineNumber).length, 2) : 2;
   for (const line of doc.lines) {
     parts.push(formatLine(line, padWidth, doc.view));
   }
+  const footer = formatDecidedFooter(doc);
+  if (footer) {
+    parts.push(footer);
+  }
   return parts.join("\n");
 }
 function formatHeader(header, view) {
+  if (view === "decided" || view === "raw")
+    return "";
   const lines = [];
-  lines.push(`## ${header.filePath} | policy: ${header.protocolMode} | tracking: ${header.trackingStatus}`);
   const counts = `proposed: ${header.counts.proposed} | accepted: ${header.counts.accepted} | rejected: ${header.counts.rejected}`;
   const threads = header.threadCount > 0 ? ` | threads: ${header.threadCount}` : "";
   lines.push(`## ${counts}${threads}`);
   if (header.authors.length > 0) {
     lines.push(`## authors: ${header.authors.join(", ")}`);
   }
-  if (header.lineRange) {
-    lines.push(`## lines: ${header.lineRange.start}-${header.lineRange.end} of ${header.lineRange.total}`);
-  }
   lines.push("---");
   return lines.join("\n");
+}
+function formatDecidedFooter(doc) {
+  if (doc.view !== "decided")
+    return "";
+  const { counts, threadCount } = doc.header;
+  const anyCount = counts.proposed > 0 || counts.accepted > 0 || counts.rejected > 0 || threadCount > 0;
+  if (!anyCount)
+    return "";
+  return `\u2500\u2500 accepted ${counts.accepted} \xB7 rejected ${counts.rejected} \xB7 proposed ${counts.proposed} \xB7 threads ${threadCount} \u2500\u2500`;
 }
 function formatLine(line, padWidth, view) {
   const num = String(line.margin.lineNumber).padStart(padWidth, " ");
   const flag = line.margin.flags.length > 0 ? line.margin.flags[0] : " ";
   const margin = `${num}:${line.margin.hash} ${flag}|`;
   const content = line.content.map((s) => s.text).join("");
-  const meta = formatMetadata(line.metadata, view);
+  const meta = formatMetadata(line.metadata);
   return meta ? `${margin} ${content} ${meta}` : `${margin} ${content}`;
 }
-function ensureAt(author, fallback = "") {
-  if (!author)
-    return fallback;
-  return author.startsWith("@") ? author : `@${author}`;
+function truncateByCodePoints(text, max) {
+  if (text.length <= max)
+    return text;
+  const cps = [...text];
+  if (cps.length <= max)
+    return text;
+  return cps.slice(0, max).join("") + "\u2026";
 }
-function formatMetadata(metadata, view) {
+function withAtPrefix(handle) {
+  return handle.startsWith("@") ? handle : `@${handle}`;
+}
+function formatMetadata(metadata) {
   if (metadata.length === 0)
     return "";
   return metadata.map((m) => {
-    if (view === "simple") {
-      const author = ensureAt(m.author);
-      let block2 = `[${m.changeId}`;
-      if (author)
-        block2 += ` ${author}`;
-      if (m.type)
-        block2 += ` ${m.type}`;
-      if (m.status)
-        block2 += ` ${m.status}`;
-      if (m.reason)
-        block2 += `: ${m.reason}`;
-      if (m.latestThreadTurn) {
-        const turnAuthor = ensureAt(m.latestThreadTurn.author, "@?");
-        block2 += ` | ${turnAuthor}: ${m.latestThreadTurn.text}`;
-      }
-      block2 += "]";
-      return block2;
-    }
-    let block = `{>>${m.changeId}`;
+    const parts = [m.changeId];
     if (m.author)
-      block += ` ${m.author}:`;
-    if (m.reason)
-      block += ` ${m.reason}`;
-    if (m.replyCount && m.replyCount > 0) {
-      block += ` | ${m.replyCount} ${m.replyCount === 1 ? "reply" : "replies"}`;
+      parts.push(withAtPrefix(m.author));
+    if (m.type)
+      parts.push(m.type);
+    if (m.status)
+      parts.push(m.status);
+    let head = parts.join(" ");
+    if (m.reason) {
+      head += `: "${m.reason}"`;
     }
-    block += "<<}";
-    return block;
+    if (m.latestThreadTurn) {
+      const turnAuthor = m.latestThreadTurn.author ? `${withAtPrefix(m.latestThreadTurn.author)}: ` : "";
+      const turnText = truncateByCodePoints(m.latestThreadTurn.text, MAX_TURN_CODE_POINTS);
+      head += ` | ${turnAuthor}${turnText}`;
+    }
+    return `[${head}]`;
   }).join(" ");
 }
+var MAX_TURN_CODE_POINTS;
 var init_plain_text = __esm({
   "../../packages/core/dist-esm/renderers/formatters/plain-text.js"() {
     "use strict";
+    MAX_TURN_CODE_POINTS = 60;
   }
 });
 
@@ -6809,12 +7138,187 @@ var init_edit_boundary = __esm({
   }
 });
 
+// ../../packages/core/dist-esm/operations/structural-integrity.js
+function validateStructuralIntegrity(text) {
+  const violations = [];
+  let doc;
+  try {
+    doc = parseForFormat(text);
+  } catch (err) {
+    violations.push({
+      kind: "structural_invalid",
+      message: `Parser threw: ${err.message}`
+    });
+    return violations;
+  }
+  for (const d of doc.getDiagnostics()) {
+    violations.push(d);
+  }
+  violations.push(...detectNestedMarkup(text));
+  violations.push(...detectOrphans(text, doc));
+  return violations;
+}
+function detectNestedMarkup(text) {
+  const inCodeZone = buildCodeZoneMask(text);
+  const violations = [];
+  let currentOpen = null;
+  let pos = 0;
+  while (pos < text.length) {
+    if (inCodeZone[pos]) {
+      pos++;
+      continue;
+    }
+    const ch = text[pos];
+    if (currentOpen !== null && CM_CLOSE_FIRST_CHARS.has(ch)) {
+      let closedSpan = false;
+      for (const [close, matchingOpen] of CM_CLOSE_TO_OPEN) {
+        if (currentOpen === matchingOpen && text.startsWith(close, pos)) {
+          currentOpen = null;
+          pos += close.length;
+          closedSpan = true;
+          break;
+        }
+      }
+      if (closedSpan)
+        continue;
+    }
+    if (ch === "{") {
+      for (const [open2] of CM_DELIMITERS) {
+        if (text.startsWith(open2, pos)) {
+          if (currentOpen !== null) {
+            violations.push({
+              kind: "structural_invalid",
+              message: `Nested CriticMarkup: found '${open2}' inside '${currentOpen}' (at offset ${pos}).`
+            });
+          } else {
+            currentOpen = open2;
+          }
+          pos += open2.length;
+          break;
+        }
+      }
+      if (text[pos] === "{")
+        pos++;
+      continue;
+    }
+    pos++;
+  }
+  return violations;
+}
+function detectOrphans(text, doc) {
+  const violations = [];
+  const { bodyLines, footnoteLines } = splitBodyAndFootnotes(text.split("\n"));
+  const bodyText = bodyLines.join("\n");
+  const footnoteText = footnoteLines.join("\n");
+  const bodyRefs = /* @__PURE__ */ new Set();
+  const bodyCodeZones = findCodeZones(bodyText);
+  INLINE_REF_GLOBAL.lastIndex = 0;
+  let m;
+  while ((m = INLINE_REF_GLOBAL.exec(bodyText)) !== null) {
+    const refStart = m.index;
+    const inZone = bodyCodeZones.some((z) => refStart >= z.start && refStart < z.end);
+    if (!inZone) {
+      bodyRefs.add(m[1]);
+    }
+  }
+  const footnoteDefs = /* @__PURE__ */ new Map();
+  FOOTNOTE_DEF_STATUS_GM.lastIndex = 0;
+  while ((m = FOOTNOTE_DEF_STATUS_GM.exec(footnoteText)) !== null) {
+    footnoteDefs.set(m[1], m[2]);
+  }
+  for (const change of doc.getChanges()) {
+    if (!footnoteDefs.has(change.id)) {
+      const status = change.status === ChangeStatus.Accepted ? "accepted" : change.status === ChangeStatus.Rejected ? "rejected" : "proposed";
+      footnoteDefs.set(change.id, status);
+    }
+  }
+  for (const ref of bodyRefs) {
+    if (!footnoteDefs.has(ref)) {
+      violations.push({
+        kind: "record_orphaned",
+        changeId: ref,
+        message: `Inline ref [^${ref}] has no matching footnote definition.`
+      });
+    }
+  }
+  for (const [id, status] of footnoteDefs) {
+    if (DECIDED_STATUSES.has(status) && !bodyRefs.has(id)) {
+      violations.push({
+        kind: "surface_orphaned",
+        changeId: id,
+        message: `Footnote def [^${id}] is decided (${status}) but has no matching inline ref in the body.`
+      });
+    }
+  }
+  return violations;
+}
+var CM_DELIMITERS, CM_CLOSE_TO_OPEN, CM_CLOSE_FIRST_CHARS, INLINE_REF_GLOBAL, FOOTNOTE_DEF_STATUS_GM, DECIDED_STATUSES;
+var init_structural_integrity = __esm({
+  "../../packages/core/dist-esm/operations/structural-integrity.js"() {
+    "use strict";
+    init_format_aware_parse();
+    init_code_zones();
+    init_footnote_patterns();
+    init_types();
+    CM_DELIMITERS = [
+      ["{++", "++}"],
+      ["{--", "--}"],
+      ["{~~", "~~}"],
+      ["{==", "==}"],
+      ["{>>", "<<}"]
+    ];
+    CM_CLOSE_TO_OPEN = /* @__PURE__ */ new Map([
+      ["++}", "{++"],
+      ["--}", "{--"],
+      ["~~}", "{~~"],
+      ["==}", "{=="],
+      ["<<}", "{>>"]
+    ]);
+    CM_CLOSE_FIRST_CHARS = /* @__PURE__ */ new Set(["+", "-", "~", "=", "<"]);
+    INLINE_REF_GLOBAL = new RegExp(`\\[\\^(${FOOTNOTE_ID_PATTERN})\\]`, "g");
+    FOOTNOTE_DEF_STATUS_GM = new RegExp(FOOTNOTE_DEF_STATUS.source, "gm");
+    DECIDED_STATUSES = /* @__PURE__ */ new Set(["accepted", "rejected"]);
+  }
+});
+
+// ../../packages/core/dist-esm/operations/markup-by-id.js
+var init_markup_by_id = __esm({
+  "../../packages/core/dist-esm/operations/markup-by-id.js"() {
+    "use strict";
+    init_code_zones();
+  }
+});
+
 // ../../packages/core/dist-esm/operations/parse-document.js
 var init_parse_document = __esm({
   "../../packages/core/dist-esm/operations/parse-document.js"() {
     "use strict";
     init_footnote_patterns();
     init_footnote_block_parser();
+  }
+});
+
+// ../../packages/core/dist-esm/operations/changes-to-document.js
+var init_changes_to_document = __esm({
+  "../../packages/core/dist-esm/operations/changes-to-document.js"() {
+    "use strict";
+    init_types();
+    init_footnote_generator();
+  }
+});
+
+// ../../packages/core/dist-esm/backend/types.js
+var init_types3 = __esm({
+  "../../packages/core/dist-esm/backend/types.js"() {
+    "use strict";
+  }
+});
+
+// ../../packages/core/dist-esm/backend/registry.js
+var init_registry = __esm({
+  "../../packages/core/dist-esm/backend/registry.js"() {
+    "use strict";
+    init_types3();
   }
 });
 
@@ -6877,9 +7381,15 @@ var init_dist_esm = __esm({
     init_edit_boundary();
     init_edit_boundary();
     init_edit_boundary();
+    init_structural_integrity();
+    init_markup_by_id();
     init_format_aware_parse();
     init_session_hashes();
     init_parse_document();
+    init_changes_to_document();
+    init_diagnostic();
+    init_types3();
+    init_registry();
   }
 });
 
@@ -9775,7 +10285,7 @@ var require_command = __commonJS({
     var EventEmitter2 = __require("node:events").EventEmitter;
     var childProcess = __require("node:child_process");
     var path14 = __require("node:path");
-    var fs19 = __require("node:fs");
+    var fs20 = __require("node:fs");
     var process2 = __require("node:process");
     var { Argument: Argument2, humanReadableArgName } = require_argument();
     var { CommanderError: CommanderError2 } = require_error();
@@ -10756,7 +11266,7 @@ Expecting one of '${allowedValues.join("', '")}'`);
        * @param {string} subcommandName
        */
       _checkForMissingExecutable(executableFile, executableDir, subcommandName) {
-        if (fs19.existsSync(executableFile)) return;
+        if (fs20.existsSync(executableFile)) return;
         const executableDirMessage = executableDir ? `searched for local subcommand relative to directory '${executableDir}'` : "no directory for search for local subcommand, use .executableDir() to supply a custom directory";
         const executableMissing = `'${executableFile}' does not exist
  - if '${subcommandName}' is not meant to be an executable command, remove description parameter from '.command()' and use '.description()' instead
@@ -10775,10 +11285,10 @@ Expecting one of '${allowedValues.join("', '")}'`);
         const sourceExt = [".js", ".ts", ".tsx", ".mjs", ".cjs"];
         function findFile(baseDir, baseName) {
           const localBin = path14.resolve(baseDir, baseName);
-          if (fs19.existsSync(localBin)) return localBin;
+          if (fs20.existsSync(localBin)) return localBin;
           if (sourceExt.includes(path14.extname(baseName))) return void 0;
           const foundExt = sourceExt.find(
-            (ext) => fs19.existsSync(`${localBin}${ext}`)
+            (ext) => fs20.existsSync(`${localBin}${ext}`)
           );
           if (foundExt) return `${localBin}${foundExt}`;
           return void 0;
@@ -10790,7 +11300,7 @@ Expecting one of '${allowedValues.join("', '")}'`);
         if (this._scriptPath) {
           let resolvedScriptPath;
           try {
-            resolvedScriptPath = fs19.realpathSync(this._scriptPath);
+            resolvedScriptPath = fs20.realpathSync(this._scriptPath);
           } catch {
             resolvedScriptPath = this._scriptPath;
           }
@@ -12001,6 +12511,15 @@ function parseGlobalArgs(argv) {
 // ../../packages/cli/dist/cli-runner.js
 init_dist_esm();
 
+// ../../packages/core/dist-esm/backend/index.js
+init_types3();
+init_registry();
+
+// ../../packages/cli/dist/engine/config-resolver.js
+import * as path2 from "node:path";
+import * as fs2 from "node:fs/promises";
+import { existsSync, realpathSync, watch } from "node:fs";
+
 // ../../packages/cli/dist/config/index.js
 init_dist_esm();
 
@@ -12784,6 +13303,8 @@ init_supersede();
 init_resolution();
 init_current_text();
 init_format_aware_parse();
+init_document();
+init_diagnostic();
 init_types();
 
 // ../../packages/core/dist-esm/host/decorations/index.js
@@ -12981,7 +13502,7 @@ async function loadConfig(projectDir) {
   const configPath = await findConfigFile(projectDir);
   if (!configPath) {
     console.error(`changedown: no .changedown/config.toml found (searched from ${projectDir} to /), using defaults`);
-    return structuredClone(DEFAULT_CONFIG2);
+    return structuredClone(DEFAULT_UNCONFIGURED_CONFIG);
   }
   let raw;
   try {
@@ -13055,11 +13576,28 @@ var DEFAULT_CONFIG2 = {
     batch_reasoning: "optional"
   }
 };
+var DEFAULT_UNCONFIGURED_CONFIG = {
+  ...DEFAULT_CONFIG2,
+  tracking: {
+    ...DEFAULT_CONFIG2.tracking,
+    include: [],
+    include_absolute: [],
+    default: "untracked",
+    auto_header: false
+  },
+  hooks: {
+    ...DEFAULT_CONFIG2.hooks,
+    intercept_tools: false,
+    intercept_bash: false,
+    patch_wrap_experimental: false
+  },
+  policy: {
+    ...DEFAULT_CONFIG2.policy,
+    creation_tracking: "none"
+  }
+};
 
 // ../../packages/cli/dist/engine/config-resolver.js
-import * as path2 from "node:path";
-import * as fs2 from "node:fs/promises";
-import { existsSync, realpathSync, watch } from "node:fs";
 var ConfigResolver = class _ConfigResolver {
   /** Map from project root path → cached config */
   cache = /* @__PURE__ */ new Map();
@@ -13110,7 +13648,7 @@ var ConfigResolver = class _ConfigResolver {
       this.watchConfig(projectRoot);
       return { config, projectDir: projectRoot };
     }
-    return { config: structuredClone(DEFAULT_CONFIG2), projectDir: this.resolveDir() };
+    return { config: structuredClone(DEFAULT_UNCONFIGURED_CONFIG), projectDir: this.resolveDir() };
   }
   /**
    * Resolve a file path argument from a tool call.
@@ -13207,7 +13745,7 @@ var ConfigResolver = class _ConfigResolver {
       this.watchConfig(projectRoot);
       return config;
     }
-    return structuredClone(DEFAULT_CONFIG2);
+    return structuredClone(DEFAULT_UNCONFIGURED_CONFIG);
   }
   /**
    * Walk up from `startDir` looking for a directory containing `.changedown/`.
@@ -13494,6 +14032,13 @@ var SessionState = class {
     });
   }
   /**
+   * Returns all absolute paths that have been read via `read_tracked_file`
+   * in this session. Used by `FileBackend.list()` to enumerate resources.
+   */
+  getAccessedPaths() {
+    return Array.from(this.fileRecords.keys());
+  }
+  /**
    * Returns the view name from the last read_tracked_file call for this file,
    * or undefined if the file has not been read in this session.
    */
@@ -13649,6 +14194,9 @@ var SessionState = class {
    * and appends remaining segments.
    */
   normalizePath(filePath) {
+    if (/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(filePath)) {
+      return filePath;
+    }
     const resolved = path3.resolve(filePath);
     try {
       return realpathSync2(resolved);
@@ -13672,939 +14220,32 @@ var SessionState = class {
   }
 };
 
-// ../../packages/cli/dist/engine/state-utils.js
-init_dist_esm();
-async function rerecordState(state, filePath, content, config) {
-  if (!state)
-    return void 0;
-  if (!config.hashline.enabled) {
-    state.resetFile(filePath);
-    return void 0;
-  }
-  await initHashline();
-  const lastView = state.getLastReadView(filePath) ?? "raw";
-  const changes = parseForFormat(content).getChanges();
-  const sessionHashesResult = buildSessionHashes(content, changes);
-  const hashes = [];
-  for (const [rawLineNum, sh] of sessionHashesResult.byRawLine) {
-    let lineNumInView;
-    switch (lastView) {
-      case "working":
-      case "raw":
-      case "original":
-        lineNumInView = rawLineNum;
-        break;
-      case "simple":
-        lineNumInView = sessionHashesResult.currentLineByRaw.get(rawLineNum);
-        break;
-      case "decided":
-        lineNumInView = sessionHashesResult.decidedLineByRaw.get(rawLineNum);
-        break;
-    }
-    if (lineNumInView === void 0)
-      continue;
-    if (lastView === "raw" || lastView === "original") {
-      hashes.push({ line: lineNumInView, raw: sh.raw, rawLineNum });
-    } else {
-      hashes.push({
-        line: lineNumInView,
-        raw: sh.raw,
-        committed: sh.committed,
-        currentView: sh.currentView,
-        rawLineNum
-      });
-    }
-  }
-  state.rerecordAfterWrite(filePath, content, hashes);
-  if (lastView === "decided") {
-    return { decidedView: sessionHashesResult.decidedResult };
-  }
-  if (lastView === "simple" || lastView === "working") {
-    return { currentView: sessionHashesResult.currentResult };
-  }
-  return void 0;
-}
-
-// ../../packages/cli/dist/engine/author.js
-var AUTHOR_ENV_KEY = "CHANGEDOWN_AUTHOR";
-var AUTHOR_FORMAT = /^[a-z][a-z0-9]*:[a-zA-Z0-9_.-]+$/;
-var SYSTEM_FALLBACK = "unknown";
-function validateAuthorFormat(author) {
-  if (author === SYSTEM_FALLBACK) {
-    return null;
-  }
-  if (!AUTHOR_FORMAT.test(author)) {
-    return {
-      author: "",
-      error: {
-        isError: true,
-        message: `Invalid author format: '${author}'. Expected namespace:identifier (e.g., ai:claude-opus-4.6, human:alice).`
-      }
-    };
-  }
-  return null;
-}
-function resolveAuthor(explicitAuthor, config, toolName) {
-  if (explicitAuthor) {
-    const formatError2 = validateAuthorFormat(explicitAuthor);
-    if (formatError2)
-      return formatError2;
-    return { author: explicitAuthor };
-  }
-  const fromEnv = process.env[AUTHOR_ENV_KEY]?.trim();
-  if (config.author.enforcement === "required") {
-    if (fromEnv) {
-      const formatError2 = validateAuthorFormat(fromEnv);
-      if (formatError2)
-        return formatError2;
-      return { author: fromEnv };
-    }
-    return {
-      author: "",
-      error: {
-        isError: true,
-        message: `${toolName} requires an author parameter. This project has [author] enforcement = "required". Pass author in the tool call (e.g. author: "ai:claude-opus-4.6") or set ${AUTHOR_ENV_KEY} in the MCP server env (e.g. in Cursor mcp.json).`
-      }
-    };
-  }
-  const fallback = fromEnv || config.author.default || "unknown";
-  const formatError = validateAuthorFormat(fallback);
-  if (formatError)
-    return formatError;
-  return { author: fallback };
-}
-
-// ../../packages/cli/dist/engine/scope.js
-init_dist_esm();
-import * as fs3 from "node:fs/promises";
-async function resolveTrackingStatus(filePath, config, projectDir) {
-  const projectDefault = config.tracking.default;
-  const autoHeader = config.tracking.auto_header;
-  let fileContent = null;
-  try {
-    fileContent = await fs3.readFile(filePath, "utf-8");
-  } catch {
-  }
-  if (fileContent !== null) {
-    const header = parseTrackingHeader(fileContent);
-    if (header !== null) {
-      return {
-        status: header.status,
-        source: "file_header",
-        header_present: true,
-        project_default: projectDefault,
-        auto_header: autoHeader
-      };
-    }
-  }
-  if (isFileInScope(filePath, config, projectDir)) {
-    return {
-      status: projectDefault,
-      source: "project_config",
-      header_present: false,
-      project_default: projectDefault,
-      auto_header: autoHeader
-    };
-  }
-  return {
-    status: "untracked",
-    source: "global_default",
-    header_present: false,
-    project_default: projectDefault,
-    auto_header: autoHeader
-  };
-}
-
-// ../../packages/cli/dist/engine/path-utils.js
-import * as path4 from "node:path";
-function toRelativePath(projectDir, filePath) {
-  return path4.relative(projectDir, filePath);
-}
-
-// ../../packages/cli/dist/engine/guide-composer.js
-function composeGuide(config) {
-  const sections = [];
-  const protocolMode = resolveProtocolMode(config.protocol.mode);
-  sections.push(composeProtocolSection(protocolMode, config));
-  sections.push(composeAuthorSection(config));
-  if (config.reasoning?.propose?.agent === true) {
-    sections.push("**Annotations**: Required on every change. Append `{>>reason` to your `op` string, or include reasoning in your propose call.");
-  }
-  sections.push("**Chaining edits**: Each `propose_change` response shows your changes applied. The `applied` array includes `preview` (the line with your edit) and coordinates for follow-up edits. `affected_lines` shows neighboring lines with fresh coordinates. No re-read needed between edits. Re-read only after review (accept/reject).");
-  sections.push("**Revising proposals**: Re-proposing over your own earlier changes auto-supersedes them. No need to reject first. The response includes a `superseded` array with the IDs of replaced changes.");
-  sections.push(composeViewSection(config));
-  return `---
-## How to edit this file
-
-${sections.join("\n\n")}
----`;
-}
-function composeProtocolSection(mode, config) {
-  if (mode === "classic") {
-    return "**Editing**: Use `propose_change` with `old_text` (exact text to replace) and `new_text`.\nFor insertions, use `insert_after` to place new text after an anchor string.\nGroup related changes: `propose_change(file, changes=[{old_text:..., new_text:...}, ...])`";
-  }
-  const lines = [
-    "**Editing**: Use `propose_change` with `at` (LINE:HASH from the margin) and `op`:",
-    "  Substitute: `{~~old~>new~~}`  Insert: `{++text++}`  Delete: `{--text--}`",
-    "  Highlight: `{==text==}`  Comment: `{>>reason`"
-  ];
-  if (config.reasoning?.propose?.agent !== true) {
-    lines.push("  Annotate: `{~~old~>new~~}{>>reason`  (append {>> to any op)");
-  } else {
-    lines.push("  Annotate (required): `{~~old~>new~~}{>>reason`  (append {>> to any op)");
-  }
-  lines.push('Group: `propose_change(file, changes=[{at:"3:a1", op:"{~~old~>new~~}{>>reason"}, ...])`', "Include enough context in your `op` to disambiguate repeated text on the same line.");
-  lines.push('Range replace: `at:"5:a1-20:b3"` + `op:"{~~~>new content~~}"` replaces the entire range.');
-  lines.push("Multi-line ops: use real newlines in your op string \u2014 the MCP transport handles encoding.");
-  return lines.join("\n");
-}
-function composeAuthorSection(config) {
-  if (config.author.enforcement === "required") {
-    return '**Author**: Required. Pass `author="ai:YOUR-ACTUAL-MODEL"` on every propose/review call.\nDo not copy example identities from documentation.';
-  }
-  return '**Author**: Recommended. Pass `author="ai:YOUR-MODEL"` for clear attribution.';
-}
-function composeViewSection(config) {
-  const defaultView = config.policy.default_view ?? "working";
-  switch (defaultView) {
-    case "working":
-      return "**You're seeing**: working view \u2014 full deliberation context. CriticMarkup shows proposals inline, [cn-N] anchors link to end-of-line metadata.\nOther views: `simple` (clean prose + P/A flags), `decided` (decided-changes-only preview).";
-    case "simple":
-      return "**You're seeing**: simple view \u2014 current projection text with P/A flags in the margin. Proposals are summarized, not shown inline.\nOther views: `working` (full deliberation context), `decided` (decided-changes-only preview).";
-    case "decided":
-      return "**You're seeing**: decided view \u2014 the document with only decided changes applied. Proposed deletions are not visible.\nOther views: `working` (full deliberation context), `simple` (current text + P/A flags).";
-    default:
-      return `**Current view**: ${defaultView}.`;
-  }
-}
-
-// ../../packages/cli/dist/engine/index.js
-init_file_ops2();
-
-// ../../packages/cli/dist/engine/args.js
-function strArg(args, snake, camel, defaultValue = "") {
-  const v = args[snake] ?? args[camel];
-  return v ?? defaultValue;
-}
-function optionalStrArg(args, snake, camel) {
-  const v = args[snake] ?? args[camel];
-  if (v === void 0 || v === null)
-    return void 0;
-  return String(v);
-}
-
-// ../../packages/cli/dist/engine/handlers/review-changes.js
-import * as fs4 from "node:fs/promises";
+// ../../packages/cli/dist/engine/handlers/propose-change.js
+import * as fs6 from "node:fs/promises";
 import * as path5 from "node:path";
 
-// ../../packages/cli/dist/engine/shared/error-result.js
-function errorResult(message) {
-  return {
-    content: [{ type: "text", text: message }],
-    isError: true
-  };
-}
-
-// ../../packages/cli/dist/engine/handlers/review-changes.js
+// ../../packages/cli/dist/engine/write-tracked-file.js
 init_dist_esm();
-
-// ../../packages/cli/dist/engine/shared/blocking-annotation.js
-init_dist_esm();
-function applyBlockingAnnotation(content, changeId, author, label, shouldBlock) {
-  const lines = content.split("\n");
-  const block = findFootnoteBlock(lines, changeId);
-  if (!block)
-    return content;
-  const insertIdx = findReviewInsertionIndex(lines, block.headerLine, block.blockEnd);
-  if (label && insertIdx >= block.headerLine) {
-    const rcLine = lines[insertIdx];
-    if (rcLine.trimStart().startsWith("request-changes:")) {
-      lines[insertIdx] = rcLine + ` [${label}]`;
-    }
-  }
-  if (shouldBlock) {
-    lines.splice(insertIdx + 1, 0, `    blocked: @${author}`);
-  }
-  return lines.join("\n");
+import { promises as fs3, writeFileSync } from "fs";
+var WRITE_BLOCKING_KINDS = /* @__PURE__ */ new Set([
+  "coordinate_failed",
+  "anchor_ambiguous",
+  "anchor_missing",
+  "record_orphaned",
+  "structural_invalid"
+]);
+function getWriteBlockingViolations(content) {
+  return validateStructuralIntegrity(content).filter((violation) => WRITE_BLOCKING_KINDS.has(violation.kind));
 }
-
-// ../../packages/cli/dist/engine/handlers/settle.js
-init_dist_esm();
-function applyAcceptedChanges2(fileContent) {
-  return applyAcceptedChanges(fileContent);
+async function writeTrackedFile(filePath, content) {
+  const violations = getWriteBlockingViolations(content);
+  if (violations.length > 0)
+    throw new StructuralIntegrityError(violations);
+  await fs3.writeFile(filePath, content, "utf-8");
 }
-function applyRejectedChanges2(fileContent) {
-  return applyRejectedChanges(fileContent);
-}
-
-// ../../packages/cli/dist/engine/handlers/propose-utils.js
-init_dist_esm();
-function computeAffectedLines(modifiedText, affectedStartLine, affectedEndLine, options) {
-  const lines = modifiedText.split("\n");
-  const result = [];
-  const ctx = options.contextLines ?? 2;
-  const start = Math.max(1, affectedStartLine - ctx);
-  const end = Math.min(lines.length, affectedEndLine + ctx);
-  for (let lineNum = start; lineNum <= end; lineNum++) {
-    const lineContent = lines[lineNum - 1];
-    if (options.viewProjection) {
-      const viewEntry = options.viewProjection.rawToView.get(lineNum);
-      if (!viewEntry) {
-        continue;
-      }
-      const entry = {
-        line: viewEntry.viewLine,
-        content: viewEntry.viewContent
-      };
-      if (options.hashlineEnabled) {
-        entry.hash = viewEntry.viewHash;
-      }
-      if (lineContent.match(/\{\+\+|\{--|\{~~|\{==/)) {
-        entry.flag = "P";
-      }
-      result.push(entry);
-    } else {
-      const entry = {
-        line: lineNum,
-        content: lineContent
-      };
-      if (options.hashlineEnabled) {
-        entry.hash = computeLineHash(lineNum - 1, lineContent, lines);
-      }
-      if (lineContent.match(/\{\+\+|\{--|\{~~|\{==/)) {
-        entry.flag = "P";
-      }
-      result.push(entry);
-    }
-  }
-  return result;
-}
-
-// ../../packages/cli/dist/engine/handlers/review-changes.js
-async function handleReviewChanges(args, resolver, state) {
-  try {
-    const file = optionalStrArg(args, "file", "file");
-    let reviewsRaw = args.reviews;
-    let responsesRaw = args.responses;
-    const settleFlag = args.settle === true || args.settle === "true";
-    const authorArg = optionalStrArg(args, "author", "author");
-    if (!file) {
-      return errorResult('Missing required argument: "file"');
-    }
-    if (typeof reviewsRaw === "string") {
-      try {
-        const parsed = JSON.parse(reviewsRaw);
-        if (Array.isArray(parsed)) {
-          reviewsRaw = parsed;
-        } else {
-          return errorResult(`The "reviews" parameter was received as a JSON string but parsed to ${typeof parsed}, not an array. Send reviews as a JSON array of objects, e.g.: reviews: [{ "change_id": "cn-1", "decision": "approve", "reason": "looks good" }]`);
-        }
-      } catch {
-        return errorResult('The "reviews" parameter was received as a string but could not be parsed as JSON. Send reviews as a JSON array of objects, e.g.: reviews: [{ "change_id": "cn-1", "decision": "approve", "reason": "looks good" }]');
-      }
-    }
-    if (typeof responsesRaw === "string") {
-      try {
-        const parsed = JSON.parse(responsesRaw);
-        if (Array.isArray(parsed)) {
-          responsesRaw = parsed;
-        } else {
-          return errorResult(`The "responses" parameter was received as a JSON string but parsed to ${typeof parsed}, not an array. Send responses as a JSON array of objects, e.g.: responses: [{ "change_id": "cn-1", "response": "addressed in latest revision" }]`);
-        }
-      } catch {
-        return errorResult('The "responses" parameter was received as a string but could not be parsed as JSON. Send responses as a JSON array of objects, e.g.: responses: [{ "change_id": "cn-1", "response": "addressed in latest revision" }]');
-      }
-    }
-    const hasReviews = Array.isArray(reviewsRaw) && reviewsRaw.length > 0;
-    const hasResponses = Array.isArray(responsesRaw) && responsesRaw.length > 0;
-    if (!hasReviews && !hasResponses && !settleFlag) {
-      return errorResult('At least one of "reviews", "responses", or "settle" must be provided.\n\nExample:\n  review_changes(file: "doc.md", reviews: [{ change_id: "cn-1", decision: "approve", reason: "looks good" }])\n\nRequired fields per review: change_id, decision (approve|reject|request_changes|withdraw), reason.');
-    }
-    const filePath = resolver.resolveFilePath(file);
-    const { config, projectDir } = await resolver.forFile(filePath);
-    if (!isFileInScope(filePath, config, projectDir)) {
-      return errorResult(`File is not in scope for tracking: "${filePath}". Check .changedown/config.toml include/exclude patterns.`);
-    }
-    let fileContent;
-    let originalContent;
-    try {
-      fileContent = await fs4.readFile(filePath, "utf-8");
-      originalContent = fileContent;
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      return errorResult(`File not found or unreadable: ${msg}`);
-    }
-    const { author, error: authorError } = resolveAuthor(authorArg, config, "review_changes");
-    if (authorError) {
-      return errorResult(authorError.message);
-    }
-    const successes = [];
-    const errors = [];
-    let results = [];
-    if (hasReviews) {
-      const lines = fileContent.split("\n");
-      const inputOrderChangeIds = [];
-      const withPosition = [];
-      const validationErrors = [];
-      for (let idx = 0; idx < reviewsRaw.length; idx++) {
-        const r = reviewsRaw[idx];
-        if (r === null || r === void 0 || typeof r !== "object" || Array.isArray(r)) {
-          validationErrors.push(`Review item #${idx} must be an object, got ${r === null ? "null" : Array.isArray(r) ? "array" : typeof r}`);
-          continue;
-        }
-        const rObj = r;
-        const changeId = rObj.change_id;
-        const decision = rObj.decision;
-        const reason = rObj.reason;
-        const missingFields = [];
-        if (!changeId)
-          missingFields.push("'change_id'");
-        if (!decision)
-          missingFields.push("'decision'");
-        if (!reason) {
-          if (rObj.reasoning) {
-            missingFields.push("'reason' (did you mean 'reason'? You passed 'reasoning' which is not the correct field name)");
-          } else {
-            missingFields.push("'reason'");
-          }
-        }
-        if (missingFields.length > 0) {
-          validationErrors.push(`Review item #${idx} missing required field(s): ${missingFields.join(", ")}`);
-          continue;
-        }
-        inputOrderChangeIds.push(changeId);
-        const block = findFootnoteBlock(lines, changeId);
-        withPosition.push({
-          review: {
-            change_id: changeId,
-            decision,
-            reason,
-            blocking: rObj.blocking === true ? true : void 0,
-            label: typeof rObj.label === "string" ? rObj.label : void 0
-          },
-          headerLine: block ? block.headerLine : -1
-        });
-      }
-      withPosition.sort((a, b) => b.headerLine - a.headerLine);
-      const resultByChangeId = /* @__PURE__ */ new Map();
-      for (const { review } of withPosition) {
-        if (!VALID_DECISIONS.includes(review.decision)) {
-          resultByChangeId.set(review.change_id, {
-            change_id: review.change_id,
-            error: `Invalid decision: "${review.decision}". Must be one of: approve, reject, request_changes, withdraw`
-          });
-          continue;
-        }
-        const applied = applyReview(fileContent, review.change_id, review.decision, review.reason, author, config);
-        if ("error" in applied) {
-          resultByChangeId.set(review.change_id, { change_id: review.change_id, error: applied.error });
-          continue;
-        }
-        if (review.decision === "request_changes" && (review.blocking || review.label)) {
-          const autoBlock = review.label ? config.review.blocking_labels[review.label] === true : false;
-          const shouldBlock = review.blocking || autoBlock;
-          applied.updatedContent = applyBlockingAnnotation(applied.updatedContent, review.change_id, author, review.label, shouldBlock);
-        }
-        resultByChangeId.set(review.change_id, applied.result);
-        fileContent = applied.updatedContent;
-      }
-      results = inputOrderChangeIds.map((id) => resultByChangeId.get(id));
-      if (validationErrors.length > 0) {
-        errors.push(...validationErrors);
-      }
-    }
-    if (hasResponses) {
-      const VALID_LABELS = ["suggestion", "issue", "question", "praise", "todo", "thought", "nitpick"];
-      for (let rIdx = 0; rIdx < responsesRaw.length; rIdx++) {
-        const resp = responsesRaw[rIdx];
-        if (resp === null || resp === void 0 || typeof resp !== "object" || Array.isArray(resp)) {
-          errors.push(`Response item #${rIdx} must be an object, got ${resp === null ? "null" : Array.isArray(resp) ? "array" : typeof resp}`);
-          continue;
-        }
-        const respObj = resp;
-        const respChangeId = respObj.change_id;
-        const respText = respObj.response;
-        const respLabel = respObj.label;
-        if (!respChangeId || !respText) {
-          const missing = [];
-          if (!respChangeId)
-            missing.push("'change_id'");
-          if (!respText)
-            missing.push("'response'");
-          errors.push(`Response item #${rIdx} missing required field(s): ${missing.join(", ")}`);
-          continue;
-        }
-        if (respLabel && !VALID_LABELS.includes(respLabel)) {
-          errors.push(`Response to ${respChangeId}: Invalid label "${respLabel}". Must be one of: ${VALID_LABELS.join(", ")}`);
-          continue;
-        }
-        const lines = fileContent.split("\n");
-        const block = findFootnoteBlock(lines, respChangeId);
-        if (!block) {
-          errors.push(`Response to ${respChangeId}: Change "${respChangeId}" not found in file.`);
-          continue;
-        }
-        const insertionIdx = findDiscussionInsertionIndex(lines, block.headerLine, block.blockEnd) + 1;
-        const ts = nowTimestamp();
-        const labelPart = respLabel ? ` [${respLabel}]` : "";
-        const responseLines = respText.split("\n");
-        const indent = "    ";
-        const continuationIndent = "      ";
-        const firstLine = `${indent}@${author} ${ts.raw}${labelPart}: ${responseLines[0]}`;
-        const formatted = [firstLine];
-        for (let li = 1; li < responseLines.length; li++) {
-          formatted.push(`${continuationIndent}${responseLines[li]}`);
-        }
-        lines.splice(insertionIdx, 0, ...formatted);
-        fileContent = lines.join("\n");
-        successes.push(`Responded to ${respChangeId}`);
-      }
-    }
-    let settlementInfo;
-    if (config.settlement.auto_on_approve && hasReviews) {
-      const hasApprovals = results.some((r) => "decision" in r && r.decision === "approve");
-      if (hasApprovals) {
-        const { currentContent, appliedIds } = applyAcceptedChanges2(fileContent);
-        if (appliedIds.length > 0) {
-          fileContent = currentContent;
-          settlementInfo = { appliedIds };
-        }
-      }
-    }
-    if (config.settlement.auto_on_reject && hasReviews) {
-      const hasRejections = results.some((r) => "decision" in r && r.decision === "reject");
-      if (hasRejections) {
-        const { currentContent, appliedIds } = applyRejectedChanges2(fileContent);
-        if (appliedIds.length > 0) {
-          fileContent = currentContent;
-          if (settlementInfo) {
-            const existingSet = new Set(settlementInfo.appliedIds);
-            for (const id of appliedIds) {
-              if (!existingSet.has(id)) {
-                settlementInfo.appliedIds.push(id);
-              }
-            }
-          } else {
-            settlementInfo = { appliedIds };
-          }
-        }
-      }
-    }
-    if (settleFlag) {
-      const { currentContent, appliedIds } = applyAcceptedChanges2(fileContent);
-      if (appliedIds.length > 0) {
-        fileContent = currentContent;
-        if (settlementInfo) {
-          const existingSet = new Set(settlementInfo.appliedIds);
-          for (const id of appliedIds) {
-            if (!existingSet.has(id)) {
-              settlementInfo.appliedIds.push(id);
-            }
-          }
-        } else {
-          settlementInfo = { appliedIds };
-        }
-      }
-      successes.push("Settled all accepted changes (Layer 1 compaction)");
-    }
-    let affectedLines;
-    if (settlementInfo && settlementInfo.appliedIds.length > 0) {
-      const postLines = fileContent.split("\n");
-      const settledIdSet = new Set(settlementInfo.appliedIds);
-      const footnoteStart = postLines.findIndex((l) => /^\[\^cn-/.test(l));
-      const contentEnd = footnoteStart > 0 ? footnoteStart : postLines.length;
-      let minLine = Infinity;
-      let maxLine = -Infinity;
-      for (let i = 0; i < contentEnd; i++) {
-        const lineNum = i + 1;
-        for (const id of settledIdSet) {
-          if (postLines[i].includes(`[^${id}]`)) {
-            if (lineNum < minLine)
-              minLine = lineNum;
-            if (lineNum > maxLine)
-              maxLine = lineNum;
-          }
-        }
-      }
-      if (minLine !== Infinity && maxLine !== -Infinity) {
-        if (config.hashline.enabled) {
-          await initHashline();
-        }
-        try {
-          affectedLines = computeAffectedLines(fileContent, minLine, maxLine, {
-            hashlineEnabled: config.hashline.enabled
-          });
-        } catch {
-          affectedLines = [];
-        }
-      }
-    }
-    if (fileContent !== originalContent) {
-      await fs4.writeFile(filePath, fileContent, "utf-8");
-      await rerecordState(state, filePath, fileContent, config);
-    }
-    const response = { file: path5.relative(projectDir, filePath) };
-    if (results.length > 0) {
-      response.results = results;
-    }
-    if (successes.length > 0) {
-      response.successes = successes;
-    }
-    if (errors.length > 0) {
-      response.errors = errors;
-    }
-    if (settlementInfo) {
-      response.settled = settlementInfo.appliedIds;
-      response.settlement_note = `${settlementInfo.appliedIds.length} change(s) settled to clean text. The file now contains clean prose where those changes were. Proposed changes remain as markup.`;
-    }
-    if (affectedLines && config.response?.affected_lines) {
-      response.affected_lines = affectedLines;
-    }
-    const remaining = countFootnoteHeadersWithStatus(fileContent, "proposed");
-    response.document_state = {
-      remaining_proposed: remaining,
-      all_resolved: remaining === 0
-    };
-    if (remaining === 0) {
-      response.note = "All changes in this file are now resolved (accepted or rejected). No proposed changes remain.";
-    }
-    return {
-      content: [
-        {
-          type: "text",
-          text: JSON.stringify(response)
-        }
-      ]
-    };
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    return errorResult(msg);
-  }
-}
-
-// ../../packages/cli/dist/engine/handlers/read-tracked-file.js
-init_dist_esm();
-import * as fs5 from "node:fs/promises";
-import * as path6 from "node:path";
-var DEFAULT_LIMIT = 500;
-var MAX_LIMIT = 2e3;
-function formatLineNumberedContent(lines, startLine) {
-  return lines.map((line, i) => {
-    const n = startLine + i;
-    const pad = n < 10 ? "  " : n < 100 ? " " : "";
-    return `${pad}${n}| ${line}`;
-  }).join("\n");
-}
-function formatChangeLevelsLine(content) {
-  const parser = new CriticMarkupParser();
-  const doc = parser.parse(content);
-  const changes = doc.getChanges();
-  if (changes.length === 0)
-    return null;
-  const parts = changes.map((c) => `${c.id}=${c.level}`);
-  return `## change levels: ${parts.join(", ")}`;
-}
-function maybeComposeGuide(state, config, explicit = false) {
-  if (!explicit && state.isGuideSuppressed())
-    return "";
-  const mode = resolveProtocolMode(config.protocol.mode);
-  if (!explicit && state.getGuideShownForMode() === mode)
-    return "";
-  state.setGuideShown(mode);
-  return "\n\n" + composeGuide(config);
-}
-function computeEffectiveRange(offset, requestedLimit, totalLines) {
-  const effectiveStart = Math.max(1, offset);
-  const limit = Math.min(requestedLimit ?? DEFAULT_LIMIT, MAX_LIMIT);
-  const effectiveEnd = Math.min(effectiveStart + limit - 1, totalLines);
-  return { effectiveStart, effectiveEnd };
-}
-function buildTruncationMessage(effectiveStart, effectiveEnd, totalLines) {
-  if (effectiveEnd >= totalLines)
-    return null;
-  return `
-
---- showing lines ${effectiveStart}-${effectiveEnd} of ${totalLines} | use offset/limit to paginate ---`;
-}
-function findSafePaginationEnd(lines, effectiveEnd) {
-  let end = effectiveEnd;
-  while (end < lines.length && lines[end]?.continuesChange) {
-    end++;
-  }
-  return end;
-}
-function findSafePaginationEndFromText(contentLines, effectiveEnd, totalLines) {
-  const continuations = computeContinuationLines(contentLines.join("\n"));
-  let end = effectiveEnd;
-  while (end < totalLines && continuations.has(end)) {
-    end++;
-  }
-  return end;
-}
-async function handleReadTrackedFile(args, resolver, state) {
-  try {
-    await initHashline();
-    const file = optionalStrArg(args, "file", "file");
-    if (!file) {
-      return errorResult('Missing required argument: "file"');
-    }
-    const offset = args.offset ?? 1;
-    const requestedLimit = args.limit;
-    const requestedView = optionalStrArg(args, "view", "view");
-    const resolved = requestedView !== void 0 ? resolveView(requestedView) : null;
-    if (requestedView !== void 0 && resolved === null) {
-      return errorResult(`Unknown view '${requestedView}'. Valid views: ${CANONICAL_VIEWS.join(", ")}`);
-    }
-    const includeMeta = args.include_meta === true;
-    const includeGuide = args.include_guide === true;
-    const filePath = resolver.resolveFilePath(file);
-    const { config, projectDir } = await resolver.forFile(filePath);
-    const defaultView = resolveView(config.policy.default_view ?? "working") ?? "working";
-    const viewPolicy = config.policy.view_policy ?? "suggest";
-    let canonicalView;
-    if (requestedView === void 0) {
-      canonicalView = defaultView;
-    } else {
-      canonicalView = resolved;
-      if (viewPolicy === "require" && canonicalView !== defaultView) {
-        return errorResult(`This project requires view "${config.policy.default_view}" (view_policy = "require"). Requested view "${requestedView}" is not allowed. Change view_policy to "suggest" in .changedown/config.toml to allow view selection.`);
-      }
-    }
-    let fileContent;
-    try {
-      fileContent = await fs5.readFile(filePath, "utf-8");
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      return errorResult(`File not found or unreadable: ${msg}`);
-    }
-    const trackingStatus = await resolveTrackingStatus(filePath, config, projectDir);
-    const displayPath = path6.relative(projectDir, filePath);
-    if (!config.hashline.enabled) {
-      if (canonicalView === "simple") {
-        return errorResult("Simple view requires hashline mode. Enable hashline in .changedown/config.toml: [hashline] enabled = true");
-      }
-      if (canonicalView === "working") {
-        const protocolMode2 = resolveProtocolMode(config.protocol.mode);
-        const doc2 = buildViewDocument(fileContent, canonicalView, {
-          filePath: displayPath,
-          trackingStatus: trackingStatus.status,
-          protocolMode: protocolMode2,
-          defaultView: "working",
-          viewPolicy: config.policy.view_policy ?? "suggest"
-        });
-        const sessionHashes2 = doc2.lines.map((l) => ({
-          line: l.margin.lineNumber,
-          raw: l.sessionHashes.raw,
-          committed: l.sessionHashes.committed,
-          currentView: l.sessionHashes.currentView,
-          rawLineNum: l.rawLineNumber
-        }));
-        state.recordAfterRead(filePath, canonicalView, sessionHashes2, fileContent);
-        const totalLines2 = doc2.lines.length;
-        const { effectiveStart: effectiveStart2, effectiveEnd: effectiveEnd2 } = computeEffectiveRange(offset, requestedLimit, totalLines2);
-        const adjustedEnd3 = findSafePaginationEnd(doc2.lines, effectiveEnd2);
-        const paginatedDoc2 = {
-          ...doc2,
-          lines: doc2.lines.slice(effectiveStart2 - 1, adjustedEnd3),
-          header: {
-            ...doc2.header,
-            lineRange: { start: effectiveStart2, end: adjustedEnd3, total: totalLines2 }
-          }
-        };
-        const metaOutput = formatPlainText(paginatedDoc2);
-        const guide3 = maybeComposeGuide(state, config, includeGuide);
-        const content3 = [{ type: "text", text: metaOutput }];
-        const truncation3 = buildTruncationMessage(effectiveStart2, adjustedEnd3, totalLines2);
-        if (truncation3) {
-          content3[content3.length - 1].text += truncation3;
-        }
-        if (guide3)
-          content3.unshift({ type: "text", text: guide3 });
-        return { content: content3 };
-      }
-      let header = formatTrackedHeader(displayPath, fileContent, trackingStatus.status);
-      if (includeMeta) {
-        const levelsLine = formatChangeLevelsLine(fileContent);
-        if (levelsLine)
-          header = header + "\n" + levelsLine;
-      }
-      header = header.replace(/## tracking: (tracked|untracked)/, `## policy: ${config.policy.mode} | tracking: $1`);
-      let headerWithoutHashlineTip = header.replace(/## tip:.*/, "## tip: Hashline addressing is disabled. Edits use text matching; re-read for current content if propose_change fails.");
-      const nonHashProtocolMode = resolveProtocolMode(config.protocol.mode);
-      if (nonHashProtocolMode === "compact") {
-        headerWithoutHashlineTip = headerWithoutHashlineTip.replace(/## tip:.*/, "## tip: Hashline addressing is disabled but compact mode requires it. Enable in .changedown/config.toml: [hashline] enabled = true");
-      }
-      const contentToShow = canonicalView === "decided" ? computeCurrentText(fileContent) : fileContent;
-      const allContentLines = contentToShow.split("\n");
-      const totalContentLines = allContentLines.length;
-      const { effectiveStart: effStart, effectiveEnd: effEnd } = computeEffectiveRange(offset, requestedLimit, totalContentLines);
-      const adjustedEnd2 = findSafePaginationEndFromText(allContentLines, effEnd, totalContentLines);
-      const slicedLines = allContentLines.slice(effStart - 1, adjustedEnd2);
-      const lineNumbered = formatLineNumberedContent(slicedLines, effStart);
-      const output2 = `${headerWithoutHashlineTip}
-
-${lineNumbered}`;
-      state.recordAfterRead(filePath, canonicalView, [], fileContent);
-      const guide2 = maybeComposeGuide(state, config, includeGuide);
-      const content2 = [{ type: "text", text: output2 }];
-      const truncation2 = buildTruncationMessage(effStart, adjustedEnd2, totalContentLines);
-      if (truncation2) {
-        content2[content2.length - 1].text += truncation2;
-      }
-      if (guide2)
-        content2.unshift({ type: "text", text: guide2 });
-      return { content: content2 };
-    }
-    const protocolMode = resolveProtocolMode(config.protocol.mode);
-    const doc = buildViewDocument(fileContent, canonicalView, {
-      filePath: displayPath,
-      trackingStatus: trackingStatus.status,
-      protocolMode,
-      defaultView: "working",
-      viewPolicy: config.policy.view_policy ?? "suggest"
-    });
-    const sessionHashes = doc.lines.map((l) => ({
-      line: l.margin.lineNumber,
-      raw: l.sessionHashes.raw,
-      committed: l.sessionHashes.committed,
-      currentView: l.sessionHashes.currentView,
-      rawLineNum: l.rawLineNumber
-    }));
-    state.recordAfterRead(filePath, canonicalView, sessionHashes, fileContent);
-    const totalLines = doc.lines.length;
-    const { effectiveStart, effectiveEnd } = computeEffectiveRange(offset, requestedLimit, totalLines);
-    const adjustedEnd = findSafePaginationEnd(doc.lines, effectiveEnd);
-    const paginatedDoc = {
-      ...doc,
-      lines: doc.lines.slice(effectiveStart - 1, adjustedEnd),
-      header: {
-        ...doc.header,
-        lineRange: { start: effectiveStart, end: adjustedEnd, total: totalLines }
-      }
-    };
-    let output = formatPlainText(paginatedDoc);
-    if (includeMeta) {
-      const levelsLine = formatChangeLevelsLine(fileContent);
-      if (levelsLine) {
-        output = output.replace(/^---$/m, `${levelsLine}
----`);
-      }
-    }
-    const guide = maybeComposeGuide(state, config, includeGuide);
-    const content = [{ type: "text", text: output }];
-    const truncation = buildTruncationMessage(effectiveStart, adjustedEnd, totalLines);
-    if (truncation) {
-      content[content.length - 1].text += truncation;
-    }
-    if (guide)
-      content.unshift({ type: "text", text: guide });
-    return { content };
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    return errorResult(msg);
-  }
-}
-
-// ../../packages/cli/dist/engine/handlers/amend-change.js
-init_dist_esm();
-import * as fs6 from "node:fs/promises";
-async function handleAmendChange(args, resolver, state) {
-  try {
-    const file = args.file;
-    const changeId = optionalStrArg(args, "change_id", "changeId");
-    const newText = strArg(args, "new_text", "newText");
-    const oldText = optionalStrArg(args, "old_text", "oldText");
-    const reasoning = optionalStrArg(args, "reason", "reason");
-    if (!file) {
-      return errorResult('Missing required argument: "file"');
-    }
-    if (!changeId) {
-      return errorResult('Missing required argument: "change_id"');
-    }
-    const filePath = resolver.resolveFilePath(file);
-    const { config, projectDir } = await resolver.forFile(filePath);
-    if (!isFileInScope(filePath, config, projectDir)) {
-      return errorResult(`File is not in scope for tracking: "${filePath}". Check .changedown/config.toml include/exclude patterns.`);
-    }
-    let fileContent;
-    try {
-      fileContent = await fs6.readFile(filePath, "utf-8");
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      return errorResult(`File not found or unreadable: ${msg}`);
-    }
-    const { author, error: authorError } = resolveAuthor(args.author, config, "amend_change");
-    if (authorError) {
-      return errorResult(authorError.message);
-    }
-    const doc = parseForFormat(fileContent);
-    const originalChange = doc.getChanges().find((c) => c.id === changeId);
-    if (originalChange) {
-      const originalAuthor = originalChange.metadata?.author?.replace(/^@/, "") ?? "";
-      const normalizedAuthor = (author ?? "").replace(/^@/, "");
-      if (originalAuthor && normalizedAuthor && originalAuthor !== normalizedAuthor) {
-        return errorResult(`Cannot amend change "${changeId}": you (${normalizedAuthor}) are not the original author (${originalAuthor}). Use supersede_change to propose a replacement by a different author.`);
-      }
-    }
-    const result = await computeSupersedeResult(fileContent, changeId, {
-      newText,
-      oldText,
-      reason: reasoning,
-      author
-    });
-    if (result.isError) {
-      return errorResult(result.error);
-    }
-    await fs6.writeFile(filePath, result.text, "utf-8");
-    await rerecordState(state, filePath, result.text, config);
-    const responseData = {
-      change_id: changeId,
-      new_change_id: result.newChangeId,
-      file: toRelativePath(projectDir, filePath),
-      amended: true,
-      new_text: newText
-    };
-    return {
-      content: [{ type: "text", text: JSON.stringify(responseData) }]
-    };
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    return errorResult(msg);
-  }
-}
-
-// ../../packages/cli/dist/engine/handlers/list-changes.js
-init_dist_esm();
-init_dist_esm();
-
-// ../../packages/cli/dist/engine/handlers/change-utils.js
-init_dist_esm();
-var TYPE_MAP = {
-  [ChangeType.Insertion]: "ins",
-  [ChangeType.Deletion]: "del",
-  [ChangeType.Substitution]: "sub",
-  [ChangeType.Highlight]: "highlight",
-  [ChangeType.Comment]: "comment"
-};
-function offsetToLineNumber2(text, offset) {
-  let line = 1;
-  for (let i = 0; i < offset && i < text.length; i++) {
-    if (text[i] === "\n")
-      line++;
-  }
-  return line;
-}
-
-// ../../packages/cli/dist/engine/handlers/supersede-change.js
-init_dist_esm();
-
-// ../../packages/cli/dist/engine/handlers/resolve-thread.js
-init_dist_esm();
 
 // ../../packages/cli/dist/engine/handlers/propose-change.js
 init_dist_esm();
-import * as fs8 from "node:fs/promises";
-import * as path7 from "node:path";
 
 // ../../packages/cli/dist/engine/handlers/hashline-relocate.js
 init_dist_esm();
@@ -14681,12 +14322,33 @@ function validateOrAutoRemap(ref, fileLines, paramName, relocations, autoRemap) 
 init_dist_esm();
 
 // ../../packages/cli/dist/engine/handlers/propose-batch.js
+import * as fs5 from "node:fs/promises";
 init_dist_esm();
-import * as fs7 from "node:fs/promises";
 
 // ../../packages/cli/dist/engine/handlers/resolve-and-apply.js
 init_dist_esm();
 init_file_ops2();
+
+// ../../packages/cli/dist/engine/handlers/change-utils.js
+init_dist_esm();
+var TYPE_MAP = {
+  [ChangeType.Insertion]: "ins",
+  [ChangeType.Deletion]: "del",
+  [ChangeType.Substitution]: "sub",
+  [ChangeType.Highlight]: "highlight",
+  [ChangeType.Comment]: "comment",
+  [ChangeType.Move]: "move"
+};
+function offsetToLineNumber2(text, offset) {
+  let line = 1;
+  for (let i = 0; i < offset && i < text.length; i++) {
+    if (text[i] === "\n")
+      line++;
+  }
+  return line;
+}
+
+// ../../packages/cli/dist/engine/handlers/resolve-and-apply.js
 function resolveCoordinates(op, fileContent, fileLines, state, filePath, config) {
   const relocations = [];
   const remaps = [];
@@ -14697,7 +14359,13 @@ function resolveCoordinates(op, fileContent, fileLines, state, filePath, config)
   let endLine = parsed.endLine;
   let endHash = parsed.endHash;
   let viewResolved;
-  const startResolution = state.resolveHash(filePath, startLine, startHash);
+  const rawStartMatches = startLine >= 1 && startLine <= fileLines.length && computeLineHash(startLine - 1, fileLines[startLine - 1], fileLines) === startHash;
+  const rawEndMatches = endLine >= 1 && endLine <= fileLines.length && computeLineHash(endLine - 1, fileLines[endLine - 1], fileLines) === endHash;
+  const skipViewTranslation = rawStartMatches && (parsed.startLine === parsed.endLine || rawEndMatches);
+  if (skipViewTranslation && state.getLastReadView(filePath) === "raw") {
+    viewResolved = "raw";
+  }
+  const startResolution = skipViewTranslation ? void 0 : state.resolveHash(filePath, startLine, startHash);
   if (startResolution?.match) {
     viewResolved = startResolution.view;
     const rawStart = startResolution.rawLineNum;
@@ -14708,7 +14376,7 @@ function resolveCoordinates(op, fileContent, fileLines, state, filePath, config)
     startHash = computeLineHash(rawStart - 1, fileLines[rawStart - 1], fileLines);
   }
   if (parsed.startLine !== parsed.endLine) {
-    const endResolution = state.resolveHash(filePath, endLine, endHash);
+    const endResolution = skipViewTranslation ? void 0 : state.resolveHash(filePath, endLine, endHash);
     if (endResolution?.match) {
       viewResolved = viewResolved ?? endResolution.view;
       const rawEnd = endResolution.rawLineNum;
@@ -15029,10 +14697,218 @@ function resolveAndApply(op, fileContent, fileLines, state, filePath, config, ch
   return applyCompactOp(resolved, op, fileContent, fileLines, changeId, author, config);
 }
 
+// ../../packages/cli/dist/engine/author.js
+var AUTHOR_ENV_KEY = "CHANGEDOWN_AUTHOR";
+var AUTHOR_FORMAT = /^[a-z][a-z0-9]*:[a-zA-Z0-9_.-]+$/;
+var SYSTEM_FALLBACK = "unknown";
+function validateAuthorFormat(author) {
+  if (author === SYSTEM_FALLBACK) {
+    return null;
+  }
+  if (!AUTHOR_FORMAT.test(author)) {
+    return {
+      author: "",
+      error: {
+        isError: true,
+        message: `Invalid author format: '${author}'. Expected namespace:identifier (e.g., ai:claude-opus-4.6, human:alice).`
+      }
+    };
+  }
+  return null;
+}
+function resolveAuthor(explicitAuthor, config, toolName) {
+  if (explicitAuthor) {
+    const formatError2 = validateAuthorFormat(explicitAuthor);
+    if (formatError2)
+      return formatError2;
+    return { author: explicitAuthor };
+  }
+  const fromEnv = process.env[AUTHOR_ENV_KEY]?.trim();
+  if (config.author.enforcement === "required") {
+    if (fromEnv) {
+      const formatError2 = validateAuthorFormat(fromEnv);
+      if (formatError2)
+        return formatError2;
+      return { author: fromEnv };
+    }
+    return {
+      author: "",
+      error: {
+        isError: true,
+        message: `${toolName} requires an author parameter. This project has [author] enforcement = "required". Pass author in the tool call (e.g. author: "ai:claude-opus-4.6") or set ${AUTHOR_ENV_KEY} in the MCP server env (e.g. in Cursor mcp.json).`
+      }
+    };
+  }
+  const fallback = fromEnv || config.author.default || "unknown";
+  const formatError = validateAuthorFormat(fallback);
+  if (formatError)
+    return formatError;
+  return { author: fallback };
+}
+
+// ../../packages/cli/dist/engine/args.js
+function strArg(args, snake, camel, defaultValue = "") {
+  const v = args[snake] ?? args[camel];
+  return v ?? defaultValue;
+}
+function optionalStrArg(args, snake, camel) {
+  const v = args[snake] ?? args[camel];
+  if (v === void 0 || v === null)
+    return void 0;
+  return String(v);
+}
+
 // ../../packages/cli/dist/engine/handlers/propose-batch.js
 init_file_ops2();
+
+// ../../packages/cli/dist/engine/handlers/propose-utils.js
 init_dist_esm();
-function errorResult2(message, details) {
+function computeAffectedLines(modifiedText, affectedStartLine, affectedEndLine, options) {
+  const lines = modifiedText.split("\n");
+  const result = [];
+  const ctx = options.contextLines ?? 2;
+  const start = Math.max(1, affectedStartLine - ctx);
+  const end = Math.min(lines.length, affectedEndLine + ctx);
+  for (let lineNum = start; lineNum <= end; lineNum++) {
+    const lineContent = lines[lineNum - 1];
+    if (options.viewProjection) {
+      const viewEntry = options.viewProjection.rawToView.get(lineNum);
+      if (!viewEntry) {
+        continue;
+      }
+      const entry = {
+        line: viewEntry.viewLine,
+        content: viewEntry.viewContent
+      };
+      if (options.hashlineEnabled) {
+        entry.hash = viewEntry.viewHash;
+      }
+      if (lineContent.match(/\{\+\+|\{--|\{~~|\{==/)) {
+        entry.flag = "P";
+      }
+      result.push(entry);
+    } else {
+      const entry = {
+        line: lineNum,
+        content: lineContent
+      };
+      if (options.hashlineEnabled) {
+        entry.hash = computeLineHash(lineNum - 1, lineContent, lines);
+      }
+      if (lineContent.match(/\{\+\+|\{--|\{~~|\{==/)) {
+        entry.flag = "P";
+      }
+      result.push(entry);
+    }
+  }
+  return result;
+}
+
+// ../../packages/cli/dist/engine/path-utils.js
+import * as path4 from "node:path";
+function toRelativePath(projectDir, filePath) {
+  return path4.relative(projectDir, filePath);
+}
+
+// ../../packages/cli/dist/engine/scope.js
+init_dist_esm();
+import * as fs4 from "node:fs/promises";
+async function resolveTrackingStatus(filePath, config, projectDir) {
+  const projectDefault = config.tracking.default;
+  const autoHeader = config.tracking.auto_header;
+  let fileContent = null;
+  try {
+    fileContent = await fs4.readFile(filePath, "utf-8");
+  } catch {
+  }
+  if (fileContent !== null) {
+    const header = parseTrackingHeader(fileContent);
+    if (header !== null) {
+      return {
+        status: header.status,
+        source: "file_header",
+        header_present: true,
+        project_default: projectDefault,
+        auto_header: autoHeader
+      };
+    }
+  }
+  if (isFileInScope(filePath, config, projectDir)) {
+    return {
+      status: projectDefault,
+      source: "project_config",
+      header_present: false,
+      project_default: projectDefault,
+      auto_header: autoHeader
+    };
+  }
+  return {
+    status: "untracked",
+    source: "global_default",
+    header_present: false,
+    project_default: projectDefault,
+    auto_header: autoHeader
+  };
+}
+
+// ../../packages/cli/dist/engine/handlers/propose-batch.js
+init_dist_esm();
+
+// ../../packages/cli/dist/engine/state-utils.js
+init_dist_esm();
+async function rerecordState(state, filePath, content, config) {
+  if (!state)
+    return void 0;
+  if (!config.hashline.enabled) {
+    state.resetFile(filePath);
+    return void 0;
+  }
+  await initHashline();
+  const lastView = state.getLastReadView(filePath) ?? "raw";
+  const changes = parseForFormat(content).getChanges();
+  const sessionHashesResult = buildSessionHashes(content, changes);
+  const hashes = [];
+  for (const [rawLineNum, sh] of sessionHashesResult.byRawLine) {
+    let lineNumInView;
+    switch (lastView) {
+      case "working":
+      case "raw":
+      case "original":
+        lineNumInView = rawLineNum;
+        break;
+      case "simple":
+        lineNumInView = sessionHashesResult.currentLineByRaw.get(rawLineNum);
+        break;
+      case "decided":
+        lineNumInView = sessionHashesResult.decidedLineByRaw.get(rawLineNum);
+        break;
+    }
+    if (lineNumInView === void 0)
+      continue;
+    if (lastView === "raw" || lastView === "original") {
+      hashes.push({ line: lineNumInView, raw: sh.raw, rawLineNum });
+    } else {
+      hashes.push({
+        line: lineNumInView,
+        raw: sh.raw,
+        committed: sh.committed,
+        currentView: sh.currentView,
+        rawLineNum
+      });
+    }
+  }
+  state.rerecordAfterWrite(filePath, content, hashes);
+  if (lastView === "decided") {
+    return { decidedView: sessionHashesResult.decidedResult };
+  }
+  if (lastView === "simple" || lastView === "working") {
+    return { currentView: sessionHashesResult.currentResult };
+  }
+  return void 0;
+}
+
+// ../../packages/cli/dist/engine/handlers/propose-batch.js
+function errorResult(message, details) {
   const content = [{ type: "text", text: message }];
   if (details) {
     content.push({ type: "text", text: JSON.stringify({ error: { message, ...details } }) });
@@ -15055,7 +14931,7 @@ async function handleProposeBatch(args, resolver, state) {
     const reasoning = args.reason;
     let changesRaw = args.changes;
     if (!file) {
-      return errorResult2('Missing required argument: "file"');
+      return errorResult('Missing required argument: "file"');
     }
     if (typeof changesRaw === "string") {
       try {
@@ -15063,23 +14939,23 @@ async function handleProposeBatch(args, resolver, state) {
         if (Array.isArray(parsed)) {
           changesRaw = parsed;
         } else {
-          return errorResult2(`The "changes" parameter was received as a JSON string but parsed to ${typeof parsed}, not an array. Send changes as a JSON array of objects.`);
+          return errorResult(`The "changes" parameter was received as a JSON string but parsed to ${typeof parsed}, not an array. Send changes as a JSON array of objects.`);
         }
       } catch {
-        return errorResult2('The "changes" parameter was received as a string but could not be parsed as JSON. Send changes as a JSON array of objects.');
+        return errorResult('The "changes" parameter was received as a string but could not be parsed as JSON. Send changes as a JSON array of objects.');
       }
     }
     if (!Array.isArray(changesRaw) || changesRaw.length === 0) {
-      return errorResult2("changes must be a non-empty array.");
+      return errorResult("changes must be a non-empty array.");
     }
     const MAX_BATCH_SIZE = 100;
     if (changesRaw.length > MAX_BATCH_SIZE) {
-      return errorResult2(`Batch too large: ${changesRaw.length} changes exceeds maximum of ${MAX_BATCH_SIZE}. Split into smaller batches.`);
+      return errorResult(`Batch too large: ${changesRaw.length} changes exceeds maximum of ${MAX_BATCH_SIZE}. Split into smaller batches.`);
     }
     for (let i = 0; i < changesRaw.length; i++) {
       const elem = changesRaw[i];
       if (elem === null || elem === void 0 || typeof elem !== "object" || Array.isArray(elem)) {
-        return errorResult2(`changes[${i}] must be an object, got ${elem === null ? "null" : Array.isArray(elem) ? "array" : typeof elem}.`);
+        return errorResult(`changes[${i}] must be an object, got ${elem === null ? "null" : Array.isArray(elem) ? "array" : typeof elem}.`);
       }
     }
     const filePath = resolver.resolveFilePath(file);
@@ -15087,21 +14963,29 @@ async function handleProposeBatch(args, resolver, state) {
     const relativePath = toRelativePath(projectDir, filePath);
     const trackingStatus = await resolveTrackingStatus(filePath, config, projectDir);
     if (trackingStatus.status !== "tracked") {
-      return errorResult2(`File is not tracked for propose_batch: "${filePath}".`, { file: relativePath, tracking_status: trackingStatus });
+      return errorResult(`File is not tracked for propose_batch: "${filePath}".`, { file: relativePath, tracking_status: trackingStatus });
     }
     if (state.hasActiveGroup()) {
-      return errorResult2("End your current change group before calling propose_batch.");
+      return errorResult("End your current change group before calling propose_batch.");
     }
     let fileContent;
     try {
-      fileContent = await fs7.readFile(filePath, "utf-8");
+      fileContent = await fs5.readFile(filePath, "utf-8");
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      return errorResult2(`File not found or unreadable: ${msg}`, { file: relativePath });
+      return errorResult(`File not found or unreadable: ${msg}`, { file: relativePath });
+    }
+    try {
+      assertResolved(parseForFormat(fileContent));
+    } catch (err) {
+      if (err instanceof UnresolvedChangesError) {
+        return errorResult(`Document has ${err.diagnostics.length} unresolved change(s); run 'cd repair' or amend the failing change.`, { diagnostics: err.diagnostics });
+      }
+      throw err;
     }
     const { author, error: authorError } = resolveAuthor(args.author, config, "propose_batch");
     if (authorError) {
-      return errorResult2(authorError.message);
+      return errorResult(authorError.message);
     }
     let headerLineDelta = 0;
     if (config.tracking.auto_header) {
@@ -15117,15 +15001,15 @@ async function handleProposeBatch(args, resolver, state) {
     const protocolMode = resolveProtocolMode(config.protocol?.mode ?? "classic");
     const hasCompactOpsInBatch = changesRaw.some((op) => typeof op.at === "string" || typeof op.op === "string");
     if (protocolMode === "classic" && hasCompactOpsInBatch) {
-      return errorResult2('Protocol mode is "classic" but batch contains compact params (at/op). Use old_text/new_text instead, or set protocol.mode = "compact" in config.');
+      return errorResult('Protocol mode is "classic" but batch contains compact params (at/op). Use old_text/new_text instead, or set protocol.mode = "compact" in config.');
     }
     if (protocolMode === "compact" && !hasCompactOpsInBatch) {
       const hasClassicOpsInBatch = changesRaw.some((op) => typeof op.old_text === "string" && op.old_text !== "" || typeof op.new_text === "string" && op.new_text !== "");
       if (hasClassicOpsInBatch) {
-        return errorResult2('Protocol mode is "compact" but batch contains classic params (old_text/new_text). Use at/op instead, or set protocol.mode = "classic" in config.');
+        return errorResult('Protocol mode is "compact" but batch contains classic params (old_text/new_text). Use at/op instead, or set protocol.mode = "classic" in config.');
       }
     }
-    const partial = args.atomic !== true;
+    const partial = args.partial === true;
     const validationFailures = [];
     const fileLines = fileContent.split("\n");
     const relocations = [];
@@ -15133,7 +15017,7 @@ async function handleProposeBatch(args, resolver, state) {
     const autoRemap = config.hashline.auto_remap ?? true;
     const hasHashlineInBatch = changesRaw.some((op) => hasHashlineParams(op));
     if (hasHashlineInBatch && !config.hashline.enabled) {
-      return errorResult2("Hashline addressing in batch requires [hashline] enabled = true in .changedown/config.toml", { file: relativePath });
+      return errorResult("Hashline addressing in batch requires [hashline] enabled = true in .changedown/config.toml", { file: relativePath });
     }
     if (hasHashlineInBatch) {
       await initHashline();
@@ -15306,7 +15190,7 @@ async function handleProposeBatch(args, resolver, state) {
           continue;
         }
         if (validationErr instanceof OpValidationError) {
-          return errorResult2(validationErr.message, {
+          return errorResult(validationErr.message, {
             operation_index: i,
             total_operations: changesRaw.length
           });
@@ -15321,7 +15205,7 @@ async function handleProposeBatch(args, resolver, state) {
         const curr = sorted[j];
         const next = sorted[j + 1];
         if (curr.endOffset > next.startOffset) {
-          return errorResult2(`Batch changes overlap: operation ${curr.index} (offsets ${curr.startOffset}-${curr.endOffset}) and operation ${next.index} (offsets ${next.startOffset}-${next.endOffset}) target overlapping text. Split into separate propose_change calls or adjust old_text to non-overlapping regions.`, {
+          return errorResult(`Batch changes overlap: operation ${curr.index} (offsets ${curr.startOffset}-${curr.endOffset}) and operation ${next.index} (offsets ${next.startOffset}-${next.endOffset}) target overlapping text. Split into separate propose_change calls or adjust old_text to non-overlapping regions.`, {
             overlapping_operations: [curr.index, next.index],
             total_operations: changesRaw.length
           });
@@ -15329,7 +15213,7 @@ async function handleProposeBatch(args, resolver, state) {
       }
     }
     if (partial && skippedIndices.size === changesRaw.length) {
-      return errorResult2("All operations failed in partial batch.", {
+      return errorResult("All operations failed in partial batch.", {
         failed: validationFailures,
         total_operations: changesRaw.length
       });
@@ -15408,7 +15292,7 @@ async function handleProposeBatch(args, resolver, state) {
         const msg = err instanceof Error ? err.message : String(err);
         if (!partial) {
           state.endGroup();
-          return errorResult2(`Operation ${originalIndex}: ${msg}`, { phase: "application", operation_index: originalIndex, total_operations: changesRaw.length });
+          return errorResult(`Operation ${originalIndex}: ${msg}`, { phase: "application", operation_index: originalIndex, total_operations: changesRaw.length });
         }
         applicationFailures.push({ index: originalIndex, reason: msg });
       }
@@ -15416,7 +15300,7 @@ async function handleProposeBatch(args, resolver, state) {
     const allFailures = [...validationFailures, ...applicationFailures];
     if (partial && results.length === 0) {
       state.endGroup();
-      return errorResult2("All operations failed in partial batch.", {
+      return errorResult("All operations failed in partial batch.", {
         failed: allFailures,
         total_operations: changesRaw.length
       });
@@ -15429,7 +15313,7 @@ async function handleProposeBatch(args, resolver, state) {
     @${author} ${ts.raw}: ${groupInfo.reasoning ?? groupInfo.description}` : "";
     const groupFootnoteBlock = footnoteHeader + reasonLine;
     currentText = appendFootnote(currentText, groupFootnoteBlock);
-    await fs7.writeFile(filePath, currentText, "utf-8");
+    await writeTrackedFile(filePath, currentText);
     await rerecordState(state, filePath, currentText, config);
     await initHashline();
     const affectedLineSet = /* @__PURE__ */ new Set();
@@ -15497,7 +15381,7 @@ async function handleProposeBatch(args, resolver, state) {
     };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    return errorResult2(msg);
+    return errorResult(msg);
   }
 }
 
@@ -15511,7 +15395,7 @@ function checkReasoningRequired(author, reasoning, config, compact2) {
   if (reasoning)
     return null;
   const hint = compact2 ? "Append {>>reason to your op string, or include a reason parameter in your propose_change call." : "Include a reason parameter in your propose_change call.";
-  return errorResult3(`This project requires reasoning on proposals. ${hint}`, "REASONING_REQUIRED");
+  return errorResult2(`This project requires reasoning on proposals. ${hint}`, "REASONING_REQUIRED");
 }
 function hasHashlineParams2(args) {
   return args.start_line !== void 0 || args.start_hash !== void 0 || args.after_line !== void 0 || args.after_hash !== void 0;
@@ -15648,40 +15532,40 @@ async function handleProposeChange(args, resolver, state) {
         if (Array.isArray(parsed)) {
           changesArray = parsed;
         } else {
-          return errorResult3(`The "changes" parameter was received as a JSON string but parsed to ${typeof parsed}, not an array. Send changes as a JSON array of objects, e.g.: changes: [{ "at": "5:a1b2", "op": "{~~old~>new~~}" }]`, "VALIDATION_ERROR");
+          return errorResult2(`The "changes" parameter was received as a JSON string but parsed to ${typeof parsed}, not an array. Send changes as a JSON array of objects, e.g.: changes: [{ "at": "5:a1b2", "op": "{~~old~>new~~}" }]`, "VALIDATION_ERROR");
         }
       } catch {
-        return errorResult3('The "changes" parameter was received as a string but could not be parsed as JSON. Send changes as a JSON array of objects, e.g.: changes: [{ "at": "5:a1b2", "op": "{~~old~>new~~}" }]', "VALIDATION_ERROR");
+        return errorResult2('The "changes" parameter was received as a string but could not be parsed as JSON. Send changes as a JSON array of objects, e.g.: changes: [{ "at": "5:a1b2", "op": "{~~old~>new~~}" }]', "VALIDATION_ERROR");
       }
     } else if (args.changes !== void 0) {
-      return errorResult3(`The "changes" parameter must be an array of objects, got ${typeof args.changes}. Send changes as a JSON array, e.g.: changes: [{ "at": "5:a1b2", "op": "{~~old~>new~~}" }]`, "VALIDATION_ERROR");
+      return errorResult2(`The "changes" parameter must be an array of objects, got ${typeof args.changes}. Send changes as a JSON array, e.g.: changes: [{ "at": "5:a1b2", "op": "{~~old~>new~~}" }]`, "VALIDATION_ERROR");
     }
     const rawMode = args.raw === true;
     if (rawMode) {
       const file2 = args.file;
       if (!file2) {
-        return errorResult3('Missing required argument: "file"', "MISSING_ARGUMENT");
+        return errorResult2('Missing required argument: "file"', "MISSING_ARGUMENT");
       }
       const filePath2 = resolver.resolveFilePath(file2);
       const { config: config2 } = await resolver.forFile(filePath2);
       const policyMode = config2.policy?.mode ?? "safety-net";
       if (policyMode === "strict") {
-        return errorResult3("Raw edit denied: project policy is strict. Raw edits bypass CriticMarkup tracking and are not allowed in strict mode.", "VALIDATION_ERROR");
+        return errorResult2("Raw edit denied: project policy is strict. Raw edits bypass CriticMarkup tracking and are not allowed in strict mode.", "VALIDATION_ERROR");
       }
     }
     if (changesArray) {
       if (changesArray.length === 0) {
-        return errorResult3("No changes provided: changes array is empty.", "VALIDATION_ERROR");
+        return errorResult2("No changes provided: changes array is empty.", "VALIDATION_ERROR");
       }
       for (let i = 0; i < changesArray.length; i++) {
         const elem = changesArray[i];
         if (elem === null || elem === void 0 || typeof elem !== "object" || Array.isArray(elem)) {
-          return errorResult3(`changes[${i}] must be an object, got ${elem === null ? "null" : Array.isArray(elem) ? "array" : typeof elem}.`, "VALIDATION_ERROR");
+          return errorResult2(`changes[${i}] must be an object, got ${elem === null ? "null" : Array.isArray(elem) ? "array" : typeof elem}.`, "VALIDATION_ERROR");
         }
       }
       const file2 = args.file;
       if (!file2) {
-        return errorResult3('Missing required argument: "file"', "MISSING_ARGUMENT");
+        return errorResult2('Missing required argument: "file"', "MISSING_ARGUMENT");
       }
       if (rawMode) {
         return handleRawChanges(changesArray, file2, resolver, state);
@@ -15725,7 +15609,8 @@ async function handleProposeChange(args, resolver, state) {
         file: args.file,
         reason: args.reason,
         author: args.author,
-        changes: changesArray
+        changes: changesArray,
+        partial: true
       };
       const batchResult = await handleProposeBatch(batchArgs, resolver, state);
       return batchResult;
@@ -15733,12 +15618,12 @@ async function handleProposeChange(args, resolver, state) {
     if (rawMode) {
       const file2 = args.file;
       if (!file2) {
-        return errorResult3('Missing required argument: "file"', "MISSING_ARGUMENT");
+        return errorResult2('Missing required argument: "file"', "MISSING_ARGUMENT");
       }
       const oldText2 = strArg(args, "old_text", "oldText");
       const newText2 = strArg(args, "new_text", "newText");
       if (oldText2 === "" && newText2 === "") {
-        return errorResult3("Both old_text and new_text are empty \u2014 nothing to change.", "VALIDATION_ERROR");
+        return errorResult2("Both old_text and new_text are empty \u2014 nothing to change.", "VALIDATION_ERROR");
       }
       return handleRawChanges([{ old_text: oldText2, new_text: newText2 }], file2, resolver, state);
     }
@@ -15757,14 +15642,14 @@ async function handleProposeChange(args, resolver, state) {
         const receivedKeys = Object.keys(args ?? {}).join(", ") || "(none)";
         const oldLen = typeof args.old_text === "string" ? args.old_text.length : typeof args.oldText === "string" ? args.oldText.length : "missing";
         const newLen = typeof args.new_text === "string" ? args.new_text.length : typeof args.newText === "string" ? args.newText.length : "missing";
-        return errorResult3(`Both old_text and new_text are empty \u2014 nothing to change. Received argument keys: [${receivedKeys}]. old_text/oldText length: ${String(oldLen)}, new_text/newText length: ${String(newLen)}. Use old_text and new_text (snake_case) or oldText and newText (camelCase).`, "VALIDATION_ERROR", { received_keys: Object.keys(args ?? {}), old_text_length: oldLen, new_text_length: newLen });
+        return errorResult2(`Both old_text and new_text are empty \u2014 nothing to change. Received argument keys: [${receivedKeys}]. old_text/oldText length: ${String(oldLen)}, new_text/newText length: ${String(newLen)}. Use old_text and new_text (snake_case) or oldText and newText (camelCase).`, "VALIDATION_ERROR", { received_keys: Object.keys(args ?? {}), old_text_length: oldLen, new_text_length: newLen });
       }
     }
     if (oldText && newText) {
       const strippedOld = oldText.replace(/\[\^?cn-\d+(?:\.\d+)?\]/g, "").trim();
       const strippedNew = newText.replace(/\[\^?cn-\d+(?:\.\d+)?\]/g, "").trim();
       if (strippedOld === strippedNew) {
-        return errorResult3("No prose changes detected (only footnote references differ). Footnote references are structural links to change history \u2014 use review_changes to manage them, not propose_change.", "VALIDATION_ERROR");
+        return errorResult2("No prose changes detected (only footnote references differ). Footnote references are structural links to change history \u2014 use review_changes to manage them, not propose_change.", "VALIDATION_ERROR");
       }
     }
     let endLine = args.end_line;
@@ -15772,20 +15657,20 @@ async function handleProposeChange(args, resolver, state) {
     let afterLine = args.after_line;
     const afterHash = args.after_hash;
     if (!file) {
-      return errorResult3('Missing required argument: "file"', "MISSING_ARGUMENT");
+      return errorResult2('Missing required argument: "file"', "MISSING_ARGUMENT");
     }
     const filePath = resolver.resolveFilePath(file);
     const { config, projectDir } = await resolver.forFile(filePath);
     const relativePath = toRelativePath(projectDir, filePath);
     const trackingStatus = await resolveTrackingStatus(filePath, config, projectDir);
     if (hasHashlineParams2(args) && !config.hashline.enabled) {
-      return errorResult3("Hashline addressing requires [hashline] enabled = true in .changedown/config.toml", "HASHLINE_DISABLED", {
+      return errorResult2("Hashline addressing requires [hashline] enabled = true in .changedown/config.toml", "HASHLINE_DISABLED", {
         file: relativePath,
         hashline_enabled: config.hashline.enabled
       });
     }
     if (trackingStatus.status !== "tracked") {
-      return errorResult3(`File is not tracked for propose_change: "${filePath}".`, "TRACKING_UNTRACKED_FILE", {
+      return errorResult2(`File is not tracked for propose_change: "${filePath}".`, "TRACKING_UNTRACKED_FILE", {
         file: relativePath,
         tracking_status: trackingStatus
       });
@@ -15793,25 +15678,35 @@ async function handleProposeChange(args, resolver, state) {
     let fileContent;
     let isNewFile = false;
     try {
-      fileContent = await fs8.readFile(filePath, "utf-8");
+      fileContent = await fs6.readFile(filePath, "utf-8");
     } catch (err) {
       if (oldText === "" && !insertAfter && !hasHashlineParams2(args)) {
         fileContent = "";
         isNewFile = true;
       } else {
         const msg = err instanceof Error ? err.message : String(err);
-        return errorResult3(`File not found or unreadable: ${msg}`, "FILE_UNREADABLE", {
+        return errorResult2(`File not found or unreadable: ${msg}`, "FILE_UNREADABLE", {
           file: relativePath
         });
+      }
+    }
+    if (!isNewFile) {
+      try {
+        assertResolved(parseForFormat(fileContent));
+      } catch (err) {
+        if (err instanceof UnresolvedChangesError) {
+          return errorResult2(`Document has ${err.diagnostics.length} unresolved change(s); run 'cd repair' or amend the failing change.`, "VALIDATION_ERROR", { diagnostics: err.diagnostics });
+        }
+        throw err;
       }
     }
     const protocolMode = resolveProtocolMode(config.protocol?.mode ?? "classic");
     const hasClassicParams = typeof args.old_text === "string" && args.old_text !== "" || typeof args.new_text === "string" && args.new_text !== "" || typeof args.insert_after === "string";
     if (protocolMode === "classic" && hasCompactParams) {
-      return errorResult3("This project uses classic mode. Use old_text/new_text parameters instead of at/op.", "PROTOCOL_MODE_MISMATCH");
+      return errorResult2("This project uses classic mode. Use old_text/new_text parameters instead of at/op.", "PROTOCOL_MODE_MISMATCH");
     }
     if (protocolMode === "compact" && hasClassicParams && !hasCompactParams) {
-      return errorResult3("This project uses compact mode. Use at/op parameters instead of old_text/new_text.", "PROTOCOL_MODE_MISMATCH");
+      return errorResult2("This project uses compact mode. Use at/op parameters instead of old_text/new_text.", "PROTOCOL_MODE_MISMATCH");
     }
     if (protocolMode === "compact" && hasCompactParams) {
       return await handleCompactProposeChange(args, filePath, relativePath, config, state, fileContent);
@@ -15862,7 +15757,7 @@ async function handleProposeChange(args, resolver, state) {
     const changeId = state.getNextId(filePath, fileContent);
     const { author, error: authorError } = resolveAuthor(args.author, config, "propose_change");
     if (authorError) {
-      return errorResult3(authorError.message, "AUTHOR_RESOLUTION_FAILED");
+      return errorResult2(authorError.message, "AUTHOR_RESOLUTION_FAILED");
     }
     const reasoningError = checkReasoningRequired(author, reasoning, config, false);
     if (reasoningError)
@@ -15892,7 +15787,7 @@ async function handleProposeChange(args, resolver, state) {
           } catch (err) {
             const message = err instanceof Error ? err.message : String(err);
             const { staleLine, currentHash } = extractQuickFixFromError(err, afterLine);
-            return errorResult3(message, classifyHashlineValidationError(message), {
+            return errorResult2(message, classifyHashlineValidationError(message), {
               file: relativePath,
               quick_fix: buildQuickFix(filePath, staleLine, currentHash)
             });
@@ -15940,7 +15835,7 @@ async function handleProposeChange(args, resolver, state) {
           } catch (err) {
             const message = err instanceof Error ? err.message : String(err);
             const { staleLine, currentHash } = extractQuickFixFromError(err, startLine);
-            return errorResult3(message, classifyHashlineValidationError(message), {
+            return errorResult2(message, classifyHashlineValidationError(message), {
               file: relativePath,
               quick_fix: buildQuickFix(filePath, staleLine, currentHash)
             });
@@ -15948,7 +15843,7 @@ async function handleProposeChange(args, resolver, state) {
         }
         if (viewResolved === void 0 && (effectiveEndLine !== startLine || endHash !== void 0 && endHash !== startHash)) {
           if (!effectiveEndHash) {
-            return errorResult3("end_line requires end_hash for verification.", "VALIDATION_ERROR", { file: relativePath });
+            return errorResult2("end_line requires end_hash for verification.", "VALIDATION_ERROR", { file: relativePath });
           }
           try {
             const endResult = validateOrAutoRemap({ line: effectiveEndLine, hash: effectiveEndHash }, fileLines, "end_line", relocations, autoRemap);
@@ -15958,7 +15853,7 @@ async function handleProposeChange(args, resolver, state) {
           } catch (err) {
             const message = err instanceof Error ? err.message : String(err);
             const { staleLine, currentHash } = extractQuickFixFromError(err, effectiveEndLine);
-            return errorResult3(message, classifyHashlineValidationError(message), {
+            return errorResult2(message, classifyHashlineValidationError(message), {
               file: relativePath,
               quick_fix: buildQuickFix(filePath, staleLine, currentHash)
             });
@@ -16000,7 +15895,7 @@ async function handleProposeChange(args, resolver, state) {
           modifiedText = fileContent.slice(0, absPos) + inlineMarkup + fileContent.slice(absEnd);
         } else {
           if (/\{\+\+|\{--|\{~~|\{==|\{>>/.test(extracted.content)) {
-            return errorResult3("Line range contains existing CriticMarkup. Use hybrid mode (provide old_text to target specific text within the range) or accept/reject the existing change first.", "VALIDATION_ERROR", { file: relativePath });
+            return errorResult2("Line range contains existing CriticMarkup. Use hybrid mode (provide old_text to target specific text within the range) or accept/reject the existing change first.", "VALIDATION_ERROR", { file: relativePath });
           }
           let cleanedNewText = newText;
           let newTextLines = cleanedNewText.split("\n");
@@ -16042,7 +15937,7 @@ async function handleProposeChange(args, resolver, state) {
           affectedLines = [];
         }
       } else {
-        return errorResult3("Internal error: hashline mode detected but no valid params.", "INTERNAL_ERROR");
+        return errorResult2("Internal error: hashline mode detected but no valid params.", "INTERNAL_ERROR");
       }
     } else if (isNewFile && oldText === "" && !insertAfter) {
       changeType = "ins";
@@ -16054,7 +15949,7 @@ async function handleProposeChange(args, resolver, state) {
       const reasonLine = reasoning ? `
     @${author} ${ts.raw}: ${reasoning}` : "";
       const footnoteBlock = footnoteHeader + reasonLine;
-      await fs8.mkdir(path7.dirname(filePath), { recursive: true });
+      await fs6.mkdir(path5.dirname(filePath), { recursive: true });
       modifiedText = level === 2 ? fileContent + inlineMarkup + footnoteBlock : fileContent + inlineMarkup;
     } else {
       if (oldText && !insertAfter) {
@@ -16095,7 +15990,7 @@ async function handleProposeChange(args, resolver, state) {
         affectedLines = [];
       }
     }
-    await fs8.writeFile(filePath, modifiedText, "utf-8");
+    await writeTrackedFile(filePath, modifiedText);
     await rerecordState(state, filePath, modifiedText, config);
     const responseData = {
       change_id: changeId,
@@ -16128,7 +16023,7 @@ async function handleProposeChange(args, resolver, state) {
     };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    return errorResult3(msg, "INTERNAL_ERROR");
+    return errorResult2(msg, "INTERNAL_ERROR");
   }
 }
 async function handleRawChanges(changes, file, resolver, state) {
@@ -16137,10 +16032,10 @@ async function handleRawChanges(changes, file, resolver, state) {
   const relativePath = toRelativePath(projectDir, filePath);
   let fileContent;
   try {
-    fileContent = await fs8.readFile(filePath, "utf-8");
+    fileContent = await fs6.readFile(filePath, "utf-8");
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    return errorResult3(`File not found or unreadable: ${msg}`, "FILE_UNREADABLE", {
+    return errorResult2(`File not found or unreadable: ${msg}`, "FILE_UNREADABLE", {
       file: relativePath
     });
   }
@@ -16150,28 +16045,28 @@ async function handleRawChanges(changes, file, resolver, state) {
     const oldText = change.old_text ?? "";
     const newText = change.new_text ?? "";
     if (oldText === "" && newText === "") {
-      return errorResult3(`Raw change ${i}: both old_text and new_text are empty.`, "VALIDATION_ERROR");
+      return errorResult2(`Raw change ${i}: both old_text and new_text are empty.`, "VALIDATION_ERROR");
     }
     if (oldText === "") {
       const afterText = change.after_text ?? change.insert_after ?? "";
       if (afterText === "") {
-        return errorResult3(`Raw change ${i}: Raw insertion requires after_text to specify insertion point (or use non-empty old_text for replacement).`, "VALIDATION_ERROR", { file: relativePath });
+        return errorResult2(`Raw change ${i}: Raw insertion requires after_text to specify insertion point (or use non-empty old_text for replacement).`, "VALIDATION_ERROR", { file: relativePath });
       }
       const anchorIdx = modifiedText.indexOf(afterText);
       if (anchorIdx === -1) {
-        return errorResult3(`Raw change ${i}: after_text anchor not found in file.`, "VALIDATION_ERROR", { file: relativePath });
+        return errorResult2(`Raw change ${i}: after_text anchor not found in file.`, "VALIDATION_ERROR", { file: relativePath });
       }
       const insertPos = anchorIdx + afterText.length;
       modifiedText = modifiedText.slice(0, insertPos) + newText + modifiedText.slice(insertPos);
     } else {
       const idx = modifiedText.indexOf(oldText);
       if (idx === -1) {
-        return errorResult3(`Raw change ${i}: old_text not found in file.`, "VALIDATION_ERROR", { file: relativePath });
+        return errorResult2(`Raw change ${i}: old_text not found in file.`, "VALIDATION_ERROR", { file: relativePath });
       }
       modifiedText = modifiedText.slice(0, idx) + newText + modifiedText.slice(idx + oldText.length);
     }
   }
-  await fs8.writeFile(filePath, modifiedText, "utf-8");
+  await writeTrackedFile(filePath, modifiedText);
   if (state) {
     state.resetFile(filePath);
   }
@@ -16181,25 +16076,25 @@ async function handleRawChanges(changes, file, resolver, state) {
 }
 async function handleCompactProposeChange(args, filePath, relativePath, config, state, fileContent) {
   if (args.start_line || args.end_line || args.after_line) {
-    return errorResult3("Use at parameter for line addressing. start_line/end_line/after_line are not supported in compact mode.", "DEPRECATED_PARAMS");
+    return errorResult2("Use at parameter for line addressing. start_line/end_line/after_line are not supported in compact mode.", "DEPRECATED_PARAMS");
   }
   const at = args.at;
   const op = args.op;
   if (!at || !op) {
-    return errorResult3('Compact mode requires both "at" and "op" parameters.', "MISSING_ARGUMENT");
+    return errorResult2('Compact mode requires both "at" and "op" parameters.', "MISSING_ARGUMENT");
   }
   let parsed;
   try {
     parsed = parseOp(op);
   } catch (err) {
-    return errorResult3(err instanceof Error ? err.message : String(err), "VALIDATION_ERROR");
+    return errorResult2(err instanceof Error ? err.message : String(err), "VALIDATION_ERROR");
   }
   let fileLines = fileContent.split("\n");
   await initHashline();
   const changeId = state.getNextId(filePath, fileContent);
   const { author, error: authorError } = resolveAuthor(args.author, config, "propose_change");
   if (authorError) {
-    return errorResult3(authorError.message, "AUTHOR_RESOLUTION_FAILED");
+    return errorResult2(authorError.message, "AUTHOR_RESOLUTION_FAILED");
   }
   const reasoning = parsed.reasoning ?? args.reason;
   const reasoningError = checkReasoningRequired(author, reasoning, config, true);
@@ -16220,7 +16115,7 @@ async function handleCompactProposeChange(args, filePath, relativePath, config, 
     applyResult = resolveAndApply(op2, fileContent, fileLines, state, filePath, config, changeId, author);
   } catch (err) {
     const { staleLine, currentHash } = extractQuickFixFromError(err);
-    return errorResult3(err instanceof Error ? err.message : String(err), "HASHLINE_REFERENCE_UNRESOLVED", {
+    return errorResult2(err instanceof Error ? err.message : String(err), "HASHLINE_REFERENCE_UNRESOLVED", {
       file: relativePath,
       quick_fix: buildQuickFix(filePath, staleLine, currentHash)
     });
@@ -16230,7 +16125,7 @@ async function handleCompactProposeChange(args, filePath, relativePath, config, 
   supersededIds.push(...applyResult.supersededIds);
   fileContent = applyResult.modifiedText;
   fileLines = fileContent.split("\n");
-  await fs8.writeFile(filePath, modifiedText, "utf-8");
+  await writeTrackedFile(filePath, modifiedText);
   const viewResult = await rerecordState(state, filePath, modifiedText, config);
   let viewProjection;
   if (viewResult?.currentView) {
@@ -16279,7 +16174,7 @@ async function handleCompactProposeChange(args, filePath, relativePath, config, 
     content: [{ type: "text", text: JSON.stringify(responseData) }]
   };
 }
-function errorResult3(message, code, details) {
+function errorResult2(message, code, details) {
   const quickFix = details?.quick_fix;
   const errorDetails = details ? { ...details } : void 0;
   if (errorDetails) {
@@ -16301,21 +16196,759 @@ function errorResult3(message, code, details) {
   };
 }
 
+// ../../packages/cli/dist/engine/handlers/review-changes.js
+import * as fs7 from "node:fs/promises";
+import * as path6 from "node:path";
+
+// ../../packages/cli/dist/engine/shared/error-result.js
+function errorResult3(message) {
+  return {
+    content: [{ type: "text", text: message }],
+    isError: true
+  };
+}
+
+// ../../packages/cli/dist/engine/handlers/review-changes.js
+init_dist_esm();
+
+// ../../packages/cli/dist/engine/shared/blocking-annotation.js
+init_dist_esm();
+function applyBlockingAnnotation(content, changeId, author, label, shouldBlock) {
+  const lines = content.split("\n");
+  const block = findFootnoteBlock(lines, changeId);
+  if (!block)
+    return content;
+  const insertIdx = findReviewInsertionIndex(lines, block.headerLine, block.blockEnd);
+  if (label && insertIdx >= block.headerLine) {
+    const rcLine = lines[insertIdx];
+    if (rcLine.trimStart().startsWith("request-changes:")) {
+      lines[insertIdx] = rcLine + ` [${label}]`;
+    }
+  }
+  if (shouldBlock) {
+    lines.splice(insertIdx + 1, 0, `    blocked: @${author}`);
+  }
+  return lines.join("\n");
+}
+
+// ../../packages/cli/dist/engine/handlers/settle.js
+init_dist_esm();
+function applyAcceptedChanges2(fileContent) {
+  return applyAcceptedChanges(fileContent);
+}
+function applyRejectedChanges2(fileContent) {
+  return applyRejectedChanges(fileContent);
+}
+
+// ../../packages/cli/dist/engine/handlers/review-changes.js
+async function handleReviewChanges(args, resolver, state) {
+  try {
+    const file = optionalStrArg(args, "file", "file");
+    let reviewsRaw = args.reviews;
+    let responsesRaw = args.responses;
+    const settleFlag = args.settle === true || args.settle === "true";
+    const authorArg = optionalStrArg(args, "author", "author");
+    if (!file) {
+      return errorResult3('Missing required argument: "file"');
+    }
+    if (typeof reviewsRaw === "string") {
+      try {
+        const parsed = JSON.parse(reviewsRaw);
+        if (Array.isArray(parsed)) {
+          reviewsRaw = parsed;
+        } else {
+          return errorResult3(`The "reviews" parameter was received as a JSON string but parsed to ${typeof parsed}, not an array. Send reviews as a JSON array of objects, e.g.: reviews: [{ "change_id": "cn-1", "decision": "approve", "reason": "looks good" }]`);
+        }
+      } catch {
+        return errorResult3('The "reviews" parameter was received as a string but could not be parsed as JSON. Send reviews as a JSON array of objects, e.g.: reviews: [{ "change_id": "cn-1", "decision": "approve", "reason": "looks good" }]');
+      }
+    }
+    if (typeof responsesRaw === "string") {
+      try {
+        const parsed = JSON.parse(responsesRaw);
+        if (Array.isArray(parsed)) {
+          responsesRaw = parsed;
+        } else {
+          return errorResult3(`The "responses" parameter was received as a JSON string but parsed to ${typeof parsed}, not an array. Send responses as a JSON array of objects, e.g.: responses: [{ "change_id": "cn-1", "response": "addressed in latest revision" }]`);
+        }
+      } catch {
+        return errorResult3('The "responses" parameter was received as a string but could not be parsed as JSON. Send responses as a JSON array of objects, e.g.: responses: [{ "change_id": "cn-1", "response": "addressed in latest revision" }]');
+      }
+    }
+    const hasReviews = Array.isArray(reviewsRaw) && reviewsRaw.length > 0;
+    const hasResponses = Array.isArray(responsesRaw) && responsesRaw.length > 0;
+    if (!hasReviews && !hasResponses && !settleFlag) {
+      return errorResult3('At least one of "reviews", "responses", or "settle" must be provided.\n\nExample:\n  review_changes(file: "doc.md", reviews: [{ change_id: "cn-1", decision: "approve", reason: "looks good" }])\n\nRequired fields per review: change_id, decision (approve|reject|request_changes|withdraw), reason.');
+    }
+    const filePath = resolver.resolveFilePath(file);
+    const { config, projectDir } = await resolver.forFile(filePath);
+    if (!isFileInScope(filePath, config, projectDir)) {
+      return errorResult3(`File is not in scope for tracking: "${filePath}". Check .changedown/config.toml include/exclude patterns.`);
+    }
+    let fileContent;
+    let originalContent;
+    try {
+      fileContent = await fs7.readFile(filePath, "utf-8");
+      originalContent = fileContent;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return errorResult3(`File not found or unreadable: ${msg}`);
+    }
+    try {
+      assertResolved(parseForFormat(fileContent));
+    } catch (err) {
+      if (err instanceof UnresolvedChangesError) {
+        return errorResult3(`Document has ${err.diagnostics.length} unresolved change(s); run 'cd repair' or amend the failing change. Diagnostics: ${JSON.stringify(err.diagnostics)}`);
+      }
+      throw err;
+    }
+    const { author, error: authorError } = resolveAuthor(authorArg, config, "review_changes");
+    if (authorError) {
+      return errorResult3(authorError.message);
+    }
+    const successes = [];
+    const errors = [];
+    let results = [];
+    if (hasReviews) {
+      const lines = fileContent.split("\n");
+      const inputOrderChangeIds = [];
+      const withPosition = [];
+      const validationErrors = [];
+      for (let idx = 0; idx < reviewsRaw.length; idx++) {
+        const r = reviewsRaw[idx];
+        if (r === null || r === void 0 || typeof r !== "object" || Array.isArray(r)) {
+          validationErrors.push(`Review item #${idx} must be an object, got ${r === null ? "null" : Array.isArray(r) ? "array" : typeof r}`);
+          continue;
+        }
+        const rObj = r;
+        const changeId = rObj.change_id;
+        const decision = rObj.decision;
+        const reason = rObj.reason;
+        const missingFields = [];
+        if (!changeId)
+          missingFields.push("'change_id'");
+        if (!decision)
+          missingFields.push("'decision'");
+        if (!reason) {
+          if (rObj.reasoning) {
+            missingFields.push("'reason' (did you mean 'reason'? You passed 'reasoning' which is not the correct field name)");
+          } else {
+            missingFields.push("'reason'");
+          }
+        }
+        if (missingFields.length > 0) {
+          validationErrors.push(`Review item #${idx} missing required field(s): ${missingFields.join(", ")}`);
+          continue;
+        }
+        inputOrderChangeIds.push(changeId);
+        const block = findFootnoteBlock(lines, changeId);
+        withPosition.push({
+          review: {
+            change_id: changeId,
+            decision,
+            reason,
+            blocking: rObj.blocking === true ? true : void 0,
+            label: typeof rObj.label === "string" ? rObj.label : void 0
+          },
+          headerLine: block ? block.headerLine : -1
+        });
+      }
+      withPosition.sort((a, b) => b.headerLine - a.headerLine);
+      const resultByChangeId = /* @__PURE__ */ new Map();
+      for (const { review } of withPosition) {
+        if (!VALID_DECISIONS.includes(review.decision)) {
+          resultByChangeId.set(review.change_id, {
+            change_id: review.change_id,
+            error: `Invalid decision: "${review.decision}". Must be one of: approve, reject, request_changes, withdraw`
+          });
+          continue;
+        }
+        const applied = applyReview(fileContent, review.change_id, review.decision, review.reason, author, config);
+        if ("error" in applied) {
+          resultByChangeId.set(review.change_id, { change_id: review.change_id, error: applied.error });
+          continue;
+        }
+        if (review.decision === "request_changes" && (review.blocking || review.label)) {
+          const autoBlock = review.label ? config.review.blocking_labels[review.label] === true : false;
+          const shouldBlock = review.blocking || autoBlock;
+          applied.updatedContent = applyBlockingAnnotation(applied.updatedContent, review.change_id, author, review.label, shouldBlock);
+        }
+        resultByChangeId.set(review.change_id, applied.result);
+        fileContent = applied.updatedContent;
+      }
+      results = inputOrderChangeIds.map((id) => resultByChangeId.get(id));
+      if (validationErrors.length > 0) {
+        errors.push(...validationErrors);
+      }
+    }
+    if (hasResponses) {
+      const VALID_LABELS = ["suggestion", "issue", "question", "praise", "todo", "thought", "nitpick"];
+      for (let rIdx = 0; rIdx < responsesRaw.length; rIdx++) {
+        const resp = responsesRaw[rIdx];
+        if (resp === null || resp === void 0 || typeof resp !== "object" || Array.isArray(resp)) {
+          errors.push(`Response item #${rIdx} must be an object, got ${resp === null ? "null" : Array.isArray(resp) ? "array" : typeof resp}`);
+          continue;
+        }
+        const respObj = resp;
+        const respChangeId = respObj.change_id;
+        const respText = respObj.response;
+        const respLabel = respObj.label;
+        if (!respChangeId || !respText) {
+          const missing = [];
+          if (!respChangeId)
+            missing.push("'change_id'");
+          if (!respText)
+            missing.push("'response'");
+          errors.push(`Response item #${rIdx} missing required field(s): ${missing.join(", ")}`);
+          continue;
+        }
+        if (respLabel && !VALID_LABELS.includes(respLabel)) {
+          errors.push(`Response to ${respChangeId}: Invalid label "${respLabel}". Must be one of: ${VALID_LABELS.join(", ")}`);
+          continue;
+        }
+        const lines = fileContent.split("\n");
+        const block = findFootnoteBlock(lines, respChangeId);
+        if (!block) {
+          errors.push(`Response to ${respChangeId}: Change "${respChangeId}" not found in file.`);
+          continue;
+        }
+        const insertionIdx = findDiscussionInsertionIndex(lines, block.headerLine, block.blockEnd) + 1;
+        const ts = nowTimestamp();
+        const labelPart = respLabel ? ` [${respLabel}]` : "";
+        const responseLines = respText.split("\n");
+        const indent = "    ";
+        const continuationIndent = "      ";
+        const firstLine = `${indent}@${author} ${ts.raw}${labelPart}: ${responseLines[0]}`;
+        const formatted = [firstLine];
+        for (let li = 1; li < responseLines.length; li++) {
+          formatted.push(`${continuationIndent}${responseLines[li]}`);
+        }
+        lines.splice(insertionIdx, 0, ...formatted);
+        fileContent = lines.join("\n");
+        successes.push(`Responded to ${respChangeId}`);
+      }
+    }
+    let settlementInfo;
+    if (config.settlement.auto_on_approve && hasReviews) {
+      const hasApprovals = results.some((r) => "decision" in r && r.decision === "approve");
+      if (hasApprovals) {
+        await initHashline();
+        const { currentContent, appliedIds } = applyAcceptedChanges2(fileContent);
+        if (appliedIds.length > 0) {
+          fileContent = currentContent;
+          settlementInfo = { appliedIds };
+        }
+      }
+    }
+    if (config.settlement.auto_on_reject && hasReviews) {
+      const hasRejections = results.some((r) => "decision" in r && r.decision === "reject");
+      if (hasRejections) {
+        await initHashline();
+        const { currentContent, appliedIds } = applyRejectedChanges2(fileContent);
+        if (appliedIds.length > 0) {
+          fileContent = currentContent;
+          if (settlementInfo) {
+            const existingSet = new Set(settlementInfo.appliedIds);
+            for (const id of appliedIds) {
+              if (!existingSet.has(id)) {
+                settlementInfo.appliedIds.push(id);
+              }
+            }
+          } else {
+            settlementInfo = { appliedIds };
+          }
+        }
+      }
+    }
+    if (settleFlag) {
+      await initHashline();
+      const { currentContent, appliedIds } = applyAcceptedChanges2(fileContent);
+      if (appliedIds.length > 0) {
+        fileContent = currentContent;
+        if (settlementInfo) {
+          const existingSet = new Set(settlementInfo.appliedIds);
+          for (const id of appliedIds) {
+            if (!existingSet.has(id)) {
+              settlementInfo.appliedIds.push(id);
+            }
+          }
+        } else {
+          settlementInfo = { appliedIds };
+        }
+      }
+      successes.push("Settled all accepted changes (Layer 1 compaction)");
+    }
+    let affectedLines;
+    if (settlementInfo && settlementInfo.appliedIds.length > 0) {
+      const postLines = fileContent.split("\n");
+      const settledIdSet = new Set(settlementInfo.appliedIds);
+      const footnoteStart = postLines.findIndex((l) => /^\[\^cn-/.test(l));
+      const contentEnd = footnoteStart > 0 ? footnoteStart : postLines.length;
+      let minLine = Infinity;
+      let maxLine = -Infinity;
+      for (let i = 0; i < contentEnd; i++) {
+        const lineNum = i + 1;
+        for (const id of settledIdSet) {
+          if (postLines[i].includes(`[^${id}]`)) {
+            if (lineNum < minLine)
+              minLine = lineNum;
+            if (lineNum > maxLine)
+              maxLine = lineNum;
+          }
+        }
+      }
+      if (minLine !== Infinity && maxLine !== -Infinity) {
+        if (config.hashline.enabled) {
+          await initHashline();
+        }
+        try {
+          affectedLines = computeAffectedLines(fileContent, minLine, maxLine, {
+            hashlineEnabled: config.hashline.enabled
+          });
+        } catch {
+          affectedLines = [];
+        }
+      }
+    }
+    if (fileContent !== originalContent) {
+      await writeTrackedFile(filePath, fileContent);
+      await rerecordState(state, filePath, fileContent, config);
+    }
+    const response = { file: path6.relative(projectDir, filePath) };
+    if (results.length > 0) {
+      response.results = results;
+    }
+    if (successes.length > 0) {
+      response.successes = successes;
+    }
+    if (errors.length > 0) {
+      response.errors = errors;
+    }
+    if (settlementInfo) {
+      response.settled = settlementInfo.appliedIds;
+      response.settlement_note = `${settlementInfo.appliedIds.length} change(s) settled to clean text. The file now contains clean prose where those changes were. Proposed changes remain as markup.`;
+    }
+    if (affectedLines && config.response?.affected_lines) {
+      response.affected_lines = affectedLines;
+    }
+    const remaining = countFootnoteHeadersWithStatus(fileContent, "proposed");
+    response.document_state = {
+      remaining_proposed: remaining,
+      all_resolved: remaining === 0
+    };
+    if (remaining === 0) {
+      response.note = "All changes in this file are now resolved (accepted or rejected). No proposed changes remain.";
+    }
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(response)
+        }
+      ]
+    };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return errorResult3(msg);
+  }
+}
+
+// ../../packages/cli/dist/engine/handlers/read-tracked-file.js
+init_dist_esm();
+import * as fs8 from "node:fs/promises";
+import * as path7 from "node:path";
+
+// ../../packages/cli/dist/engine/guide-composer.js
+function composeGuide(config) {
+  const sections = [];
+  const protocolMode = resolveProtocolMode(config.protocol.mode);
+  sections.push(composeProtocolSection(protocolMode, config));
+  sections.push(composeAuthorSection(config));
+  if (config.reasoning?.propose?.agent === true) {
+    sections.push("**Annotations**: Required on every change. Append `{>>reason` to your `op` string, or include reasoning in your propose call.");
+  }
+  sections.push("**Chaining edits**: Each `propose_change` response shows your changes applied. The `applied` array includes `preview` (the line with your edit) and coordinates for follow-up edits. `affected_lines` shows neighboring lines with fresh coordinates. No re-read needed between edits. Re-read only after review (accept/reject).");
+  sections.push("**Revising proposals**: Re-proposing over your own earlier changes auto-supersedes them. No need to reject first. The response includes a `superseded` array with the IDs of replaced changes.");
+  sections.push(composeViewSection(config));
+  return `---
+## How to edit this file
+
+${sections.join("\n\n")}
+---`;
+}
+function composeProtocolSection(mode, config) {
+  if (mode === "classic") {
+    return "**Editing**: Use `propose_change` with `old_text` (exact text to replace) and `new_text`.\nFor insertions, use `insert_after` to place new text after an anchor string.\nGroup related changes: `propose_change(file, changes=[{old_text:..., new_text:...}, ...])`";
+  }
+  const lines = [
+    "**Editing**: Use `propose_change` with `at` (LINE:HASH from the margin) and `op`:",
+    "  Substitute: `{~~old~>new~~}`  Insert: `{++text++}`  Delete: `{--text--}`",
+    "  Highlight: `{==text==}`  Comment: `{>>reason`"
+  ];
+  if (config.reasoning?.propose?.agent !== true) {
+    lines.push("  Annotate: `{~~old~>new~~}{>>reason`  (append {>> to any op)");
+  } else {
+    lines.push("  Annotate (required): `{~~old~>new~~}{>>reason`  (append {>> to any op)");
+  }
+  lines.push('Group: `propose_change(file, changes=[{at:"3:a1", op:"{~~old~>new~~}{>>reason"}, ...])`', "Include enough context in your `op` to disambiguate repeated text on the same line.");
+  lines.push('Range replace: `at:"5:a1-20:b3"` + `op:"{~~~>new content~~}"` replaces the entire range.');
+  lines.push("Multi-line ops: use real newlines in your op string \u2014 the MCP transport handles encoding.");
+  return lines.join("\n");
+}
+function composeAuthorSection(config) {
+  if (config.author.enforcement === "required") {
+    return '**Author**: Required. Pass `author="ai:YOUR-ACTUAL-MODEL"` on every propose/review call.\nDo not copy example identities from documentation.';
+  }
+  return '**Author**: Recommended. Pass `author="ai:YOUR-MODEL"` for clear attribution.';
+}
+function composeViewSection(config) {
+  const defaultView = config.policy.default_view ?? "working";
+  switch (defaultView) {
+    case "working":
+      return "**You're seeing**: working view \u2014 full deliberation context. CriticMarkup shows proposals inline, [cn-N] anchors link to end-of-line metadata.\nOther views: `simple` (clean prose + P/A flags), `decided` (decided-changes-only preview).";
+    case "simple":
+      return "**You're seeing**: simple view \u2014 current projection text with P/A flags in the margin. Proposals are summarized, not shown inline.\nOther views: `working` (full deliberation context), `decided` (decided-changes-only preview).";
+    case "decided":
+      return "**You're seeing**: decided view \u2014 the document with only decided changes applied. Proposed deletions are not visible.\nOther views: `working` (full deliberation context), `simple` (current text + P/A flags).";
+    default:
+      return `**Current view**: ${defaultView}.`;
+  }
+}
+
+// ../../packages/cli/dist/engine/handlers/read-tracked-file.js
+var DEFAULT_LIMIT = 500;
+var MAX_LIMIT = 2e3;
+var HASHLINE_DISABLED_TIP_DEFAULT = "## tip: Hashline addressing is disabled. Edits use text matching; re-read for current content if propose_change fails.";
+var HASHLINE_DISABLED_TIP_COMPACT = "## tip: Hashline addressing is disabled but compact mode requires it. Enable in .changedown/config.toml: [hashline] enabled = true";
+function formatChangeLevelsLine(content) {
+  const parser = new CriticMarkupParser();
+  const doc = parser.parse(content);
+  const changes = doc.getChanges();
+  if (changes.length === 0)
+    return null;
+  const parts = changes.map((c) => `${c.id}=${c.level}`);
+  return `## change levels: ${parts.join(", ")}`;
+}
+function maybeComposeGuide(state, config, explicit = false) {
+  if (!explicit && state.isGuideSuppressed())
+    return "";
+  const mode = resolveProtocolMode(config.protocol.mode);
+  if (!explicit && state.getGuideShownForMode() === mode)
+    return "";
+  state.setGuideShown(mode);
+  return "\n\n" + composeGuide(config);
+}
+function computeEffectiveRange(offset, requestedLimit, totalLines) {
+  const effectiveStart = Math.max(1, offset);
+  const limit = Math.min(requestedLimit ?? DEFAULT_LIMIT, MAX_LIMIT);
+  const effectiveEnd = Math.min(effectiveStart + limit - 1, totalLines);
+  return { effectiveStart, effectiveEnd };
+}
+function buildTruncationMessage(effectiveStart, effectiveEnd, totalLines) {
+  if (effectiveEnd >= totalLines)
+    return null;
+  return `
+
+--- showing lines ${effectiveStart}-${effectiveEnd} of ${totalLines} | use offset/limit to paginate ---`;
+}
+function findSafePaginationEnd(lines, effectiveEnd) {
+  let end = effectiveEnd;
+  while (end < lines.length && lines[end]?.continuesChange) {
+    end++;
+  }
+  return end;
+}
+function buildAndFormatPaginatedDoc(fileContent, canonicalView, opts, pagination, state, absolutePath) {
+  const doc = buildViewDocument(fileContent, canonicalView, opts);
+  const sessionHashes = doc.lines.map((l) => ({
+    line: l.margin.lineNumber,
+    raw: l.sessionHashes.raw,
+    committed: l.sessionHashes.committed,
+    currentView: l.sessionHashes.currentView,
+    rawLineNum: l.rawLineNumber
+  }));
+  state.recordAfterRead(absolutePath, canonicalView, sessionHashes, fileContent);
+  const totalLines = doc.lines.length;
+  const { effectiveStart, effectiveEnd } = computeEffectiveRange(pagination.offset, pagination.requestedLimit, totalLines);
+  const adjustedEnd = findSafePaginationEnd(doc.lines, effectiveEnd);
+  const paginatedDoc = {
+    ...doc,
+    lines: doc.lines.slice(effectiveStart - 1, adjustedEnd),
+    header: {
+      ...doc.header,
+      lineRange: { start: effectiveStart, end: adjustedEnd, total: totalLines }
+    }
+  };
+  return {
+    output: formatPlainText(paginatedDoc),
+    paginatedDoc,
+    effectiveStart,
+    adjustedEnd,
+    totalLines
+  };
+}
+async function handleReadTrackedFile(args, resolver, state) {
+  try {
+    await initHashline();
+    const file = optionalStrArg(args, "file", "file");
+    if (!file) {
+      return errorResult3('Missing required argument: "file"');
+    }
+    const offset = args.offset ?? 1;
+    const requestedLimit = args.limit;
+    const requestedView = optionalStrArg(args, "view", "view");
+    const resolved = requestedView !== void 0 ? resolveView(requestedView) : null;
+    if (requestedView !== void 0 && resolved === null) {
+      return errorResult3(`Unknown view '${requestedView}'. Valid views: ${CANONICAL_VIEWS.join(", ")}`);
+    }
+    const includeMeta = args.include_meta === true;
+    const includeGuide = args.include_guide === true;
+    const filePath = resolver.resolveFilePath(file);
+    const { config, projectDir } = await resolver.forFile(filePath);
+    const defaultView = resolveView(config.policy.default_view ?? "working") ?? "working";
+    const viewPolicy = config.policy.view_policy ?? "suggest";
+    let canonicalView;
+    if (requestedView === void 0) {
+      canonicalView = defaultView;
+    } else {
+      canonicalView = resolved;
+      if (viewPolicy === "require" && canonicalView !== defaultView) {
+        return errorResult3(`This project requires view "${config.policy.default_view}" (view_policy = "require"). Requested view "${requestedView}" is not allowed. Change view_policy to "suggest" in .changedown/config.toml to allow view selection.`);
+      }
+    }
+    let fileContent;
+    try {
+      fileContent = await fs8.readFile(filePath, "utf-8");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return errorResult3(`File not found or unreadable: ${msg}`);
+    }
+    const trackingStatus = await resolveTrackingStatus(filePath, config, projectDir);
+    const parsedDoc = parseForFormat(fileContent);
+    const fileDiagnostics = parsedDoc.getDiagnostics();
+    const displayPath = path7.relative(projectDir, filePath);
+    if (!config.hashline.enabled) {
+      if (canonicalView === "simple") {
+        return errorResult3("Simple view requires hashline mode. Enable hashline in .changedown/config.toml: [hashline] enabled = true");
+      }
+      const protocolMode2 = resolveProtocolMode(config.protocol.mode);
+      const { output: rawOutput2, effectiveStart: effectiveStart2, adjustedEnd: adjustedEnd2, totalLines: totalLines2 } = buildAndFormatPaginatedDoc(fileContent, canonicalView, { filePath: displayPath, trackingStatus: trackingStatus.status, protocolMode: protocolMode2, defaultView: "working", viewPolicy: config.policy.view_policy ?? "suggest" }, { offset, requestedLimit }, state, filePath);
+      let output2 = rawOutput2;
+      const truncation2 = buildTruncationMessage(effectiveStart2, adjustedEnd2, totalLines2);
+      if (truncation2)
+        output2 += truncation2;
+      const hashlineTip = protocolMode2 === "compact" ? HASHLINE_DISABLED_TIP_COMPACT : HASHLINE_DISABLED_TIP_DEFAULT;
+      output2 = output2 + "\n" + hashlineTip;
+      const guide2 = maybeComposeGuide(state, config, includeGuide);
+      const content2 = [{ type: "text", text: output2 }];
+      if (guide2)
+        content2.unshift({ type: "text", text: guide2 });
+      return { content: content2, diagnostics: fileDiagnostics };
+    }
+    const protocolMode = resolveProtocolMode(config.protocol.mode);
+    const { output: rawOutput, effectiveStart, adjustedEnd, totalLines } = buildAndFormatPaginatedDoc(fileContent, canonicalView, { filePath: displayPath, trackingStatus: trackingStatus.status, protocolMode, defaultView: "working", viewPolicy: config.policy.view_policy ?? "suggest" }, { offset, requestedLimit }, state, filePath);
+    let output = rawOutput;
+    if (includeMeta) {
+      const levelsLine = formatChangeLevelsLine(fileContent);
+      if (levelsLine) {
+        output = output.replace(/^---$/m, `${levelsLine}
+---`);
+      }
+    }
+    const guide = maybeComposeGuide(state, config, includeGuide);
+    const content = [{ type: "text", text: output }];
+    const truncation = buildTruncationMessage(effectiveStart, adjustedEnd, totalLines);
+    if (truncation) {
+      content[content.length - 1].text += truncation;
+    }
+    if (guide)
+      content.unshift({ type: "text", text: guide });
+    return { content, diagnostics: fileDiagnostics };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return errorResult3(msg);
+  }
+}
+
+// ../../packages/cli/dist/engine/handlers/amend-change.js
+import * as fs9 from "node:fs/promises";
+init_dist_esm();
+async function handleAmendChange(args, resolver, state) {
+  try {
+    const file = args.file;
+    const changeId = optionalStrArg(args, "change_id", "changeId");
+    const newText = strArg(args, "new_text", "newText");
+    const oldText = optionalStrArg(args, "old_text", "oldText");
+    const reasoning = optionalStrArg(args, "reason", "reason");
+    if (!file) {
+      return errorResult3('Missing required argument: "file"');
+    }
+    if (!changeId) {
+      return errorResult3('Missing required argument: "change_id"');
+    }
+    const filePath = resolver.resolveFilePath(file);
+    const { config, projectDir } = await resolver.forFile(filePath);
+    if (!isFileInScope(filePath, config, projectDir)) {
+      return errorResult3(`File is not in scope for tracking: "${filePath}". Check .changedown/config.toml include/exclude patterns.`);
+    }
+    let fileContent;
+    try {
+      fileContent = await fs9.readFile(filePath, "utf-8");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return errorResult3(`File not found or unreadable: ${msg}`);
+    }
+    const { author, error: authorError } = resolveAuthor(args.author, config, "amend_change");
+    if (authorError) {
+      return errorResult3(authorError.message);
+    }
+    const doc = parseForFormat(fileContent);
+    try {
+      assertResolved(doc);
+    } catch (err) {
+      if (err instanceof UnresolvedChangesError) {
+        return errorResult3(`Document has ${err.diagnostics.length} unresolved change(s); run 'cd repair' or amend the failing change. Diagnostics: ${JSON.stringify(err.diagnostics)}`);
+      }
+      throw err;
+    }
+    const originalChange = doc.getChanges().find((c) => c.id === changeId);
+    if (originalChange) {
+      const originalAuthor = originalChange.metadata?.author?.replace(/^@/, "") ?? "";
+      const normalizedAuthor = (author ?? "").replace(/^@/, "");
+      if (originalAuthor && normalizedAuthor && originalAuthor !== normalizedAuthor) {
+        return errorResult3(`Cannot amend change "${changeId}": you (${normalizedAuthor}) are not the original author (${originalAuthor}). Use supersede_change to propose a replacement by a different author.`);
+      }
+    }
+    const result = await computeSupersedeResult(fileContent, changeId, {
+      newText,
+      oldText,
+      reason: reasoning,
+      author
+    });
+    if (result.isError) {
+      return errorResult3(result.error);
+    }
+    await writeTrackedFile(filePath, result.text);
+    await rerecordState(state, filePath, result.text, config);
+    const responseData = {
+      change_id: changeId,
+      new_change_id: result.newChangeId,
+      file: toRelativePath(projectDir, filePath),
+      amended: true,
+      new_text: newText
+    };
+    return {
+      content: [{ type: "text", text: JSON.stringify(responseData) }]
+    };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return errorResult3(msg);
+  }
+}
+
+// ../../packages/cli/dist/engine/handlers/list-changes.js
+init_dist_esm();
+init_dist_esm();
+
+// ../../packages/cli/dist/engine/handlers/supersede-change.js
+init_dist_esm();
+
+// ../../packages/cli/dist/engine/handlers/resolve-thread.js
+init_dist_esm();
+
+// ../../packages/cli/dist/engine/handlers/respond-to-thread.js
+import * as fs10 from "node:fs/promises";
+init_dist_esm();
+async function handleRespondToThread(args, resolver, _state) {
+  try {
+    const file = args.file;
+    const changeId = optionalStrArg(args, "change_id", "changeId");
+    const response = optionalStrArg(args, "response", "response");
+    const label = optionalStrArg(args, "label", "label");
+    if (!file) {
+      return errorResult3('Missing required argument: "file"');
+    }
+    if (!changeId) {
+      return errorResult3('Missing required argument: "change_id"');
+    }
+    if (!response) {
+      return errorResult3('Missing required argument: "response"');
+    }
+    const VALID_LABELS = ["suggestion", "issue", "question", "praise", "todo", "thought", "nitpick"];
+    if (label && !VALID_LABELS.includes(label)) {
+      return errorResult3(`Invalid label: "${label}". Must be one of: ${VALID_LABELS.join(", ")}`);
+    }
+    const filePath = resolver.resolveFilePath(file);
+    const { config, projectDir } = await resolver.forFile(filePath);
+    if (!isFileInScope(filePath, config, projectDir)) {
+      return errorResult3(`File is not in scope for tracking: "${filePath}". Check .changedown/config.toml include/exclude patterns.`);
+    }
+    let fileContent;
+    try {
+      fileContent = await fs10.readFile(filePath, "utf-8");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return errorResult3(`File not found or unreadable: ${msg}`);
+    }
+    const { author, error: authorError } = resolveAuthor(args.author, config, "respond_to_thread");
+    if (authorError) {
+      return errorResult3(authorError.message);
+    }
+    try {
+      assertResolved(parseForFormat(fileContent));
+    } catch (err) {
+      if (err instanceof UnresolvedChangesError) {
+        return errorResult3(`Document has ${err.diagnostics.length} unresolved change(s); run 'cd repair' or amend the failing change. Diagnostics: ${JSON.stringify(err.diagnostics)}`);
+      }
+      throw err;
+    }
+    const result = computeReplyEdit(fileContent, changeId, {
+      text: response,
+      author,
+      label
+    });
+    if (result.isError) {
+      return errorResult3(result.error);
+    }
+    await writeTrackedFile(filePath, result.text);
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify({
+            change_id: changeId,
+            comment_added: true
+          })
+        }
+      ]
+    };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return errorResult3(msg);
+  }
+}
+
+// ../../packages/cli/dist/engine/index.js
+init_file_ops2();
+
+// ../../packages/cli/dist/engine/handlers/propose-compact-memory.js
+init_dist_esm();
+
 // ../../packages/cli/dist/engine/handlers/begin-change-group.js
 init_dist_esm();
-import * as fs9 from "node:fs/promises";
+import * as fs11 from "node:fs/promises";
 import * as path8 from "node:path";
 async function scanProjectForMaxId(projectDir, config) {
   let max = 0;
   try {
-    const entries = await fs9.readdir(projectDir, { recursive: true });
+    const entries = await fs11.readdir(projectDir, { recursive: true });
     for (const rawEntry of entries) {
       const entry = typeof rawEntry === "string" ? rawEntry : String(rawEntry);
       const fullPath = path8.join(projectDir, entry);
       if (!isFileInScope(fullPath, config, projectDir))
         continue;
       try {
-        const content = await fs9.readFile(fullPath, "utf-8");
+        const content = await fs11.readFile(fullPath, "utf-8");
         const fileMax = scanMaxCnId(content);
         if (fileMax > max)
           max = fileMax;
@@ -16331,7 +16964,7 @@ async function handleBeginChangeGroup(args, resolver, state) {
     const description = optionalStrArg(args, "description", "description");
     const reasoning = optionalStrArg(args, "reason", "reason");
     if (!description) {
-      return errorResult('Missing required argument: "description"');
+      return errorResult3('Missing required argument: "description"');
     }
     const projectDir = resolver.resolveDir();
     const config = await resolver.lastConfig();
@@ -16347,14 +16980,14 @@ async function handleBeginChangeGroup(args, resolver, state) {
     };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    return errorResult(msg);
+    return errorResult3(msg);
   }
 }
 
 // ../../packages/cli/dist/engine/handlers/end-change-group.js
-init_dist_esm();
-import * as fs10 from "node:fs/promises";
+import * as fs12 from "node:fs/promises";
 import * as path9 from "node:path";
+init_dist_esm();
 init_file_ops2();
 async function handleEndChangeGroup(args, resolver, state) {
   try {
@@ -16363,7 +16996,7 @@ async function handleEndChangeGroup(args, resolver, state) {
     const projectDir = resolver.resolveDir();
     const { author, error: authorError } = resolveAuthor(args.author, config, "end_change_group");
     if (authorError) {
-      return errorResult(authorError.message);
+      return errorResult3(authorError.message);
     }
     const groupInfo = state.endGroup();
     if (groupInfo.files.length > 0) {
@@ -16375,9 +17008,17 @@ async function handleEndChangeGroup(args, resolver, state) {
       const summaryLine = summary ? `
     summary: ${summary}` : "";
       const footnoteBlock = footnoteHeader + reasonLine + summaryLine;
-      const fileContent = await fs10.readFile(targetFile, "utf-8");
+      const fileContent = await fs12.readFile(targetFile, "utf-8");
+      try {
+        assertResolved(parseForFormat(fileContent));
+      } catch (err) {
+        if (err instanceof UnresolvedChangesError) {
+          return errorResult3(`Document has ${err.diagnostics.length} unresolved change(s); run 'cd repair' or amend the failing change. Diagnostics: ${JSON.stringify(err.diagnostics)}`);
+        }
+        throw err;
+      }
       const modifiedText = appendFootnote(fileContent, footnoteBlock);
-      await fs10.writeFile(targetFile, modifiedText, "utf-8");
+      await writeTrackedFile(targetFile, modifiedText);
     }
     const filesList = groupInfo.files.length > 0 ? `Modified files:
 ${groupInfo.files.map((f) => path9.relative(projectDir, f)).join("\n")}
@@ -16398,7 +17039,7 @@ Share this list with the user so they know which file(s) to open or read.` : "";
     };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    return errorResult(msg);
+    return errorResult3(msg);
   }
 }
 
@@ -16409,79 +17050,15 @@ init_dist_esm();
 // ../../packages/cli/dist/engine/index.js
 init_dist_esm();
 
-// ../../packages/cli/dist/engine/handlers/respond-to-thread.js
-import * as fs11 from "node:fs/promises";
-init_dist_esm();
-async function handleRespondToThread(args, resolver, _state) {
-  try {
-    const file = args.file;
-    const changeId = optionalStrArg(args, "change_id", "changeId");
-    const response = optionalStrArg(args, "response", "response");
-    const label = optionalStrArg(args, "label", "label");
-    if (!file) {
-      return errorResult('Missing required argument: "file"');
-    }
-    if (!changeId) {
-      return errorResult('Missing required argument: "change_id"');
-    }
-    if (!response) {
-      return errorResult('Missing required argument: "response"');
-    }
-    const VALID_LABELS = ["suggestion", "issue", "question", "praise", "todo", "thought", "nitpick"];
-    if (label && !VALID_LABELS.includes(label)) {
-      return errorResult(`Invalid label: "${label}". Must be one of: ${VALID_LABELS.join(", ")}`);
-    }
-    const filePath = resolver.resolveFilePath(file);
-    const { config, projectDir } = await resolver.forFile(filePath);
-    if (!isFileInScope(filePath, config, projectDir)) {
-      return errorResult(`File is not in scope for tracking: "${filePath}". Check .changedown/config.toml include/exclude patterns.`);
-    }
-    let fileContent;
-    try {
-      fileContent = await fs11.readFile(filePath, "utf-8");
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      return errorResult(`File not found or unreadable: ${msg}`);
-    }
-    const { author, error: authorError } = resolveAuthor(args.author, config, "respond_to_thread");
-    if (authorError) {
-      return errorResult(authorError.message);
-    }
-    const result = computeReplyEdit(fileContent, changeId, {
-      text: response,
-      author,
-      label
-    });
-    if (result.isError) {
-      return errorResult(result.error);
-    }
-    await fs11.writeFile(filePath, result.text, "utf-8");
-    return {
-      content: [
-        {
-          type: "text",
-          text: JSON.stringify({
-            change_id: changeId,
-            comment_added: true
-          })
-        }
-      ]
-    };
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    return errorResult(msg);
-  }
-}
-
 // ../../packages/cli/dist/engine/handlers/list-open-threads.js
 init_dist_esm();
-import * as fs12 from "node:fs/promises";
+import * as fs13 from "node:fs/promises";
 import * as path10 from "node:path";
 var TRACKING_HEADER_TRACKED = "<!-- changedown.com/v1: tracked -->";
 var VALID_STATUSES = ["proposed", "accepted", "rejected"];
 async function hasTrackingHeader(filePath) {
   try {
-    const fd = await fs12.open(filePath, "r");
+    const fd = await fs13.open(filePath, "r");
     const buf = Buffer.alloc(400);
     const { bytesRead } = await fd.read(buf, 0, 400, 0);
     await fd.close();
@@ -16494,14 +17071,14 @@ async function hasTrackingHeader(filePath) {
 async function collectTrackedMdFiles(dirPath, config, projectDir) {
   const out = [];
   try {
-    const entries = await fs12.readdir(dirPath, { recursive: true });
+    const entries = await fs13.readdir(dirPath, { recursive: true });
     for (const raw of entries) {
       const entry = typeof raw === "string" ? raw : String(raw);
       const full = path10.join(dirPath, entry);
       if (!entry.endsWith(".md"))
         continue;
       try {
-        const stat3 = await fs12.stat(full);
+        const stat3 = await fs13.stat(full);
         if (!stat3.isFile())
           continue;
       } catch {
@@ -16523,25 +17100,25 @@ async function handleListOpenThreads(args, resolver, _state) {
     const authorFilter = optionalStrArg(args, "author", "author");
     const statusParam = args.status;
     if (pathArg === void 0 || pathArg === "") {
-      return errorResult('Missing required argument: "path". Pass a file or directory to list open threads for.');
+      return errorResult3('Missing required argument: "path". Pass a file or directory to list open threads for.');
     }
     const resolvedPath = resolver.resolveFilePath(pathArg);
     const { config, projectDir } = await resolver.forFile(resolvedPath);
     let filesToScan = [];
     try {
-      const stat3 = await fs12.stat(resolvedPath);
+      const stat3 = await fs13.stat(resolvedPath);
       if (stat3.isFile()) {
         if (!isFileInScope(resolvedPath, config, projectDir)) {
-          return errorResult(`File is not in scope for tracking: "${resolvedPath}". Check .changedown/config.toml include/exclude patterns.`);
+          return errorResult3(`File is not in scope for tracking: "${resolvedPath}". Check .changedown/config.toml include/exclude patterns.`);
         }
         filesToScan = [resolvedPath];
       } else if (stat3.isDirectory()) {
         filesToScan = await collectTrackedMdFiles(resolvedPath, config, projectDir);
       } else {
-        return errorResult(`Path is not a file or directory: "${resolvedPath}"`);
+        return errorResult3(`Path is not a file or directory: "${resolvedPath}"`);
       }
     } catch {
-      return errorResult(`File not found or unreadable: "${resolvedPath}"`);
+      return errorResult3(`File not found or unreadable: "${resolvedPath}"`);
     }
     const statusFilter = Array.isArray(statusParam) && statusParam.length > 0 ? statusParam.filter((s) => typeof s === "string" && VALID_STATUSES.includes(s)) : ["proposed"];
     if (statusFilter.length === 0) {
@@ -16552,7 +17129,7 @@ async function handleListOpenThreads(args, resolver, _state) {
     for (const fp of filesToScan) {
       let content;
       try {
-        content = await fs12.readFile(fp, "utf-8");
+        content = await fs13.readFile(fp, "utf-8");
       } catch {
         continue;
       }
@@ -16623,14 +17200,15 @@ async function handleListOpenThreads(args, resolver, _state) {
     };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    return errorResult(msg);
+    return errorResult3(msg);
   }
 }
 
 // ../../packages/cli/dist/engine/handlers/raw-edit.js
-import * as fs13 from "node:fs/promises";
+import * as fs14 from "node:fs/promises";
 import * as path11 from "node:path";
 init_file_ops2();
+init_dist_esm();
 var MARKUP_OPENERS = [/\{\+\+/g, /\{\-\-/g, /\{\~\~/g];
 var FOOTNOTE_REF = /\[\^cn-\d+(?:\.\d+)?\]/g;
 function countMarkupInText(text) {
@@ -16653,35 +17231,43 @@ async function handleRawEdit(args, resolver) {
     const newText = optionalStrArg(args, "new_text", "newText");
     const reason = optionalStrArg(args, "reason", "reason");
     if (!file) {
-      return errorResult('Missing required argument: "file"');
+      return errorResult3('Missing required argument: "file"');
     }
     if (oldText === void 0) {
-      return errorResult('Missing required argument: "old_text"');
+      return errorResult3('Missing required argument: "old_text"');
     }
     if (newText === void 0) {
-      return errorResult('Missing required argument: "new_text"');
+      return errorResult3('Missing required argument: "new_text"');
     }
     if (!reason || String(reason).trim() === "") {
-      return errorResult('Missing or empty required argument: "reason". Justify why this edit must bypass tracking.');
+      return errorResult3('Missing or empty required argument: "reason". Justify why this edit must bypass tracking.');
     }
     const filePath = resolver.resolveFilePath(file);
     const { config, projectDir } = await resolver.forFile(filePath);
     if (!isFileInScope(filePath, config, projectDir)) {
-      return errorResult("File is outside the configured tracking scope.");
+      return errorResult3("File is outside the configured tracking scope.");
     }
     const policyMode = config.policy?.mode ?? "safety-net";
     if (policyMode === "strict") {
-      return errorResult("Raw edit denied: project policy is strict. Raw edits bypass CriticMarkup tracking and are not allowed in strict mode. Use propose_change instead.");
+      return errorResult3("Raw edit denied: project policy is strict. Raw edits bypass CriticMarkup tracking and are not allowed in strict mode. Use propose_change instead.");
     }
     let fileContent;
     try {
-      fileContent = await fs13.readFile(filePath, "utf-8");
+      fileContent = await fs14.readFile(filePath, "utf-8");
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      return errorResult(`File not found or unreadable: ${msg}`);
+      return errorResult3(`File not found or unreadable: ${msg}`);
+    }
+    try {
+      assertResolved(parseForFormat(fileContent));
+    } catch (err) {
+      if (err instanceof UnresolvedChangesError) {
+        return errorResult3(`Document has ${err.diagnostics.length} unresolved change(s); run 'cd repair' or amend the failing change. Diagnostics: ${JSON.stringify(err.diagnostics)}`);
+      }
+      throw err;
     }
     const modifiedText = replaceUnique(fileContent, oldText, newText);
-    await fs13.writeFile(filePath, modifiedText, "utf-8");
+    await writeTrackedFile(filePath, modifiedText);
     console.error(`[changedown] raw_edit bypassed tracking: ${reason}`);
     const { annotations, footnotes } = countMarkupInText(oldText);
     const baseWarning = "This edit is untracked.";
@@ -16702,12 +17288,12 @@ async function handleRawEdit(args, resolver) {
     };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    return errorResult(msg);
+    return errorResult3(msg);
   }
 }
 
 // ../../packages/cli/dist/engine/handlers/get-tracking-status.js
-import * as fs14 from "node:fs/promises";
+import * as fs15 from "node:fs/promises";
 import * as path12 from "node:path";
 init_dist_esm();
 var import_picomatch2 = __toESM(require_picomatch2(), 1);
@@ -16732,16 +17318,30 @@ async function handleGetTrackingStatus(args, resolver, state) {
       if (isTracked) {
         let content;
         try {
-          content = await fs14.readFile(filePath, "utf-8");
+          content = await fs15.readFile(filePath, "utf-8");
         } catch {
           content = "";
         }
         const beforeSettle = countFootnoteHeadersWithStatus(content, "accepted");
         out.accepted_unsettled_count = beforeSettle;
         if (settleAccepted && beforeSettle > 0) {
+          try {
+            assertResolved(parseForFormat(content));
+          } catch (err) {
+            if (err instanceof UnresolvedChangesError) {
+              return {
+                content: [{
+                  type: "text",
+                  text: `Document has ${err.diagnostics.length} unresolved change(s); run 'cd repair' or amend the failing change. Diagnostics: ${JSON.stringify(err.diagnostics)}`
+                }],
+                isError: true
+              };
+            }
+            throw err;
+          }
           const { currentContent, appliedIds } = applyAcceptedChanges2(content);
           if (appliedIds.length > 0) {
-            await fs14.writeFile(filePath, currentContent, "utf-8");
+            await writeTrackedFile(filePath, currentContent);
             out.settled = true;
             out.settled_ids = appliedIds;
             await rerecordState(state, filePath, currentContent, config2);
@@ -16784,7 +17384,7 @@ async function handleGetTrackingStatus(args, resolver, state) {
 
 // ../../packages/cli/dist/engine/handlers/get-change.js
 init_dist_esm();
-import * as fs15 from "node:fs/promises";
+import * as fs16 from "node:fs/promises";
 init_dist_esm();
 function buildGroupInfo(doc, lines, parentId) {
   const parentBlock = findFootnoteBlock(lines, parentId);
@@ -16822,7 +17422,7 @@ async function handleGetChange(args, resolver) {
     const filePath = resolver.resolveFilePath(fileArg);
     const { config, projectDir } = await resolver.forFile(filePath);
     try {
-      const stat3 = await fs15.stat(filePath);
+      const stat3 = await fs16.stat(filePath);
       if (!stat3.isFile()) {
         return errorResult4(`Not a file: "${filePath}"`);
       }
@@ -16834,7 +17434,7 @@ async function handleGetChange(args, resolver) {
     }
     let fileContent;
     try {
-      fileContent = await fs15.readFile(filePath, "utf-8");
+      fileContent = await fs16.readFile(filePath, "utf-8");
     } catch {
       return errorResult4(`Could not read file: "${filePath}"`);
     }
@@ -16945,7 +17545,7 @@ function errorResult4(message, code, details) {
 
 // ../../packages/cli/dist/engine/handlers/find-tracked-files.js
 var import_picomatch3 = __toESM(require_picomatch2(), 1);
-import * as fs16 from "node:fs/promises";
+import * as fs17 from "node:fs/promises";
 import * as path13 from "node:path";
 async function handleFindTrackedFiles(args, resolver, _state) {
   const dirArg = args.path;
@@ -16964,7 +17564,7 @@ async function handleFindTrackedFiles(args, resolver, _state) {
 async function walkDir(dir, projectDir, matchesInclude, matchesExclude, results) {
   let entries;
   try {
-    entries = await fs16.readdir(dir, { withFileTypes: true });
+    entries = await fs17.readdir(dir, { withFileTypes: true });
   } catch {
     return;
   }
@@ -16989,37 +17589,45 @@ async function walkDir(dir, projectDir, matchesInclude, matchesExclude, results)
 }
 
 // ../../packages/cli/dist/engine/handlers/compact-changes.js
-import * as fs17 from "node:fs/promises";
+import * as fs18 from "node:fs/promises";
 init_dist_esm();
 async function handleCompactChanges(args, resolver, state) {
   try {
     const file = args.file;
     if (!file) {
-      return errorResult('Missing required argument: "file"');
+      return errorResult3('Missing required argument: "file"');
     }
     const targets = args.targets;
     if (!targets) {
-      return errorResult('Missing required argument: "targets"');
+      return errorResult3('Missing required argument: "targets"');
     }
     if (targets !== "all-decided" && !Array.isArray(targets)) {
-      return errorResult('Invalid "targets": must be an array of change IDs or "all-decided"');
+      return errorResult3('Invalid "targets": must be an array of change IDs or "all-decided"');
     }
     const undecidedPolicy = args.undecided_policy ?? args.undecidedPolicy ?? "accept";
     if (undecidedPolicy !== "accept" && undecidedPolicy !== "reject") {
-      return errorResult(`Invalid undecided_policy: "${undecidedPolicy}". Must be "accept" or "reject".`);
+      return errorResult3(`Invalid undecided_policy: "${undecidedPolicy}". Must be "accept" or "reject".`);
     }
     const boundaryMeta = args.boundary_meta ?? args.boundaryMeta;
     const filePath = resolver.resolveFilePath(file);
     const { config, projectDir } = await resolver.forFile(filePath);
     if (!isFileInScope(filePath, config, projectDir)) {
-      return errorResult(`File is not in scope for tracking: "${filePath}". Check .changedown/config.toml include/exclude patterns.`);
+      return errorResult3(`File is not in scope for tracking: "${filePath}". Check .changedown/config.toml include/exclude patterns.`);
     }
     let fileContent;
     try {
-      fileContent = await fs17.readFile(filePath, "utf-8");
+      fileContent = await fs18.readFile(filePath, "utf-8");
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      return errorResult(`File not found or unreadable: ${msg}`);
+      return errorResult3(`File not found or unreadable: ${msg}`);
+    }
+    try {
+      assertResolved(parseForFormat(fileContent));
+    } catch (err) {
+      if (err instanceof UnresolvedChangesError) {
+        return errorResult3(`Document has ${err.diagnostics.length} unresolved change(s); run 'cd repair' or amend the failing change. Diagnostics: ${JSON.stringify(err.diagnostics)}`);
+      }
+      throw err;
     }
     const l3 = isL3Format(fileContent);
     const compactFn = l3 ? compact : compactL2;
@@ -17030,7 +17638,7 @@ async function handleCompactChanges(args, resolver, state) {
     };
     const result = await compactFn(fileContent, request);
     if (result.text !== fileContent) {
-      await fs17.writeFile(filePath, result.text, "utf-8");
+      await writeTrackedFile(filePath, result.text);
     }
     await rerecordState(state, filePath, result.text, config);
     const response = {
@@ -17051,7 +17659,7 @@ async function handleCompactChanges(args, resolver, state) {
     };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    return errorResult(msg);
+    return errorResult3(msg);
   }
 }
 
@@ -17468,7 +18076,7 @@ async function executeCommand(def, subArgs, resolver, state) {
 }
 
 // ../../packages/cli/dist/cli-batch-handler.js
-import * as fs18 from "node:fs/promises";
+import * as fs19 from "node:fs/promises";
 async function handleCliBatch(args, resolver, state) {
   if (args.changes !== void 0) {
     return handleProposeBatch(args, resolver, state);
@@ -17477,7 +18085,7 @@ async function handleCliBatch(args, resolver, state) {
   if (fromPath) {
     let fileContent;
     try {
-      fileContent = await fs18.readFile(fromPath, "utf-8");
+      fileContent = await fs19.readFile(fromPath, "utf-8");
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       return {

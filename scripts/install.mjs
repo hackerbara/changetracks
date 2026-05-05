@@ -6,12 +6,13 @@
 //   1. Detect editors (Cursor, VS Code)
 //   2. Uninstall + reinstall .vsix extension
 //   3. Install CLI globally (cdown, changedown binaries)
-//   4. Detect agents (Claude Code, OpenCode)
+//   4. Detect agents (Claude Code, Codex, OpenCode)
 //   5. Claude Code: marketplace add (local) + plugin install via CLI
 //   6. Cursor: MCP config, hooks, skill
-//   7. Plugin cache sync (overwrite dist/ so rebuilds take effect)
-//   8. CD Viewer (ChangeDown.app → cdviewer)
-//   9. OpenCode guidance
+//   7. Claude plugin cache sync (overwrite dist/ so rebuilds take effect)
+//   8. Codex plugin cache sync
+//   9. CD Viewer (ChangeDown.app → cdviewer)
+//   10. OpenCode guidance
 
 import { existsSync, mkdirSync, writeFileSync, readFileSync, copyFileSync, cpSync, lstatSync, rmSync, symlinkSync } from 'fs';
 import { join, resolve, dirname } from 'path';
@@ -55,7 +56,7 @@ if (values.help) {
     - VS Code / Cursor extension (.vsix)
     - Cursor MCP config, hooks, and skill
     - Claude Code plugin (marketplace add + install via CLI)
-    - Plugin cache sync (dist/ refresh after rebuild)
+    - Claude/Codex plugin cache sync (dist/ refresh after rebuild)
 `);
   process.exit(0);
 }
@@ -150,6 +151,79 @@ function syncDir(src, dest) {
   }
 }
 
+function syncPluginPackageArtifacts(pluginCache, manifestKind) {
+  const manifestDir = manifestKind === 'codex' ? '.codex-plugin' : '.claude-plugin';
+  const manifestSrc = join(SC_ROOT, 'changedown-plugin', manifestDir);
+  if (existsSync(manifestSrc)) {
+    process.stdout.write(`    ${manifestDir}/... `);
+    syncDir(manifestSrc, join(pluginCache, manifestDir));
+    console.log(`${green('ok')}`);
+  }
+
+  const mcpConfigName = manifestKind === 'codex' ? 'codex.mcp.json' : '.mcp.json';
+  const mcpJsonSrc = join(SC_ROOT, 'changedown-plugin', mcpConfigName);
+  process.stdout.write(`    ${mcpConfigName}... `);
+  if (existsSync(mcpJsonSrc) && !dryRun) {
+    copyFileSync(mcpJsonSrc, join(pluginCache, mcpConfigName));
+  }
+  console.log(`${green('ok')}`);
+
+  for (const sub of ['mcp-server', 'hooks-impl']) {
+    process.stdout.write(`    ${sub}/dist... `);
+    syncDir(
+      join(SC_ROOT, 'changedown-plugin', sub, 'dist'),
+      join(pluginCache, sub, 'dist')
+    );
+    console.log(`${green('ok')}`);
+  }
+
+  process.stdout.write('    skills/... ');
+  syncDir(join(SC_ROOT, 'changedown-plugin', 'skills'), join(pluginCache, 'skills'));
+  console.log(`${green('ok')}`);
+
+  for (const pkg of ['core', 'cli']) {
+    const pkgSrc = join(SC_ROOT, 'packages', pkg);
+    if (!existsSync(pkgSrc)) continue;
+
+    for (const subDir of ['mcp-server', 'hooks-impl']) {
+      const dest = pkg === 'cli'
+        ? join(pluginCache, subDir, 'node_modules', 'changedown')
+        : join(pluginCache, subDir, 'node_modules', '@changedown', pkg);
+
+      if (existsSync(dest) && lstatSync(dest).isSymbolicLink()) {
+        if (!dryRun) rmSync(dest);
+      }
+      if (!dryRun) {
+        mkdirSync(dest, { recursive: true });
+        if (existsSync(join(pkgSrc, 'package.json'))) {
+          copyFileSync(join(pkgSrc, 'package.json'), join(dest, 'package.json'));
+        }
+        if (existsSync(join(pkgSrc, 'dist'))) {
+          syncDir(join(pkgSrc, 'dist'), join(dest, 'dist'));
+        }
+        if (existsSync(join(pkgSrc, 'dist-esm'))) {
+          syncDir(join(pkgSrc, 'dist-esm'), join(dest, 'dist-esm'));
+        }
+      }
+    }
+    const displayName = pkg === 'cli' ? 'changedown' : `@changedown/${pkg}`;
+    process.stdout.write(`    ${displayName}... `);
+    console.log(`${green('ok')}`);
+  }
+}
+
+function removeKnownDeletedPluginArtifacts(pluginCache) {
+  const staleDirs = ['bridge-daemon'];
+  for (const stale of staleDirs) {
+    const target = join(pluginCache, stale);
+    if (existsSync(target)) {
+      process.stdout.write(`    removing stale ${stale}/... `);
+      if (!dryRun) rmSync(target, { recursive: true, force: true });
+      console.log(`${green('ok')}`);
+    }
+  }
+}
+
 // --- Start ---
 console.log(`
   ${bold('ChangeDown Installer')}
@@ -231,10 +305,14 @@ if (run(`npm install -g "${cliDir}"`)) {
 console.log('\n  Detecting AI agents...');
 
 const claudePath = which('claude');
+const codexPath = which('codex');
 const opencodePath = which('opencode');
 
 if (claudePath) console.log(`    ${green('✓')} Claude Code (claude)`);
 else console.log(`    ${dim('✗')} Claude Code — not found on PATH`);
+
+if (codexPath) console.log(`    ${green('✓')} Codex (codex)`);
+else console.log(`    ${dim('✗')} Codex — not found on PATH`);
 
 if (opencodePath) console.log(`    ${green('✓')} OpenCode (opencode)`);
 else console.log(`    ${dim('✗')} OpenCode — not found on PATH`);
@@ -336,68 +414,12 @@ if (claudePath) {
     console.log('\n  Syncing build artifacts to plugin cache...');
     console.log(`    ${dim(pluginCache)}`);
 
-    // Plugin manifest + MCP config
-    process.stdout.write('    .claude-plugin/... ');
-    syncDir(join(SC_ROOT, 'changedown-plugin', '.claude-plugin'), join(pluginCache, '.claude-plugin'));
-    console.log(`${green('ok')}`);
-
-    process.stdout.write('    .mcp.json... ');
-    const mcpJsonSrc = join(SC_ROOT, 'changedown-plugin', '.mcp.json');
-    if (existsSync(mcpJsonSrc) && !dryRun) {
-      copyFileSync(mcpJsonSrc, join(pluginCache, '.mcp.json'));
-    }
-    console.log(`${green('ok')}`);
-
-    // Compiled output
-    for (const sub of ['mcp-server', 'hooks-impl']) {
-      process.stdout.write(`    ${sub}/dist... `);
-      syncDir(
-        join(SC_ROOT, 'changedown-plugin', sub, 'dist'),
-        join(pluginCache, sub, 'dist')
-      );
-      console.log(`${green('ok')}`);
-    }
-
-    // Hook matcher config + skills
+    removeKnownDeletedPluginArtifacts(pluginCache);
+    syncPluginPackageArtifacts(pluginCache, 'claude');
+    // Hook matcher config is Claude-specific.
     process.stdout.write('    hooks/... ');
     syncDir(join(SC_ROOT, 'changedown-plugin', 'hooks'), join(pluginCache, 'hooks'));
     console.log(`${green('ok')}`);
-
-    process.stdout.write('    skills/... ');
-    syncDir(join(SC_ROOT, 'changedown-plugin', 'skills'), join(pluginCache, 'skills'));
-    console.log(`${green('ok')}`);
-
-    // Sync workspace-linked @changedown/* dependencies (resolving symlinks)
-    // so cached node_modules stays in sync when new packages are added.
-    for (const pkg of ['core', 'cli']) {
-      const pkgSrc = join(SC_ROOT, 'packages', pkg);
-      if (!existsSync(pkgSrc)) continue;
-
-      for (const subDir of ['mcp-server', 'hooks-impl']) {
-        const dest = pkg === 'cli'
-          ? join(pluginCache, subDir, 'node_modules', 'changedown')
-          : join(pluginCache, subDir, 'node_modules', '@changedown', pkg);
-
-        if (existsSync(dest) && lstatSync(dest).isSymbolicLink()) {
-          if (!dryRun) rmSync(dest);
-        }
-        if (!dryRun) {
-          mkdirSync(dest, { recursive: true });
-          if (existsSync(join(pkgSrc, 'package.json'))) {
-            copyFileSync(join(pkgSrc, 'package.json'), join(dest, 'package.json'));
-          }
-          if (existsSync(join(pkgSrc, 'dist'))) {
-            syncDir(join(pkgSrc, 'dist'), join(dest, 'dist'));
-          }
-          if (existsSync(join(pkgSrc, 'dist-esm'))) {
-            syncDir(join(pkgSrc, 'dist-esm'), join(dest, 'dist-esm'));
-          }
-        }
-      }
-      const displayName = pkg === 'cli' ? 'changedown' : `@changedown/${pkg}`;
-      process.stdout.write(`    ${displayName}... `);
-      console.log(`${green('ok')}`);
-    }
 
     console.log(`    ${dim('Restart Claude Code to pick up changes.')}`);
   } else {
@@ -405,7 +427,23 @@ if (claudePath) {
   }
 }
 
-// --- 8. CD Viewer (symlink to packaged .app binary only; no bare .build/release link) ---
+
+// --- 8. Codex plugin cache sync (dev rebuild) ---
+if (codexPath) {
+  const codexPluginCache = join(home, '.codex', 'plugins', 'cache', 'hackerbara', 'changedown', '0.1.0');
+  if (existsSync(codexPluginCache)) {
+    console.log('\n  Syncing build artifacts to Codex plugin cache...');
+    console.log(`    ${dim(codexPluginCache)}`);
+    removeKnownDeletedPluginArtifacts(codexPluginCache);
+    syncPluginPackageArtifacts(codexPluginCache, 'codex');
+    console.log(`    ${dim('Restart Codex CLI/Desktop to pick up changes.')}`);
+  } else {
+    console.log(`\n  ${dim('No Codex plugin cache found at ~/.codex/plugins/cache/hackerbara/changedown/0.1.0.')}`);
+    console.log(`    ${dim('Install changedown@hackerbara in Codex first, then rerun this installer to sync build artifacts.')}`);
+  }
+}
+
+// --- 9. CD Viewer (symlink to packaged .app binary only; no bare .build/release link) ---
 const appBundleBinary = join(
   SC_ROOT,
   'packages',
@@ -451,7 +489,7 @@ if (platform() === 'darwin') {
   }
 }
 
-// --- 9. OpenCode ---
+// --- 10. OpenCode ---
 if (opencodePath) {
   console.log('\n  OpenCode detected.');
   console.log(`    Add to your project's opencode.json:`);

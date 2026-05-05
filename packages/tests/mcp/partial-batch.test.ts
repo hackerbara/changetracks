@@ -59,7 +59,7 @@ describe('partial batch semantics (Bug 10)', () => {
   // ── handleProposeBatch direct tests ──
 
   describe('handleProposeBatch partial-success behavior', () => {
-    it('applies good changes and reports failures separately', async () => {
+    it('applies good changes and reports failures separately (explicit partial:true)', async () => {
       const filePath = path.join(tmpDir, 'doc.md');
       await fs.writeFile(
         filePath,
@@ -70,6 +70,7 @@ describe('partial batch semantics (Bug 10)', () => {
         {
           file: filePath,
           reason: 'partial test',
+          partial: true,
           changes: [
             { old_text: 'First line.', new_text: 'Line 1.' },
             { old_text: 'NONEXISTENT TEXT', new_text: 'Replacement' },  // will fail
@@ -92,17 +93,19 @@ describe('partial batch semantics (Bug 10)', () => {
       expect(data.failed[0].reason).toMatch(/not found|no match/i);
     });
 
-    it('partial behavior is default (no flag needed)', async () => {
-      const filePath = path.join(tmpDir, 'default-partial.md');
-      await fs.writeFile(filePath, '# Test\n\nFirst line.\nSecond line.\nThird line.\n');
+    it('atomic default: batch with one failing op aborts entire batch (ADR-036 §4)', async () => {
+      const filePath = path.join(tmpDir, 'default-atomic.md');
+      const original = '# Test\n\nFirst line.\nSecond line.\nThird line.\n';
+      await fs.writeFile(filePath, original);
 
       const result = await handleProposeBatch(
         {
           file: filePath,
-          reason: 'default partial test',
+          reason: 'atomic default test',
+          // NO partial flag — atomic is the default
           changes: [
             { old_text: 'First line.', new_text: 'Line 1.' },
-            { old_text: 'NONEXISTENT', new_text: 'nope' },
+            { old_text: 'NONEXISTENT', new_text: 'nope' },  // will fail
             { old_text: 'Third line.', new_text: 'Line 3.' },
           ],
           author: 'ai:test',
@@ -111,11 +114,11 @@ describe('partial batch semantics (Bug 10)', () => {
         state,
       );
 
-      expect(result.isError).toBeUndefined();
-      const data = JSON.parse(result.content[0].text);
-      expect(data.applied.length).toBe(2);
-      expect(data.failed.length).toBe(1);
-      expect(data.failed[0].index).toBe(1);
+      // Atomic default: one failure means the whole batch fails
+      expect(result.isError).toBe(true);
+      // File must be unchanged (all-or-nothing)
+      const content = await fs.readFile(filePath, 'utf-8');
+      expect(content).toBe(original);
     });
 
     it('batch with all changes succeeding returns applied array', async () => {
@@ -146,7 +149,7 @@ describe('partial batch semantics (Bug 10)', () => {
       expect(data.failed.length).toBe(0);
     });
 
-    it('batch where ALL changes fail returns error', async () => {
+    it('partial:true batch where ALL changes fail returns error with failed[] details', async () => {
       const filePath = path.join(tmpDir, 'doc.md');
       await fs.writeFile(
         filePath,
@@ -157,6 +160,7 @@ describe('partial batch semantics (Bug 10)', () => {
         {
           file: filePath,
           reason: 'all fail',
+          partial: true,
           changes: [
             { old_text: 'NOPE', new_text: 'A' },
             { old_text: 'ALSO NOPE', new_text: 'B' },
@@ -174,7 +178,7 @@ describe('partial batch semantics (Bug 10)', () => {
       expect(errorData.error.failed.length).toBe(2);
     });
 
-    it('correctly writes only successful changes to disk', async () => {
+    it('partial:true correctly writes only successful changes to disk', async () => {
       const filePath = path.join(tmpDir, 'doc.md');
       await fs.writeFile(
         filePath,
@@ -185,6 +189,7 @@ describe('partial batch semantics (Bug 10)', () => {
         {
           file: filePath,
           reason: 'disk write check',
+          partial: true,
           changes: [
             { old_text: 'Change this.', new_text: 'Changed!' },
             { old_text: 'MISSING TEXT', new_text: 'Nope' },  // fails
@@ -204,7 +209,7 @@ describe('partial batch semantics (Bug 10)', () => {
       expect(written).not.toContain('MISSING TEXT');
     });
 
-    it('group footnote only references successfully applied child IDs', async () => {
+    it('partial:true group footnote only references successfully applied child IDs', async () => {
       const filePath = path.join(tmpDir, 'doc.md');
       await fs.writeFile(
         filePath,
@@ -215,6 +220,7 @@ describe('partial batch semantics (Bug 10)', () => {
         {
           file: filePath,
           reason: 'group check',
+          partial: true,
           changes: [
             { old_text: 'Alpha.', new_text: 'A' },
             { old_text: 'MISSING', new_text: 'X' },  // fails
@@ -236,6 +242,119 @@ describe('partial batch semantics (Bug 10)', () => {
       for (const change of data.applied) {
         expect(written).toContain(`[^${change.change_id}]`);
       }
+    });
+  });
+
+  // ── ADR-036 §4: atomic default + explicit partial opt-in ──
+
+  describe('atomic default (ADR-036 §4)', () => {
+    it('batch with one failing op aborts entire batch — no disk write', async () => {
+      const filePath = path.join(tmpDir, 'atomic-abort.md');
+      const original = '# Doc\n\nFirst.\n\nSecond.\n\nThird.\n';
+      await fs.writeFile(filePath, original);
+
+      const result = await handleProposeBatch(
+        {
+          file: filePath,
+          reason: 'atomic abort test',
+          // NO partial flag — atomic is the default per ADR-036 §4
+          changes: [
+            { old_text: 'First.', new_text: 'One.' },
+            { old_text: 'DOES NOT EXIST', new_text: 'nope' },  // will fail
+            { old_text: 'Third.', new_text: 'Three.' },
+          ],
+          author: 'ai:test',
+        },
+        resolver,
+        state,
+      );
+
+      expect(result.isError).toBe(true);
+      // File must be completely unchanged — all-or-nothing
+      const content = await fs.readFile(filePath, 'utf-8');
+      expect(content).toBe(original);
+    });
+
+    it('batch where all ops succeed completes normally in atomic mode', async () => {
+      const filePath = path.join(tmpDir, 'atomic-success.md');
+      await fs.writeFile(filePath, '# Doc\n\nAlpha.\n\nBeta.\n');
+
+      const result = await handleProposeBatch(
+        {
+          file: filePath,
+          reason: 'atomic success test',
+          changes: [
+            { old_text: 'Alpha.', new_text: 'A.' },
+            { old_text: 'Beta.', new_text: 'B.' },
+          ],
+          author: 'ai:test',
+        },
+        resolver,
+        state,
+      );
+
+      expect(result.isError).toBeUndefined();
+      const data = JSON.parse(result.content[0].text);
+      expect(data.applied).toHaveLength(2);
+      expect(data.failed).toHaveLength(0);
+      const content = await fs.readFile(filePath, 'utf-8');
+      expect(content).toContain('A.');
+      expect(content).toContain('B.');
+    });
+
+    it('atomic abort error response contains diagnostics', async () => {
+      const filePath = path.join(tmpDir, 'atomic-diag.md');
+      await fs.writeFile(filePath, 'Foo.\n');
+
+      const result = await handleProposeBatch(
+        {
+          file: filePath,
+          reason: 'diagnostics test',
+          changes: [
+            { old_text: 'Foo.', new_text: 'Bar.' },       // would succeed
+            { old_text: 'MISSING', new_text: 'nope' },    // fails — aborts whole batch
+          ],
+          author: 'ai:test',
+        },
+        resolver,
+        state,
+      );
+
+      expect(result.isError).toBe(true);
+      // Error message should identify the failing operation
+      const msg = result.content[0].text;
+      expect(msg).toMatch(/Operation 1:|not found|no match/i);
+    });
+  });
+
+  describe('explicit partial:true opt-in', () => {
+    it('partial:true applies valid ops and reports failures — file is modified', async () => {
+      const filePath = path.join(tmpDir, 'partial-opt-in.md');
+      await fs.writeFile(filePath, 'Good text.\n\nBad target.\n');
+
+      const result = await handleProposeBatch(
+        {
+          file: filePath,
+          reason: 'explicit partial',
+          partial: true,
+          changes: [
+            { old_text: 'Good text.', new_text: 'Better text.' },
+            { old_text: 'NONEXISTENT', new_text: 'nope' },  // will fail
+          ],
+          author: 'ai:test',
+        },
+        resolver,
+        state,
+      );
+
+      expect(result.isError).toBeUndefined();
+      const data = JSON.parse(result.content[0].text);
+      expect(data.applied).toHaveLength(1);
+      expect(data.failed).toHaveLength(1);
+      expect(data.failed[0].index).toBe(1);
+      // The successful op IS written to disk
+      const content = await fs.readFile(filePath, 'utf-8');
+      expect(content).toContain('Better text.');
     });
   });
 

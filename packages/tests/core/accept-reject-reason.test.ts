@@ -40,6 +40,17 @@ describe('computeApprovalLineEdit with reason', () => {
     expect(edit!.newText).not.toContain('"');
   });
 
+  it('does not double-prefix already-prefixed reviewer handles', () => {
+    const doc = docWithFootnote();
+    const edit = computeApprovalLineEdit(doc, 'cn-1', 'accepted', {
+      author: '@ai:opus',
+      date: '2026-03-09',
+    });
+    expect(edit).toBeDefined();
+    expect(edit!.newText).toContain('approved: @ai:opus 2026-03-09');
+    expect(edit!.newText).not.toContain('@@ai:opus');
+  });
+
   it('appends reason for rejection', () => {
     const doc = docWithFootnote();
     const edit = computeApprovalLineEdit(doc, 'cn-1', 'rejected', {

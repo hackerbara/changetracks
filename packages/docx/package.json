@@ -1,20 +1,45 @@
 {
   "name": "@changedown/docx",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "DOCX import/export with tracked changes for ChangeDown",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "typesVersions": {
+    "*": {
+      "browser": [
+        "dist/browser.d.ts"
+      ],
+      "inline-codec": [
+        "dist/inline-codec/index.d.ts"
+      ],
+      "ooxml-codec": [
+        "dist/ooxml-codec/index.d.ts"
+      ]
+    }
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     },
-    "./browser": "./src/browser.ts"
+    "./browser": {
+      "types": "./dist/browser.d.ts",
+      "default": "./dist/browser.js"
+    },
+    "./inline-codec": {
+      "types": "./dist/inline-codec/index.d.ts",
+      "default": "./dist/inline-codec/index.js"
+    },
+    "./ooxml-codec": {
+      "types": "./dist/ooxml-codec/index.d.ts",
+      "default": "./dist/ooxml-codec/index.js"
+    }
   },
   "scripts": {
     "build": "tsc",
-    "test": "vitest run",
-    "test:watch": "vitest"
+    "test": "npm run typecheck:test && vitest run",
+    "test:watch": "vitest",
+    "typecheck:test": "tsc -p tsconfig.test.json --noEmit"
   },
   "dependencies": {
     "@changedown/core": "file:../core",

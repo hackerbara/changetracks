@@ -1,5 +1,6 @@
 import tseslint from 'typescript-eslint';
 import importX from 'eslint-plugin-import-x';
+import noDirectTrackedFileWrite from './eslint-rules/no-direct-tracked-file-write.mjs';
 
 export default tseslint.config(
   // Global ignores
@@ -109,5 +110,23 @@ export default tseslint.config(
   // Browser Web Worker entry point — excluded from tsconfig.json (uses tsconfig.browser.json)
   {
     ignores: ['packages/lsp-server/src/browser-server.ts'],
+  },
+
+  // Chokepoint guard: forbid direct fs.writeFile* in tracked-file write paths.
+  // All writes to tracked CriticMarkup files must go through writeTrackedFile()
+  // or writeTrackedFileSync() from packages/cli/src/engine/write-tracked-file.ts.
+  // Per spec §3.7 / Tranche 6 Task 6.4.
+  {
+    files: [
+      'packages/cli/src/**/*.ts',
+      'packages/lsp-server/src/**/*.ts',
+      'packages/core/src/host/**/*.ts',
+    ],
+    plugins: {
+      'changedown': { rules: { 'no-direct-tracked-file-write': noDirectTrackedFileWrite } },
+    },
+    rules: {
+      'changedown/no-direct-tracked-file-write': 'error',
+    },
   },
 );

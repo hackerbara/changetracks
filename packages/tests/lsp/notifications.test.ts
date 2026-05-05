@@ -29,7 +29,8 @@ describe('Notifications', () => {
           status: ChangeStatus.Proposed,
           range: { start: 0, end: 11 },
           contentRange: { start: 3, end: 8 },
-          level: 0, anchored: false
+          level: 0, anchored: false,
+          resolved: true,
         }
       ];
 
@@ -79,7 +80,8 @@ describe('Notifications', () => {
             date: '2026-02-10',
             comment: 'test comment'
           },
-          level: 0, anchored: false
+          level: 0, anchored: false,
+          resolved: true,
         }
       ];
 
@@ -110,7 +112,8 @@ describe('Notifications', () => {
           status: ChangeStatus.Proposed,
           range: { start: 0, end: 11 },
           contentRange: { start: 3, end: 8 },
-          level: 0, anchored: false
+          level: 0, anchored: false,
+          resolved: true,
         },
         {
           id: '2',
@@ -118,7 +121,8 @@ describe('Notifications', () => {
           status: ChangeStatus.Proposed,
           range: { start: 12, end: 23 },
           contentRange: { start: 15, end: 20 },
-          level: 0, anchored: false
+          level: 0, anchored: false,
+          resolved: true,
         },
         {
           id: '3',
@@ -128,7 +132,8 @@ describe('Notifications', () => {
           contentRange: { start: 27, end: 37 },
           originalRange: { start: 27, end: 30 },
           modifiedRange: { start: 32, end: 37 },
-          level: 0, anchored: false
+          level: 0, anchored: false,
+          resolved: true,
         },
         {
           id: '4',
@@ -136,7 +141,8 @@ describe('Notifications', () => {
           status: ChangeStatus.Proposed,
           range: { start: 41, end: 52 },
           contentRange: { start: 44, end: 49 },
-          level: 0, anchored: false
+          level: 0, anchored: false,
+          resolved: true,
         },
         {
           id: '5',
@@ -144,7 +150,8 @@ describe('Notifications', () => {
           status: ChangeStatus.Proposed,
           range: { start: 53, end: 64 },
           contentRange: { start: 56, end: 61 },
-          level: 0, anchored: false
+          level: 0, anchored: false,
+          resolved: true,
         }
       ];
 
@@ -224,7 +231,8 @@ describe('Notifications', () => {
           status: ChangeStatus.Proposed,
           range: { start: 0, end: 11 },
           contentRange: { start: 3, end: 8 },
-          level: 0, anchored: false
+          level: 0, anchored: false,
+          resolved: true,
         }
       ];
 
@@ -244,7 +252,8 @@ describe('Notifications', () => {
           status: ChangeStatus.Proposed,
           range: { start: 0, end: 11 },
           contentRange: { start: 3, end: 8 },
-          level: 0, anchored: false
+          level: 0, anchored: false,
+          resolved: true,
         },
         {
           id: '2',
@@ -252,7 +261,8 @@ describe('Notifications', () => {
           status: ChangeStatus.Proposed,
           range: { start: 12, end: 23 },
           contentRange: { start: 15, end: 20 },
-          level: 0, anchored: false
+          level: 0, anchored: false,
+          resolved: true,
         },
         {
           id: '3',
@@ -260,7 +270,8 @@ describe('Notifications', () => {
           status: ChangeStatus.Proposed,
           range: { start: 24, end: 35 },
           contentRange: { start: 27, end: 32 },
-          level: 0, anchored: false
+          level: 0, anchored: false,
+          resolved: true,
         }
       ];
 

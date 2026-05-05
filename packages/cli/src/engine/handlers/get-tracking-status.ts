@@ -1,8 +1,9 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
+import { writeTrackedFile } from '../write-tracked-file.js';
 import { optionalStrArg } from '../args.js';
 import { ConfigResolver } from '../config-resolver.js';
-import { countFootnoteHeadersWithStatus } from '@changedown/core';
+import { countFootnoteHeadersWithStatus, parseForFormat, assertResolved, UnresolvedChangesError } from '@changedown/core';
 import { resolveTrackingStatus } from '../scope.js';
 import { SessionState } from '../state.js';
 import { rerecordState } from '../state-utils.js';
@@ -87,9 +88,24 @@ export async function handleGetTrackingStatus(
         out.accepted_unsettled_count = beforeSettle;
 
         if (settleAccepted && beforeSettle > 0) {
+          // Assert no unresolved changes before settling (zombie-elimination spec §3.4).
+          try {
+            assertResolved(parseForFormat(content));
+          } catch (err) {
+            if (err instanceof UnresolvedChangesError) {
+              return {
+                content: [{
+                  type: 'text',
+                  text: `Document has ${err.diagnostics.length} unresolved change(s); run 'cd repair' or amend the failing change. Diagnostics: ${JSON.stringify(err.diagnostics)}`,
+                }],
+                isError: true,
+              };
+            }
+            throw err;
+          }
           const { currentContent, appliedIds } = applyAcceptedChanges(content);
           if (appliedIds.length > 0) {
-            await fs.writeFile(filePath, currentContent, 'utf-8');
+            await writeTrackedFile(filePath, currentContent);
             out.settled = true;
             out.settled_ids = appliedIds;
             await rerecordState(state, filePath, currentContent, config);

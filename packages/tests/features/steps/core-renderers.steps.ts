@@ -177,7 +177,11 @@ When(
     await ensureHashline();
     // Map old view names to BuiltinView
     const viewName: BuiltinView =
-      (view === 'markup' || view === 'smart') ? 'working' : view as BuiltinView;
+      (view === 'markup' || view === 'smart')
+        ? 'working'
+        : view === 'final'
+          ? 'decided'
+          : view as BuiltinView;
     const doc = buildViewDocument(this.coreText, viewName, testViewOptions);
     const ansiOpts: { showMarkup?: boolean } = {};
     if (view === 'markup') ansiOpts.showMarkup = true;

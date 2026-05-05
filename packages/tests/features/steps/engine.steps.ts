@@ -8,9 +8,9 @@ import {
   loadConfig,
   resolveAuthor,
   resolveTrackingStatus,
-} from 'changedown/engine';
-import type { ChangeDownConfig } from 'changedown/engine';
-import type { ResolveAuthorResult } from 'changedown/engine';
+} from '@changedown/cli/engine';
+import type { ChangeDownConfig } from '@changedown/cli/engine';
+import type { ResolveAuthorResult } from '@changedown/cli/engine';
 
 // =============================================================================
 // E1 – Config Resolution steps

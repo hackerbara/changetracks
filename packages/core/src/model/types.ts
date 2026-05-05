@@ -6,6 +6,7 @@ export enum ChangeType {
   Substitution = 'Substitution',
   Highlight = 'Highlight',
   Comment = 'Comment',
+  Move = 'Move',
 }
 
 /**
@@ -19,6 +20,7 @@ export function changeTypeToAbbrev(type: ChangeType): string {
     case ChangeType.Substitution: return 'sub';
     case ChangeType.Highlight: return 'hig';
     case ChangeType.Comment: return 'com';
+    case ChangeType.Move: return 'mov';
   }
 }
 
@@ -33,13 +35,14 @@ export function changeTypeToAbbrev(type: ChangeType): string {
  */
 export function changeTypeToShortCode(
   type: ChangeType,
-): 'ins' | 'del' | 'sub' | 'hl' | 'com' {
+): 'ins' | 'del' | 'sub' | 'hl' | 'com' | 'mov' {
   switch (type) {
     case ChangeType.Insertion: return 'ins';
     case ChangeType.Deletion: return 'del';
     case ChangeType.Substitution: return 'sub';
     case ChangeType.Highlight: return 'hl';
     case ChangeType.Comment: return 'com';
+    case ChangeType.Move: return 'mov';
   }
 }
 
@@ -63,6 +66,7 @@ export interface Approval {
   date: string;
   timestamp: Timestamp;
   reason?: string;
+  blocking?: boolean; // true = blocks merge until withdrawn
 }
 
 export interface Revision {
@@ -129,7 +133,36 @@ export interface ChangeNode {
   moveRole?: 'from' | 'to';
   groupId?: string;
   decided?: boolean;
-  anchored: boolean;  // true = [^cn-N] exists in file; false = parse-assigned
+  /**
+   * True if a footnote ref [^cn-N] is present following the inline markup.
+   * - L3 footnote-native nodes always have anchored=true (a ref exists by
+   *   construction in the footnote block).
+   * - L2 settled refs always have anchored=true.
+   * - L0/L1 bare inline markup that has not yet been promoted to L2 has
+   *   anchored=false (no ref attached yet).
+   *
+   * Independent of position validity — see `resolved`.
+   */
+  anchored: boolean;
+  /**
+   * True if the parser successfully resolved this change to a byte range in the
+   * body. False only for L3 parser failures where the footnote's edit-op text
+   * could not be located on the target line. L3 parser failure paths emit
+   * coordinate_failed and set resolved:false
+   * (footnote-native-parser.ts:535, 670, 740).
+   *
+   * Every ChangeNode carries an explicit resolved value — there is no
+   * undefined/absent state after Tranche 4.5.
+   *
+   * Invariants:
+   * - When resolved=true, range.start/end point to valid bytes in body.
+   * - When resolved=false, range is the sentinel {0,0}; do not splice or render.
+   * - L0/L1 inline-only nodes always have resolved=true (parsed from inline delimiters).
+   *
+   * Replaces the dual semantics of `anchored` documented in
+   * docs/findings/2026-03-17-anchored-dual-semantics.md.
+   */
+  resolved: boolean;
   footnoteRefStart?: number;  // byte offset where [^cn-N] starts (set by parser for L2 anchored changes)
   /** Line range of the footnote definition block in the raw text (0-based, inclusive). */
   footnoteLineRange?: { startLine: number; endLine: number };
@@ -170,8 +203,8 @@ export interface ChangeNode {
   anchor?: { kind: 'offset'; offset: number; length: number }
          | { kind: 'line-hash'; line: number; hash: string; embedding?: string }
          | { kind: 'contextual'; context: string };
-  supersedes?: string[];
-  supersededBy?: string;
+  supersedes?: string;        // a change has one predecessor
+  supersededBy?: string[];    // a change can be replaced by multiple competing successors
   parent?: string;
   children?: string[];
   activeSpan?: { start: number; end: number };
@@ -195,15 +228,15 @@ export interface UnresolvedDiagnostic {
 }
 
 /**
- * Ghost nodes are L2+ footnotes whose edit-op couldn't be resolved against the body.
- * They get anchored:false with zero-width ranges at {0,0}. LSP consumers must
- * filter them to avoid phantom UI artifacts.
+ * A ghost node has unresolved position (range is the sentinel {0,0}) and
+ * is not consumed by another change. Per spec §3.1, after the resolved-field
+ * migration: ghost ⟺ resolved=false ∧ !consumedBy. The previous level≥2
+ * gate became unnecessary because L0/L1 inline-only nodes always have
+ * resolved=true.
  *
- * Consumed nodes (consumedBy set) are NOT ghosts — they were deliberately superseded
- * by another operation and should be rendered with consumed-op styling instead.
  */
-export function isGhostNode(change: ChangeNode): boolean {
-  return change.anchored === false && change.level >= 2 && !change.consumedBy;
+export function isGhostNode(node: ChangeNode): boolean {
+  return node.resolved === false && !node.consumedBy;
 }
 
 /**

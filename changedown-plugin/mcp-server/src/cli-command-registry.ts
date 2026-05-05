@@ -1,4 +1,4 @@
 /**
  * Re-export wrapper — canonical implementation lives in changedown.
  */
-export { COMMANDS } from 'changedown/agent-command-registry';
+export { COMMANDS } from '@changedown/cli/agent-command-registry';

@@ -1,6 +1,7 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
-import { generateFootnoteDefinition, nowTimestamp } from '@changedown/core';
+import { writeTrackedFile } from '../write-tracked-file.js';
+import { generateFootnoteDefinition, nowTimestamp, parseForFormat, assertResolved, UnresolvedChangesError } from '@changedown/core';
 import { errorResult } from '../shared/error-result.js';
 import { optionalStrArg } from '../args.js';
 import { resolveAuthor } from '../author.js';
@@ -80,10 +81,23 @@ export async function handleEndChangeGroup(
       const summaryLine = summary ? `\n    summary: ${summary}` : '';
       const footnoteBlock = footnoteHeader + reasonLine + summaryLine;
 
-      // Read current file content, append footnote, write back
+      // Read current file content, assert resolved, append footnote, write back
       const fileContent = await fs.readFile(targetFile, 'utf-8');
+
+      // Assert no unresolved changes before any mutation (zombie-elimination spec §3.4).
+      try {
+        assertResolved(parseForFormat(fileContent));
+      } catch (err) {
+        if (err instanceof UnresolvedChangesError) {
+          return errorResult(
+            `Document has ${err.diagnostics.length} unresolved change(s); run 'cd repair' or amend the failing change. Diagnostics: ${JSON.stringify(err.diagnostics)}`,
+          );
+        }
+        throw err;
+      }
+
       const modifiedText = appendFootnote(fileContent, footnoteBlock);
-      await fs.writeFile(targetFile, modifiedText, 'utf-8');
+      await writeTrackedFile(targetFile, modifiedText);
     }
 
     // Human-readable list of modified files + instruction so agents share paths with the user

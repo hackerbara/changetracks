@@ -9,7 +9,7 @@ import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import type { ChangeDownConfig, PolicyMode } from './index.js';
-import { DEFAULT_CONFIG } from './index.js';
+import { DEFAULT_CONFIG, DEFAULT_UNCONFIGURED_CONFIG } from './index.js';
 import { resolveView } from '../view-alias.js';
 
 // ---------------------------------------------------------------------------
@@ -264,7 +264,7 @@ export async function loadConfig(projectDir: string): Promise<ChangeDownConfig> 
     console.error(
       `changedown: no .changedown/config.toml found (searched from ${projectDir} to /), using defaults`
     );
-    return structuredClone(DEFAULT_CONFIG);
+    return structuredClone(DEFAULT_UNCONFIGURED_CONFIG);
   }
 
   let raw: string;

@@ -8,7 +8,7 @@ import {
   type ChangeDownConfig as CoreConfig,
 } from '@changedown/core';
 
-// Re-export core types so downstream consumers can import from 'changedown/config'
+// Re-export core types so downstream consumers can import from '@changedown/cli/config'
 export { type PolicyMode, type CreationTracking, type HumanAgentSplit, type CoherenceConfig } from '@changedown/core';
 
 // ---------------------------------------------------------------------------
@@ -59,6 +59,27 @@ export const DEFAULT_CONFIG: CLIConfig = {
     level: 2,
     reasoning: 'optional',
     batch_reasoning: 'optional',
+  },
+};
+
+export const DEFAULT_UNCONFIGURED_CONFIG: CLIConfig = {
+  ...DEFAULT_CONFIG,
+  tracking: {
+    ...DEFAULT_CONFIG.tracking,
+    include: [],
+    include_absolute: [],
+    default: 'untracked',
+    auto_header: false,
+  },
+  hooks: {
+    ...DEFAULT_CONFIG.hooks,
+    intercept_tools: false,
+    intercept_bash: false,
+    patch_wrap_experimental: false,
+  },
+  policy: {
+    ...DEFAULT_CONFIG.policy,
+    creation_tracking: 'none',
   },
 };
 

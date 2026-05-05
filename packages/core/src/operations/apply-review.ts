@@ -106,6 +106,11 @@ function promoteLevel0ToLevel2(
  * it is automatically promoted to Level 2 (ref + footnote) before the review
  * is applied. This allows agents to review changes proposed without footnotes.
  */
+
+function formatReviewAuthor(author: string): string {
+  return author.startsWith('@') ? author : `@${author}`;
+}
+
 export function applyReview(
   fileContent: string,
   changeId: string,
@@ -172,7 +177,7 @@ export function applyReview(
 
   const keyword = decisionToKeyword(decision);
   const ts = nowTimestamp();
-  const reviewLine = `    ${keyword} @${author} ${ts.raw} "${reasoning}"`;
+  const reviewLine = `    ${keyword} ${formatReviewAuthor(author)} ${ts.raw} "${reasoning}"`;
 
   const insertAfterIdx = findReviewInsertionIndex(lines, block.headerLine, block.blockEnd);
   lines.splice(insertAfterIdx + 1, 0, reviewLine);
@@ -219,7 +224,7 @@ export function applyReview(
         );
         // Insert review line in child footnote
         const childInsertIdx = findReviewInsertionIndex(lines, childBlock.headerLine, childBlock.blockEnd);
-        const childReviewLine = `    ${keyword} @${author} ${ts.raw} "${reasoning}" (cascaded from ${changeId})`;
+        const childReviewLine = `    ${keyword} ${formatReviewAuthor(author)} ${ts.raw} "${reasoning}" (cascaded from ${changeId})`;
         lines.splice(childInsertIdx + 1, 0, childReviewLine);
         cascadedChildren.push(childId);
       }

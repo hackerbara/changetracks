@@ -19,6 +19,7 @@ function makeL3Node(overrides: Partial<ChangeNode> & { type: ChangeType }): Chan
     contentRange: { start: 10, end: 15 },
     level: 2,
     anchored: true,
+    resolved: true,
     ...overrides,
   };
 }
@@ -34,6 +35,7 @@ function makeL2Node(overrides: Partial<ChangeNode> & { type: ChangeType }): Chan
     contentRange: { start: 3, end: 8 },
     level: 1,
     anchored: false,
+    resolved: true,
     ...overrides,
   };
 }

@@ -70,9 +70,8 @@ describe('read_tracked_file committed view', () => {
 
     expect(result.isError).toBeUndefined();
     const text = result.content[0].text;
-    // Unified renderer: ## {filename} | policy: ... | tracking: ...
-    expect(text).toMatch(/## .*test\.md \| policy:/);
-    // No separate "## view: committed" line in unified format
+    // Unified renderer: ## proposed: N | accepted: N | rejected: N
+    expect(text).toMatch(/## proposed: \d+ \| accepted: \d+ \| rejected: \d+/);
     expect(text).toContain('# Title');
     expect(text).toContain('Clean line.');
   });

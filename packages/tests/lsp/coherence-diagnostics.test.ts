@@ -12,6 +12,7 @@ describe('diagnostics with unanchored changes', () => {
       id: 'cn-1', type: ChangeType.Insertion, status: ChangeStatus.Proposed,
       range: { start: 7, end: 13 }, contentRange: { start: 7, end: 13 },
       level: 2, anchored: true,
+      resolved: true,
     }];
     const result = createDiagnostics(changes, text);
     expect(result).toHaveLength(1);
@@ -23,6 +24,7 @@ describe('diagnostics with unanchored changes', () => {
       id: 'cn-5', type: ChangeType.Insertion, status: ChangeStatus.Proposed,
       range: { start: 0, end: 0 }, contentRange: { start: 0, end: 0 },
       level: 2, anchored: false,
+      resolved: false,
     }];
     const unresolvedDiagnostics: UnresolvedDiagnostic[] = [{
       changeId: 'cn-5',
@@ -42,6 +44,7 @@ describe('diagnostics with unanchored changes', () => {
       id: 'cn-1', type: ChangeType.Insertion, status: ChangeStatus.Proposed,
       range: { start: 0, end: 0 }, contentRange: { start: 0, end: 0 },
       level: 1, anchored: false,
+      resolved: true,
     }];
     const result = createDiagnostics(changes, text);
     expect(result).toHaveLength(0);
@@ -52,6 +55,7 @@ describe('diagnostics with unanchored changes', () => {
       id: 'cn-1', type: ChangeType.Insertion, status: ChangeStatus.Proposed,
       range: { start: 0, end: 0 }, contentRange: { start: 0, end: 0 },
       level: 2, anchored: false,
+      resolved: false,
     }];
     const unresolvedDiagnostics: UnresolvedDiagnostic[] = [{
       changeId: 'cn-999', // no matching change

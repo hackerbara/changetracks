@@ -10,7 +10,7 @@
  * §"Typed document model" for the design rationale.
  */
 
-import type { DiscussionComment, Resolution, Approval } from './types.js';
+import type { DiscussionComment, Resolution, Approval, Revision } from './types.js';
 // Compile-time sanity check: Resolution uses `type` as discriminator, not `kind`.
 // The spec draft showed `kind: 'open'` but the concrete type uses `type: 'open'`.
 // If this line errors, someone renamed the discriminator in model/types.ts.
@@ -78,6 +78,11 @@ export type FootnoteLine =
   | { readonly kind: 'resolution'; readonly resolution: Resolution; readonly raw: string }
   | { readonly kind: 'image-meta'; readonly key: string; readonly value: string; readonly raw: string }
   | { readonly kind: 'equation-meta'; readonly key: string; readonly value: string; readonly raw: string }
+  | { readonly kind: 'request-changes'; readonly action: Approval; readonly raw: string }
+  | { readonly kind: 'revisions-header'; readonly raw: string }
+  | { readonly kind: 'revision'; readonly revision: Revision; readonly raw: string }
+  | { readonly kind: 'supersedes'; readonly target: string; readonly raw: string }
+  | { readonly kind: 'superseded-by'; readonly target: string; readonly raw: string }
   | { readonly kind: 'blank'; readonly raw: '' }
   | { readonly kind: 'unknown'; readonly raw: string };
 
@@ -103,7 +108,11 @@ export interface Footnote {
   readonly discussion: readonly DiscussionComment[];
   readonly approvals: readonly Approval[];
   readonly rejections: readonly Approval[];
+  readonly requestChanges: readonly Approval[];
+  readonly revisions: readonly Revision[];
   readonly resolution: Resolution | null;
+  readonly supersedes?: string;
+  readonly supersededBy: readonly string[];
   readonly imageMetadata?: Readonly<Record<string, string>>;
   readonly equationMetadata?: Readonly<Record<string, string>>;
 

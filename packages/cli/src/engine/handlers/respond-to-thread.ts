@@ -1,10 +1,11 @@
 import * as fs from 'node:fs/promises';
+import { writeTrackedFile } from '../write-tracked-file.js';
 import { errorResult } from '../shared/error-result.js';
 import { optionalStrArg } from '../args.js';
 import { resolveAuthor } from '../author.js';
 import { isFileInScope } from '../config.js';
 import { ConfigResolver } from '../config-resolver.js';
-import { computeReplyEdit } from '@changedown/core';
+import { computeReplyEdit, parseForFormat, assertResolved, UnresolvedChangesError } from '@changedown/core';
 import { SessionState } from '../state.js';
 
 /**
@@ -116,6 +117,18 @@ export async function handleRespondToThread(
       return errorResult(authorError.message);
     }
 
+    // Assert no unresolved changes before any mutation (zombie-elimination spec §3.4).
+    try {
+      assertResolved(parseForFormat(fileContent));
+    } catch (err) {
+      if (err instanceof UnresolvedChangesError) {
+        return errorResult(
+          `Document has ${err.diagnostics.length} unresolved change(s); run 'cd repair' or amend the failing change. Diagnostics: ${JSON.stringify(err.diagnostics)}`,
+        );
+      }
+      throw err;
+    }
+
     // 6. Delegate pure computation to core
     const result = computeReplyEdit(fileContent, changeId, {
       text: response,
@@ -128,7 +141,7 @@ export async function handleRespondToThread(
     }
 
     // 7. Write back to disk
-    await fs.writeFile(filePath, result.text, 'utf-8');
+    await writeTrackedFile(filePath, result.text);
 
     // 8. Return success
     return {

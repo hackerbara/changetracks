@@ -1,16 +1,16 @@
 #!/usr/bin/env node
 
-// @deprecated — Use `npx changedown init` or the shared changedown/init module.
+// @deprecated — Use `npx @changedown/cli init` or the shared changedown/init module.
 // This file will be removed in a future release.
 
 // ChangeDown — Per-project setup (DEPRECATED)
 // Usage: node scripts/setup-project.mjs [target-dir] [--author=@name] [--no-examples]
 //
-// Prefer: npx changedown init
+// Prefer: npx @changedown/cli init
 
 console.warn('');
 console.warn('  \x1b[33m⚠  DEPRECATED: setup-project.mjs is deprecated.\x1b[0m');
-console.warn('  \x1b[33m⚠  Use instead: npx changedown init\x1b[0m');
+console.warn('  \x1b[33m⚠  Use instead: npx @changedown/cli init\x1b[0m');
 console.warn('  \x1b[2m   This script will be removed in a future release.\x1b[0m');
 console.warn('');
 

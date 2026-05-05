@@ -13,10 +13,10 @@ import * as os from 'node:os';
  *
  * Meta mode uses three-zone annotation format per line:
  *   Zone 1: Margin (LINE:HASH FLAG| when hashline enabled)
- *   Zone 2: Content with lightweight [^cn-N] anchors inline after CriticMarkup
- *   Zone 3: {>>cn-N @author: reason<<} metadata at end of line
+ *   Zone 2: Content with CriticMarkup intact and [^cn-N] anchors inline
+ *   Zone 3: [cn-N @author type status: "reason" | @author: turn] bracket metadata at end of line
  *
- * Also prepends a deliberation summary header (policy, change counts, authors).
+ * Also prepends a deliberation summary header (counts, authors) followed by `---`.
  * The footnote definition section is elided from output.
  */
 describe('read_tracked_file meta mode', () => {
@@ -93,7 +93,7 @@ describe('read_tracked_file meta mode', () => {
 
   // ─── Test 1: Deliberation summary header ──────────────────────────────
 
-  it('meta mode includes deliberation summary header (policy, counts, authors)', async () => {
+  it('meta mode includes deliberation summary header (counts, authors)', async () => {
     const resolver = await createTestResolver(tmpDir, config);
     const result = await handleReadTrackedFile(
       { file: filePath, view: 'meta' },
@@ -104,11 +104,10 @@ describe('read_tracked_file meta mode', () => {
     expect(result.isError).toBeUndefined();
     const text = result.content[0].text;
 
-    // Summary header should include policy mode (unified renderer uses protocol.mode, which defaults to 'classic')
-    expect(text).toContain('policy: classic');
-    // Summary header should include change status counts (new format: "proposed: N | accepted: N | rejected: N")
-    expect(text).toContain('proposed: 3');
-    // Summary header should include author names
+    // Summary header: "## proposed: N | accepted: N | rejected: N[| threads: M]"
+    expect(text).toMatch(/## proposed: 3 \| accepted: 0 \| rejected: 0/);
+    // Summary header should include author names line
+    expect(text).toContain('## authors:');
     expect(text).toContain('@alice');
     expect(text).toContain('@ai:claude-opus-4.6');
     expect(text).toContain('@kimi');
@@ -116,7 +115,7 @@ describe('read_tracked_file meta mode', () => {
 
   // ─── Test 2: Three-zone inline metadata annotations ──────────────────
 
-  it('meta mode uses three-zone format: [^cn-N] anchor inline, {>>metadata<<} at end of line', async () => {
+  it('meta mode uses three-zone format: [^cn-N] anchor inline, bracket metadata at end of line', async () => {
     const resolver = await createTestResolver(tmpDir, config);
     const result = await handleReadTrackedFile(
       { file: filePath, view: 'meta' },
@@ -127,31 +126,31 @@ describe('read_tracked_file meta mode', () => {
     expect(result.isError).toBeUndefined();
     const text = result.content[0].text;
 
-    // Zone 2: lightweight [^cn-N] anchor stays inline after CriticMarkup
+    // Zone 2: CriticMarkup with [^cn-N] anchor stays inline
     expect(text).toContain('{~~tpyo~>typo~~}[^cn-1]');
     expect(text).toContain('{++new section about auth++}[^cn-2]');
     expect(text).toContain('{==1000/min==}[^cn-3]');
 
-    // Zone 3: metadata at end of line using CriticMarkup comment syntax
-    expect(text).toContain('{>>cn-1 @alice: spelling fix<<}');
-    expect(text).toContain('{>>cn-2 @ai:claude-opus-4.6: missing auth coverage<<}');
+    // Zone 3: bracket metadata at end of line — [cn-N @author type status: "reason"]
+    expect(text).toContain('[cn-1 @alice sub proposed: "spelling fix"]');
+    expect(text).toContain('[cn-2 @ai:claude-opus-4.6 ins proposed: "missing auth coverage"]');
     // cn-3 has replies (tested separately in Test 3)
-    expect(text).toMatch(/\{>>cn-3 @kimi: contradicts section 4/);
+    expect(text).toMatch(/\[cn-3 @kimi hl proposed: "contradicts section 4"/);
 
-    // Zone 3 is at end of line, not inline after CriticMarkup
+    // Zone 3 bracket is at end of line, after the [^cn-N] anchor
     const line1 = text.split('\n').find(l => l.includes('[^cn-1]'));
-    expect(line1).toMatch(/\[\^cn-1\].*\{>>cn-1/);  // anchor before metadata
-    expect(line1).toMatch(/<<\}$/);  // line ends with metadata closer
+    expect(line1).toMatch(/\[\^cn-1\].*\[cn-1/);  // anchor before bracket metadata
+    expect(line1).toMatch(/\]$/);  // line ends with bracket closer
 
-    // No old bracket annotation format present
-    expect(text).not.toContain('[cn-1 proposed');
-    expect(text).not.toContain('[cn-2 proposed');
-    expect(text).not.toContain('[cn-3 proposed');
+    // No old {>>...<<} CriticMarkup comment annotation format
+    expect(text).not.toContain('{>>cn-1');
+    expect(text).not.toContain('{>>cn-2');
+    expect(text).not.toContain('{>>cn-3');
   });
 
   // ─── Test 3: Thread reply count in Zone 3 ────────────────────────────
 
-  it('meta mode shows thread reply count in Zone 3 metadata', async () => {
+  it('meta mode shows latest thread turn in bracket metadata', async () => {
     const resolver = await createTestResolver(tmpDir, config);
     const result = await handleReadTrackedFile(
       { file: filePath, view: 'meta' },
@@ -162,10 +161,11 @@ describe('read_tracked_file meta mode', () => {
     expect(result.isError).toBeUndefined();
     const text = result.content[0].text;
 
-    // cn-3 has 2 thread replies — reply count appended with pipe separator
-    expect(text).toContain('{>>cn-3 @kimi: contradicts section 4 | 2 replies<<}');
-    // cn-1 has no replies — Zone 3 metadata should not mention "replies"
-    expect(text).not.toMatch(/\{>>cn-1.*replies/);
+    // cn-3 has thread replies — the latest turn is shown as "| @author: text" after the reason
+    // The fixture has @alice as the last reply author with "Let me check the spec"
+    expect(text).toMatch(/\[cn-3 @kimi hl proposed: "contradicts section 4" \| @alice: Let me check the spec\]/);
+    // cn-1 has no replies — no pipe separator in its bracket metadata
+    expect(text).not.toMatch(/\[cn-1.*\|/);
   });
 
   // ─── Test 3b: Multiple annotations per line ──────────────────────────
@@ -198,14 +198,14 @@ describe('read_tracked_file meta mode', () => {
     expect(text).toContain('{~~API~>service~~}[^cn-1]');
     expect(text).toContain('{~~REST~>GraphQL~~}[^cn-2]');
 
-    // Zone 3: both metadata blocks at end of line (space-separated in unified renderer)
-    expect(text).toContain('{>>cn-1 @alice: naming<<}');
-    expect(text).toContain('{>>cn-2 @claude: paradigm shift<<}');
+    // Zone 3: both bracket metadata blocks at end of line (space-separated)
+    expect(text).toContain('[cn-1 @alice sub proposed: "naming"]');
+    expect(text).toContain('[cn-2 @claude sub proposed: "paradigm shift"]');
 
     // Both zones on same line
     const multiLine = text.split('\n').find(l => l.includes('[^cn-1]') && l.includes('[^cn-2]'));
     expect(multiLine).toBeDefined();
-    expect(multiLine).toMatch(/<<\}$/);  // line ends with metadata closer
+    expect(multiLine).toMatch(/\]$/);  // line ends with bracket closer
   });
 
   // ─── Test 4: Footnote section elided ──────────────────────────────────
@@ -301,9 +301,9 @@ describe('read_tracked_file meta mode', () => {
     // Flag column: space + flag(P/A/space) + pipe = " P|", " A|", or "  |"
     expect(text).toMatch(/\d+:[0-9a-f]{2} [PA ]\|/);
     expect(text).toContain('| # API Design Doc');
-    // Three-zone format: [^cn-N] anchor inline + {>>metadata<<} at end of line
+    // Three-zone format: [^cn-N] anchor inline + bracket metadata at end of line
     expect(text).toContain('[^cn-1]');
-    expect(text).toContain('{>>cn-1');
+    expect(text).toContain('[cn-1 @alice sub proposed');
   });
 
   // ─── Test 8: Default view is meta ─────────────────────────────────────
@@ -321,8 +321,8 @@ describe('read_tracked_file meta mode', () => {
     const text = result.content[0].text;
 
     // Should behave like meta mode: three-zone annotations present
-    expect(text).toContain('[^cn-1]');  // Zone 2: lightweight anchor
-    expect(text).toContain('{>>cn-1');  // Zone 3: metadata at end of line
+    expect(text).toContain('[^cn-1]');         // Zone 2: CriticMarkup anchor
+    expect(text).toContain('[cn-1 @alice');    // Zone 3: bracket metadata at end of line
     // Should behave like meta mode: footnote definitions absent
     expect(text).not.toContain('[^cn-1]:');
   });

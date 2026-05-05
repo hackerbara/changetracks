@@ -1,10 +1,12 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
+import { writeTrackedFile } from '../write-tracked-file.js';
 import { errorResult } from '../shared/error-result.js';
 import { optionalStrArg } from '../args.js';
 import { replaceUnique } from '../file-ops.js';
 import { isFileInScope } from '../config.js';
 import { ConfigResolver } from '../config-resolver.js';
+import { parseForFormat, assertResolved, UnresolvedChangesError } from '@changedown/core';
 
 /** CriticMarkup opening delimiters (insertion, deletion, substitution). */
 const MARKUP_OPENERS = [/\{\+\+/g, /\{\-\-/g, /\{\~\~/g];
@@ -117,8 +119,20 @@ export async function handleRawEdit(
       return errorResult(`File not found or unreadable: ${msg}`);
     }
 
+    // Assert no unresolved changes before any mutation (zombie-elimination spec §3.4).
+    try {
+      assertResolved(parseForFormat(fileContent));
+    } catch (err) {
+      if (err instanceof UnresolvedChangesError) {
+        return errorResult(
+          `Document has ${err.diagnostics.length} unresolved change(s); run 'cd repair' or amend the failing change. Diagnostics: ${JSON.stringify(err.diagnostics)}`,
+        );
+      }
+      throw err;
+    }
+
     const modifiedText = replaceUnique(fileContent, oldText, newText);
-    await fs.writeFile(filePath, modifiedText, 'utf-8');
+    await writeTrackedFile(filePath, modifiedText);
 
     console.error(`[changedown] raw_edit bypassed tracking: ${reason}`);
 

@@ -5,37 +5,37 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import { execSync } from 'node:child_process';
 import { ChangeDownWorld } from './world.js';
-import { runInit, type ClackAdapter } from 'changedown/init/runner';
+import { runInit, type ClackAdapter } from '@changedown/cli/init/runner';
 import { MockClack, responseMapHandler } from './mock-clack.js';
 
 // Import the init module (will fail during RED phase — that's expected)
 import {
   resolveIdentity,
-} from 'changedown/init/identity';
+} from '@changedown/cli/init/identity';
 import {
   generateDefaultConfig,
   parseConfigSummary,
   type InitConfigOptions,
   type ConfigSummary,
-} from 'changedown/init/config';
+} from '@changedown/cli/init/config';
 import {
   copyExamples,
-} from 'changedown/init/examples';
+} from '@changedown/cli/init/examples';
 import {
   detectAgents,
   type AgentStatus,
-} from 'changedown/init/agents';
+} from '@changedown/cli/init/agents';
 import {
   ensureGitignoreEntries,
   createGitignore,
   hasGitignore,
   type GitignoreResult,
-} from 'changedown/init/gitignore';
+} from '@changedown/cli/init/gitignore';
 import {
   detectEnvironment,
   type EnvironmentInfo,
   type DetectEnvironmentOptions,
-} from 'changedown/init/environment';
+} from '@changedown/cli/init/environment';
 
 // =============================================================================
 // Shared state per scenario

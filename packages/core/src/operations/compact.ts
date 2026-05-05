@@ -292,7 +292,7 @@ export async function compact(l3Text: string, request: CompactionRequest): Promi
     const rejectEdits: TextEdit[] = [];
     for (const id of proposedTargetIds) {
       const change = preRejectMap.get(id);
-      if (!change || !change.anchored) continue;
+      if (!change) continue;  // T3.9: anchored-guard weakened; upstream assertResolved blocks unresolved docs
 
       const edit = computeReject(change);
       if (edit.length > 0 || edit.newText.length > 0) {

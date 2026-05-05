@@ -538,7 +538,7 @@ describe('handleAmendChange', () => {
     expect(result.content[0].text).toMatch(/not found/i);
   });
 
-  it('CriticMarkup in new_text: supersede path does not block (no delimiter guard)', async () => {
+  it('CriticMarkup in new_text: supersede path is blocked by structural write validation', async () => {
     const filePath = path.join(tmpDir, 'doc.md');
     await fs.writeFile(filePath, 'The quick fox.');
     await handleProposeChange(
@@ -547,17 +547,20 @@ describe('handleAmendChange', () => {
       state
     );
 
-    // With supersede logic, the CriticMarkup delimiter guard is no longer
-    // enforced at the amend handler level. The supersede proceeds.
+    // The amend handler no longer has its own delimiter guard, but the shared
+    // write chokepoint must still prevent nested CriticMarkup from reaching
+    // disk.
     const result = await handleAmendChange(
       { file: filePath, change_id: 'cn-1', new_text: 'fast {++nested++}', reason: 'test' },
       resolver
     );
 
-    expect(result.isError).toBeUndefined();
-    const data = JSON.parse(result.content[0].text);
-    expect(data.new_change_id).toBeDefined();
-    expect(data.amended).toBe(true);
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('Structural integrity violated');
+
+    const modified = await fs.readFile(filePath, 'utf-8');
+    expect(modified).toContain('{~~quick~>slow~~}[^cn-1]');
+    expect(modified).not.toContain('{++nested++}');
   });
 
   it('author enforcement required: amend without author when required returns error', async () => {

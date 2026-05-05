@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { computeSettlement } from 'changedown/internals';
+import { computeSettlement } from '@changedown/cli/internals';
 
 // Helper: extract body (content before the first blank-line-separated footnote block)
 function bodyOf(content: string): string {

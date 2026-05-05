@@ -1,5 +1,6 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
+import { writeTrackedFile } from '../write-tracked-file.js';
 import {
   parseTrackingHeader,
   insertTrackingHeader,
@@ -16,6 +17,9 @@ import {
   reviewerType,
   splitBodyAndFootnotes,
   FOOTNOTE_L3_EDIT_OP,
+  parseForFormat,
+  assertResolved,
+  UnresolvedChangesError,
 } from '@changedown/core';
 import { validateOrAutoRemap, type RelocationEntry, type AutoRemapResult } from './hashline-relocate.js';
 import { HashlineMismatchError } from '@changedown/core';
@@ -430,12 +434,15 @@ export async function handleProposeChange(
       }
 
       // Multiple changes: delegate to batch handler (reuses handleProposeBatch logic).
-      // Same partial semantics as propose_batch: all failures reported, not just the first.
+      // propose_change(changes=[...]) uses partial semantics: good ops applied, failures reported.
+      // Explicitly pass partial:true so the atomic-default flip in handleProposeBatch (ADR-036 §4)
+      // does not change this tool's behavior.
       const batchArgs: Record<string, unknown> = {
         file: args.file,
         reason: args.reason,
         author: args.author,
         changes: changesArray,
+        partial: true,
       };
       const batchResult = await handleProposeBatch(batchArgs, resolver, state);
       // Adapt ProposeBatchResult to ProposeChangeResult (same shape)
@@ -561,6 +568,22 @@ export async function handleProposeChange(
         return errorResult(`File not found or unreadable: ${msg}`, 'FILE_UNREADABLE', {
           file: relativePath,
         });
+      }
+    }
+
+    // Assert no unresolved changes before any mutation (zombie-elimination spec §3.4).
+    if (!isNewFile) {
+      try {
+        assertResolved(parseForFormat(fileContent));
+      } catch (err) {
+        if (err instanceof UnresolvedChangesError) {
+          return errorResult(
+            `Document has ${err.diagnostics.length} unresolved change(s); run 'cd repair' or amend the failing change.`,
+            'VALIDATION_ERROR',
+            { diagnostics: err.diagnostics },
+          );
+        }
+        throw err;
       }
     }
 
@@ -1028,7 +1051,7 @@ export async function handleProposeChange(
     }
 
     // 8. Write back to disk
-    await fs.writeFile(filePath, modifiedText, 'utf-8');
+    await writeTrackedFile(filePath, modifiedText);
 
     // 8a. Re-record hashes and fingerprint so chained edits don't trigger false staleness warnings
     await rerecordState(state, filePath, modifiedText, config);
@@ -1147,7 +1170,7 @@ async function handleRawChanges(
     }
   }
 
-  await fs.writeFile(filePath, modifiedText, 'utf-8');
+  await writeTrackedFile(filePath, modifiedText);
 
   // Raw edits bypass hashline, so just reset the ID counter and clear cache
   if (state) {
@@ -1258,7 +1281,7 @@ async function handleCompactProposeChange(
   fileLines = fileContent.split('\n');
 
   // Write to disk
-  await fs.writeFile(filePath, modifiedText, 'utf-8');
+  await writeTrackedFile(filePath, modifiedText);
 
   // Re-record hashes and fingerprint for staleness detection.
   const viewResult = await rerecordState(state, filePath, modifiedText, config);

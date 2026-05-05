@@ -52,7 +52,8 @@ describe('Semantic Tokens', () => {
           status: ChangeStatus.Proposed,
           range: { start: 0, end: 14 },
           contentRange: { start: 3, end: 11 },
-          level: 0, anchored: false
+          level: 0, anchored: false,
+          resolved: true,
         }];
 
         const result = buildSemanticTokens(changes, testText);
@@ -80,7 +81,8 @@ describe('Semantic Tokens', () => {
           status: ChangeStatus.Proposed,
           range: { start: 0, end: 20 },
           contentRange: { start: 3, end: 17 }, // spans from Line 1 to Line 2
-          level: 0, anchored: false
+          level: 0, anchored: false,
+          resolved: true,
         }];
 
         const result = buildSemanticTokens(changes, multilineText);
@@ -97,7 +99,8 @@ describe('Semantic Tokens', () => {
           status: ChangeStatus.Proposed,
           range: { start: 0, end: 14 },
           contentRange: { start: 3, end: 11 },
-          level: 0, anchored: false
+          level: 0, anchored: false,
+          resolved: true,
         }];
 
         const result = buildSemanticTokens(changes, testText);
@@ -123,7 +126,8 @@ describe('Semantic Tokens', () => {
           contentRange: { start: 3, end: 17 },
           originalRange: { start: 3, end: 10 },
           modifiedRange: { start: 12, end: 17 },
-          level: 0, anchored: false
+          level: 0, anchored: false,
+          resolved: true,
         }];
 
         const result = buildSemanticTokens(changes, testText);
@@ -151,7 +155,8 @@ describe('Semantic Tokens', () => {
           status: ChangeStatus.Proposed,
           range: { start: 0, end: 20 },
           contentRange: { start: 3, end: 17 },
-          level: 0, anchored: false
+          level: 0, anchored: false,
+          resolved: true,
           // Missing originalRange and modifiedRange
         }];
 
@@ -169,7 +174,8 @@ describe('Semantic Tokens', () => {
           status: ChangeStatus.Proposed,
           range: { start: 0, end: 14 },
           contentRange: { start: 3, end: 11 },
-          level: 0, anchored: false
+          level: 0, anchored: false,
+          resolved: true,
         }];
 
         const result = buildSemanticTokens(changes, testText);
@@ -193,7 +199,8 @@ describe('Semantic Tokens', () => {
           status: ChangeStatus.Proposed,
           range: { start: 0, end: 14 },
           contentRange: { start: 3, end: 11 },
-          level: 0, anchored: false
+          level: 0, anchored: false,
+          resolved: true,
         }];
 
         const result = buildSemanticTokens(changes, testText);
@@ -218,7 +225,8 @@ describe('Semantic Tokens', () => {
             status: ChangeStatus.Proposed,
             range: { start: 0, end: 10 },
             contentRange: { start: 3, end: 7 },
-            level: 0, anchored: false
+            level: 0, anchored: false,
+            resolved: true,
           },
           {
             id: '2',
@@ -226,7 +234,8 @@ describe('Semantic Tokens', () => {
             status: ChangeStatus.Proposed,
             range: { start: 15, end: 25 },
             contentRange: { start: 18, end: 22 },
-            level: 0, anchored: false
+            level: 0, anchored: false,
+            resolved: true,
           }
         ];
 
@@ -262,7 +271,8 @@ describe('Semantic Tokens', () => {
             status: ChangeStatus.Proposed,
             range: { start: 0, end: 5 },
             contentRange: { start: 0, end: 5 },
-            level: 0, anchored: false
+            level: 0, anchored: false,
+            resolved: true,
           },
           {
             id: '2',
@@ -270,7 +280,8 @@ describe('Semantic Tokens', () => {
             status: ChangeStatus.Proposed,
             range: { start: 7, end: 12 },
             contentRange: { start: 7, end: 12 },
-            level: 0, anchored: false
+            level: 0, anchored: false,
+            resolved: true,
           }
         ];
 
@@ -295,7 +306,8 @@ describe('Semantic Tokens', () => {
           status: ChangeStatus.Proposed,
           range: { start: 0, end: 0 },
           contentRange: { start: 0, end: 0 },
-          level: 0, anchored: false
+          level: 0, anchored: false,
+          resolved: true,
         }];
 
         const result = buildSemanticTokens(changes, '');
@@ -313,7 +325,8 @@ describe('Semantic Tokens', () => {
             status: ChangeStatus.Proposed,
             range: { start: 0, end: 10 },
             contentRange: { start: 3, end: 7 },
-            level: 0, anchored: false
+            level: 0, anchored: false,
+            resolved: true,
           },
           {
             id: '2',
@@ -321,7 +334,8 @@ describe('Semantic Tokens', () => {
             status: ChangeStatus.Proposed,
             range: { start: 10, end: 20 },
             contentRange: { start: 13, end: 17 },
-            level: 0, anchored: false
+            level: 0, anchored: false,
+            resolved: true,
           }
         ];
 
@@ -345,7 +359,8 @@ describe('Semantic Tokens', () => {
           status: ChangeStatus.Proposed,
           range: { start: 0, end: 10 },
           contentRange: { start: 3, end: 7 },
-          level: 0, anchored: false
+          level: 0, anchored: false,
+          resolved: true,
         }];
 
         const result = buildSemanticTokens(changes, testText);
@@ -369,6 +384,7 @@ describe('Semantic Tokens', () => {
           range: { start: 0, end: 14 },
           contentRange: { start: 3, end: 11 },
           level: 0, anchored: false,
+          resolved: true,
           moveRole: 'to',
           groupId: 'g1'
         }];
@@ -389,6 +405,7 @@ describe('Semantic Tokens', () => {
           range: { start: 0, end: 14 },
           contentRange: { start: 3, end: 11 },
           level: 0, anchored: false,
+          resolved: true,
           moveRole: 'from',
           groupId: 'g1'
         }];
@@ -408,7 +425,8 @@ describe('Semantic Tokens', () => {
           status: ChangeStatus.Proposed,
           range: { start: 0, end: 14 },
           contentRange: { start: 3, end: 11 },
-          level: 0, anchored: false
+          level: 0, anchored: false,
+          resolved: true,
         }];
 
         const result = buildSemanticTokens(changes, testText);
@@ -423,7 +441,8 @@ describe('Semantic Tokens', () => {
           status: ChangeStatus.Proposed,
           range: { start: 0, end: 14 },
           contentRange: { start: 3, end: 11 },
-          level: 0, anchored: false
+          level: 0, anchored: false,
+          resolved: true,
         }];
 
         const result = buildSemanticTokens(changes, testText);
@@ -440,7 +459,8 @@ describe('Semantic Tokens', () => {
           status: ChangeStatus.Proposed,
           range: { start: 0, end: 14 },
           contentRange: { start: 3, end: 11 },
-          level: 0, anchored: false
+          level: 0, anchored: false,
+          resolved: true,
         }];
 
         const result = buildSemanticTokens(changes, testText);
@@ -458,7 +478,8 @@ describe('Semantic Tokens', () => {
           status: ChangeStatus.Accepted,
           range: { start: 0, end: 14 },
           contentRange: { start: 3, end: 11 },
-          level: 0, anchored: false
+          level: 0, anchored: false,
+          resolved: true,
         }];
 
         const result = buildSemanticTokens(changes, testText);
@@ -477,6 +498,7 @@ describe('Semantic Tokens', () => {
           range: { start: 0, end: 14 },
           contentRange: { start: 3, end: 11 },
           level: 0, anchored: false,
+          resolved: true,
           metadata: { status: 'proposed' }
         }];
 
@@ -493,6 +515,7 @@ describe('Semantic Tokens', () => {
           range: { start: 0, end: 14 },
           contentRange: { start: 3, end: 11 },
           level: 0, anchored: false,
+          resolved: true,
           metadata: { status: 'accepted' }
         }];
 
@@ -512,6 +535,7 @@ describe('Semantic Tokens', () => {
           range: { start: 0, end: 14 },
           contentRange: { start: 3, end: 11 },
           level: 0, anchored: false,
+          resolved: true,
           metadata: {
             discussion: [{
               author: 'alice',
@@ -537,6 +561,7 @@ describe('Semantic Tokens', () => {
           range: { start: 0, end: 14 },
           contentRange: { start: 3, end: 11 },
           level: 0, anchored: false,
+          resolved: true,
           metadata: { discussion: [] }
         }];
 
@@ -552,7 +577,8 @@ describe('Semantic Tokens', () => {
           status: ChangeStatus.Proposed,
           range: { start: 0, end: 14 },
           contentRange: { start: 3, end: 11 },
-          level: 0, anchored: false
+          level: 0, anchored: false,
+          resolved: true,
         }];
 
         const result = buildSemanticTokens(changes, testText);
@@ -570,6 +596,7 @@ describe('Semantic Tokens', () => {
           range: { start: 0, end: 14 },
           contentRange: { start: 3, end: 11 },
           level: 0, anchored: false,
+          resolved: true,
           metadata: { author: 'alice' }
         }];
 
@@ -590,6 +617,7 @@ describe('Semantic Tokens', () => {
             range: { start: 0, end: 10 },
             contentRange: { start: 3, end: 7 },
             level: 0, anchored: false,
+            resolved: true,
             metadata: { author: 'alice' }
           },
           {
@@ -599,6 +627,7 @@ describe('Semantic Tokens', () => {
             range: { start: 12, end: 22 },
             contentRange: { start: 15, end: 20 },
             level: 0, anchored: false,
+            resolved: true,
             metadata: { author: 'bob' }
           }
         ];
@@ -624,6 +653,7 @@ describe('Semantic Tokens', () => {
             range: { start: 0, end: 6 },
             contentRange: { start: 0, end: 6 },
             level: 0, anchored: false,
+            resolved: true,
             metadata: { author: 'alice' }
           },
           {
@@ -633,6 +663,7 @@ describe('Semantic Tokens', () => {
             range: { start: 7, end: 13 },
             contentRange: { start: 7, end: 13 },
             level: 0, anchored: false,
+            resolved: true,
             metadata: { author: 'bob' }
           },
           {
@@ -642,6 +673,7 @@ describe('Semantic Tokens', () => {
             range: { start: 14, end: 18 },
             contentRange: { start: 14, end: 18 },
             level: 0, anchored: false,
+            resolved: true,
             metadata: { author: 'carol' }
           }
         ];
@@ -664,6 +696,7 @@ describe('Semantic Tokens', () => {
             range: { start: 0, end: 6 },
             contentRange: { start: 0, end: 6 },
             level: 0, anchored: false,
+            resolved: true,
             metadata: { author: 'alice' }
           },
           {
@@ -673,6 +706,7 @@ describe('Semantic Tokens', () => {
             range: { start: 7, end: 13 },
             contentRange: { start: 7, end: 13 },
             level: 0, anchored: false,
+            resolved: true,
             metadata: { author: 'bob' }
           },
           {
@@ -682,6 +716,7 @@ describe('Semantic Tokens', () => {
             range: { start: 14, end: 18 },
             contentRange: { start: 14, end: 18 },
             level: 0, anchored: false,
+            resolved: true,
             metadata: { author: 'carol' }
           },
           {
@@ -691,6 +726,7 @@ describe('Semantic Tokens', () => {
             range: { start: 19, end: 23 },
             contentRange: { start: 19, end: 23 },
             level: 0, anchored: false,
+            resolved: true,
             metadata: { author: 'dave' }  // slot index 3, 3%3=0 → authorSlot0
           }
         ];
@@ -710,6 +746,7 @@ describe('Semantic Tokens', () => {
           range: { start: 0, end: 14 },
           contentRange: { start: 3, end: 11 },
           level: 0, anchored: false,
+          resolved: true,
           metadata: { comment: 'no author here' }
         }];
 
@@ -729,6 +766,7 @@ describe('Semantic Tokens', () => {
           range: { start: 0, end: 14 },
           contentRange: { start: 3, end: 11 },
           level: 0, anchored: false,
+          resolved: true,
           metadata: {
             author: 'alice',
             discussion: [{
@@ -760,6 +798,7 @@ describe('Semantic Tokens', () => {
           range: { start: 0, end: 14 },
           contentRange: { start: 3, end: 11 },
           level: 2, anchored: false,
+          resolved: true,
           consumedBy: 'cn-5',
         }];
 
@@ -777,6 +816,7 @@ describe('Semantic Tokens', () => {
           range: { start: 0, end: 14 },
           contentRange: { start: 3, end: 11 },
           level: 2, anchored: false,
+          resolved: true,
           consumedBy: 'cn-6',
         }];
 
@@ -794,6 +834,7 @@ describe('Semantic Tokens', () => {
           range: { start: 0, end: 14 },
           contentRange: { start: 3, end: 11 },
           level: 0, anchored: false,
+          resolved: true,
         }];
 
         const result = buildSemanticTokens(changes, testText, 'working');

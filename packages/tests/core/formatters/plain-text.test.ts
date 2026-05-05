@@ -13,7 +13,7 @@ describe('formatPlainText', () => {
     threadCount: 0,
   };
 
-  it('formats working view with hashline margin + CriticMarkup + metadata', () => {
+  it('formats working view with hashline margin + bracket metadata', () => {
     const doc: ThreeZoneDocument = {
       view: 'working',
       header: baseHeader,
@@ -29,15 +29,15 @@ describe('formatPlainText', () => {
           { type: 'anchor', text: '[^cn-1]' },
           { type: 'plain', text: '.' },
         ],
-        metadata: [{ changeId: 'cn-1', author: '@alice', reason: 'paradigm', status: 'proposed' }],
+        metadata: [{ changeId: 'cn-1', author: 'alice', reason: 'paradigm', status: 'proposed' }],
         rawLineNumber: 1,
       }],
     };
     const output = formatPlainText(doc);
-    expect(output.includes('1:a3 P|')).toBeTruthy();
-    expect(output.includes('{~~REST~>GraphQL~~}')).toBeTruthy();
-    expect(output.includes('[^cn-1]')).toBeTruthy();
-    expect(output.includes('{>>cn-1 @alice: paradigm<<}')).toBeTruthy();
+    expect(output).toContain('1:a3 P|');
+    expect(output).toContain('{~~REST~>GraphQL~~}');
+    expect(output).toContain('[^cn-1]');
+    expect(output).toContain('[cn-1 @alice proposed: "paradigm"]');
   });
 
   it('formats simple view with committed text + rich metadata bracket format', () => {
@@ -47,14 +47,14 @@ describe('formatPlainText', () => {
       lines: [{
         margin: { lineNumber: 1, hash: 'a3', flags: ['P'] },
         content: [{ type: 'plain', text: 'Use REST.' }],
-        metadata: [{ changeId: 'cn-1', author: '@alice', type: 'ins', status: 'proposed', reason: 'initial wording' }],
+        metadata: [{ changeId: 'cn-1', author: 'alice', type: 'ins', status: 'proposed', reason: 'initial wording' }],
         rawLineNumber: 1,
       }],
     };
     const output = formatPlainText(doc);
-    expect(output.includes('1:a3 P|')).toBeTruthy();
-    expect(output.includes('Use REST.')).toBeTruthy();
-    expect(output.includes('[cn-1 @alice ins proposed: initial wording]')).toBeTruthy();
+    expect(output).toContain('1:a3 P|');
+    expect(output).toContain('Use REST.');
+    expect(output).toContain('[cn-1 @alice ins proposed: "initial wording"]');
   });
 
   it('simple view: insertion with 2+ turn discussion includes | @author: turn segment', () => {
@@ -66,17 +66,17 @@ describe('formatPlainText', () => {
         content: [{ type: 'plain', text: 'Make it bigger.' }],
         metadata: [{
           changeId: 'cn-1',
-          author: '@alice',
+          author: 'alice',
           type: 'ins',
           status: 'proposed',
           reason: 'make it bigger',
-          latestThreadTurn: { author: '@dave', text: 'actually, keep it small' },
+          latestThreadTurn: { author: 'dave', text: 'actually, keep it small' },
         }],
         rawLineNumber: 1,
       }],
     };
     const output = formatPlainText(doc);
-    expect(output.includes('[cn-1 @alice ins proposed: make it bigger | @dave: actually, keep it small]')).toBeTruthy();
+    expect(output).toContain('[cn-1 @alice ins proposed: "make it bigger" | @dave: actually, keep it small]');
   });
 
   it('simple view: accepted substitution with reason, no thread turn', () => {
@@ -88,7 +88,7 @@ describe('formatPlainText', () => {
         content: [{ type: 'plain', text: 'GraphQL is better.' }],
         metadata: [{
           changeId: 'cn-2',
-          author: '@bob',
+          author: 'bob',
           type: 'sub',
           status: 'accepted',
           reason: 'cleaner API',
@@ -97,9 +97,8 @@ describe('formatPlainText', () => {
       }],
     };
     const output = formatPlainText(doc);
-    expect(output.includes('[cn-2 @bob sub accepted: cleaner API]')).toBeTruthy();
-    // No thread-turn pipe segment in the metadata bracket
-    expect(!output.includes('cleaner API |')).toBeTruthy();
+    expect(output).toContain('[cn-2 @bob sub accepted: "cleaner API"]');
+    expect(output).not.toContain('"cleaner API" |');
   });
 
   it('simple view: change without reason omits colon-reason segment', () => {
@@ -111,7 +110,7 @@ describe('formatPlainText', () => {
         content: [{ type: 'plain', text: 'Some text.' }],
         metadata: [{
           changeId: 'cn-3',
-          author: '@alice',
+          author: 'alice',
           type: 'del',
           status: 'proposed',
         }],
@@ -119,9 +118,8 @@ describe('formatPlainText', () => {
       }],
     };
     const output = formatPlainText(doc);
-    expect(output.includes('[cn-3 @alice del proposed]')).toBeTruthy();
-    // The metadata bracket should close immediately after status (no ': reason' segment)
-    expect(!output.includes('[cn-3 @alice del proposed:')).toBeTruthy();
+    expect(output).toContain('[cn-3 @alice del proposed]');
+    expect(output).not.toContain('[cn-3 @alice del proposed:');
   });
 
   it('formats decided view with clean text and no metadata', () => {
@@ -136,9 +134,9 @@ describe('formatPlainText', () => {
       }],
     };
     const output = formatPlainText(doc);
-    expect(output.includes('1:a3  |')).toBeTruthy();
-    expect(output.includes('Use GraphQL.')).toBeTruthy();
-    expect(!output.includes('{>>')).toBeTruthy();
+    expect(output).toContain('1:a3  |');
+    expect(output).toContain('Use GraphQL.');
+    expect(output).not.toContain('{>>');
   });
 
   it('formats header with status counts and authors', () => {
@@ -148,10 +146,9 @@ describe('formatPlainText', () => {
       lines: [],
     };
     const output = formatPlainText(doc);
-    expect(output.includes('test.md')).toBeTruthy();
-    expect(output.includes('proposed: 2')).toBeTruthy();
-    expect(output.includes('accepted: 1')).toBeTruthy();
-    expect(output.includes('@alice')).toBeTruthy();
+    expect(output).toContain('proposed: 2');
+    expect(output).toContain('accepted: 1');
+    expect(output).toContain('@alice');
   });
 
   it('formats multiple metadata entries on one line', () => {
@@ -173,40 +170,15 @@ describe('formatPlainText', () => {
           { type: 'anchor', text: '[^cn-2]' },
         ],
         metadata: [
-          { changeId: 'cn-1', author: '@alice', reason: 'add greeting', status: 'proposed' },
-          { changeId: 'cn-2', author: '@bob', reason: 'remove cruft', status: 'proposed' },
+          { changeId: 'cn-1', author: 'alice', reason: 'add greeting', status: 'proposed' },
+          { changeId: 'cn-2', author: 'bob', reason: 'remove cruft', status: 'proposed' },
         ],
         rawLineNumber: 1,
       }],
     };
     const output = formatPlainText(doc);
-    expect(output.includes('{>>cn-1 @alice: add greeting<<}')).toBeTruthy();
-    expect(output.includes('{>>cn-2 @bob: remove cruft<<}')).toBeTruthy();
-  });
-
-  it('includes reply count in working view metadata', () => {
-    const doc: ThreeZoneDocument = {
-      view: 'working',
-      header: baseHeader,
-      lines: [{
-        margin: { lineNumber: 1, hash: 'c2', flags: ['P'] },
-        content: [{ type: 'plain', text: 'Some text.' }],
-        metadata: [{ changeId: 'cn-1', author: '@alice', reason: 'fix typo', replyCount: 3, status: 'proposed' }],
-        rawLineNumber: 1,
-      }],
-    };
-    const output = formatPlainText(doc);
-    expect(output.includes('3 replies')).toBeTruthy();
-  });
-
-  it('includes line range in header when present', () => {
-    const doc: ThreeZoneDocument = {
-      view: 'working',
-      header: { ...baseHeader, lineRange: { start: 10, end: 20, total: 100 } },
-      lines: [],
-    };
-    const output = formatPlainText(doc);
-    expect(output.includes('lines: 10-20 of 100')).toBeTruthy();
+    expect(output).toContain('[cn-1 @alice proposed: "add greeting"]');
+    expect(output).toContain('[cn-2 @bob proposed: "remove cruft"]');
   });
 
   it('includes thread count in header when nonzero', () => {
@@ -216,7 +188,7 @@ describe('formatPlainText', () => {
       lines: [],
     };
     const output = formatPlainText(doc);
-    expect(output.includes('threads: 5')).toBeTruthy();
+    expect(output).toContain('threads: 5');
   });
 
   it('pads line numbers for multi-digit documents', () => {
@@ -240,8 +212,8 @@ describe('formatPlainText', () => {
     };
     const output = formatPlainText(doc);
     // Line 1 should be padded to 3 digits to match line 100
-    expect(output.includes('  1:aa  |')).toBeTruthy();
-    expect(output.includes('100:bb  |')).toBeTruthy();
+    expect(output).toContain('  1:aa  |');
+    expect(output).toContain('100:bb  |');
   });
 
   it('handles empty document with no lines', () => {
@@ -251,24 +223,9 @@ describe('formatPlainText', () => {
       lines: [],
     };
     const output = formatPlainText(doc);
-    // Should have header but no line content
-    expect(output.includes('test.md')).toBeTruthy();
-    expect(output.includes('---')).toBeTruthy();
+    // Should have header with counts and separator
+    expect(output).toContain('proposed: 1');
+    expect(output).toContain('---');
   });
 
-  it('singular reply for count of 1', () => {
-    const doc: ThreeZoneDocument = {
-      view: 'working',
-      header: baseHeader,
-      lines: [{
-        margin: { lineNumber: 1, hash: 'd4', flags: ['P'] },
-        content: [{ type: 'plain', text: 'Text.' }],
-        metadata: [{ changeId: 'cn-1', author: '@alice', reason: 'note', replyCount: 1, status: 'proposed' }],
-        rawLineNumber: 1,
-      }],
-    };
-    const output = formatPlainText(doc);
-    expect(output.includes('1 reply')).toBeTruthy();
-    expect(!output.includes('1 replies')).toBeTruthy();
-  });
 });

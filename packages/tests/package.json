@@ -14,13 +14,12 @@
   },
   "dependencies": {
     "@changedown/core": "file:../core",
-    "@changedown/vienna-plugin": "file:../vienna-plugin",
     "@changedown/docx": "file:../docx",
     "@changedown/lsp-server": "file:../lsp-server",
     "@changedown/mcp": "file:../../changedown-plugin/mcp-server",
     "@changedown/opencode-plugin": "file:../opencode-plugin",
-    "changedown": "file:../cli",
-    "changedown-hooks": "file:../../changedown-plugin/hooks-impl",
+    "@changedown/cli": "file:../cli",
+        "changedown-hooks": "file:../../changedown-plugin/hooks-impl",
     "esbuild": "0.27.4",
     "happy-dom": "^20.8.9",
     "vite": "8.0.0"

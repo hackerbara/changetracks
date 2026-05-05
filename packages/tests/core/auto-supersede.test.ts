@@ -17,9 +17,11 @@ describe('resolveOverlapWithAuthor', () => {
     const result = resolveOverlapWithAuthor(text, subStart, subEnd - subStart, '@ai:opus');
     expect(result).not.toBeNull();
     expect(result!.supersededIds).toEqual(['cn-1']);
-    // Settled content should have the proposed sub rejected and settled (reverted to "quick")
-    expect(result!.currentContent).toContain('quick');
-    expect(result!.currentContent).not.toContain('{~~');
+    // Settled body should have the proposed sub rejected and settled (reverted to "quick");
+    // edit-op history may preserve the original operation in footnotes.
+    const body = result!.currentContent.split('\n\n')[0];
+    expect(body).toContain('quick');
+    expect(body).not.toContain('{~~');
   });
 
   it('throws for different-author overlap', () => {
@@ -73,9 +75,11 @@ describe('resolveOverlapWithAuthor', () => {
     const insEnd = text.indexOf('++}') + 3;
     const result = resolveOverlapWithAuthor(text, insStart, insEnd - insStart, '@ai:opus');
     expect(result).not.toBeNull();
-    // Rejected insertion: text is removed (reverted to nothing)
-    expect(result!.currentContent).not.toContain('{++');
-    expect(result!.currentContent).not.toContain('world');
+    // Rejected insertion: text is removed from the body (reverted to nothing);
+    // edit-op history may preserve the original operation in footnotes.
+    const body = result!.currentContent.split('\n\n')[0];
+    expect(body).not.toContain('{++');
+    expect(body).not.toContain('world');
     expect(result!.supersededIds).toEqual(['cn-1']);
   });
 
@@ -96,8 +100,10 @@ describe('resolveOverlapWithAuthor', () => {
     const result = resolveOverlapWithAuthor(text, delStart, delEnd - delStart, '@ai:opus');
     expect(result).not.toBeNull();
     expect(result!.supersededIds).toEqual(['cn-1']);
-    // Rejected deletion: original text is restored
-    expect(result!.currentContent).toContain('quick');
-    expect(result!.currentContent).not.toContain('{--');
+    // Rejected deletion: original text is restored in the body;
+    // edit-op history may preserve the original operation in footnotes.
+    const body = result!.currentContent.split('\n\n')[0];
+    expect(body).toContain('quick');
+    expect(body).not.toContain('{--');
   });
 });

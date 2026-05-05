@@ -180,7 +180,26 @@ describe('loadConfig — direct import from config.ts', () => {
       const emptyDir = await fs.mkdtemp(path.join(os.tmpdir(), 'cn-hooks-noconf-'));
       try {
         const config = await loadConfig(emptyDir);
-        expect(config).toEqual(DEFAULT_CONFIG);
+        expect(config).toEqual({
+          ...DEFAULT_CONFIG,
+          tracking: {
+            ...DEFAULT_CONFIG.tracking,
+            include: [],
+            include_absolute: [],
+            default: 'untracked',
+            auto_header: false,
+          },
+          hooks: {
+            ...DEFAULT_CONFIG.hooks,
+            intercept_tools: false,
+            intercept_bash: false,
+            patch_wrap_experimental: false,
+          },
+          policy: {
+            ...DEFAULT_CONFIG.policy,
+            creation_tracking: 'none',
+          },
+        });
       } finally {
         await fs.rm(emptyDir, { recursive: true, force: true });
       }

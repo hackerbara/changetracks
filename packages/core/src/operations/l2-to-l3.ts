@@ -58,6 +58,9 @@ export function bodyReplacement(change: ChangeNode): string {
 
     case ChangeType.Comment:
       return '';
+
+    case ChangeType.Move:
+      return change.modifiedText ?? '';
   }
 }
 
@@ -191,7 +194,12 @@ export async function convertL2ToL3(text: string): Promise<string> {
       case ChangeType.Highlight:
         anchorLen = (change.originalText ?? '').length;
         break;
-      default:
+      case ChangeType.Move:
+        // Move contributes its destination text to the body — same shape as Insertion.
+        anchorLen = change.status === ChangeStatus.Rejected ? 0 : (change.modifiedText ?? '').length;
+        break;
+      case ChangeType.Comment:
+        // Comments do not contribute body text.
         anchorLen = 0;
         break;
     }

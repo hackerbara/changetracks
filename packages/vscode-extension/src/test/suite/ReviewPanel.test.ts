@@ -115,6 +115,37 @@ suite('ReviewPanel', () => {
             assert.strictEqual(cards[0].discussionPreview.length, 3);
         });
 
+        // ANTI-REGRESSION: This test must parse real L3 text via parseForFormat, not hand-craft
+        // metadata. Hand-crafted-metadata tests cannot catch parser-to-panel regressions like
+        // the Apr 6 regression (c5ff1e349). Future tests covering review-panel data shape should
+        // follow this pattern.
+        test('parser-integration: L3 parse round-trip populates all card metadata fields', async () => {
+            const { parseForFormat } = await import('@changedown/core');
+            const fixture = [
+                '<!-- changedown.com/v1: tracked -->',
+                '# Doc',
+                '',
+                'The system provides excellent results.',
+                '',
+                '[^cn-1]: @alice | 2026-04-27 | ins | proposed',
+                '    4:ab {++excellent ++}',
+                '    @bob 2026-04-27: I think this phrasing is too vague',
+                '    request-changes: @bob 2026-04-27 "Needs stronger phrasing"',
+                '    revisions:',
+                '      r1 @alice 2026-04-27: "The system delivers exceptional results."',
+                '    resolved: @alice 2026-04-27 "Addressed in r1"',
+            ].join('\n');
+            const doc = parseForFormat(fixture);
+            const nodes = doc.getChanges();
+            const cards = buildCardData(nodes, fixture);
+            assert.ok(cards.length > 0, 'should have at least one card');
+            assert.ok(cards[0].replyCount > 0, 'replyCount should be populated from parser');
+            assert.strictEqual(cards[0].hasDiscussion, true, 'hasDiscussion should be true');
+            assert.strictEqual(cards[0].isResolved, true, 'isResolved should be true');
+            assert.strictEqual(cards[0].hasRequestChanges, true, 'hasRequestChanges should be true');
+            assert.strictEqual(cards[0].hasAmendments, true, 'hasAmendments should be true');
+        });
+
     });
 
     // ── buildCardHtml suite ──────────────────────────────────────────────────

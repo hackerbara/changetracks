@@ -78,7 +78,36 @@ export function resolveCoordinates(
   let viewResolved: BuiltinView | undefined;
 
   // Stage 2: View-aware translation
-  const startResolution = state.resolveHash(filePath, startLine, startHash);
+  const rawStartMatches =
+    startLine >= 1 &&
+    startLine <= fileLines.length &&
+    computeLineHash(startLine - 1, fileLines[startLine - 1], fileLines) ===
+      startHash;
+  const rawEndMatches =
+    endLine >= 1 &&
+    endLine <= fileLines.length &&
+    computeLineHash(endLine - 1, fileLines[endLine - 1], fileLines) ===
+      endHash;
+
+  // Prefer direct raw coordinates when the supplied LINE:HASH already matches
+  // the current L2 source. Working views for multiline CriticMarkup can expose
+  // the same physical source lines; running those hashes through a stale or
+  // lossy view table first can translate a valid body line to the trailing
+  // footnote/ref line for the same change. Raw equality is stronger evidence
+  // than view-memory translation.
+  const skipViewTranslation =
+    rawStartMatches && (parsed.startLine === parsed.endLine || rawEndMatches);
+
+  if (skipViewTranslation && state.getLastReadView(filePath) === 'raw') {
+    // Preserve the previous observability contract for explicit raw reads:
+    // no translation is needed, but callers can still tell the coordinate
+    // came from a recorded raw view.
+    viewResolved = 'raw';
+  }
+
+  const startResolution = skipViewTranslation
+    ? undefined
+    : state.resolveHash(filePath, startLine, startHash);
   // If view resolution matched, translate to raw coordinates.
   // If view resolution failed (match: false), DON'T throw — fall through to Stage 3
   // which will try file-based relocation via validateOrAutoRemap.
@@ -94,7 +123,9 @@ export function resolveCoordinates(
   }
 
   if (parsed.startLine !== parsed.endLine) {
-    const endResolution = state.resolveHash(filePath, endLine, endHash);
+    const endResolution = skipViewTranslation
+      ? undefined
+      : state.resolveHash(filePath, endLine, endHash);
     // Same pattern as start line: don't throw on mismatch, let Stage 3 try relocation.
     if (endResolution?.match) {
       viewResolved = viewResolved ?? endResolution.view;

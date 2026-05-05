@@ -49,3 +49,12 @@ export { buildSimpleDocument } from './renderers/view-builders/simple.js';
 export type { SimpleBuildOptions } from './renderers/view-builders/simple.js';
 export { buildDecidedDocument } from './renderers/view-builders/decided.js';
 export type { DecidedBuildOptions } from './renderers/view-builders/decided.js';
+
+export { formatMetadata } from './renderers/formatters/plain-text.js';
+
+export { verifyAcceptedHistoryCoherence } from './operations/change-record-coherence.js';
+export type {
+  AcceptedHistoryCoherenceInput,
+  AcceptedHistoryCoherenceRecord,
+  AcceptedHistoryCoherenceResult,
+} from './operations/change-record-coherence.js';

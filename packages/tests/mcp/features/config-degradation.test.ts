@@ -13,6 +13,27 @@ import { ConfigResolver } from '@changedown/mcp/internals';
 
 let tmpDir: string;
 
+const DEFAULT_UNCONFIGURED_CONFIG = {
+  ...DEFAULT_CONFIG,
+  tracking: {
+    ...DEFAULT_CONFIG.tracking,
+    include: [],
+    include_absolute: [],
+    default: 'untracked',
+    auto_header: false,
+  },
+  hooks: {
+    ...DEFAULT_CONFIG.hooks,
+    intercept_tools: false,
+    intercept_bash: false,
+    patch_wrap_experimental: false,
+  },
+  policy: {
+    ...DEFAULT_CONFIG.policy,
+    creation_tracking: 'none',
+  },
+};
+
 async function setupTmpDir(): Promise<string> {
   return fs.mkdtemp(path.join(os.tmpdir(), 'cn-config-degrade-'));
 }
@@ -42,7 +63,7 @@ describe('Config Graceful Degradation', () => {
     it('uses defaults when config file does not exist', async () => {
       // No .changedown/config.toml created — just a bare temp dir
       const config = await loadConfig(tmpDir);
-      expect(config).toEqual(DEFAULT_CONFIG);
+      expect(config).toEqual(DEFAULT_UNCONFIGURED_CONFIG);
     });
 
     it('uses defaults when config file is empty', async () => {
@@ -271,9 +292,12 @@ enforcement = "nonsense"
       await fs.writeFile(dummyFile, '# test', 'utf-8');
 
       const { config } = await resolver.forFile(dummyFile);
-      // ConfigResolver uses its own FALLBACK_CONFIG when no .changedown/ exists
-      expect(config.tracking.include).toEqual(['**/*.md']);
+      // Missing config stays default-off until project init.
+      expect(config.tracking.include).toEqual([]);
+      expect(config.tracking.default).toBe('untracked');
+      expect(config.tracking.auto_header).toBe(false);
       expect(config.hooks.enforcement).toBe('warn');
+      expect(config.hooks.intercept_tools).toBe(false);
       expect(config.matching.mode).toBe('normalized');
       resolver.dispose();
     });

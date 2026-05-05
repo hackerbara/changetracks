@@ -112,7 +112,7 @@ export function buildDecorationPlan(
   let hasFootnoteAnchoredChanges = false;
 
   changes.forEach(change => {
-    // Skip unresolved L3 nodes (anchored === false on level >= 2)
+    // Skip unresolved nodes (resolved === false; per Task 1.5 the level gate was removed)
     if (isGhostNode(change)) return;
 
     // Consumed ops: dimmed + italic "consumed by" label

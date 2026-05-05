@@ -3,8 +3,8 @@ import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { initHashline } from '@changedown/core';
-import { runCommand } from 'changedown/cli-runner';
-import { formatResult } from 'changedown/cli-output';
+import { runCommand } from '@changedown/cli/cli-runner';
+import { formatResult } from '@changedown/cli/cli-output';
 
 let tmpDir: string;
 

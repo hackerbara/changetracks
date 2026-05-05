@@ -12,7 +12,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { ChangedownServer } from '../server';
 import { getWorkspaceRoot, getPreviousVersion } from '../git';
-import { parseConfigToml } from 'changedown/config';
+import { parseConfigToml } from '@changedown/cli/config';
 
 const conn = createConnection(ProposedFeatures.all);
 

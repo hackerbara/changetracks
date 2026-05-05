@@ -44,6 +44,7 @@ import {
   compact, compactL2,
   splitBodyAndFootnotes,
   scanMaxCnId,
+  assertResolved, UnresolvedChangesError,
 } from '@changedown/core';
 import type { Decision, VerificationResult } from '@changedown/core';
 import type { PreviousVersionResult } from './git';
@@ -704,6 +705,7 @@ export class ChangedownServer {
       modifiedText: overlay.text,
       level: 1,
       anchored: false,
+      resolved: true,
     };
     const merged = [...parseChanges, synthetic];
     merged.sort((a, b) => a.range.start - b.range.start);
@@ -1521,6 +1523,18 @@ export class ChangedownServer {
       // --- For insertions, derive insertAfter anchor ---
       let insertAfter: string | undefined;
       const doc = parseForFormat(docText);
+
+      // T3.5: guard — refuse to amend on a document with unresolved changes
+      try {
+        assertResolved(doc);
+      } catch (err) {
+        if (err instanceof UnresolvedChangesError) {
+          const summary = err.diagnostics.map(d => d.message).join('; ');
+          return { error: `Cannot amend change: document has unresolved changes: ${summary}` };
+        }
+        throw err;
+      }
+
       const change = doc.getChanges().find(c => c.id === params.changeId);
       if (change && change.type === ChangeType.Insertion) {
         const start = change.range.start;
@@ -1777,6 +1791,18 @@ export class ChangedownServer {
       // Parse once to identify all proposed changes (format-aware via workspace)
       const languageId = this.docStates.get(params.uri)?.languageId;
       const doc = this.workspace.parse(text, languageId);
+
+      // T3.5: guard — refuse to review-all on a document with unresolved changes
+      try {
+        assertResolved(doc);
+      } catch (err) {
+        if (err instanceof UnresolvedChangesError) {
+          const summary = err.diagnostics.map(d => d.message).join('; ');
+          return { error: `Cannot apply review: document has unresolved changes: ${summary}` };
+        }
+        throw err;
+      }
+
       const allChanges = doc.getChanges();
 
       // Filter to proposed changes; optionally restrict to a specified ID set

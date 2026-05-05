@@ -156,6 +156,61 @@ describe('parseL3/serializeL3 round-trip', () => {
     const reserialized = serializeL3(doc);
     expect(reserialized.trimEnd()).toBe(text.trimEnd());
   });
+
+  it('parseL3 and serializeL3 preserve base metadata footnotes', () => {
+    const text = [
+      'Canonical body.',
+      '',
+      '[^cn-1]: @base-document | 2026-05-04 | ins | accepted',
+      '    source: initial-word-body',
+      '    scope: document',
+      '    body-hash: test-body-hash',
+      '',
+    ].join('\n');
+
+    const parsed = parseL3(text);
+    expect(parsed.body).toBe('Canonical body.');
+    expect(parsed.footnotes).toHaveLength(1);
+    expect(parsed.footnotes[0]!.header.type).toBe('ins');
+    expect(serializeL3(parsed)).toBe(text);
+  });
+
+  it('VirtualDocument exposes durable records separately from reviewable changes', () => {
+    const text = [
+      'Fresh visible seed.',
+      'Codec garden live seed.',
+      '',
+      '[^cn-1]: @base-document | 2026-05-04 | ins | accepted',
+      '    source: initial-word-body',
+      '    scope: document',
+      '    body-hash: test-body-hash',
+      '',
+    ].join('\n');
+
+    const parser = new FootnoteNativeParser();
+    const doc = parser.parse(text);
+
+    expect(doc.getChanges()).toEqual([]);
+    expect(doc.getReviewableChanges()).toEqual([]);
+    expect(doc.getRecords()).toContainEqual(expect.objectContaining({
+      id: 'cn-1',
+      author: '@base-document',
+      date: '2026-05-04',
+      type: 'ins',
+      status: 'accepted',
+      reviewable: false,
+      metadata: expect.objectContaining({
+        source: 'initial-word-body',
+        scope: 'document',
+        'body-hash': 'test-body-hash',
+      }),
+      bodyLines: expect.arrayContaining([
+        'source: initial-word-body',
+        'scope: document',
+        'body-hash: test-body-hash',
+      ]),
+    }));
+  });
 });
 
 describe('parseL2/serializeL2 round-trip', () => {

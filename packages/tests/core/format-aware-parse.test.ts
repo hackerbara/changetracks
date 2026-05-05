@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll } from 'vitest';
-import { parseForFormat, ChangeType, initHashline, stripFootnoteBlocks, neutralizeEditOpLine } from '@changedown/core/internals';
+import { parseForFormat, ChangeType, initHashline, stripFootnoteBlocks, neutralizeEditOpLine, isL3Format } from '@changedown/core/internals';
 
 describe('parseForFormat', () => {
   beforeAll(async () => { await initHashline(); });
@@ -34,6 +34,36 @@ describe('parseForFormat', () => {
     const plain = 'Just some plain text.';
     const doc = parseForFormat(plain);
     expect(doc.getChanges().length).toBe(0);
+  });
+
+  it('parses document-scope accepted genesis as L3 with one durable record', async () => {
+    await initHashline();
+    const genesisL3 = [
+      'Fresh visible seed.',
+      'Codec garden live seed.',
+      '',
+      '[^cn-1]: @base-document | 2026-05-04 | ins | accepted',
+      '    source: initial-word-body',
+      '    scope: document',
+      '    body-hash: test-body-hash',
+      '',
+    ].join('\n');
+
+    expect(isL3Format(genesisL3)).toBe(true);
+    const doc = parseForFormat(genesisL3);
+    expect(doc.getChanges()).toEqual([]);
+    expect(doc.getDiagnostics()).toEqual([]);
+    expect(doc.getRecords()).toContainEqual(expect.objectContaining({
+      id: 'cn-1',
+      type: 'ins',
+      status: 'accepted',
+      reviewable: false,
+      metadata: expect.objectContaining({
+        source: 'initial-word-body',
+        scope: 'document',
+        'body-hash': 'test-body-hash',
+      }),
+    }));
   });
 });
 

@@ -9,7 +9,7 @@ describe('code lenses with unanchored changes', () => {
     const changes: ChangeNode[] = [{
       id: 'cn-1', type: ChangeType.Insertion, status: ChangeStatus.Proposed,
       range: { start: 0, end: 0 }, contentRange: { start: 0, end: 0 },
-      level: 2, anchored: false, settled: false,
+      level: 2, anchored: false, resolved: false,
     }];
     const result = createCodeLenses(changes, text, 'working', 'always');
     // Should have no per-change lenses (unanchored filtered out)
@@ -25,7 +25,7 @@ describe('code lenses with unanchored changes', () => {
     const changes: ChangeNode[] = [{
       id: 'cn-1', type: ChangeType.Insertion, status: ChangeStatus.Proposed,
       range: { start: 0, end: 0 }, contentRange: { start: 0, end: 0 },
-      level: 2, anchored: false, settled: false,
+      level: 2, anchored: false, resolved: false,
     }];
     const result = createCodeLenses(changes, text, 'working', 'always', undefined, 50);
     const docLens = result.find(l =>
@@ -40,7 +40,7 @@ describe('code lenses with unanchored changes', () => {
     const changes: ChangeNode[] = [{
       id: 'cn-1', type: ChangeType.Insertion, status: ChangeStatus.Proposed,
       range: { start: 0, end: 0 }, contentRange: { start: 0, end: 0 },
-      level: 2, anchored: false, settled: false,
+      level: 2, anchored: false, resolved: false,
     }];
     const result = createCodeLenses(changes, text, 'final', 'always', undefined, 50);
     const docLens = result.find(l =>
@@ -54,7 +54,7 @@ describe('code lenses with unanchored changes', () => {
     const changes: ChangeNode[] = [{
       id: 'cn-1', type: ChangeType.Insertion, status: ChangeStatus.Proposed,
       range: { start: 0, end: 0 }, contentRange: { start: 0, end: 0 },
-      level: 2, anchored: false, settled: false,
+      level: 2, anchored: false, resolved: false,
     }];
     const result = createCodeLenses(changes, text, 'working', 'off', undefined, 50);
     expect(result).toHaveLength(0);

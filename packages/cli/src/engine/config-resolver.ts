@@ -1,7 +1,7 @@
 import * as path from 'node:path';
 import * as fs from 'node:fs/promises';
 import { existsSync, realpathSync, watch, type FSWatcher } from 'node:fs';
-import { loadConfig, DEFAULT_CONFIG, type ChangeDownConfig } from './config.js';
+import { loadConfig, DEFAULT_UNCONFIGURED_CONFIG, type ChangeDownConfig } from './config.js';
 
 interface CachedProject {
   projectDir: string;
@@ -85,8 +85,8 @@ export class ConfigResolver {
       return { config, projectDir: projectRoot };
     }
 
-    // No project root found — use defaults
-    return { config: structuredClone(DEFAULT_CONFIG), projectDir: this.resolveDir() };
+    // No project root found — use inert defaults for uninitialized projects.
+    return { config: structuredClone(DEFAULT_UNCONFIGURED_CONFIG), projectDir: this.resolveDir() };
   }
 
   /**
@@ -220,7 +220,7 @@ export class ConfigResolver {
       return config;
     }
 
-    return structuredClone(DEFAULT_CONFIG);
+    return structuredClone(DEFAULT_UNCONFIGURED_CONFIG);
   }
 
   /**

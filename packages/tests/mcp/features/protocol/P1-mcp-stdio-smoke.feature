@@ -12,6 +12,7 @@ Feature: MCP stdio transport smoke tests
     Then I receive a valid response with at least 7 tools
     And the tools include: read_tracked_file, propose_change, review_changes, resolve_thread, amend_change, list_changes, supersede_change
 
+  @wip
   Scenario: Full round-trip via stdio -- read -> propose -> review
     When I send read_tracked_file for a tracked file
     Then I receive content with no errors

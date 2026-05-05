@@ -107,7 +107,7 @@ describe('Workspace provider dispatch', () => {
     it('acceptChange returns TextEdit[] for sidecar changes', () => {
       const result = ws.acceptChange(
         { id: 'cn-1', type: ChangeType.Insertion, status: ChangeStatus.Proposed,
-          range: { start: 0, end: 10 }, contentRange: { start: 0, end: 10 }, level: 0, anchored: false },
+          range: { start: 0, end: 10 }, contentRange: { start: 0, end: 10 }, level: 0, anchored: false, resolved: true },
         pythonSidecar,
         'python'
       );
@@ -118,7 +118,7 @@ describe('Workspace provider dispatch', () => {
     it('rejectChange returns TextEdit[] for sidecar changes', () => {
       const result = ws.rejectChange(
         { id: 'cn-1', type: ChangeType.Insertion, status: ChangeStatus.Proposed,
-          range: { start: 0, end: 10 }, contentRange: { start: 0, end: 10 }, level: 0, anchored: false },
+          range: { start: 0, end: 10 }, contentRange: { start: 0, end: 10 }, level: 0, anchored: false, resolved: true },
         pythonSidecar,
         'python'
       );

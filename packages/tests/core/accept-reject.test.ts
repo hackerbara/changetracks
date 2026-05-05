@@ -33,6 +33,7 @@ function makeChange(overrides: Partial<ChangeNode> & { type: ChangeType }): Chan
     contentRange: { start: 3, end: 7 },
     level: 0,
     anchored: false,
+    resolved: true,
     ...overrides,
   };
 }
@@ -707,17 +708,17 @@ describe('VirtualDocument.getGroupMembers', () => {
       {
         id: 'cn-5.1', type: ChangeType.Deletion, status: ChangeStatus.Proposed,
         range: { start: 0, end: 20 }, contentRange: { start: 3, end: 15 },
-        originalText: 'moved', groupId: 'cn-5', moveRole: 'from', level: 0, anchored: false,
+        originalText: 'moved', groupId: 'cn-5', moveRole: 'from', level: 0, anchored: false, resolved: true,
       },
       {
         id: 'cn-5.2', type: ChangeType.Insertion, status: ChangeStatus.Proposed,
         range: { start: 30, end: 50 }, contentRange: { start: 33, end: 45 },
-        modifiedText: 'moved', groupId: 'cn-5', moveRole: 'to', level: 0, anchored: false,
+        modifiedText: 'moved', groupId: 'cn-5', moveRole: 'to', level: 0, anchored: false, resolved: true,
       },
       {
         id: 'cn-1', type: ChangeType.Insertion, status: ChangeStatus.Proposed,
         range: { start: 60, end: 70 }, contentRange: { start: 63, end: 67 },
-        modifiedText: 'other', level: 0, anchored: false,
+        modifiedText: 'other', level: 0, anchored: false, resolved: true,
       },
     ];
     const doc = new VirtualDocument(changes);
@@ -737,7 +738,7 @@ describe('VirtualDocument.getGroupMembers', () => {
       {
         id: 'cn-1', type: ChangeType.Insertion, status: ChangeStatus.Proposed,
         range: { start: 0, end: 10 }, contentRange: { start: 3, end: 7 },
-        modifiedText: 'text', level: 0, anchored: false,
+        modifiedText: 'text', level: 0, anchored: false, resolved: true,
       },
     ];
     const doc = new VirtualDocument(changes);

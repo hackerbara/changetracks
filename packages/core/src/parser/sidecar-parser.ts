@@ -302,6 +302,7 @@ export class SidecarParser {
         contentRange: { ...range },
         level: 0,
         anchored: false,
+        resolved: true,
       };
 
       if (originalText !== undefined) {

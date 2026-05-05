@@ -58,7 +58,8 @@ const fs = require('fs');
 const pPath = process.env.PKG_JSON;
 const p = JSON.parse(fs.readFileSync(pPath, 'utf8'));
 p.dependencies['@changedown/core'] = 'file:../core';
-p.dependencies['changedown'] = 'file:../cli';
+p.dependencies['@changedown/cli'] = 'file:../cli';
+delete p.dependencies['changedown'];
 fs.writeFileSync(pPath, JSON.stringify(p, null, 2));
 "
 (cd "$BUNDLE_DIR/mcp-server" && npm install --omit=dev --no-package-lock)
@@ -98,6 +99,9 @@ mkdir -p "$PLUGIN_DIR/hooks"
 # Plugin manifest and MCP/hooks config (use CLAUDE_PLUGIN_ROOT; Claude sets it to cached plugin dir)
 cp changedown-plugin/.claude-plugin/plugin.json "$PLUGIN_DIR/.claude-plugin/"
 cp changedown-plugin/.mcp.json "$PLUGIN_DIR/"
+mkdir -p "$PLUGIN_DIR/.codex-plugin"
+cp changedown-plugin/.codex-plugin/plugin.json "$PLUGIN_DIR/.codex-plugin/"
+cp changedown-plugin/codex.mcp.json "$PLUGIN_DIR/"
 cp changedown-plugin/hooks/hooks.json "$PLUGIN_DIR/hooks/"
 cp -R changedown-plugin/skills "$PLUGIN_DIR/"
 # Core + cli inside plugin (so cached copy is self-contained)
@@ -112,7 +116,8 @@ const fs = require('fs');
 const pPath = process.env.PKG_JSON;
 const p = JSON.parse(fs.readFileSync(pPath, 'utf8'));
 p.dependencies['@changedown/core'] = 'file:../core';
-p.dependencies['changedown'] = 'file:../cli';
+p.dependencies['@changedown/cli'] = 'file:../cli';
+delete p.dependencies['changedown'];
 fs.writeFileSync(pPath, JSON.stringify(p, null, 2));
 "
 (cd "$PLUGIN_DIR/mcp-server" && npm install --omit=dev --no-package-lock)
@@ -125,7 +130,8 @@ const fs = require('fs');
 const pPath = process.env.PKG_JSON;
 const p = JSON.parse(fs.readFileSync(pPath, 'utf8'));
 p.dependencies['@changedown/core'] = 'file:../core';
-p.dependencies['changedown'] = 'file:../cli';
+p.dependencies['@changedown/cli'] = 'file:../cli';
+delete p.dependencies['changedown'];
 fs.writeFileSync(pPath, JSON.stringify(p, null, 2));
 "
 (cd "$PLUGIN_DIR/hooks-impl" && npm install --omit=dev --no-package-lock)
@@ -144,7 +150,30 @@ cat > "$BUNDLE_DIR/.claude-plugin/marketplace.json" << 'MKT'
   ]
 }
 MKT
-echo "Claude Code plugin and marketplace ready"
+mkdir -p "$BUNDLE_DIR/.agents/plugins"
+cat > "$BUNDLE_DIR/.agents/plugins/marketplace.json" << 'MKT'
+{
+  "name": "hackerbara",
+  "interface": {
+    "displayName": "hackerbara"
+  },
+  "plugins": [
+    {
+      "name": "changedown",
+      "source": {
+        "source": "local",
+        "path": "./plugin"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}
+MKT
+echo "Claude Code and Codex plugin marketplaces ready"
 
 echo ""
 echo "=== Bundle created at: $BUNDLE_DIR ==="
@@ -157,3 +186,5 @@ echo "Claude Code: cd into the bundle (or your repo that contains it), then:"
 echo "  /plugin marketplace add ."
 echo "  /plugin install changedown@local"
 echo "  (Start Claude from a git repo to avoid known hang.)"
+echo "  Codex local marketplace: .agents/plugins/marketplace.json"
+echo "  Codex plugin root: plugin/.codex-plugin/plugin.json"

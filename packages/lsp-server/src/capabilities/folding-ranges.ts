@@ -63,7 +63,7 @@ export function createFoldingRanges(
   if (viewMode === 'simple') {
     for (const change of changes) {
       if (change.type !== ChangeType.Deletion) continue;
-      if (change.decided) continue;
+      if (change.decided || (change as ChangeNode & { settled?: boolean }).settled) continue;
 
       const startLine = offsetToLine(text, change.range.start);
       const endLine = offsetToLine(text, change.range.end);

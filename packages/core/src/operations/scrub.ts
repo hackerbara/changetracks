@@ -698,19 +698,19 @@ export function resolve(l3Text: string): ResolvedDocument {
     // in the edit history), but their text is absent from the current body
     // because another op overwrote/deleted it. They are "resolved" in the sense
     // that the protocol handled them — same semantics as the old resolve() Phase B.
-    // Parser sets anchored:false for consumed nodes (ghost-node filter), but
-    // resolve() treats them as resolved per the original API contract.
+    // Parser now populates `resolved` directly (Tranche 2 migration); consumed
+    // nodes are treated as resolved per the original API contract.
     const isConsumed = !!node.consumedBy;
-    const isResolved = node.anchored || isConsumed;
+    const isResolved = (node.resolved !== false) || isConsumed;
 
     const result: ResolvedChange = {
       id: node.id,
       resolved: isResolved,
       resolutionPath: node.resolutionPath ?? (isResolved ? 'replay' : 'rejected'),
       freshAnchor: node.freshAnchor,
-      // Only provide resolvedRange for non-consumed, anchored nodes.
+      // Only provide resolvedRange for non-consumed, resolved nodes.
       // Consumed ops' text is absent from the current body, so a body range is invalid.
-      resolvedRange: (node.anchored && !isConsumed)
+      resolvedRange: (node.resolved !== false && !isConsumed)
         ? { start: node.range.start, end: node.range.end }
         : undefined,
     };

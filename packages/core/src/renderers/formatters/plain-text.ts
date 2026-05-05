@@ -1,26 +1,25 @@
 import type { ThreeZoneDocument, ThreeZoneLine, DeliberationHeader, LineMetadata } from '../three-zone-types.js';
+import type { BuiltinView } from '../../host/types.js';
 
 /**
  * Formats a ThreeZoneDocument as plain text for agent consumption.
  *
- * Output structure:
- *   - Header block: file path, policy, tracking status, counts, authors
- *   - Separator: `---`
- *   - Lines: `LINENUM:HASH FLAG| content {>>metadata<<}`
- *
- * Metadata density varies by view:
- *   - working: full (changeId, author, reason, reply count)
- *   - simple: [cn-ID @author type status: reason | @author: turn]
- *   - decided: none
+ * The header is view-sensitive: working and simple views emit a 2-line summary
+ * (counts + thread count, then authors) followed by `---`; decided and raw views
+ * emit no header. Each content line is rendered as `LINENUM:HASH FLAG| text`,
+ * with bracket metadata appended for working and simple views (`[changeId @author type status…]`).
+ * The decided view appends a bottom status footer (`── accepted N · rejected N · proposed N · threads N ──`)
+ * when any counts are non-zero.
  */
 export function formatPlainText(doc: ThreeZoneDocument): string {
   const parts: string[] = [];
 
-  // Header
-  parts.push(formatHeader(doc.header, doc.view));
-  parts.push('');
+  const header = formatHeader(doc.header, doc.view);
+  if (header) {
+    parts.push(header);
+    parts.push('');
+  }
 
-  // Lines
   const padWidth = doc.lines.length > 0
     ? Math.max(String(doc.lines[doc.lines.length - 1].margin.lineNumber).length, 2)
     : 2;
@@ -29,13 +28,18 @@ export function formatPlainText(doc: ThreeZoneDocument): string {
     parts.push(formatLine(line, padWidth, doc.view));
   }
 
+  const footer = formatDecidedFooter(doc);
+  if (footer) {
+    parts.push(footer);
+  }
+
   return parts.join('\n');
 }
 
-function formatHeader(header: DeliberationHeader, view: string): string {
-  const lines: string[] = [];
-  lines.push(`## ${header.filePath} | policy: ${header.protocolMode} | tracking: ${header.trackingStatus}`);
+function formatHeader(header: DeliberationHeader, view: BuiltinView): string {
+  if (view === 'decided' || view === 'raw') return '';
 
+  const lines: string[] = [];
   const counts = `proposed: ${header.counts.proposed} | accepted: ${header.counts.accepted} | rejected: ${header.counts.rejected}`;
   const threads = header.threadCount > 0 ? ` | threads: ${header.threadCount}` : '';
   lines.push(`## ${counts}${threads}`);
@@ -44,15 +48,19 @@ function formatHeader(header: DeliberationHeader, view: string): string {
     lines.push(`## authors: ${header.authors.join(', ')}`);
   }
 
-  if (header.lineRange) {
-    lines.push(`## lines: ${header.lineRange.start}-${header.lineRange.end} of ${header.lineRange.total}`);
-  }
-
   lines.push('---');
   return lines.join('\n');
 }
 
-function formatLine(line: ThreeZoneLine, padWidth: number, view: string): string {
+function formatDecidedFooter(doc: ThreeZoneDocument): string {
+  if (doc.view !== 'decided') return '';
+  const { counts, threadCount } = doc.header;
+  const anyCount = counts.proposed > 0 || counts.accepted > 0 || counts.rejected > 0 || threadCount > 0;
+  if (!anyCount) return '';
+  return `── accepted ${counts.accepted} · rejected ${counts.rejected} · proposed ${counts.proposed} · threads ${threadCount} ──`;
+}
+
+function formatLine(line: ThreeZoneLine, padWidth: number, view: BuiltinView): string {
   // Zone 1: Margin
   const num = String(line.margin.lineNumber).padStart(padWidth, ' ');
   const flag = line.margin.flags.length > 0 ? line.margin.flags[0] : ' ';
@@ -62,43 +70,50 @@ function formatLine(line: ThreeZoneLine, padWidth: number, view: string): string
   const content = line.content.map(s => s.text).join('');
 
   // Zone 3: Metadata
-  const meta = formatMetadata(line.metadata, view);
+  const meta = formatMetadata(line.metadata);
 
   return meta ? `${margin} ${content} ${meta}` : `${margin} ${content}`;
 }
 
-function ensureAt(author: string | undefined, fallback = ''): string {
-  if (!author) return fallback;
-  return author.startsWith('@') ? author : `@${author}`;
+const MAX_TURN_CODE_POINTS = 60;
+
+function truncateByCodePoints(text: string, max: number): string {
+  if (text.length <= max) return text;
+  const cps = [...text];
+  if (cps.length <= max) return text;
+  return cps.slice(0, max).join('') + '…';
 }
 
-function formatMetadata(metadata: LineMetadata[], view: string): string {
+/**
+ * Ensures exactly one leading `@` on an author handle.
+ * Callers may supply the handle with or without the prefix; this function always returns `@handle`.
+ */
+function withAtPrefix(handle: string): string {
+  return handle.startsWith('@') ? handle : `@${handle}`;
+}
+
+export function formatMetadata(metadata: LineMetadata[]): string {
   if (metadata.length === 0) return '';
 
   return metadata.map(m => {
-    if (view === 'simple') {
-      // [cn-ID @author type status: reason | @author: turn]
-      const author = ensureAt(m.author);
-      let block = `[${m.changeId}`;
-      if (author) block += ` ${author}`;
-      if (m.type) block += ` ${m.type}`;
-      if (m.status) block += ` ${m.status}`;
-      if (m.reason) block += `: ${m.reason}`;
-      if (m.latestThreadTurn) {
-        const turnAuthor = ensureAt(m.latestThreadTurn.author, '@?');
-        block += ` | ${turnAuthor}: ${m.latestThreadTurn.text}`;
-      }
-      block += ']';
-      return block;
+    const parts: string[] = [m.changeId];
+
+    if (m.author) parts.push(withAtPrefix(m.author));
+    if (m.type)   parts.push(m.type);
+    if (m.status) parts.push(m.status);
+
+    let head = parts.join(' ');
+
+    if (m.reason) {
+      head += `: "${m.reason}"`;
     }
-    // Working view: full metadata
-    let block = `{>>${m.changeId}`;
-    if (m.author) block += ` ${m.author}:`;
-    if (m.reason) block += ` ${m.reason}`;
-    if (m.replyCount && m.replyCount > 0) {
-      block += ` | ${m.replyCount} ${m.replyCount === 1 ? 'reply' : 'replies'}`;
+
+    if (m.latestThreadTurn) {
+      const turnAuthor = m.latestThreadTurn.author ? `${withAtPrefix(m.latestThreadTurn.author)}: ` : '';
+      const turnText = truncateByCodePoints(m.latestThreadTurn.text, MAX_TURN_CODE_POINTS);
+      head += ` | ${turnAuthor}${turnText}`;
     }
-    block += '<<}';
-    return block;
+
+    return `[${head}]`;
   }).join(' ');
 }

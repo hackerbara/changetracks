@@ -15,7 +15,8 @@ describe('Code Actions', () => {
           range: { start: 6, end: 17 },
           contentRange: { start: 9, end: 14 },
           modifiedText: 'world',
-          level: 0, anchored: false
+          level: 0, anchored: false,
+          resolved: true,
         }
       ];
       const diagnostic: Diagnostic = {
@@ -67,7 +68,8 @@ describe('Code Actions', () => {
           range: { start: 6, end: 17 },
           contentRange: { start: 9, end: 14 },
           originalText: 'world',
-          level: 0, anchored: false
+          level: 0, anchored: false,
+          resolved: true,
         }
       ];
       const diagnostic: Diagnostic = {
@@ -115,7 +117,8 @@ describe('Code Actions', () => {
           modifiedRange: { start: 16, end: 24 },
           originalText: 'world',
           modifiedText: 'universe',
-          level: 0, anchored: false
+          level: 0, anchored: false,
+          resolved: true,
         }
       ];
       const diagnostic: Diagnostic = {
@@ -161,7 +164,8 @@ describe('Code Actions', () => {
           modifiedRange: { start: 14, end: 17 },
           originalText: 'old',
           modifiedText: 'new',
-          level: 0, anchored: false
+          level: 0, anchored: false,
+          resolved: true,
         }
       ];
       const diagnostic: Diagnostic = {
@@ -197,7 +201,8 @@ describe('Code Actions', () => {
           range: { start: 6, end: 17 },
           contentRange: { start: 9, end: 14 },
           originalText: 'world',
-          level: 0, anchored: false
+          level: 0, anchored: false,
+          resolved: true,
         }
       ];
       const diagnostic: Diagnostic = {
@@ -232,7 +237,8 @@ describe('Code Actions', () => {
           status: ChangeStatus.Proposed,
           range: { start: 6, end: 16 },
           contentRange: { start: 9, end: 13 },
-          level: 0, anchored: false
+          level: 0, anchored: false,
+          resolved: true,
         }
       ];
       const diagnostic: Diagnostic = {
@@ -270,7 +276,8 @@ describe('Code Actions', () => {
           range: { start: 0, end: 12 },
           contentRange: { start: 3, end: 9 },
           modifiedText: 'insert',
-          level: 0, anchored: false
+          level: 0, anchored: false,
+          resolved: true,
         },
         {
           id: 'change-8',
@@ -279,7 +286,8 @@ describe('Code Actions', () => {
           range: { start: 18, end: 30 },
           contentRange: { start: 21, end: 27 },
           originalText: 'delete',
-          level: 0, anchored: false
+          level: 0, anchored: false,
+          resolved: true,
         }
       ];
       const diagnostic: Diagnostic = {
@@ -315,7 +323,8 @@ describe('Code Actions', () => {
           range: { start: 0, end: 12 },
           contentRange: { start: 3, end: 9 },
           modifiedText: 'insert',
-          level: 0, anchored: false
+          level: 0, anchored: false,
+          resolved: true,
         },
         {
           id: 'change-10',
@@ -324,7 +333,8 @@ describe('Code Actions', () => {
           range: { start: 18, end: 30 },
           contentRange: { start: 21, end: 27 },
           originalText: 'delete',
-          level: 0, anchored: false
+          level: 0, anchored: false,
+          resolved: true,
         }
       ];
       const diagnostic: Diagnostic = {
@@ -360,7 +370,8 @@ describe('Code Actions', () => {
           modifiedRange: { start: 8, end: 11 },
           originalText: 'old',
           modifiedText: 'new',
-          level: 0, anchored: false
+          level: 0, anchored: false,
+          resolved: true,
         }
       ];
       const diagnostic: Diagnostic = {
@@ -391,7 +402,8 @@ describe('Code Actions', () => {
         range: { start: 6, end: 17 },
         contentRange: { start: 9, end: 14 },
         modifiedText: 'world',
-        level: 0, anchored: false
+        level: 0, anchored: false,
+        resolved: true,
       };
       const text = 'Hello {++world++}!';
       const diagnostic: Diagnostic = {
@@ -419,7 +431,8 @@ describe('Code Actions', () => {
         range: { start: 6, end: 17 },
         contentRange: { start: 9, end: 14 },
         modifiedText: 'world',
-        level: 0, anchored: false
+        level: 0, anchored: false,
+        resolved: true,
       };
       const text = 'Hello {++world++}!';
       const diagnostic: Diagnostic = {
@@ -448,6 +461,7 @@ describe('Code Actions', () => {
         type: ChangeType.Insertion,
         status: ChangeStatus.Proposed,
         anchored: false,
+        resolved: true,
         level: 2,
         consumedBy: 'cn-5',
         range: { start: 100, end: 120 },
@@ -482,6 +496,7 @@ describe('Code Actions', () => {
         type: ChangeType.Insertion,
         status: ChangeStatus.Proposed,
         anchored: false,
+        resolved: true,
         level: 2,
         consumedBy: 'cn-5',
         replyCount: 2,
@@ -512,6 +527,7 @@ describe('Code Actions', () => {
         type: ChangeType.Insertion,
         status: ChangeStatus.Proposed,
         anchored: false,
+        resolved: true,
         level: 2,
         consumedBy: 'cn-5',
         range: { start: 100, end: 120 },
@@ -540,6 +556,7 @@ describe('Code Actions', () => {
         type: ChangeType.Insertion,
         status: ChangeStatus.Proposed,
         anchored: false,
+        resolved: true,
         level: 2,
         consumedBy: 'cn-5',
         range: { start: 100, end: 120 },
@@ -574,7 +591,8 @@ describe('Code Actions', () => {
           range: { start: 7, end: 26 },
           contentRange: { start: 10, end: 23 },
           modifiedText: 'Line 2\nLine 3',
-          level: 0, anchored: false
+          level: 0, anchored: false,
+          resolved: true,
         }
       ];
       const diagnostic: Diagnostic = {
@@ -609,7 +627,8 @@ describe('Code Actions', () => {
           range: { start: 8, end: 20 },
           contentRange: { start: 11, end: 17 },
           modifiedText: 'Line 2',
-          level: 0, anchored: false
+          level: 0, anchored: false,
+          resolved: true,
         }
       ];
       const diagnostic: Diagnostic = {

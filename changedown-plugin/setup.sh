@@ -6,11 +6,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 
 usage() {
-  echo "Usage: $0 [--cursor|--claude|--both]"
+  echo "Usage: $0 [--cursor|--claude|--codex|--both]"
   echo ""
-  echo "  --cursor   Install for Cursor (hooks, MCP, skill)"
+  echo "  --cursor   Install Cursor MCP config, hooks, and skill"
   echo "  --claude   Verify Claude Code plugin structure"
-  echo "  --both     Both platforms"
+  echo "  --codex    Verify Codex plugin structure"
+  echo "  --both     Do Cursor setup and verify Claude + Codex plugin structure"
   exit 1
 }
 
@@ -60,10 +61,32 @@ verify_claude() {
   fi
 }
 
+verify_codex() {
+  echo "=== Verifying Codex plugin structure ==="
+  local ok=true
+  [ -f "$SCRIPT_DIR/.codex-plugin/plugin.json" ] && echo "  [OK] .codex-plugin/plugin.json" || { echo "  [MISSING] .codex-plugin/plugin.json"; ok=false; }
+  [ -f "$SCRIPT_DIR/codex.mcp.json" ] && echo "  [OK] codex.mcp.json" || { echo "  [MISSING] codex.mcp.json"; ok=false; }
+  [ -d "$SCRIPT_DIR/mcp-server/dist" ] && echo "  [OK] mcp-server built" || { echo "  [MISSING] mcp-server/dist"; ok=false; }
+  [ -d "$SCRIPT_DIR/skills/changedown-codex" ] && echo "  [OK] Codex skill" || { echo "  [MISSING] skills/changedown-codex"; ok=false; }
+  if grep -R '\${CLAUDE_PLUGIN_ROOT}' "$SCRIPT_DIR/.codex-plugin" "$SCRIPT_DIR/codex.mcp.json" >/dev/null 2>&1; then
+    echo "  [FAIL] Codex plugin files contain Claude plugin placeholder"
+    ok=false
+  else
+    echo "  [OK] no Claude plugin placeholder in Codex files"
+  fi
+  if $ok; then
+    echo "=== Codex plugin structure verified ==="
+  else
+    echo "=== Codex plugin structure incomplete ==="
+    return 1
+  fi
+}
+
 # Parse arguments
 case "${1:-}" in
   --cursor) setup_cursor ;;
   --claude) verify_claude ;;
-  --both)   setup_cursor; echo ""; verify_claude ;;
-  *)        usage ;;
+  --codex)  verify_codex ;;
+  --both)   setup_cursor; echo ""; verify_claude; echo ""; verify_codex ;;
+  ""|*) usage; exit 1 ;;
 esac

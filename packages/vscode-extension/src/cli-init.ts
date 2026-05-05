@@ -24,8 +24,10 @@ export interface InitConfigOptions {
     autoSettleOnReject?: boolean;
 }
 
+export type AgentName = 'claude' | 'cursor' | 'opencode' | 'codex';
+
 export interface AgentStatus {
-    name: string;
+    name: AgentName;
     detected: boolean;
     configured: boolean;
 }
@@ -54,8 +56,8 @@ let cached: CliInit | undefined;
  */
 export async function loadCliInit(): Promise<CliInit> {
     if (cached) return cached;
-    const mod = await import('changedown/init');
-    cached = {
+    const mod = await import('@changedown/cli/init');
+    const loaded: CliInit = {
         resolveIdentity: mod.resolveIdentity,
         generateDefaultConfig: mod.generateDefaultConfig,
         copyExamples: mod.copyExamples,
@@ -65,5 +67,6 @@ export async function loadCliInit(): Promise<CliInit> {
         createGitignore: mod.createGitignore,
         hasGitignore: mod.hasGitignore,
     };
-    return cached;
+    cached = loaded;
+    return loaded;
 }

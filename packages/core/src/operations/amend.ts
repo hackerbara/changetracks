@@ -7,6 +7,7 @@
  */
 
 import { parseForFormat } from '../format-aware-parse.js';
+import { assertResolved } from '../model/document.js';
 import { ChangeType, ChangeStatus } from '../model/types.js';
 import { resolveChangeById, parseFootnoteHeader, findFootnoteBlock, findDiscussionInsertionIndex } from '../footnote-utils.js';
 import { nowTimestamp } from '../timestamp.js';
@@ -99,6 +100,7 @@ export function computeAmendEdits(
 
   // --- Parse document for ChangeNode range/content ---
   const doc = parseForFormat(text);
+  assertResolved(doc);  // T3.9: flag-gated; throws UnresolvedChangesError on unresolved input
   const change = doc.getChanges().find((c) => c.id === changeId);
 
   if (!change) {

@@ -11,7 +11,7 @@
     "declaration": true,
     "esModuleInterop": true,
     "paths": {
-      "changedown/config": ["../cli/dist/config/index.d.ts"],
+      "@changedown/cli/config": ["../cli/dist/config/index.d.ts"],
       "@changedown/core/host": ["../core/dist/host/index.d.ts"]
     },
     // TODO: enable after fixing violations

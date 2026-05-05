@@ -10,9 +10,10 @@ describe('hover with unanchored changes', () => {
       id: 'cn-1', type: ChangeType.Comment, status: ChangeStatus.Proposed,
       range: { start: 0, end: 0 }, contentRange: { start: 0, end: 0 },
       level: 2, anchored: false,
+      resolved: false,
       metadata: { comment: 'This is a comment' },
     }];
-    // level >= 2 && anchored === false → isGhostNode → filtered before range check
+    // resolved:false → isGhostNode → filtered before range check
     const result = createHover({ line: 0, character: 0 }, changes, text);
     expect(result).toBeNull();
   });
@@ -23,6 +24,7 @@ describe('hover with unanchored changes', () => {
       id: 'cn-1', type: ChangeType.Comment, status: ChangeStatus.Proposed,
       range: { start: 0, end: 5 }, contentRange: { start: 0, end: 5 },
       level: 2, anchored: true,
+      resolved: true,
       metadata: { comment: 'A comment' },
     }];
     // anchored === true → not a ghost node → included in range check → hover returned
@@ -41,6 +43,7 @@ describe('hover with consumed ops', () => {
       id: 'cn-3', type: ChangeType.Insertion, status: ChangeStatus.Proposed,
       range: { start: 50, end: 80 }, contentRange: { start: 50, end: 80 },
       anchored: false, level: 2,
+      resolved: true,
       consumedBy: 'cn-5',
     }];
     const position = offsetToPosition(text, 60); // inside footnote block range
@@ -54,6 +57,7 @@ describe('hover with consumed ops', () => {
       id: 'cn-3', type: ChangeType.Insertion, status: ChangeStatus.Proposed,
       range: { start: 50, end: 80 }, contentRange: { start: 50, end: 80 },
       anchored: false, level: 2,
+      resolved: true,
       consumedBy: 'cn-5',
       consumptionType: 'partial',
     }];
@@ -69,18 +73,21 @@ describe('hover with consumed ops', () => {
         id: 'cn-3', type: ChangeType.Insertion, status: ChangeStatus.Proposed,
         range: { start: 10, end: 20 }, contentRange: { start: 10, end: 20 },
         anchored: false, level: 2,
+        resolved: true,
         consumedBy: 'cn-5',
       },
       {
         id: 'cn-4', type: ChangeType.Deletion, status: ChangeStatus.Proposed,
         range: { start: 30, end: 40 }, contentRange: { start: 30, end: 40 },
         anchored: false, level: 2,
+        resolved: true,
         consumedBy: 'cn-5',
       },
       {
         id: 'cn-5', type: ChangeType.Substitution, status: ChangeStatus.Proposed,
         range: { start: 50, end: 80 }, contentRange: { start: 50, end: 80 },
         anchored: true, level: 2,
+        resolved: true,
         metadata: { comment: 'Rewrote the paragraph' },
       },
     ];
@@ -100,12 +107,14 @@ describe('hover with consumed ops', () => {
         id: 'cn-3', type: ChangeType.Insertion, status: ChangeStatus.Proposed,
         range: { start: 10, end: 20 }, contentRange: { start: 10, end: 20 },
         anchored: false, level: 2,
+        resolved: true,
         consumedBy: 'cn-5',
       },
       {
         id: 'cn-5', type: ChangeType.Insertion, status: ChangeStatus.Proposed,
         range: { start: 50, end: 80 }, contentRange: { start: 50, end: 80 },
         anchored: true, level: 2,
+        resolved: true,
       },
     ];
     const position = offsetToPosition(text, 60);

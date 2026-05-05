@@ -1470,6 +1470,7 @@ describe('CriticMarkupParser', () => {
         groupId: 'cn-1',
         level: 0,
         anchored: false,
+        resolved: true,
       };
       expect(node.moveRole).toBe('from');
       expect(node.groupId).toBe('cn-1');
@@ -1484,6 +1485,7 @@ describe('CriticMarkupParser', () => {
         contentRange: { start: 3, end: 7 },
         level: 0,
         anchored: false,
+        resolved: true,
       };
       expect(node.moveRole).toBeUndefined();
       expect(node.groupId).toBeUndefined();

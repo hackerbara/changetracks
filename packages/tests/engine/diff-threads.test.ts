@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { extractThreadEntries, formatThreadLines, formatAnsiWithThreads } from 'changedown/internals';
+import { extractThreadEntries, formatThreadLines, formatAnsiWithThreads } from '@changedown/cli/internals';
 import { buildViewDocument, initHashline, type ThreeZoneDocument } from '@changedown/core';
 
 // ─── extractThreadEntries ───────────────────────────────────────────────────

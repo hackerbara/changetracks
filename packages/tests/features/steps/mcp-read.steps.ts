@@ -95,7 +95,6 @@ Then(
   function (this: ChangeDownWorld, _example: string) {
     assert.ok(this.lastResult, 'No MCP result available');
     const text = this.ctx.resultText(this.lastResult);
-    // The meta view produces [^cn-N] anchors and {>>cn-N @author: reason<<} metadata
     assert.ok(text.includes('[^cn-1]'), 'Expected [^cn-1] inline anchor');
     assert.ok(text.includes('[^cn-2]'), 'Expected [^cn-2] inline anchor');
   },

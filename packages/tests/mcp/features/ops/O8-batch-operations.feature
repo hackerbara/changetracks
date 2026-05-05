@@ -41,3 +41,16 @@ Feature: Batch operations
     Then affected_lines contains fewer than 20 entries
     And affected_lines includes the edit region with context
     But affected_lines does NOT contain the entire file
+
+  # ADR-036 §4: atomic default — one failure aborts the whole batch
+
+  Scenario: propose_batch aborts atomically when one op fails (ADR-036 default)
+    When I call propose_batch with 1 valid and 1 invalid change
+    Then the response is an error
+    And the file is unchanged
+
+  # ADR-036 §4: explicit partial:true opts into partial-success
+
+  Scenario: propose_batch with partial:true applies valid ops and reports failures
+    When I call propose_batch with 1 valid and 1 invalid change and partial:true
+    Then the response includes 1 applied and 1 failed

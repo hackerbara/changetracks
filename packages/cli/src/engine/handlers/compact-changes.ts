@@ -1,4 +1,5 @@
 import * as fs from 'node:fs/promises';
+import { writeTrackedFile } from '../write-tracked-file.js';
 import { errorResult } from '../shared/error-result.js';
 import { ConfigResolver } from '../config-resolver.js';
 import { SessionState } from '../state.js';
@@ -6,6 +7,7 @@ import { rerecordState } from '../state-utils.js';
 import { isFileInScope } from '../config.js';
 import {
   compact, compactL2, analyzeCompactionCandidates, isL3Format,
+  parseForFormat, assertResolved, UnresolvedChangesError,
 } from '@changedown/core';
 import type { CompactionRequest } from '@changedown/core';
 
@@ -128,6 +130,18 @@ export async function handleCompactChanges(
       return errorResult(`File not found or unreadable: ${msg}`);
     }
 
+    // Assert no unresolved changes before any mutation (zombie-elimination spec §3.4).
+    try {
+      assertResolved(parseForFormat(fileContent));
+    } catch (err) {
+      if (err instanceof UnresolvedChangesError) {
+        return errorResult(
+          `Document has ${err.diagnostics.length} unresolved change(s); run 'cd repair' or amend the failing change. Diagnostics: ${JSON.stringify(err.diagnostics)}`,
+        );
+      }
+      throw err;
+    }
+
     // 5. Detect format and compact
     const l3 = isL3Format(fileContent);
     const compactFn = l3 ? compact : compactL2;
@@ -142,7 +156,7 @@ export async function handleCompactChanges(
 
     // 6. Write result
     if (result.text !== fileContent) {
-      await fs.writeFile(filePath, result.text, 'utf-8');
+      await writeTrackedFile(filePath, result.text);
     }
 
     // 7. Re-record state

@@ -2983,7 +2983,7 @@ var require_compile = __commonJS({
       const schOrFunc = root.refs[ref];
       if (schOrFunc)
         return schOrFunc;
-      let _sch = resolve5.call(this, root, ref);
+      let _sch = resolve6.call(this, root, ref);
       if (_sch === void 0) {
         const schema = (_a2 = root.localRefs) === null || _a2 === void 0 ? void 0 : _a2[ref];
         const { schemaId } = this.opts;
@@ -3010,7 +3010,7 @@ var require_compile = __commonJS({
     function sameSchemaEnv(s1, s2) {
       return s1.schema === s2.schema && s1.root === s2.root && s1.baseId === s2.baseId;
     }
-    function resolve5(root, ref) {
+    function resolve6(root, ref) {
       let sch;
       while (typeof (sch = this.refs[ref]) == "string")
         ref = sch;
@@ -3225,8 +3225,8 @@ var require_utils = __commonJS({
       }
       return ind;
     }
-    function removeDotSegments(path13) {
-      let input = path13;
+    function removeDotSegments(path15) {
+      let input = path15;
       const output = [];
       let nextSlash = -1;
       let len = 0;
@@ -3425,8 +3425,8 @@ var require_schemes = __commonJS({
         wsComponent.secure = void 0;
       }
       if (wsComponent.resourceName) {
-        const [path13, query] = wsComponent.resourceName.split("?");
-        wsComponent.path = path13 && path13 !== "/" ? path13 : void 0;
+        const [path15, query] = wsComponent.resourceName.split("?");
+        wsComponent.path = path15 && path15 !== "/" ? path15 : void 0;
         wsComponent.query = query;
         wsComponent.resourceName = void 0;
       }
@@ -3485,7 +3485,7 @@ var require_schemes = __commonJS({
       urnComponent.nss = (uuidComponent.uuid || "").toLowerCase();
       return urnComponent;
     }
-    var http = (
+    var http3 = (
       /** @type {SchemeHandler} */
       {
         scheme: "http",
@@ -3494,11 +3494,11 @@ var require_schemes = __commonJS({
         serialize: httpSerialize
       }
     );
-    var https = (
+    var https3 = (
       /** @type {SchemeHandler} */
       {
         scheme: "https",
-        domainHost: http.domainHost,
+        domainHost: http3.domainHost,
         parse: httpParse,
         serialize: httpSerialize
       }
@@ -3542,8 +3542,8 @@ var require_schemes = __commonJS({
     var SCHEMES = (
       /** @type {Record<SchemeName, SchemeHandler>} */
       {
-        http,
-        https,
+        http: http3,
+        https: https3,
         ws,
         wss,
         urn,
@@ -3585,7 +3585,7 @@ var require_fast_uri = __commonJS({
       }
       return uri;
     }
-    function resolve5(baseURI, relativeURI, options) {
+    function resolve6(baseURI, relativeURI, options) {
       const schemelessOptions = options ? Object.assign({ scheme: "null" }, options) : { scheme: "null" };
       const resolved = resolveComponent(parse6(baseURI, schemelessOptions), parse6(relativeURI, schemelessOptions), schemelessOptions, true);
       schemelessOptions.skipEscape = true;
@@ -3812,7 +3812,7 @@ var require_fast_uri = __commonJS({
     var fastUri = {
       SCHEMES,
       normalize: normalize2,
-      resolve: resolve5,
+      resolve: resolve6,
       resolveComponent,
       equal,
       serialize,
@@ -4150,8 +4150,8 @@ var require_core = __commonJS({
             return this;
           }
           case "object": {
-            const cacheKey = schemaKeyRef;
-            this._cache.delete(cacheKey);
+            const cacheKey2 = schemaKeyRef;
+            this._cache.delete(cacheKey2);
             let id = schemaKeyRef[this.opts.schemaId];
             if (id) {
               id = (0, resolve_1.normalizeId)(id);
@@ -6788,12 +6788,12 @@ var require_dist = __commonJS({
         throw new Error(`Unknown format "${name}"`);
       return f;
     };
-    function addFormats(ajv, list, fs19, exportName) {
+    function addFormats(ajv, list, fs23, exportName) {
       var _a2;
       var _b;
       (_a2 = (_b = ajv.opts.code).formats) !== null && _a2 !== void 0 ? _a2 : _b.formats = (0, codegen_1._)`require("ajv-formats/dist/formats").${exportName}`;
       for (const f of list)
-        ajv.addFormat(f, fs19[f]);
+        ajv.addFormat(f, fs23[f]);
     }
     module.exports = exports = formatsPlugin;
     Object.defineProperty(exports, "__esModule", { value: true });
@@ -6926,6 +6926,8 @@ function changeTypeToAbbrev(type) {
       return "hig";
     case ChangeType.Comment:
       return "com";
+    case ChangeType.Move:
+      return "mov";
   }
 }
 function changeTypeToShortCode(type) {
@@ -6940,10 +6942,12 @@ function changeTypeToShortCode(type) {
       return "hl";
     case ChangeType.Comment:
       return "com";
+    case ChangeType.Move:
+      return "mov";
   }
 }
-function isGhostNode(change) {
-  return change.anchored === false && change.level >= 2 && !change.consumedBy;
+function isGhostNode(node) {
+  return node.resolved === false && !node.consumedBy;
 }
 function nodeStatus(node) {
   return (node.metadata?.status ?? node.inlineMetadata?.status ?? node.status).toString().toLowerCase();
@@ -6958,6 +6962,7 @@ var init_types = __esm({
       ChangeType2["Substitution"] = "Substitution";
       ChangeType2["Highlight"] = "Highlight";
       ChangeType2["Comment"] = "Comment";
+      ChangeType2["Move"] = "Move";
     })(ChangeType || (ChangeType = {}));
     (function(ChangeStatus2) {
       ChangeStatus2["Proposed"] = "Proposed";
@@ -6967,15 +6972,46 @@ var init_types = __esm({
   }
 });
 
+// ../../packages/core/dist-esm/model/diagnostic.js
+var UnresolvedChangesError, StructuralIntegrityError;
+var init_diagnostic = __esm({
+  "../../packages/core/dist-esm/model/diagnostic.js"() {
+    "use strict";
+    UnresolvedChangesError = class extends Error {
+      constructor(diagnostics) {
+        super(`Document has ${diagnostics.length} unresolved change(s); cannot mutate.`);
+        this.name = "UnresolvedChangesError";
+        this.diagnostics = diagnostics;
+      }
+    };
+    StructuralIntegrityError = class extends Error {
+      constructor(violations) {
+        super(`Structural integrity violated: ${violations.map((v) => v.kind).join(", ")}.`);
+        this.name = "StructuralIntegrityError";
+        this.violations = violations;
+      }
+    };
+  }
+});
+
 // ../../packages/core/dist-esm/model/document.js
-var VirtualDocument;
+function assertResolved(doc, options) {
+  const allowed = new Set(options?.allow ?? []);
+  const violations = doc.getDiagnostics().filter((d) => BLOCKING_KINDS.has(d.kind) && !allowed.has(d.kind));
+  if (violations.length > 0)
+    throw new UnresolvedChangesError(violations);
+}
+var VirtualDocument, BLOCKING_KINDS;
 var init_document = __esm({
   "../../packages/core/dist-esm/model/document.js"() {
     "use strict";
     init_types();
+    init_diagnostic();
     VirtualDocument = class _VirtualDocument {
-      constructor(changes = [], coherenceRate = 100, unresolvedDiagnostics = [], resolvedText) {
+      constructor(changes = [], coherenceRate = 100, unresolvedDiagnostics = [], resolvedText, records = []) {
+        this.diagnostics = [];
         this.changes = changes;
+        this.records = records;
         this.coherenceRate = coherenceRate;
         this.unresolvedDiagnostics = unresolvedDiagnostics;
         this.resolvedText = resolvedText;
@@ -6994,12 +7030,19 @@ var init_document = __esm({
           contentRange: overlay.range,
           modifiedText: overlay.text,
           level: 1,
-          anchored: false
+          anchored: false,
+          resolved: true
         };
         return new _VirtualDocument([change]);
       }
       getChanges() {
         return this.changes;
+      }
+      getRecords() {
+        return this.records.slice();
+      }
+      getReviewableChanges() {
+        return this.changes.filter((change) => String(change.metadata?.status ?? change.inlineMetadata?.status ?? change.status).toLowerCase() === "proposed");
       }
       /** Returns L2+ ghost nodes that failed anchor resolution. L0/L1 unanchored nodes are excluded. */
       getUnresolvedChanges() {
@@ -7032,7 +7075,37 @@ var init_document = __esm({
       getGroupMembers(groupId) {
         return this.changes.filter((c) => c.groupId === groupId);
       }
+      /**
+       * Returns a readonly view of diagnostics emitted during parsing or
+       * subsequent operations on this document. Diagnostics live on the
+       * document, not on individual ChangeNodes — see model/diagnostic.ts.
+       */
+      getDiagnostics() {
+        return this.diagnostics;
+      }
+      /**
+       * Append a diagnostic. Called by parsers during construction and by
+       * recovery paths that detect new issues. Not part of the read API
+       * surface for ordinary consumers.
+       */
+      addDiagnostic(d) {
+        this.diagnostics.push(d);
+      }
+      /**
+       * Remove all diagnostics whose changeId matches. Used by the replay
+       * protocol in footnote-native-parser when a previously-failed change
+       * is recovered, and by review-changes when a change settles.
+       */
+      removeDiagnosticsForChange(changeId) {
+        this.diagnostics = this.diagnostics.filter((d) => d.changeId !== changeId);
+      }
     };
+    BLOCKING_KINDS = /* @__PURE__ */ new Set([
+      "coordinate_failed",
+      "anchor_ambiguous",
+      "anchor_missing",
+      "structural_invalid"
+    ]);
   }
 });
 
@@ -7058,6 +7131,16 @@ var init_tokens = __esm({
 });
 
 // ../../packages/core/dist-esm/parser/code-zones.js
+function buildCodeZoneMask(text) {
+  const mask = new Uint8Array(text.length);
+  for (const zone of findCodeZones(text)) {
+    const end = Math.min(zone.end, text.length);
+    for (let i = zone.start; i < end; i++) {
+      mask[i] = 1;
+    }
+  }
+  return mask;
+}
 function findCodeZones(text) {
   const zones = [];
   let position = 0;
@@ -7286,7 +7369,23 @@ function isL3Format(text) {
     }
   }
   const footnoteSection = text.slice(firstFootnote);
-  return footnoteSection.split("\n").some((line) => FOOTNOTE_L3_EDIT_OP.test(line));
+  const footnoteLines = footnoteSection.split("\n");
+  if (footnoteLines.some((line) => FOOTNOTE_L3_EDIT_OP.test(line)))
+    return true;
+  for (let i = 0; i < footnoteLines.length; i++) {
+    if (!FOOTNOTE_L3_HISTORY_HEADER.test(footnoteLines[i]))
+      continue;
+    for (let j = i + 1; j < footnoteLines.length; j++) {
+      const line = footnoteLines[j];
+      if (FOOTNOTE_DEF_START.test(line))
+        break;
+      if (/^ {4}source:\s*\S/.test(line))
+        return true;
+      if (line.trim() !== "" && !line.startsWith("    "))
+        break;
+    }
+  }
+  return false;
 }
 function unescapeCtxString(s) {
   return s.replace(/\\"/g, '"').replace(/\\\\/g, "\\");
@@ -7314,7 +7413,7 @@ function splitBodyAndFootnotes(lines) {
     bodyEndIndex: bodyEnd
   };
 }
-var FOOTNOTE_ID_PATTERN, FOOTNOTE_ID_NUMERIC_PATTERN, FOOTNOTE_REF_ANCHORED, FOOTNOTE_DEF_START, FOOTNOTE_DEF_START_QUICK, FOOTNOTE_DEF_LENIENT, FOOTNOTE_DEF_STRICT, FOOTNOTE_DEF_STATUS, FOOTNOTE_DEF_STATUS_VALUE, FOOTNOTE_L3_EDIT_OP, IMAGE_DIMENSIONS_RE, CTX_RE, FOOTNOTE_CONTINUATION, FOOTNOTE_THREAD_REPLY;
+var FOOTNOTE_ID_PATTERN, FOOTNOTE_ID_NUMERIC_PATTERN, FOOTNOTE_REF_ANCHORED, FOOTNOTE_DEF_START, FOOTNOTE_DEF_START_QUICK, FOOTNOTE_DEF_LENIENT, FOOTNOTE_DEF_STRICT, FOOTNOTE_DEF_STATUS, FOOTNOTE_DEF_STATUS_VALUE, FOOTNOTE_L3_EDIT_OP, FOOTNOTE_L3_HISTORY_HEADER, IMAGE_DIMENSIONS_RE, CTX_RE, FOOTNOTE_CONTINUATION, FOOTNOTE_THREAD_REPLY;
 var init_footnote_patterns = __esm({
   "../../packages/core/dist-esm/footnote-patterns.js"() {
     "use strict";
@@ -7329,10 +7428,11 @@ var init_footnote_patterns = __esm({
     FOOTNOTE_DEF_STATUS = new RegExp(`^\\[\\^(${FOOTNOTE_ID_PATTERN})\\]:\\s+(?:@\\S+\\s+\\|\\s+)?\\S+\\s+\\|\\s+\\S+\\s+\\|\\s+(\\S+)`);
     FOOTNOTE_DEF_STATUS_VALUE = new RegExp(`^\\[\\^${FOOTNOTE_ID_PATTERN}\\]:\\s.*\\|\\s*(proposed|accepted|rejected)`);
     FOOTNOTE_L3_EDIT_OP = /^ {4}(\d+):([0-9a-fA-F]{2,}) (.*)/;
+    FOOTNOTE_L3_HISTORY_HEADER = new RegExp(`^\\[\\^${FOOTNOTE_ID_PATTERN}\\]:\\s.*\\|\\s*(?:ins|del|sub|format|equation|image|field|object)\\s*\\|\\s*accepted\\s*$`);
     IMAGE_DIMENSIONS_RE = /^([\d.]+)in\s*x\s*([\d.]+)in$/;
     CTX_RE = /@ctx:"((?:[^"\\]|\\.)*)"\|\|"((?:[^"\\]|\\.)*)"/;
     FOOTNOTE_CONTINUATION = /^\s+\S/;
-    FOOTNOTE_THREAD_REPLY = /^\s+@\S+\s+\d{4}-\d{2}-\d{2}(?:[T ]\d{1,2}:\d{2}(?::\d{2})?(?:\s?[AaPp][Mm])?Z?)?:/;
+    FOOTNOTE_THREAD_REPLY = /^\s+@\S+\s+\d{4}-\d{2}-\d{2}(?:[T ]\d{1,2}:\d{2}(?::\d{2})?(?:\s?[AaPp][Mm])?Z?)?(?:\s+\[[^\]]+\])?:/;
   }
 });
 
@@ -7451,7 +7551,8 @@ var init_footnote_generator = __esm({
       [ChangeType.Deletion]: "deletion",
       [ChangeType.Substitution]: "substitution",
       [ChangeType.Highlight]: "highlight",
-      [ChangeType.Comment]: "comment"
+      [ChangeType.Comment]: "comment",
+      [ChangeType.Move]: "move"
     };
     UNKNOWN_PRIOR_SUB = "\u2026";
   }
@@ -7671,7 +7772,8 @@ var init_parser = __esm({
           contentRange: { start: contentStart, end: closePos },
           modifiedText: content,
           level: 0,
-          anchored: false
+          anchored: false,
+          resolved: true
         };
       }
       parseDeletion(text, startPos, counter) {
@@ -7690,7 +7792,8 @@ var init_parser = __esm({
           contentRange: { start: contentStart, end: closePos },
           originalText: content,
           level: 0,
-          anchored: false
+          anchored: false,
+          resolved: true
         };
       }
       /**
@@ -7736,7 +7839,8 @@ var init_parser = __esm({
           originalText,
           modifiedText,
           level: 0,
-          anchored: false
+          anchored: false,
+          resolved: true
         };
       }
       parseHighlight(text, startPos, counter) {
@@ -7765,7 +7869,8 @@ var init_parser = __esm({
           originalText: highlightedText,
           metadata: comment !== void 0 ? { comment } : void 0,
           level: 0,
-          anchored: false
+          anchored: false,
+          resolved: true
         };
       }
       parseComment(text, startPos, counter) {
@@ -7784,7 +7889,8 @@ var init_parser = __esm({
           contentRange: { start: contentStart, end: closePos },
           metadata: { comment },
           level: 0,
-          anchored: false
+          anchored: false,
+          resolved: true
         };
       }
       parseFootnoteDefinitions(text) {
@@ -7937,6 +8043,21 @@ var init_parser = __esm({
             lastDiscussionComment = comment;
             continue;
           }
+          const supersedesMatch = trimmed.match(_CriticMarkupParser.SUPERSEDES_RE);
+          if (supersedesMatch) {
+            if (!currentDef.supersedes)
+              currentDef.supersedes = supersedesMatch[1];
+            lastDiscussionComment = null;
+            continue;
+          }
+          const supersededByMatch = trimmed.match(_CriticMarkupParser.SUPERSEDED_BY_RE);
+          if (supersededByMatch) {
+            if (!currentDef.supersededBy)
+              currentDef.supersededBy = [];
+            currentDef.supersededBy.push(supersededByMatch[1]);
+            lastDiscussionComment = null;
+            continue;
+          }
           const discMatch = trimmed.match(_CriticMarkupParser.DISCUSSION_RE);
           if (discMatch) {
             const depth = Math.max(0, Math.floor((rawIndent - 4) / 2));
@@ -8015,6 +8136,10 @@ var init_parser = __esm({
           }
           applyImageExtraMetadata(def, node.metadata);
           applyEquationExtraMetadata(def, node.metadata);
+          if (def.supersedes)
+            node.supersedes = def.supersedes;
+          if (def.supersededBy && def.supersededBy.length > 0)
+            node.supersededBy = def.supersededBy;
           if (def.startLine !== void 0) {
             node.footnoteLineRange = { startLine: def.startLine, endLine: def.endLine ?? def.startLine };
           }
@@ -8055,6 +8180,7 @@ var init_parser = __esm({
               level: 2,
               decided: true,
               anchored: true,
+              resolved: true,
               metadata: {
                 author: def.author,
                 date: def.date,
@@ -8078,6 +8204,10 @@ var init_parser = __esm({
               node.metadata.resolution = def.resolution;
             applyImageExtraMetadata(def, node.metadata);
             applyEquationExtraMetadata(def, node.metadata);
+            if (def.supersedes)
+              node.supersedes = def.supersedes;
+            if (def.supersededBy && def.supersededBy.length > 0)
+              node.supersededBy = def.supersededBy;
             if (def.startLine !== void 0) {
               node.footnoteLineRange = { startLine: def.startLine, endLine: def.endLine ?? def.startLine };
             }
@@ -8130,6 +8260,7 @@ var init_parser = __esm({
           node.range = { start: node.range.start, end: node.range.end + match[0].length };
           node.level = 2;
           node.anchored = true;
+          node.resolved = true;
         }
       }
       matchesAt(text, position, delimiter) {
@@ -8142,6 +8273,8 @@ var init_parser = __esm({
     CriticMarkupParser.FOOTNOTE_REF = FOOTNOTE_REF_ANCHORED;
     CriticMarkupParser.FOOTNOTE_DEF = FOOTNOTE_DEF_STRICT;
     CriticMarkupParser.APPROVAL_RE = /^(approved|rejected|request-changes):\s+(@\S+)\s+(\S+)(?:\s+"([^"]*)")?$/;
+    CriticMarkupParser.SUPERSEDES_RE = /^supersedes:\s+(\S+)\s*$/;
+    CriticMarkupParser.SUPERSEDED_BY_RE = /^superseded-by:\s+(\S+)\s*$/;
     CriticMarkupParser.DISCUSSION_RE = /^(@\S+)\s+(\S+)(?:\s+\[([^\]]+)\])?:\s*(.*)$/;
     CriticMarkupParser.RESOLVED_RE = /^resolved:?\s+(@\S+)\s+(\S+)(?::\s*(.*))?$/;
     CriticMarkupParser.OPEN_RE = /^open(?:\s+--\s+(.*))?$/;
@@ -8367,6 +8500,8 @@ function computeAcceptParts(change) {
       return { offset: change.range.start, length: rangeLength, text: change.originalText ?? "", refId };
     case ChangeType.Comment:
       return { offset: change.range.start, length: rangeLength, text: "", refId: "" };
+    case ChangeType.Move:
+      return { offset: change.range.start, length: rangeLength, text: change.modifiedText ?? "", refId };
   }
 }
 function computeRejectParts(change) {
@@ -8383,6 +8518,8 @@ function computeRejectParts(change) {
       return { offset: change.range.start, length: rangeLength, text: change.originalText ?? "", refId };
     case ChangeType.Comment:
       return { offset: change.range.start, length: rangeLength, text: "", refId: "" };
+    case ChangeType.Move:
+      return { offset: change.range.start, length: rangeLength, text: change.originalText ?? "", refId };
   }
 }
 function computeReject(change) {
@@ -8398,6 +8535,8 @@ function computeReject(change) {
         return { offset: change.range.start, length: 0, newText: "" };
       case ChangeType.Comment:
         return { offset: change.range.start, length: 0, newText: "" };
+      case ChangeType.Move:
+        return { offset: change.range.start, length: change.range.end - change.range.start, newText: "" };
     }
   }
   const parts = computeRejectParts(change);
@@ -8416,6 +8555,33 @@ var init_accept_reject = __esm({
 });
 
 // ../../packages/core/dist-esm/operations/resolution.js
+function computeResolutionEdit(text, changeId, opts) {
+  const lines = text.split("\n");
+  const block = findFootnoteBlock(lines, changeId);
+  if (!block)
+    return null;
+  const date4 = opts.date ?? nowTimestamp().raw;
+  const author = opts.author.startsWith("@") ? opts.author : `@${opts.author}`;
+  const line = `    resolved: ${author} ${date4}`;
+  const offset = lines.slice(0, block.blockEnd + 1).join("\n").length;
+  return { offset, length: 0, newText: "\n" + line };
+}
+function computeUnresolveEdit(text, changeId) {
+  const lines = text.split("\n");
+  const block = findFootnoteBlock(lines, changeId);
+  if (!block)
+    return null;
+  for (let i = block.headerLine + 1; i <= block.blockEnd; i++) {
+    const trimmed = lines[i].trim();
+    if (trimmed.startsWith("resolved:") || trimmed.startsWith("resolved ")) {
+      const linesBefore = lines.slice(0, i).join("\n");
+      const lineOffset2 = linesBefore.length;
+      const lineLength = lines[i].length + 1;
+      return { offset: lineOffset2, length: lineLength, newText: "" };
+    }
+  }
+  return null;
+}
 var init_resolution = __esm({
   "../../packages/core/dist-esm/operations/resolution.js"() {
     "use strict";
@@ -8528,6 +8694,9 @@ function promoteLevel0ToLevel2(fileContent, changeId, author) {
   }
   return result.text;
 }
+function formatReviewAuthor(author) {
+  return author.startsWith("@") ? author : `@${author}`;
+}
 function applyReview(fileContent, changeId, decision, reasoning, author, config2) {
   let lines = fileContent.split("\n");
   let block = findFootnoteBlock(lines, changeId);
@@ -8576,7 +8745,7 @@ function applyReview(fileContent, changeId, decision, reasoning, author, config2
   }
   const keyword = decisionToKeyword(decision);
   const ts = nowTimestamp();
-  const reviewLine = `    ${keyword} @${author} ${ts.raw} "${reasoning}"`;
+  const reviewLine = `    ${keyword} ${formatReviewAuthor(author)} ${ts.raw} "${reasoning}"`;
   const insertAfterIdx = findReviewInsertionIndex(lines, block.headerLine, block.blockEnd);
   lines.splice(insertAfterIdx + 1, 0, reviewLine);
   let statusUpdated = false;
@@ -8613,7 +8782,7 @@ function applyReview(fileContent, changeId, decision, reasoning, author, config2
           continue;
         lines[childBlock.headerLine] = lines[childBlock.headerLine].replace(/\|\s*proposed\s*$/, `| ${targetStatus}`);
         const childInsertIdx = findReviewInsertionIndex(lines, childBlock.headerLine, childBlock.blockEnd);
-        const childReviewLine = `    ${keyword} @${author} ${ts.raw} "${reasoning}" (cascaded from ${changeId})`;
+        const childReviewLine = `    ${keyword} ${formatReviewAuthor(author)} ${ts.raw} "${reasoning}" (cascaded from ${changeId})`;
         lines.splice(childInsertIdx + 1, 0, childReviewLine);
         cascadedChildren.push(childId);
       }
@@ -9107,9 +9276,14 @@ function parseFootnoteBlock(lines, startLineOffset = 0) {
     const discussion = [];
     const approvals = [];
     const rejections = [];
+    const requestChanges = [];
+    const revisions = [];
+    let inRevisions = false;
     let resolution = null;
     let imageMetadata;
     let equationMetadata;
+    let supersedesTarget;
+    const supersededByTargets = [];
     while (i < lines.length) {
       const body = lines[i];
       if (FOOTNOTE_DEF_START.test(body))
@@ -9166,13 +9340,16 @@ function parseFootnoteBlock(lines, startLineOffset = 0) {
         continue;
       }
       if (FOOTNOTE_THREAD_REPLY.test(body)) {
-        const replyMatch = body.match(/^\s+@(\S+)\s+(\S+):\s*(.*)$/);
+        const replyMatch = body.match(/^\s+@(\S+)\s+(\S+)(?:\s+\[([^\]]+)\])?:\s*(.*)$/);
         if (replyMatch) {
           const reply = {
             author: replyMatch[1],
             date: replyMatch[2],
+            label: replyMatch[3] ?? void 0,
+            // group 3: optional [label]
             timestamp: parseTimestamp(replyMatch[2]),
-            text: replyMatch[3],
+            text: replyMatch[4],
+            // group 4: text (shifted from group 3)
             depth: 0
           };
           discussion.push(reply);
@@ -9197,6 +9374,37 @@ function parseFootnoteBlock(lines, startLineOffset = 0) {
         i++;
         continue;
       }
+      const requestChangesMatch = body.match(REQUEST_CHANGES_RE);
+      if (requestChangesMatch) {
+        const action = parseApprovalLine(requestChangesMatch);
+        requestChanges.push(action);
+        bodyLines.push({ kind: "request-changes", action, raw: body });
+        i++;
+        continue;
+      }
+      if (body.trim() === "revisions:") {
+        inRevisions = true;
+        bodyLines.push({ kind: "revisions-header", raw: body });
+        i++;
+        continue;
+      }
+      if (inRevisions) {
+        const revMatch = body.match(REVISION_RE);
+        if (revMatch) {
+          const rev = {
+            label: revMatch[1],
+            author: revMatch[2],
+            date: revMatch[3],
+            timestamp: parseTimestamp(revMatch[3]),
+            text: revMatch[4]
+          };
+          revisions.push(rev);
+          bodyLines.push({ kind: "revision", revision: rev, raw: body });
+          i++;
+          continue;
+        }
+        inRevisions = false;
+      }
       const resolvedMatch = body.match(RESOLVED_RE);
       if (resolvedMatch) {
         const res = {
@@ -9218,6 +9426,23 @@ function parseFootnoteBlock(lines, startLineOffset = 0) {
         if (!resolution)
           resolution = res;
         bodyLines.push({ kind: "resolution", resolution: res, raw: body });
+        i++;
+        continue;
+      }
+      const supersedesMatch = body.match(SUPERSEDES_RE);
+      if (supersedesMatch) {
+        const target = supersedesMatch[1];
+        if (supersedesTarget === void 0)
+          supersedesTarget = target;
+        bodyLines.push({ kind: "supersedes", target, raw: body });
+        i++;
+        continue;
+      }
+      const supersededByMatch = body.match(SUPERSEDED_BY_RE);
+      if (supersededByMatch) {
+        const target = supersededByMatch[1];
+        supersededByTargets.push(target);
+        bodyLines.push({ kind: "superseded-by", target, raw: body });
         i++;
         continue;
       }
@@ -9251,15 +9476,19 @@ function parseFootnoteBlock(lines, startLineOffset = 0) {
       discussion,
       approvals,
       rejections,
+      requestChanges,
+      revisions,
       resolution,
       imageMetadata: imageMetadata ? Object.freeze(imageMetadata) : void 0,
       equationMetadata: equationMetadata ? Object.freeze(equationMetadata) : void 0,
+      supersedes: supersedesTarget,
+      supersededBy: Object.freeze(supersededByTargets),
       sourceRange: { startLine: startLineOffset + startLine, endLine: startLineOffset + endLine }
     });
   }
   return footnotes;
 }
-var APPROVED_RE, REJECTED_RE, REASON_RE, CONTEXT_RE, RESOLVED_RE, OPEN_RE, IMAGE_META_RE, EQUATION_META_RE;
+var APPROVED_RE, REJECTED_RE, REQUEST_CHANGES_RE, REVISION_RE, REASON_RE, CONTEXT_RE, RESOLVED_RE, OPEN_RE, SUPERSEDES_RE, SUPERSEDED_BY_RE, IMAGE_META_RE, EQUATION_META_RE;
 var init_footnote_block_parser = __esm({
   "../../packages/core/dist-esm/parser/footnote-block-parser.js"() {
     "use strict";
@@ -9269,10 +9498,14 @@ var init_footnote_block_parser = __esm({
     init_contextual_edit_op();
     APPROVED_RE = /^ {4}approved:\s+(\S+)\s+(\S+)(?:\s+"([^"]*)")?/;
     REJECTED_RE = /^ {4}rejected:\s+(\S+)\s+(\S+)(?:\s+"([^"]*)")?/;
+    REQUEST_CHANGES_RE = /^ {4}request-changes:\s+(\S+)\s+(\S+)(?:\s+"([^"]*)")?/;
+    REVISION_RE = /^ {4,}(r\d+)\s+(@?\S+)\s+(\S+):\s+"([^"]*)"$/;
     REASON_RE = /^ {4}reason:\s+(.*)$/;
     CONTEXT_RE = /^ {4}context:\s+(.*)$/;
     RESOLVED_RE = /^ {4}resolved:\s+(\S+)\s+(\S+)(?:\s+"([^"]*)")?/;
     OPEN_RE = /^ {4}open(?:\s+--\s+(.*))?$/;
+    SUPERSEDES_RE = /^ {4}supersedes:\s+(\S+)\s*$/;
+    SUPERSEDED_BY_RE = /^ {4}superseded-by:\s+(\S+)\s*$/;
     IMAGE_META_RE = /^ {4}(image-[\w-]+):\s*(.*)$/;
     EQUATION_META_RE = /^ {4}(equation-[\w-]+):\s*(.*)$/;
   }
@@ -9678,6 +9911,32 @@ var init_comment_syntax = __esm({
 });
 
 // ../../packages/core/dist-esm/parser/footnote-native-parser.js
+function metadataFromUnknownLines(lines) {
+  const result = {};
+  for (const line of lines) {
+    const match = /^\s*([^:]+):\s*(.*)$/.exec(line);
+    if (match)
+      result[match[1].trim()] = match[2].trim();
+  }
+  return result;
+}
+function isDocumentScopeAcceptedInsertion(fn) {
+  const metadata = metadataFromUnknownLines(fn.unknownBodyLines ?? []);
+  return fn.type === "ins" && fn.status === "accepted" && fn.author === "@base-document" && fn.lineNumber === void 0 && fn.hash === void 0 && fn.opString === void 0 && metadata.source === "initial-word-body" && metadata.scope === "document" && metadata["body-hash"] !== void 0;
+}
+function toChangeDownRecord(fn) {
+  const bodyLines = fn.unknownBodyLines ?? [];
+  return {
+    id: fn.id,
+    author: fn.author,
+    date: fn.date,
+    type: fn.type,
+    status: fn.status,
+    reviewable: false,
+    metadata: metadataFromUnknownLines(bodyLines),
+    bodyLines
+  };
+}
 function parseDeletionContext(opString) {
   const closerIdx = opString.indexOf("--}");
   if (closerIdx < 0)
@@ -9687,6 +9946,9 @@ function parseDeletionContext(opString) {
   if (!match)
     return null;
   return { before: unescapeCtxString(match[1]), after: unescapeCtxString(match[2]) };
+}
+function truncate(s, n) {
+  return s.length > n ? s.slice(0, n) + "\u2026" : s;
 }
 var FootnoteNativeParser;
 var init_footnote_native_parser = __esm({
@@ -9706,19 +9968,29 @@ var init_footnote_native_parser = __esm({
     init_comment_syntax();
     init_contextual_edit_op();
     FootnoteNativeParser = class {
+      constructor() {
+        this.pendingDiagnostics = [];
+      }
       parse(text) {
+        this.pendingDiagnostics = [];
         const lines = text.split("\n");
         const { bodyLines, footnoteLines } = splitBodyAndFootnotes(lines);
         const footnotes = this.parseFootnotes(lines);
         if (footnotes.length === 0) {
-          return new VirtualDocument([]);
+          const emptyDoc = new VirtualDocument([]);
+          for (const d of this.pendingDiagnostics)
+            emptyDoc.addDiagnostic(d);
+          return emptyDoc;
         }
-        const changes = this.resolveChanges(footnotes, bodyLines);
+        const records = footnotes.filter(isDocumentScopeAcceptedInsertion).map(toChangeDownRecord);
+        const recordIds = new Set(records.map((record2) => record2.id));
+        const reviewableFootnotes = footnotes.filter((fn) => !recordIds.has(fn.id));
+        const changes = this.resolveChanges(reviewableFootnotes, bodyLines);
         let freshAnchors = /* @__PURE__ */ new Map();
-        if (changes.some((c) => !c.anchored)) {
+        if (changes.some((c) => c.resolved === false)) {
           try {
             const bodyText = bodyLines.join("\n");
-            const replayFootnotes = footnotes.map((fn) => ({
+            const replayFootnotes = reviewableFootnotes.map((fn) => ({
               id: fn.id,
               type: fn.type,
               status: fn.status,
@@ -9729,15 +10001,16 @@ var init_footnote_native_parser = __esm({
             }));
             const replay = resolveReplayFromParsedFootnotes(bodyText, replayFootnotes);
             for (const node of changes) {
-              if (node.anchored)
+              if (node.resolved !== false)
                 continue;
               const finalPos = replay.finalPositions.get(node.id);
               const isConsumed = replay.consumption.has(node.id);
               if (finalPos && !isConsumed) {
-                node.anchored = true;
+                node.resolved = true;
                 node.range = { start: finalPos.start, end: finalPos.end };
                 node.contentRange = { ...node.range };
                 node.resolutionPath = "replay";
+                this.pendingDiagnostics = this.pendingDiagnostics.filter((d) => d.changeId !== node.id);
               }
               const freshAnchor = replay.freshAnchors.get(node.id);
               if (freshAnchor)
@@ -9759,7 +10032,7 @@ var init_footnote_native_parser = __esm({
           }
         }
         const resolvableCount = changes.length;
-        const resolvedCount = changes.filter((c) => c.anchored || !!c.consumedBy).length;
+        const resolvedCount = changes.filter((c) => c.resolved !== false || !!c.consumedBy).length;
         const coherenceRate = resolvableCount > 0 ? Math.round(resolvedCount / resolvableCount * 100) : 100;
         let resolvedText;
         if (freshAnchors.size > 0) {
@@ -9800,7 +10073,10 @@ var init_footnote_native_parser = __esm({
             resolvedText = bodyLines.join("\n") + "\n\n" + rebuiltFootnotes.join("\n") + "\n";
           }
         }
-        return new VirtualDocument(changes, coherenceRate, [], resolvedText);
+        const doc = new VirtualDocument(changes, coherenceRate, [], resolvedText, records);
+        for (const d of this.pendingDiagnostics)
+          doc.addDiagnostic(d);
+        return doc;
       }
       /**
        * Test-only hook: run just the footnote-scanning phase and return the raw
@@ -9848,6 +10124,12 @@ var init_footnote_native_parser = __esm({
           imageDimensions,
           imageMetadata: f.imageMetadata ? { ...f.imageMetadata } : void 0,
           equationMetadata: f.equationMetadata ? { ...f.equationMetadata } : void 0,
+          discussion: f.discussion.length > 0 ? [...f.discussion] : void 0,
+          requestChanges: f.requestChanges.length > 0 ? f.requestChanges.map((a) => ({ author: a.author, date: a.date, reason: a.reason ?? "" })) : void 0,
+          revisions: f.revisions.length > 0 ? [...f.revisions] : void 0,
+          resolution: f.resolution ?? void 0,
+          supersedes: f.supersedes,
+          supersededBy: f.supersededBy.length > 0 ? [...f.supersededBy] : void 0,
           unknownBodyLines: f.bodyLines.filter((l) => l.kind === "unknown").map((l) => l.raw.trim())
         };
       }
@@ -9881,7 +10163,7 @@ var init_footnote_native_parser = __esm({
             }
           }
           const rangeResult = this.resolveRangeAndContent(fn, parsedOp, ctxResult, changeType, status, bodyLines, lineOffsets);
-          const { range, originalText, modifiedText, comment, anchored, resolutionPath } = rangeResult;
+          const { range, originalText, modifiedText, comment, anchored: positionResolved, resolved: rangeResolved, resolutionPath } = rangeResult;
           const node = {
             id: fn.id,
             type: changeType,
@@ -9890,9 +10172,10 @@ var init_footnote_native_parser = __esm({
             contentRange: { ...range },
             // L3: range === contentRange (no delimiters in body)
             level: 2,
-            // anchored:false means position could not be deterministically resolved (Invariant A).
-            // anchored:true (default) means either resolved uniquely or explicitly OK (deletion line-start).
-            anchored: anchored !== false,
+            anchored: true,
+            // L3 nodes always have a footnote ref by construction
+            resolved: rangeResolved !== void 0 ? rangeResolved : positionResolved !== false,
+            // false only when edit-op text could not be located
             metadata: {
               author: fn.author,
               date: fn.date,
@@ -9938,6 +10221,27 @@ var init_footnote_native_parser = __esm({
               reason: r.reason || void 0
             }));
           }
+          if (fn.discussion && fn.discussion.length > 0) {
+            node.metadata.discussion = fn.discussion;
+          }
+          if (fn.requestChanges && fn.requestChanges.length > 0) {
+            node.metadata.requestChanges = fn.requestChanges.map((a) => ({
+              author: a.author,
+              date: a.date,
+              timestamp: parseTimestamp(a.date),
+              reason: a.reason || void 0
+            }));
+          }
+          if (fn.revisions && fn.revisions.length > 0) {
+            node.metadata.revisions = fn.revisions;
+          }
+          if (fn.resolution) {
+            node.metadata.resolution = fn.resolution;
+          }
+          if (fn.supersedes)
+            node.supersedes = fn.supersedes;
+          if (fn.supersededBy && fn.supersededBy.length > 0)
+            node.supersededBy = fn.supersededBy;
           changes.push(node);
         }
         changes.sort((a, b) => a.range.start - b.range.start);
@@ -9952,7 +10256,7 @@ var init_footnote_native_parser = __esm({
        *   `deletionSeamOffset` gives the byte offset within this span where the deletion occurred
        *   (equals contextBefore.length). The spec's Contextual Uniqueness Guarantee ensures this
        *   span appears exactly once on the target line (04-spec.md §"Contextual Embedding").
-       *   Zero-width ranges appear only as the {0,0} anchored:false sentinel (Invariant A).
+       *   Zero-width ranges appear only as the {0,0} resolved:false sentinel (Invariant A).
        *   This is deliberate — do NOT revert to zero-width seam without understanding
        *   the plan builder's ghost-text injection and accept-change.ts's seam-based removal.
        * - Substitution: search for newText (proposed/accepted) or oldText (rejected) on target line
@@ -9964,18 +10268,19 @@ var init_footnote_native_parser = __esm({
        *
        * Invariant A — Non-deletion ops (ins, sub, highlight) MUST resolve uniquely via
        * findUniqueMatch on the hash-resolved line. If the match fails (text not found or
-       * ambiguous), the node is marked anchored:false. There is NO fallback to line-start
-       * for non-deletion ops. Silent fallback produces wrong decoration placement.
+       * ambiguous), the node is marked resolved:false (with anchored:true). There is NO
+       * fallback to line-start for non-deletion ops. Silent fallback produces wrong
+       * decoration placement.
        *
        * Invariant B — Deletion ops resolve via @ctx:"before"||"after" ONLY. The deleted
        * text is absent from the body so there is nothing to search for. Line-start fallback
        * when @ctx is missing is acceptable degradation (not a silent error).
        *
-       * Invariant C — anchored:false is an error path, not a silent default. Consumers
-       * must not render anchored:false nodes as correctly placed decorations.
+       * Invariant C — resolved:false is an error path, not a silent default. Consumers
+       * must not render resolved:false nodes as correctly placed decorations.
        *
        * Task 3 enforced Invariant A by removing the fallbackRange branches for
-       * ins/sub/highlight and setting anchored:false + sentinel range {0,0} instead.
+       * ins/sub/highlight and setting resolved:false + sentinel range {0,0} instead.
        */
       resolveRangeAndContent(fn, parsedOp, ctxResult, changeType, status, bodyLines, lineOffsets) {
         let effectiveLineNumber = fn.lineNumber;
@@ -10000,7 +10305,12 @@ var init_footnote_native_parser = __esm({
         const lineContent = lineIdx >= 0 && lineIdx < bodyLines.length ? bodyLines[lineIdx] : "";
         const fallbackRange = { start: lineOffset2, end: lineOffset2 };
         if (!parsedOp) {
-          return { range: fallbackRange, anchored: false, comment: fn.unknownBodyLines?.[0], resolutionPath: "rejected" };
+          this.pendingDiagnostics.push({
+            kind: "coordinate_failed",
+            changeId: fn.id,
+            message: `Footnote ${fn.id} has no parsedOp; cannot resolve position.`
+          });
+          return { range: fallbackRange, anchored: true, resolved: false, comment: fn.unknownBodyLines?.[0], resolutionPath: "rejected" };
         }
         const findOnLine = (searchText) => {
           if (!searchText || !lineContent)
@@ -10088,7 +10398,15 @@ var init_footnote_native_parser = __esm({
             }
             const match = findOnLine(text);
             if (!match) {
-              return { range: { start: 0, end: 0 }, modifiedText: text, anchored: false };
+              const targetLine = effectiveLineNumber ?? 1;
+              const matchCount = lineContent ? lineContent.split(text).length - 1 : 0;
+              this.pendingDiagnostics.push({
+                kind: "coordinate_failed",
+                changeId: fn.id,
+                message: `Insertion text "${truncate(text, 40)}" not uniquely found on line ${targetLine} (found ${matchCount} match${matchCount === 1 ? "" : "es"}).`,
+                evidence: { line: targetLine, expectedText: text, candidates: matchCount }
+              });
+              return { range: { start: 0, end: 0 }, modifiedText: text, anchored: true, resolved: false };
             }
             const range = {
               start: lineOffset2 + match.index,
@@ -10126,14 +10444,33 @@ var init_footnote_native_parser = __esm({
           case ChangeType.Substitution: {
             const oldText = parsedOp.oldText;
             const newText = parsedOp.newText;
-            const searchText = newText;
-            const match = searchText ? findOnLine(searchText) : null;
+            const searchTexts = status === ChangeStatus.Rejected ? [newText, oldText].filter((t2) => Boolean(t2)) : [newText].filter((t2) => Boolean(t2));
+            let match = null;
+            let matchedText = "";
+            for (const candidate of searchTexts) {
+              match = findOnLine(candidate);
+              if (match) {
+                matchedText = candidate;
+                break;
+              }
+            }
             if (!match) {
-              return { range: { start: 0, end: 0 }, originalText: oldText, modifiedText: newText, anchored: false };
+              const targetLine = effectiveLineNumber ?? 1;
+              const expectedText = searchTexts.join(" or ");
+              const matchCount = searchTexts.reduce((sum, candidate) => {
+                return sum + (lineContent ? lineContent.split(candidate).length - 1 : 0);
+              }, 0);
+              this.pendingDiagnostics.push({
+                kind: "coordinate_failed",
+                changeId: fn.id,
+                message: `Substitution text "${truncate(expectedText, 40)}" not uniquely found on line ${targetLine} (found ${matchCount} match${matchCount === 1 ? "" : "es"}).`,
+                evidence: { line: targetLine, expectedText, candidates: matchCount }
+              });
+              return { range: { start: 0, end: 0 }, originalText: oldText, modifiedText: newText, anchored: true, resolved: false };
             }
             const range = {
               start: lineOffset2 + match.index,
-              end: lineOffset2 + match.index + match.length
+              end: lineOffset2 + match.index + matchedText.length
             };
             return { range, originalText: oldText, modifiedText: newText, resolutionPath: hashMatched ? "hash" : void 0 };
           }
@@ -10283,7 +10620,7 @@ function computeCurrentTextL3(text) {
 function revertChangesInBody(body, changes) {
   const sorted = [...changes].sort((a, b) => b.range.start - a.range.start);
   for (const change of sorted) {
-    if (change.anchored === false)
+    if (change.resolved === false)
       continue;
     switch (change.type) {
       case ChangeType.Insertion:
@@ -10419,19 +10756,33 @@ function recoverL2EditOpPayload(change, sourceText) {
   }
   return { originalText: orig, currentText: cur };
 }
-function applyAcceptedChanges(text) {
-  if (isL3Format(text)) {
-    return { currentContent: text, appliedIds: [] };
+function settlementAnchorLength(change, projection, payload) {
+  if (projection === "accepted") {
+    switch (change.type) {
+      case ChangeType.Insertion:
+      case ChangeType.Substitution:
+        return payload.currentText.length;
+      case ChangeType.Deletion:
+        return 0;
+      case ChangeType.Highlight:
+        return payload.originalText.length;
+      default:
+        return 0;
+    }
   }
-  const doc = parseForFormat(text, { skipCodeBlocks: false });
-  const accepted = doc.getChanges().filter((c) => c.status === ChangeStatus.Accepted);
-  const appliedIds = accepted.map((c) => c.id);
-  if (accepted.length === 0) {
-    return { currentContent: text, appliedIds: [] };
+  switch (change.type) {
+    case ChangeType.Insertion:
+      return 0;
+    case ChangeType.Deletion:
+    case ChangeType.Substitution:
+    case ChangeType.Highlight:
+    case ChangeType.Move:
+      return payload.originalText.length;
+    default:
+      return 0;
   }
-  const parts = [...accepted].sort((a, b) => a.range.start - b.range.start).map(computeAcceptParts);
-  const zones = findCodeZones(text);
-  const rawCurrentContent = buildSegmentsWithZoneAwareness(text, parts, zones);
+}
+function addL2SettlementEditOps(rawCurrentContent, changes, sourceText, projection) {
   const { bodyLines, footnoteLines } = splitBodyAndFootnotes(rawCurrentContent.split("\n"));
   const refRe = footnoteRefGlobal();
   const cleanBodyLines = bodyLines.map((line) => line.replace(refRe, ""));
@@ -10451,28 +10802,13 @@ function applyAcceptedChanges(text) {
   }
   const scanRe = footnoteRefGlobal();
   const editOpInsertions = [];
-  for (const change of accepted) {
-    const { originalText: effOrig, currentText: effCur } = recoverL2EditOpPayload(change, text);
+  for (const change of changes) {
+    const payload = recoverL2EditOpPayload(change, sourceText);
     const refPos = refIndex.get(`[^${change.id}]`);
     if (!refPos)
       continue;
     const { lineIdx, col: refColInLine } = refPos;
-    let anchorLen;
-    switch (change.type) {
-      case ChangeType.Insertion:
-      case ChangeType.Substitution:
-        anchorLen = effCur.length;
-        break;
-      case ChangeType.Deletion:
-        anchorLen = 0;
-        break;
-      case ChangeType.Highlight:
-        anchorLen = (change.originalText ?? "").length;
-        break;
-      default:
-        anchorLen = 0;
-        break;
-    }
+    const anchorLen = settlementAnchorLength(change, projection, payload);
     scanRe.lastIndex = 0;
     let precedingRefBytes = 0;
     let m;
@@ -10486,8 +10822,8 @@ function applyAcceptedChanges(text) {
     const hash2 = computeLineHash(lineIdx, cleanBodyLines[lineIdx], cleanBodyLines);
     const editOpLine = buildContextualL3EditOp({
       changeType: change.type,
-      originalText: effOrig,
-      currentText: effCur,
+      originalText: payload.originalText,
+      currentText: payload.currentText,
       lineContent: cleanBodyLines[lineIdx],
       lineNumber,
       hash: hash2,
@@ -10503,30 +10839,56 @@ function applyAcceptedChanges(text) {
   for (const { headerLine, editOpLine } of editOpInsertions) {
     footnoteLines.splice(headerLine + 1, 0, editOpLine);
   }
-  const currentContent = [...bodyLines, "", ...footnoteLines].join("\n");
+  return [...bodyLines, "", ...footnoteLines].join("\n");
+}
+function applyAcceptedChanges(text) {
+  if (isL3Format(text)) {
+    return { currentContent: text, appliedIds: [] };
+  }
+  const doc = parseForFormat(text, { skipCodeBlocks: false });
+  assertResolved(doc);
+  const accepted = doc.getChanges().filter((c) => c.status === ChangeStatus.Accepted);
+  const appliedIds = accepted.map((c) => c.id);
+  if (accepted.length === 0) {
+    return { currentContent: text, appliedIds: [] };
+  }
+  const parts = [...accepted].sort((a, b) => a.range.start - b.range.start).map(computeAcceptParts);
+  const zones = findCodeZones(text);
+  const rawCurrentContent = buildSegmentsWithZoneAwareness(text, parts, zones);
+  const currentContent = addL2SettlementEditOps(rawCurrentContent, accepted, text, "accepted");
   return { currentContent, appliedIds };
 }
 function applyRejectedChanges(text) {
   if (isL3Format(text)) {
     const doc2 = parseForFormat(text);
+    assertResolved(doc2);
     const rejected2 = doc2.getChanges().filter((c) => c.status === ChangeStatus.Rejected);
-    const appliedIds2 = rejected2.map((c) => c.id);
     if (rejected2.length === 0)
       return { currentContent: text, appliedIds: [] };
     const { bodyLines, footnoteLines } = splitBodyAndFootnotes(text.split("\n"));
     const body = revertChangesInBody(bodyLines.join("\n"), rejected2);
+    const appliedIds2 = rejected2.filter((c) => c.resolved !== false).map((c) => c.id);
     const currentContent2 = footnoteLines.length > 0 ? body + "\n\n" + footnoteLines.join("\n") : body;
     return { currentContent: currentContent2, appliedIds: appliedIds2 };
   }
   const doc = parseForFormat(text, { skipCodeBlocks: false });
+  assertResolved(doc);
   const rejected = doc.getChanges().filter((c) => c.status === ChangeStatus.Rejected);
-  const appliedIds = rejected.map((c) => c.id);
   if (rejected.length === 0) {
     return { currentContent: text, appliedIds: [] };
   }
   const parts = [...rejected].sort((a, b) => a.range.start - b.range.start).map(computeRejectParts);
   const zones = findCodeZones(text);
-  const currentContent = buildSegmentsWithZoneAwareness(text, parts, zones);
+  const rawCurrentContent = buildSegmentsWithZoneAwareness(text, parts, zones);
+  const currentContent = addL2SettlementEditOps(rawCurrentContent, rejected, text, "rejected");
+  const appliedIds = [];
+  for (const part of parts) {
+    if (!part.refId)
+      continue;
+    if (part.length === 0 && part.text === "")
+      continue;
+    appliedIds.push(part.refId);
+  }
   return { currentContent, appliedIds };
 }
 function computeCurrentViewL3(rawText) {
@@ -10641,6 +11003,7 @@ var init_current_text = __esm({
     init_code_zones();
     init_format_aware_parse();
     init_footnote_generator();
+    init_document();
   }
 });
 
@@ -11689,6 +12052,7 @@ var init_amend = __esm({
   "../../packages/core/dist-esm/operations/amend.js"() {
     "use strict";
     init_format_aware_parse();
+    init_document();
     init_types();
     init_footnote_utils();
     init_timestamp();
@@ -11728,6 +12092,8 @@ async function computeSupersedeResult(text, changeId, opts) {
       error: `Cannot supersede change "${changeId}": unexpected status "${header.status}". Only proposed changes can be superseded.`
     };
   }
+  const inputDoc = parseForFormat(text);
+  assertResolved(inputDoc);
   const rejectResult = applyReview(text, changeId, "reject", reason ?? "Superseded by new change", author);
   if ("error" in rejectResult) {
     return { isError: true, error: `Failed to reject old change: ${rejectResult.error}` };
@@ -11837,6 +12203,7 @@ var init_supersede = __esm({
     init_footnote_generator();
     init_footnote_patterns();
     init_format_aware_parse();
+    init_document();
     init_accept_reject();
     init_types();
     init_timestamp();
@@ -11923,6 +12290,7 @@ var init_sidecar_accept_reject = __esm({
 var init_workspace = __esm({
   "../../packages/core/dist-esm/workspace.js"() {
     "use strict";
+    init_document();
     init_parser();
     init_sidecar_parser();
     init_footnote_native_parser();
@@ -12029,12 +12397,6 @@ function multiLineComment() {
 function hasCriticMarkup(line) {
   return HAS_CRITIC_MARKUP.test(line);
 }
-function inlineMarkupAll() {
-  return /\{\+\+[^]*?\+\+\}|\{--[^]*?--\}|\{~~[^]*?~~\}|\{==[^]*?==\}|\{>>[^]*?<<\}/g;
-}
-function markupWithRef() {
-  return /(?:\+\+\}|-{2}\}|~~\}|==\}|<<\})\[\^cn-\d+(?:\.\d+)?\]/g;
-}
 var HAS_CRITIC_MARKUP;
 var init_critic_regex = __esm({
   "../../packages/core/dist-esm/critic-regex.js"() {
@@ -12044,44 +12406,6 @@ var init_critic_regex = __esm({
 });
 
 // ../../packages/core/dist-esm/hashline-tracked.js
-function countChanges(content) {
-  const counts = { proposed: 0, accepted: 0, rejected: 0 };
-  const lines = content.split("\n");
-  for (const line of lines) {
-    const match = line.match(FOOTNOTE_DEF_STATUS_VALUE);
-    if (match) {
-      const status = match[1];
-      counts[status]++;
-    }
-  }
-  const allMarkup = content.match(inlineMarkupAll()) || [];
-  const markupWithRefs = content.match(markupWithRef()) || [];
-  const level0Count = allMarkup.length - markupWithRefs.length;
-  if (level0Count > 0) {
-    counts.proposed += level0Count;
-  }
-  return counts;
-}
-function formatTrackedHeader(filePath, content, trackingStatus) {
-  const status = trackingStatus ?? "tracked";
-  const lineCount = content.split("\n").length;
-  const changes = countChanges(content);
-  const changeParts = [];
-  if (changes.proposed > 0)
-    changeParts.push(`${changes.proposed} proposed`);
-  if (changes.accepted > 0)
-    changeParts.push(`${changes.accepted} accepted`);
-  if (changes.rejected > 0)
-    changeParts.push(`${changes.rejected} rejected`);
-  const changeSummary = changeParts.length > 0 ? ` (${changeParts.join(", ")})` : "";
-  const headerLines = [
-    `## file: ${filePath}`,
-    `## tracking: ${status}${changeSummary}`,
-    `## lines: 1-${lineCount} of ${lineCount}`,
-    `## tip: Use LINE:HASH refs in propose_change for precise edits`
-  ];
-  return headerLines.join("\n");
-}
 var init_hashline_tracked = __esm({
   "../../packages/core/dist-esm/hashline-tracked.js"() {
     "use strict";
@@ -12110,19 +12434,8 @@ function resolveStatus(changeId, footnotes) {
     return "proposed";
   return info.status;
 }
-function computeDecidedLine(line, footnotes) {
-  let result = line;
-  const changeIds = [];
-  let hasProposed = false;
-  let hasAccepted = false;
-  function trackStatus(status, changeId) {
-    if (changeId)
-      changeIds.push(changeId);
-    if (status === "proposed")
-      hasProposed = true;
-    else if (status === "accepted")
-      hasAccepted = true;
-  }
+function applyDecidedReplacementsOnce(text, footnotes, trackStatus) {
+  let result = text;
   result = result.replace(multiLineSubstitution(), (_match, old, newText, _refFull, refId) => {
     const status = resolveStatus(refId, footnotes);
     trackStatus(status, refId);
@@ -12143,6 +12456,26 @@ function computeDecidedLine(line, footnotes) {
   });
   result = result.replace(multiLineComment(), "");
   result = result.replace(footnoteRefGlobal(), "");
+  return result;
+}
+function computeDecidedLine(line, footnotes) {
+  let result = line;
+  const changeIds = [];
+  let hasProposed = false;
+  let hasAccepted = false;
+  function trackStatus(status, changeId) {
+    if (changeId)
+      changeIds.push(changeId);
+    if (status === "proposed")
+      hasProposed = true;
+    else if (status === "accepted")
+      hasAccepted = true;
+  }
+  let depth = 0;
+  while (depth < MAX_DECIDED_DEPTH && hasCriticMarkup(result)) {
+    result = applyDecidedReplacementsOnce(result, footnotes, trackStatus);
+    depth++;
+  }
   let flag = "";
   if (hasProposed)
     flag = "P";
@@ -12247,6 +12580,7 @@ function computeDecidedView(rawText, preParsed) {
   }
   return { lines: decidedLines, summary, decidedToRaw, rawToDecided, changes };
 }
+var MAX_DECIDED_DEPTH;
 var init_decided_text = __esm({
   "../../packages/core/dist-esm/decided-text.js"() {
     "use strict";
@@ -12256,6 +12590,7 @@ var init_decided_text = __esm({
     init_hashline();
     init_critic_regex();
     init_footnote_patterns();
+    MAX_DECIDED_DEPTH = 3;
   }
 });
 
@@ -12348,79 +12683,90 @@ var init_at_resolver = __esm({
 // ../../packages/core/dist-esm/renderers/formatters/plain-text.js
 function formatPlainText(doc) {
   const parts = [];
-  parts.push(formatHeader(doc.header, doc.view));
-  parts.push("");
+  const header = formatHeader(doc.header, doc.view);
+  if (header) {
+    parts.push(header);
+    parts.push("");
+  }
   const padWidth = doc.lines.length > 0 ? Math.max(String(doc.lines[doc.lines.length - 1].margin.lineNumber).length, 2) : 2;
   for (const line of doc.lines) {
     parts.push(formatLine(line, padWidth, doc.view));
   }
+  const footer = formatDecidedFooter(doc);
+  if (footer) {
+    parts.push(footer);
+  }
   return parts.join("\n");
 }
 function formatHeader(header, view) {
+  if (view === "decided" || view === "raw")
+    return "";
   const lines = [];
-  lines.push(`## ${header.filePath} | policy: ${header.protocolMode} | tracking: ${header.trackingStatus}`);
   const counts = `proposed: ${header.counts.proposed} | accepted: ${header.counts.accepted} | rejected: ${header.counts.rejected}`;
   const threads = header.threadCount > 0 ? ` | threads: ${header.threadCount}` : "";
   lines.push(`## ${counts}${threads}`);
   if (header.authors.length > 0) {
     lines.push(`## authors: ${header.authors.join(", ")}`);
   }
-  if (header.lineRange) {
-    lines.push(`## lines: ${header.lineRange.start}-${header.lineRange.end} of ${header.lineRange.total}`);
-  }
   lines.push("---");
   return lines.join("\n");
+}
+function formatDecidedFooter(doc) {
+  if (doc.view !== "decided")
+    return "";
+  const { counts, threadCount } = doc.header;
+  const anyCount = counts.proposed > 0 || counts.accepted > 0 || counts.rejected > 0 || threadCount > 0;
+  if (!anyCount)
+    return "";
+  return `\u2500\u2500 accepted ${counts.accepted} \xB7 rejected ${counts.rejected} \xB7 proposed ${counts.proposed} \xB7 threads ${threadCount} \u2500\u2500`;
 }
 function formatLine(line, padWidth, view) {
   const num = String(line.margin.lineNumber).padStart(padWidth, " ");
   const flag = line.margin.flags.length > 0 ? line.margin.flags[0] : " ";
   const margin = `${num}:${line.margin.hash} ${flag}|`;
   const content = line.content.map((s) => s.text).join("");
-  const meta3 = formatMetadata(line.metadata, view);
+  const meta3 = formatMetadata(line.metadata);
   return meta3 ? `${margin} ${content} ${meta3}` : `${margin} ${content}`;
 }
-function ensureAt(author, fallback = "") {
-  if (!author)
-    return fallback;
-  return author.startsWith("@") ? author : `@${author}`;
+function truncateByCodePoints(text, max) {
+  if (text.length <= max)
+    return text;
+  const cps = [...text];
+  if (cps.length <= max)
+    return text;
+  return cps.slice(0, max).join("") + "\u2026";
 }
-function formatMetadata(metadata, view) {
+function withAtPrefix(handle) {
+  return handle.startsWith("@") ? handle : `@${handle}`;
+}
+function formatMetadata(metadata) {
   if (metadata.length === 0)
     return "";
   return metadata.map((m) => {
-    if (view === "simple") {
-      const author = ensureAt(m.author);
-      let block2 = `[${m.changeId}`;
-      if (author)
-        block2 += ` ${author}`;
-      if (m.type)
-        block2 += ` ${m.type}`;
-      if (m.status)
-        block2 += ` ${m.status}`;
-      if (m.reason)
-        block2 += `: ${m.reason}`;
-      if (m.latestThreadTurn) {
-        const turnAuthor = ensureAt(m.latestThreadTurn.author, "@?");
-        block2 += ` | ${turnAuthor}: ${m.latestThreadTurn.text}`;
-      }
-      block2 += "]";
-      return block2;
-    }
-    let block = `{>>${m.changeId}`;
+    const parts = [m.changeId];
     if (m.author)
-      block += ` ${m.author}:`;
-    if (m.reason)
-      block += ` ${m.reason}`;
-    if (m.replyCount && m.replyCount > 0) {
-      block += ` | ${m.replyCount} ${m.replyCount === 1 ? "reply" : "replies"}`;
+      parts.push(withAtPrefix(m.author));
+    if (m.type)
+      parts.push(m.type);
+    if (m.status)
+      parts.push(m.status);
+    let head = parts.join(" ");
+    if (m.reason) {
+      head += `: "${m.reason}"`;
     }
-    block += "<<}";
-    return block;
+    if (m.latestThreadTurn) {
+      const turnAuthor = m.latestThreadTurn.author ? `${withAtPrefix(m.latestThreadTurn.author)}: ` : "";
+      const turnText = truncateByCodePoints(m.latestThreadTurn.text, MAX_TURN_CODE_POINTS);
+      head += ` | ${turnAuthor}${turnText}`;
+    }
+    return `[${head}]`;
   }).join(" ");
 }
+var MAX_TURN_CODE_POINTS;
 var init_plain_text = __esm({
   "../../packages/core/dist-esm/renderers/formatters/plain-text.js"() {
     "use strict";
+    MAX_TURN_CODE_POINTS = 60;
   }
 });
 
@@ -13047,12 +13393,291 @@ var init_edit_boundary = __esm({
   }
 });
 
+// ../../packages/core/dist-esm/operations/structural-integrity.js
+function validateStructuralIntegrity(text) {
+  const violations = [];
+  let doc;
+  try {
+    doc = parseForFormat(text);
+  } catch (err) {
+    violations.push({
+      kind: "structural_invalid",
+      message: `Parser threw: ${err.message}`
+    });
+    return violations;
+  }
+  for (const d of doc.getDiagnostics()) {
+    violations.push(d);
+  }
+  violations.push(...detectNestedMarkup(text));
+  violations.push(...detectOrphans(text, doc));
+  return violations;
+}
+function detectNestedMarkup(text) {
+  const inCodeZone = buildCodeZoneMask(text);
+  const violations = [];
+  let currentOpen = null;
+  let pos = 0;
+  while (pos < text.length) {
+    if (inCodeZone[pos]) {
+      pos++;
+      continue;
+    }
+    const ch = text[pos];
+    if (currentOpen !== null && CM_CLOSE_FIRST_CHARS.has(ch)) {
+      let closedSpan = false;
+      for (const [close, matchingOpen] of CM_CLOSE_TO_OPEN) {
+        if (currentOpen === matchingOpen && text.startsWith(close, pos)) {
+          currentOpen = null;
+          pos += close.length;
+          closedSpan = true;
+          break;
+        }
+      }
+      if (closedSpan)
+        continue;
+    }
+    if (ch === "{") {
+      for (const [open2] of CM_DELIMITERS) {
+        if (text.startsWith(open2, pos)) {
+          if (currentOpen !== null) {
+            violations.push({
+              kind: "structural_invalid",
+              message: `Nested CriticMarkup: found '${open2}' inside '${currentOpen}' (at offset ${pos}).`
+            });
+          } else {
+            currentOpen = open2;
+          }
+          pos += open2.length;
+          break;
+        }
+      }
+      if (text[pos] === "{")
+        pos++;
+      continue;
+    }
+    pos++;
+  }
+  return violations;
+}
+function detectOrphans(text, doc) {
+  const violations = [];
+  const { bodyLines, footnoteLines } = splitBodyAndFootnotes(text.split("\n"));
+  const bodyText = bodyLines.join("\n");
+  const footnoteText = footnoteLines.join("\n");
+  const bodyRefs = /* @__PURE__ */ new Set();
+  const bodyCodeZones = findCodeZones(bodyText);
+  INLINE_REF_GLOBAL.lastIndex = 0;
+  let m;
+  while ((m = INLINE_REF_GLOBAL.exec(bodyText)) !== null) {
+    const refStart = m.index;
+    const inZone = bodyCodeZones.some((z2) => refStart >= z2.start && refStart < z2.end);
+    if (!inZone) {
+      bodyRefs.add(m[1]);
+    }
+  }
+  const footnoteDefs = /* @__PURE__ */ new Map();
+  FOOTNOTE_DEF_STATUS_GM.lastIndex = 0;
+  while ((m = FOOTNOTE_DEF_STATUS_GM.exec(footnoteText)) !== null) {
+    footnoteDefs.set(m[1], m[2]);
+  }
+  for (const change of doc.getChanges()) {
+    if (!footnoteDefs.has(change.id)) {
+      const status = change.status === ChangeStatus.Accepted ? "accepted" : change.status === ChangeStatus.Rejected ? "rejected" : "proposed";
+      footnoteDefs.set(change.id, status);
+    }
+  }
+  for (const ref of bodyRefs) {
+    if (!footnoteDefs.has(ref)) {
+      violations.push({
+        kind: "record_orphaned",
+        changeId: ref,
+        message: `Inline ref [^${ref}] has no matching footnote definition.`
+      });
+    }
+  }
+  for (const [id, status] of footnoteDefs) {
+    if (DECIDED_STATUSES.has(status) && !bodyRefs.has(id)) {
+      violations.push({
+        kind: "surface_orphaned",
+        changeId: id,
+        message: `Footnote def [^${id}] is decided (${status}) but has no matching inline ref in the body.`
+      });
+    }
+  }
+  return violations;
+}
+var CM_DELIMITERS, CM_CLOSE_TO_OPEN, CM_CLOSE_FIRST_CHARS, INLINE_REF_GLOBAL, FOOTNOTE_DEF_STATUS_GM, DECIDED_STATUSES;
+var init_structural_integrity = __esm({
+  "../../packages/core/dist-esm/operations/structural-integrity.js"() {
+    "use strict";
+    init_format_aware_parse();
+    init_code_zones();
+    init_footnote_patterns();
+    init_types();
+    CM_DELIMITERS = [
+      ["{++", "++}"],
+      ["{--", "--}"],
+      ["{~~", "~~}"],
+      ["{==", "==}"],
+      ["{>>", "<<}"]
+    ];
+    CM_CLOSE_TO_OPEN = /* @__PURE__ */ new Map([
+      ["++}", "{++"],
+      ["--}", "{--"],
+      ["~~}", "{~~"],
+      ["==}", "{=="],
+      ["<<}", "{>>"]
+    ]);
+    CM_CLOSE_FIRST_CHARS = /* @__PURE__ */ new Set(["+", "-", "~", "=", "<"]);
+    INLINE_REF_GLOBAL = new RegExp(`\\[\\^(${FOOTNOTE_ID_PATTERN})\\]`, "g");
+    FOOTNOTE_DEF_STATUS_GM = new RegExp(FOOTNOTE_DEF_STATUS.source, "gm");
+    DECIDED_STATUSES = /* @__PURE__ */ new Set(["accepted", "rejected"]);
+  }
+});
+
+// ../../packages/core/dist-esm/operations/markup-by-id.js
+var init_markup_by_id = __esm({
+  "../../packages/core/dist-esm/operations/markup-by-id.js"() {
+    "use strict";
+    init_code_zones();
+  }
+});
+
 // ../../packages/core/dist-esm/operations/parse-document.js
 var init_parse_document = __esm({
   "../../packages/core/dist-esm/operations/parse-document.js"() {
     "use strict";
     init_footnote_patterns();
     init_footnote_block_parser();
+  }
+});
+
+// ../../packages/core/dist-esm/operations/changes-to-document.js
+var init_changes_to_document = __esm({
+  "../../packages/core/dist-esm/operations/changes-to-document.js"() {
+    "use strict";
+    init_types();
+    init_footnote_generator();
+  }
+});
+
+// ../../packages/core/dist-esm/backend/types.js
+function wordSessionResourceName(sessionUri) {
+  return `Active Word Document (${sessionUri.split("/").pop() ?? sessionUri})`;
+}
+function parseUri(uri) {
+  const colonIdx = uri.indexOf(":");
+  if (!uri || colonIdx <= 0) {
+    throw new Error(`Invalid URI: "${uri}"`);
+  }
+  return {
+    scheme: uri.slice(0, colonIdx).toLowerCase(),
+    rest: uri.slice(colonIdx + 1)
+  };
+}
+var AGENTS_UPDATED_METHOD;
+var init_types3 = __esm({
+  "../../packages/core/dist-esm/backend/types.js"() {
+    "use strict";
+    AGENTS_UPDATED_METHOD = "agents_updated";
+  }
+});
+
+// ../../packages/core/dist-esm/backend/registry.js
+var BackendRegistry;
+var init_registry = __esm({
+  "../../packages/core/dist-esm/backend/registry.js"() {
+    "use strict";
+    init_types3();
+    BackendRegistry = class {
+      constructor() {
+        this.backends = /* @__PURE__ */ new Map();
+        this.changeListeners = [];
+      }
+      /**
+       * Register a backend for all schemes it declares.
+       * If a scheme is already registered, the new backend replaces it and
+       * `onDidChange` fires.
+       */
+      register(backend) {
+        for (const scheme of backend.schemes) {
+          this.backends.set(scheme, backend);
+        }
+        this.fireChange();
+      }
+      /**
+       * Resolve a URI to its backend. Throws with
+       * "BackendNotFoundError: no backend for scheme '<scheme>'" when the scheme
+       * is not registered.
+       */
+      resolve(uri) {
+        const { scheme } = parseUri(uri);
+        const backend = this.backends.get(scheme);
+        if (!backend) {
+          throw new Error(`BackendNotFoundError: no backend for scheme '${scheme}'`);
+        }
+        return backend;
+      }
+      /**
+       * Snapshot of all registered backends as `{scheme, backend}` pairs.
+       * Used by diagnostics. See `listResources()` for the MCP-facing equivalent.
+       */
+      list() {
+        return Array.from(this.backends.entries()).map(([scheme, backend]) => ({
+          scheme,
+          backend
+        }));
+      }
+      /**
+       * Aggregate `DocumentResourceDescriptor[]` from every registered backend.
+       * Called by `ResourceLister` to build the `resources/list` response.
+       *
+       * Deduplicates by backend instance (not by scheme): when multiple scheme
+       * keys map to the same backend object, `list()` is called only once.
+       */
+      listResources() {
+        const seen = /* @__PURE__ */ new Set();
+        const result = [];
+        for (const backend of this.backends.values()) {
+          if (seen.has(backend))
+            continue;
+          seen.add(backend);
+          result.push(...backend.list());
+        }
+        return result;
+      }
+      /**
+       * Remove the backend registered for `scheme`. No-op if the scheme is not
+       * registered. Fires `onDidChange` when a backend is actually removed.
+       */
+      unregister(scheme) {
+        if (this.backends.delete(scheme)) {
+          this.fireChange();
+        }
+      }
+      /**
+       * Subscribe to change notifications. Fires whenever `register()` is called.
+       * Returns a disposal function.
+       */
+      onDidChange(listener) {
+        this.changeListeners.push(listener);
+        return () => {
+          const idx = this.changeListeners.indexOf(listener);
+          if (idx !== -1)
+            this.changeListeners.splice(idx, 1);
+        };
+      }
+      fireChange() {
+        for (const l of this.changeListeners) {
+          try {
+            l();
+          } catch (err) {
+            console.error("[BackendRegistry] change listener threw:", err instanceof Error ? err.message : err);
+          }
+        }
+      }
+    };
   }
 });
 
@@ -13115,9 +13740,15 @@ var init_dist_esm = __esm({
     init_edit_boundary();
     init_edit_boundary();
     init_edit_boundary();
+    init_structural_integrity();
+    init_markup_by_id();
     init_format_aware_parse();
     init_session_hashes();
     init_parse_document();
+    init_changes_to_document();
+    init_diagnostic();
+    init_types3();
+    init_registry();
   }
 });
 
@@ -13376,8 +14007,8 @@ var require_utils2 = __commonJS({
       }
       return output;
     };
-    exports.basename = (path13, { windows } = {}) => {
-      const segs = path13.split(windows ? /[\\/]/ : "/");
+    exports.basename = (path15, { windows } = {}) => {
+      const segs = path15.split(windows ? /[\\/]/ : "/");
       const last = segs[segs.length - 1];
       if (last === "") {
         return segs[segs.length - 2];
@@ -14896,7 +15527,8 @@ var init_file_ops2 = __esm({
 });
 
 // src/index.ts
-import { fileURLToPath } from "node:url";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 
 // ../../node_modules/zod/v3/helpers/util.js
 var util;
@@ -15257,8 +15889,8 @@ function getErrorMap() {
 
 // ../../node_modules/zod/v3/helpers/parseUtil.js
 var makeIssue = (params) => {
-  const { data, path: path13, errorMaps, issueData } = params;
-  const fullPath = [...path13, ...issueData.path || []];
+  const { data, path: path15, errorMaps, issueData } = params;
+  const fullPath = [...path15, ...issueData.path || []];
   const fullIssue = {
     ...issueData,
     path: fullPath
@@ -15373,11 +16005,11 @@ var errorUtil;
 
 // ../../node_modules/zod/v3/types.js
 var ParseInputLazyPath = class {
-  constructor(parent, value, path13, key) {
+  constructor(parent, value, path15, key) {
     this._cachedPath = [];
     this.parent = parent;
     this.data = value;
-    this._path = path13;
+    this._path = path15;
     this._key = key;
   }
   get path() {
@@ -15756,11 +16388,11 @@ function datetimeRegex(args) {
   regex = `${regex}(${opts.join("|")})`;
   return new RegExp(`^${regex}$`);
 }
-function isValidIP(ip, version2) {
-  if ((version2 === "v4" || !version2) && ipv4Regex.test(ip)) {
+function isValidIP(ip, version3) {
+  if ((version3 === "v4" || !version3) && ipv4Regex.test(ip)) {
     return true;
   }
-  if ((version2 === "v6" || !version2) && ipv6Regex.test(ip)) {
+  if ((version3 === "v6" || !version3) && ipv6Regex.test(ip)) {
     return true;
   }
   return false;
@@ -15787,11 +16419,11 @@ function isValidJWT(jwt2, alg) {
     return false;
   }
 }
-function isValidCidr(ip, version2) {
-  if ((version2 === "v4" || !version2) && ipv4CidrRegex.test(ip)) {
+function isValidCidr(ip, version3) {
+  if ((version3 === "v4" || !version3) && ipv4CidrRegex.test(ip)) {
     return true;
   }
-  if ((version2 === "v6" || !version2) && ipv6CidrRegex.test(ip)) {
+  if ((version3 === "v6" || !version3) && ipv6CidrRegex.test(ip)) {
     return true;
   }
   return false;
@@ -19021,15 +19653,15 @@ function mergeDefs(...defs) {
 function cloneDef(schema) {
   return mergeDefs(schema._zod.def);
 }
-function getElementAtPath(obj, path13) {
-  if (!path13)
+function getElementAtPath(obj, path15) {
+  if (!path15)
     return obj;
-  return path13.reduce((acc, key) => acc?.[key], obj);
+  return path15.reduce((acc, key) => acc?.[key], obj);
 }
 function promiseAllObject(promisesObj) {
   const keys = Object.keys(promisesObj);
-  const promises = keys.map((key) => promisesObj[key]);
-  return Promise.all(promises).then((results) => {
+  const promises2 = keys.map((key) => promisesObj[key]);
+  return Promise.all(promises2).then((results) => {
     const resolvedObj = {};
     for (let i = 0; i < keys.length; i++) {
       resolvedObj[keys[i]] = results[i];
@@ -19407,11 +20039,11 @@ function aborted(x, startIndex = 0) {
   }
   return false;
 }
-function prefixIssues(path13, issues) {
+function prefixIssues(path15, issues) {
   return issues.map((iss) => {
     var _a2;
     (_a2 = iss).path ?? (_a2.path = []);
-    iss.path.unshift(path13);
+    iss.path.unshift(path15);
     return iss;
   });
 }
@@ -19744,10 +20376,10 @@ var nanoid = /^[a-zA-Z0-9_-]{21}$/;
 var duration = /^P(?:(\d+W)|(?!.*W)(?=\d|T\d)(\d+Y)?(\d+M)?(\d+D)?(T(?=\d)(\d+H)?(\d+M)?(\d+([.,]\d+)?S)?)?)$/;
 var extendedDuration = /^[-+]?P(?!$)(?:(?:[-+]?\d+Y)|(?:[-+]?\d+[.,]\d+Y$))?(?:(?:[-+]?\d+M)|(?:[-+]?\d+[.,]\d+M$))?(?:(?:[-+]?\d+W)|(?:[-+]?\d+[.,]\d+W$))?(?:(?:[-+]?\d+D)|(?:[-+]?\d+[.,]\d+D$))?(?:T(?=[\d+-])(?:(?:[-+]?\d+H)|(?:[-+]?\d+[.,]\d+H$))?(?:(?:[-+]?\d+M)|(?:[-+]?\d+[.,]\d+M$))?(?:[-+]?\d+(?:[.,]\d+)?S)?)??$/;
 var guid = /^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$/;
-var uuid = (version2) => {
-  if (!version2)
+var uuid = (version3) => {
+  if (!version3)
     return /^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$/;
-  return new RegExp(`^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-${version2}[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$`);
+  return new RegExp(`^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-${version3}[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$`);
 };
 var uuid4 = /* @__PURE__ */ uuid(4);
 var uuid6 = /* @__PURE__ */ uuid(6);
@@ -25638,6 +26270,7 @@ config(en_default2());
 
 // ../../node_modules/@modelcontextprotocol/sdk/dist/esm/types.js
 var LATEST_PROTOCOL_VERSION = "2025-11-25";
+var DEFAULT_NEGOTIATED_PROTOCOL_VERSION = "2025-03-26";
 var SUPPORTED_PROTOCOL_VERSIONS = [LATEST_PROTOCOL_VERSION, "2025-06-18", "2025-03-26", "2024-11-05", "2024-10-07"];
 var RELATED_TASK_META_KEY = "io.modelcontextprotocol/related-task";
 var JSONRPC_VERSION = "2.0";
@@ -25966,6 +26599,7 @@ var InitializeRequestSchema = RequestSchema.extend({
   method: literal("initialize"),
   params: InitializeRequestParamsSchema
 });
+var isInitializeRequest = (value) => InitializeRequestSchema.safeParse(value).success;
 var ServerCapabilitiesSchema = object2({
   /**
    * Experimental, non-standard capabilities that the server supports.
@@ -27213,8 +27847,8 @@ var Protocol = class {
     this._taskStore = _options?.taskStore;
     this._taskMessageQueue = _options?.taskMessageQueue;
     if (this._taskStore) {
-      this.setRequestHandler(GetTaskRequestSchema, async (request, extra) => {
-        const task = await this._taskStore.getTask(request.params.taskId, extra.sessionId);
+      this.setRequestHandler(GetTaskRequestSchema, async (request3, extra) => {
+        const task = await this._taskStore.getTask(request3.params.taskId, extra.sessionId);
         if (!task) {
           throw new McpError(ErrorCode.InvalidParams, "Failed to retrieve task: Task not found");
         }
@@ -27222,9 +27856,9 @@ var Protocol = class {
           ...task
         };
       });
-      this.setRequestHandler(GetTaskPayloadRequestSchema, async (request, extra) => {
+      this.setRequestHandler(GetTaskPayloadRequestSchema, async (request3, extra) => {
         const handleTaskResult = async () => {
-          const taskId = request.params.taskId;
+          const taskId = request3.params.taskId;
           if (this._taskMessageQueue) {
             let queuedMessage;
             while (queuedMessage = await this._taskMessageQueue.dequeue(taskId, extra.sessionId)) {
@@ -27275,9 +27909,9 @@ var Protocol = class {
         };
         return await handleTaskResult();
       });
-      this.setRequestHandler(ListTasksRequestSchema, async (request, extra) => {
+      this.setRequestHandler(ListTasksRequestSchema, async (request3, extra) => {
         try {
-          const { tasks, nextCursor } = await this._taskStore.listTasks(request.params?.cursor, extra.sessionId);
+          const { tasks, nextCursor } = await this._taskStore.listTasks(request3.params?.cursor, extra.sessionId);
           return {
             tasks,
             nextCursor,
@@ -27287,20 +27921,20 @@ var Protocol = class {
           throw new McpError(ErrorCode.InvalidParams, `Failed to list tasks: ${error2 instanceof Error ? error2.message : String(error2)}`);
         }
       });
-      this.setRequestHandler(CancelTaskRequestSchema, async (request, extra) => {
+      this.setRequestHandler(CancelTaskRequestSchema, async (request3, extra) => {
         try {
-          const task = await this._taskStore.getTask(request.params.taskId, extra.sessionId);
+          const task = await this._taskStore.getTask(request3.params.taskId, extra.sessionId);
           if (!task) {
-            throw new McpError(ErrorCode.InvalidParams, `Task not found: ${request.params.taskId}`);
+            throw new McpError(ErrorCode.InvalidParams, `Task not found: ${request3.params.taskId}`);
           }
           if (isTerminal(task.status)) {
             throw new McpError(ErrorCode.InvalidParams, `Cannot cancel task in terminal status: ${task.status}`);
           }
-          await this._taskStore.updateTaskStatus(request.params.taskId, "cancelled", "Client cancelled task execution.", extra.sessionId);
-          this._clearTaskQueue(request.params.taskId);
-          const cancelledTask = await this._taskStore.getTask(request.params.taskId, extra.sessionId);
+          await this._taskStore.updateTaskStatus(request3.params.taskId, "cancelled", "Client cancelled task execution.", extra.sessionId);
+          this._clearTaskQueue(request3.params.taskId);
+          const cancelledTask = await this._taskStore.getTask(request3.params.taskId, extra.sessionId);
           if (!cancelledTask) {
-            throw new McpError(ErrorCode.InvalidParams, `Task not found after cancellation: ${request.params.taskId}`);
+            throw new McpError(ErrorCode.InvalidParams, `Task not found after cancellation: ${request3.params.taskId}`);
           }
           return {
             _meta: {},
@@ -27421,14 +28055,14 @@ var Protocol = class {
     }
     Promise.resolve().then(() => handler(notification)).catch((error2) => this._onerror(new Error(`Uncaught error in notification handler: ${error2}`)));
   }
-  _onrequest(request, extra) {
-    const handler = this._requestHandlers.get(request.method) ?? this.fallbackRequestHandler;
+  _onrequest(request3, extra) {
+    const handler = this._requestHandlers.get(request3.method) ?? this.fallbackRequestHandler;
     const capturedTransport = this._transport;
-    const relatedTaskId = request.params?._meta?.[RELATED_TASK_META_KEY]?.taskId;
+    const relatedTaskId = request3.params?._meta?.[RELATED_TASK_META_KEY]?.taskId;
     if (handler === void 0) {
       const errorResponse = {
         jsonrpc: "2.0",
-        id: request.id,
+        id: request3.id,
         error: {
           code: ErrorCode.MethodNotFound,
           message: "Method not found"
@@ -27446,17 +28080,17 @@ var Protocol = class {
       return;
     }
     const abortController = new AbortController();
-    this._requestHandlerAbortControllers.set(request.id, abortController);
-    const taskCreationParams = isTaskAugmentedRequestParams(request.params) ? request.params.task : void 0;
-    const taskStore = this._taskStore ? this.requestTaskStore(request, capturedTransport?.sessionId) : void 0;
+    this._requestHandlerAbortControllers.set(request3.id, abortController);
+    const taskCreationParams = isTaskAugmentedRequestParams(request3.params) ? request3.params.task : void 0;
+    const taskStore = this._taskStore ? this.requestTaskStore(request3, capturedTransport?.sessionId) : void 0;
     const fullExtra = {
       signal: abortController.signal,
       sessionId: capturedTransport?.sessionId,
-      _meta: request.params?._meta,
+      _meta: request3.params?._meta,
       sendNotification: async (notification) => {
         if (abortController.signal.aborted)
           return;
-        const notificationOptions = { relatedRequestId: request.id };
+        const notificationOptions = { relatedRequestId: request3.id };
         if (relatedTaskId) {
           notificationOptions.relatedTask = { taskId: relatedTaskId };
         }
@@ -27466,7 +28100,7 @@ var Protocol = class {
         if (abortController.signal.aborted) {
           throw new McpError(ErrorCode.ConnectionClosed, "Request was cancelled");
         }
-        const requestOptions = { ...options, relatedRequestId: request.id };
+        const requestOptions = { ...options, relatedRequestId: request3.id };
         if (relatedTaskId && !requestOptions.relatedTask) {
           requestOptions.relatedTask = { taskId: relatedTaskId };
         }
@@ -27477,7 +28111,7 @@ var Protocol = class {
         return await this.request(r, resultSchema, requestOptions);
       },
       authInfo: extra?.authInfo,
-      requestId: request.id,
+      requestId: request3.id,
       requestInfo: extra?.requestInfo,
       taskId: relatedTaskId,
       taskStore,
@@ -27487,16 +28121,16 @@ var Protocol = class {
     };
     Promise.resolve().then(() => {
       if (taskCreationParams) {
-        this.assertTaskHandlerCapability(request.method);
+        this.assertTaskHandlerCapability(request3.method);
       }
-    }).then(() => handler(request, fullExtra)).then(async (result) => {
+    }).then(() => handler(request3, fullExtra)).then(async (result) => {
       if (abortController.signal.aborted) {
         return;
       }
       const response = {
         result,
         jsonrpc: "2.0",
-        id: request.id
+        id: request3.id
       };
       if (relatedTaskId && this._taskMessageQueue) {
         await this._enqueueTaskMessage(relatedTaskId, {
@@ -27513,7 +28147,7 @@ var Protocol = class {
       }
       const errorResponse = {
         jsonrpc: "2.0",
-        id: request.id,
+        id: request3.id,
         error: {
           code: Number.isSafeInteger(error2["code"]) ? error2["code"] : ErrorCode.InternalError,
           message: error2.message ?? "Internal error",
@@ -27530,8 +28164,8 @@ var Protocol = class {
         await capturedTransport?.send(errorResponse);
       }
     }).catch((error2) => this._onerror(new Error(`Failed to send response: ${error2}`))).finally(() => {
-      if (this._requestHandlerAbortControllers.get(request.id) === abortController) {
-        this._requestHandlerAbortControllers.delete(request.id);
+      if (this._requestHandlerAbortControllers.get(request3.id) === abortController) {
+        this._requestHandlerAbortControllers.delete(request3.id);
       }
     });
   }
@@ -27635,11 +28269,11 @@ var Protocol = class {
    *
    * @experimental Use `client.experimental.tasks.requestStream()` to access this method.
    */
-  async *requestStream(request, resultSchema, options) {
+  async *requestStream(request3, resultSchema, options) {
     const { task } = options ?? {};
     if (!task) {
       try {
-        const result = await this.request(request, resultSchema, options);
+        const result = await this.request(request3, resultSchema, options);
         yield { type: "result", result };
       } catch (error2) {
         yield {
@@ -27651,7 +28285,7 @@ var Protocol = class {
     }
     let taskId;
     try {
-      const createResult = await this.request(request, CreateTaskResultSchema, options);
+      const createResult = await this.request(request3, CreateTaskResultSchema, options);
       if (createResult.task) {
         taskId = createResult.task.taskId;
         yield { type: "taskCreated", task: createResult.task };
@@ -27684,7 +28318,7 @@ var Protocol = class {
           return;
         }
         const pollInterval = task2.pollInterval ?? this._options?.defaultTaskPollInterval ?? 1e3;
-        await new Promise((resolve5) => setTimeout(resolve5, pollInterval));
+        await new Promise((resolve6) => setTimeout(resolve6, pollInterval));
         options?.signal?.throwIfAborted();
       }
     } catch (error2) {
@@ -27699,9 +28333,9 @@ var Protocol = class {
    *
    * Do not use this method to emit notifications! Use notification() instead.
    */
-  request(request, resultSchema, options) {
+  request(request3, resultSchema, options) {
     const { relatedRequestId, resumptionToken, onresumptiontoken, task, relatedTask } = options ?? {};
-    return new Promise((resolve5, reject) => {
+    return new Promise((resolve6, reject) => {
       const earlyReject = (error2) => {
         reject(error2);
       };
@@ -27711,9 +28345,9 @@ var Protocol = class {
       }
       if (this._options?.enforceStrictCapabilities === true) {
         try {
-          this.assertCapabilityForMethod(request.method);
+          this.assertCapabilityForMethod(request3.method);
           if (task) {
-            this.assertTaskCapability(request.method);
+            this.assertTaskCapability(request3.method);
           }
         } catch (e2) {
           earlyReject(e2);
@@ -27723,16 +28357,16 @@ var Protocol = class {
       options?.signal?.throwIfAborted();
       const messageId = this._requestMessageId++;
       const jsonrpcRequest = {
-        ...request,
+        ...request3,
         jsonrpc: "2.0",
         id: messageId
       };
       if (options?.onprogress) {
         this._progressHandlers.set(messageId, options.onprogress);
         jsonrpcRequest.params = {
-          ...request.params,
+          ...request3.params,
           _meta: {
-            ...request.params?._meta || {},
+            ...request3.params?._meta || {},
             progressToken: messageId
           }
         };
@@ -27779,7 +28413,7 @@ var Protocol = class {
           if (!parseResult.success) {
             reject(parseResult.error);
           } else {
-            resolve5(parseResult.data);
+            resolve6(parseResult.data);
           }
         } catch (error2) {
           reject(error2);
@@ -27936,8 +28570,8 @@ var Protocol = class {
   setRequestHandler(requestSchema, handler) {
     const method = getMethodLiteral(requestSchema);
     this.assertRequestHandlerCapability(method);
-    this._requestHandlers.set(method, (request, extra) => {
-      const parsed = parseWithCompat(requestSchema, request);
+    this._requestHandlers.set(method, (request3, extra) => {
+      const parsed = parseWithCompat(requestSchema, request3);
       return Promise.resolve(handler(parsed, extra));
     });
   }
@@ -28040,31 +28674,31 @@ var Protocol = class {
       }
     } catch {
     }
-    return new Promise((resolve5, reject) => {
+    return new Promise((resolve6, reject) => {
       if (signal.aborted) {
         reject(new McpError(ErrorCode.InvalidRequest, "Request cancelled"));
         return;
       }
-      const timeoutId = setTimeout(resolve5, interval);
+      const timeoutId = setTimeout(resolve6, interval);
       signal.addEventListener("abort", () => {
         clearTimeout(timeoutId);
         reject(new McpError(ErrorCode.InvalidRequest, "Request cancelled"));
       }, { once: true });
     });
   }
-  requestTaskStore(request, sessionId) {
+  requestTaskStore(request3, sessionId) {
     const taskStore = this._taskStore;
     if (!taskStore) {
       throw new Error("No task store configured");
     }
     return {
       createTask: async (taskParams) => {
-        if (!request) {
+        if (!request3) {
           throw new Error("No request provided");
         }
-        return await taskStore.createTask(taskParams, request.id, {
-          method: request.method,
-          params: request.params
+        return await taskStore.createTask(taskParams, request3.id, {
+          method: request3.method,
+          params: request3.params
         }, sessionId);
       },
       getTask: async (taskId) => {
@@ -28225,8 +28859,8 @@ var ExperimentalServerTasks = class {
    *
    * @experimental
    */
-  requestStream(request, resultSchema, options) {
-    return this._server.requestStream(request, resultSchema, options);
+  requestStream(request3, resultSchema, options) {
+    return this._server.requestStream(request3, resultSchema, options);
   }
   /**
    * Sends a sampling request and returns an AsyncGenerator that yields response messages.
@@ -28471,12 +29105,12 @@ var Server = class extends Protocol {
     this._capabilities = options?.capabilities ?? {};
     this._instructions = options?.instructions;
     this._jsonSchemaValidator = options?.jsonSchemaValidator ?? new AjvJsonSchemaValidator();
-    this.setRequestHandler(InitializeRequestSchema, (request) => this._oninitialize(request));
+    this.setRequestHandler(InitializeRequestSchema, (request3) => this._oninitialize(request3));
     this.setNotificationHandler(InitializedNotificationSchema, () => this.oninitialized?.());
     if (this._capabilities.logging) {
-      this.setRequestHandler(SetLevelRequestSchema, async (request, extra) => {
+      this.setRequestHandler(SetLevelRequestSchema, async (request3, extra) => {
         const transportSessionId = extra.sessionId || extra.requestInfo?.headers["mcp-session-id"] || void 0;
-        const { level } = request.params;
+        const { level } = request3.params;
         const parseResult = LoggingLevelSchema.safeParse(level);
         if (parseResult.success) {
           this._loggingLevels.set(transportSessionId, parseResult.data);
@@ -28535,14 +29169,14 @@ var Server = class extends Protocol {
     }
     const method = methodValue;
     if (method === "tools/call") {
-      const wrappedHandler = async (request, extra) => {
-        const validatedRequest = safeParse2(CallToolRequestSchema, request);
+      const wrappedHandler = async (request3, extra) => {
+        const validatedRequest = safeParse2(CallToolRequestSchema, request3);
         if (!validatedRequest.success) {
           const errorMessage = validatedRequest.error instanceof Error ? validatedRequest.error.message : String(validatedRequest.error);
           throw new McpError(ErrorCode.InvalidParams, `Invalid tools/call request: ${errorMessage}`);
         }
         const { params } = validatedRequest.data;
-        const result = await Promise.resolve(handler(request, extra));
+        const result = await Promise.resolve(handler(request3, extra));
         if (params.task) {
           const taskValidationResult = safeParse2(CreateTaskResultSchema, result);
           if (!taskValidationResult.success) {
@@ -28673,10 +29307,10 @@ var Server = class extends Protocol {
     }
     assertToolsCallTaskCapability(this._capabilities.tasks?.requests, method, "Server");
   }
-  async _oninitialize(request) {
-    const requestedVersion = request.params.protocolVersion;
-    this._clientCapabilities = request.params.capabilities;
-    this._clientVersion = request.params.clientInfo;
+  async _oninitialize(request3) {
+    const requestedVersion = request3.params.protocolVersion;
+    this._clientCapabilities = request3.params.capabilities;
+    this._clientVersion = request3.params.clientInfo;
     const protocolVersion = SUPPORTED_PROTOCOL_VERSIONS.includes(requestedVersion) ? requestedVersion : LATEST_PROTOCOL_VERSION;
     return {
       protocolVersion,
@@ -28915,12 +29549,12 @@ var StdioServerTransport = class {
     this.onclose?.();
   }
   send(message) {
-    return new Promise((resolve5) => {
+    return new Promise((resolve6) => {
       const json2 = serializeMessage(message);
       if (this._stdout.write(json2)) {
-        resolve5();
+        resolve6();
       } else {
-        this._stdout.once("drain", resolve5);
+        this._stdout.once("drain", resolve6);
       }
     });
   }
@@ -28928,6 +29562,170 @@ var StdioServerTransport = class {
 
 // src/index.ts
 init_dist_esm();
+
+// ../../packages/core/dist-esm/host/edit-convert.js
+init_helpers();
+
+// ../../packages/core/dist-esm/host/uri.js
+var UriMap = class {
+  constructor() {
+    this.map = /* @__PURE__ */ new Map();
+  }
+  set(uri, value) {
+    this.map.set(uri, value);
+  }
+  get(uri) {
+    return this.map.get(uri);
+  }
+  has(uri) {
+    return this.map.has(uri);
+  }
+  delete(uri) {
+    return this.map.delete(uri);
+  }
+  get size() {
+    return this.map.size;
+  }
+  clear() {
+    this.map.clear();
+  }
+  keys() {
+    return this.map.keys();
+  }
+  values() {
+    return this.map.values();
+  }
+  entries() {
+    return this.map.entries();
+  }
+  forEach(fn) {
+    this.map.forEach(fn);
+  }
+};
+
+// ../../packages/core/dist-esm/host/decoration-scheduler.js
+var DecorationScheduler = class _DecorationScheduler {
+  constructor(performUpdate) {
+    this.performUpdate = performUpdate;
+    this.timers = new UriMap();
+  }
+  schedule(uri) {
+    const key = uri;
+    const existing = this.timers.get(key);
+    if (existing !== void 0)
+      clearTimeout(existing);
+    this.timers.set(key, setTimeout(() => {
+      this.timers.delete(key);
+      this.performUpdate(uri);
+    }, _DecorationScheduler.DEBOUNCE_MS));
+  }
+  updateNow(uri) {
+    const key = uri;
+    const existing = this.timers.get(key);
+    if (existing !== void 0) {
+      clearTimeout(existing);
+      this.timers.delete(key);
+    }
+    this.performUpdate(uri);
+  }
+  dispose() {
+    for (const timer of this.timers.values())
+      clearTimeout(timer);
+    this.timers.clear();
+  }
+};
+DecorationScheduler.DEBOUNCE_MS = 50;
+
+// ../../packages/core/dist-esm/host/pending-edit-manager.js
+init_edit_boundary();
+init_critic_regex();
+
+// ../../packages/core/dist-esm/host/services/review-service.js
+init_apply_review();
+init_amend();
+init_supersede();
+init_resolution();
+init_current_text();
+init_format_aware_parse();
+init_document();
+init_diagnostic();
+init_types();
+
+// ../../packages/core/dist-esm/host/decorations/index.js
+init_helpers();
+
+// ../../packages/core/dist-esm/host/decorations/plan-builder.js
+init_types();
+init_tokens();
+init_footnote_utils();
+init_helpers();
+
+// ../../packages/core/dist-esm/host/decorations/ruler-builder.js
+init_types();
+
+// ../../packages/core/dist-esm/host/decorations/plan-to-tokens.js
+init_types();
+init_helpers();
+
+// ../../packages/core/dist-esm/host/format-service.js
+init_footnote_patterns();
+init_parse_document();
+
+// ../../packages/core/dist-esm/host/base-controller.js
+init_parse_document();
+
+// ../../packages/core/dist-esm/host/view-helpers.js
+init_types();
+var VIEW_KNOWN_NAMES = /* @__PURE__ */ new Map([
+  // Canonical (identity)
+  ["working", "working"],
+  ["simple", "simple"],
+  ["decided", "decided"],
+  ["original", "original"],
+  ["raw", "raw"],
+  // Legacy config compat (silent normalization)
+  ["review", "working"],
+  ["bytes", "raw"],
+  ["changes", "simple"],
+  ["final", "decided"],
+  ["settled", "decided"],
+  // Legacy MCP aliases
+  ["full", "raw"],
+  ["all", "working"],
+  ["content", "raw"],
+  ["meta", "working"],
+  ["committed", "simple"],
+  // VS Code settings compat
+  ["all-markup", "working"],
+  ["markup", "working"]
+]);
+function resolveView(input) {
+  return VIEW_KNOWN_NAMES.get(input) ?? null;
+}
+
+// ../../packages/core/dist-esm/host/adapters/lsp-format-adapter.js
+init_parse_document();
+
+// ../../packages/core/dist-esm/host/adapters/local-parse-adapter.js
+init_format_aware_parse();
+
+// ../../packages/core/dist-esm/host/adapters/local-format-adapter.js
+init_l2_to_l3();
+init_l3_to_l2();
+init_parse_document();
+
+// ../../packages/core/dist-esm/backend/index.js
+init_types3();
+init_registry();
+
+// ../../packages/cli/dist/engine/backends/file-backend.js
+import * as fs14 from "node:fs";
+import { fileURLToPath as fileURLToPath2 } from "node:url";
+
+// ../../packages/cli/dist/engine/config-resolver.js
+import * as path2 from "node:path";
+import * as fs2 from "node:fs/promises";
+import { existsSync, realpathSync, watch } from "node:fs";
 
 // ../../packages/cli/dist/config/index.js
 init_dist_esm();
@@ -29628,155 +30426,6 @@ import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 
-// ../../packages/core/dist-esm/host/edit-convert.js
-init_helpers();
-
-// ../../packages/core/dist-esm/host/uri.js
-var UriMap = class {
-  constructor() {
-    this.map = /* @__PURE__ */ new Map();
-  }
-  set(uri, value) {
-    this.map.set(uri, value);
-  }
-  get(uri) {
-    return this.map.get(uri);
-  }
-  has(uri) {
-    return this.map.has(uri);
-  }
-  delete(uri) {
-    return this.map.delete(uri);
-  }
-  get size() {
-    return this.map.size;
-  }
-  clear() {
-    this.map.clear();
-  }
-  keys() {
-    return this.map.keys();
-  }
-  values() {
-    return this.map.values();
-  }
-  entries() {
-    return this.map.entries();
-  }
-  forEach(fn) {
-    this.map.forEach(fn);
-  }
-};
-
-// ../../packages/core/dist-esm/host/decoration-scheduler.js
-var DecorationScheduler = class _DecorationScheduler {
-  constructor(performUpdate) {
-    this.performUpdate = performUpdate;
-    this.timers = new UriMap();
-  }
-  schedule(uri) {
-    const key = uri;
-    const existing = this.timers.get(key);
-    if (existing !== void 0)
-      clearTimeout(existing);
-    this.timers.set(key, setTimeout(() => {
-      this.timers.delete(key);
-      this.performUpdate(uri);
-    }, _DecorationScheduler.DEBOUNCE_MS));
-  }
-  updateNow(uri) {
-    const key = uri;
-    const existing = this.timers.get(key);
-    if (existing !== void 0) {
-      clearTimeout(existing);
-      this.timers.delete(key);
-    }
-    this.performUpdate(uri);
-  }
-  dispose() {
-    for (const timer of this.timers.values())
-      clearTimeout(timer);
-    this.timers.clear();
-  }
-};
-DecorationScheduler.DEBOUNCE_MS = 50;
-
-// ../../packages/core/dist-esm/host/pending-edit-manager.js
-init_edit_boundary();
-init_critic_regex();
-
-// ../../packages/core/dist-esm/host/services/review-service.js
-init_apply_review();
-init_amend();
-init_supersede();
-init_resolution();
-init_current_text();
-init_format_aware_parse();
-init_types();
-
-// ../../packages/core/dist-esm/host/decorations/index.js
-init_helpers();
-
-// ../../packages/core/dist-esm/host/decorations/plan-builder.js
-init_types();
-init_tokens();
-init_footnote_utils();
-init_helpers();
-
-// ../../packages/core/dist-esm/host/decorations/ruler-builder.js
-init_types();
-
-// ../../packages/core/dist-esm/host/decorations/plan-to-tokens.js
-init_types();
-init_helpers();
-
-// ../../packages/core/dist-esm/host/format-service.js
-init_footnote_patterns();
-init_parse_document();
-
-// ../../packages/core/dist-esm/host/base-controller.js
-init_parse_document();
-
-// ../../packages/core/dist-esm/host/view-helpers.js
-init_types();
-var VIEW_KNOWN_NAMES = /* @__PURE__ */ new Map([
-  // Canonical (identity)
-  ["working", "working"],
-  ["simple", "simple"],
-  ["decided", "decided"],
-  ["original", "original"],
-  ["raw", "raw"],
-  // Legacy config compat (silent normalization)
-  ["review", "working"],
-  ["bytes", "raw"],
-  ["changes", "simple"],
-  ["final", "decided"],
-  ["settled", "decided"],
-  // Legacy MCP aliases
-  ["full", "raw"],
-  ["all", "working"],
-  ["content", "raw"],
-  ["meta", "working"],
-  ["committed", "simple"],
-  // VS Code settings compat
-  ["all-markup", "working"],
-  ["markup", "working"]
-]);
-function resolveView(input) {
-  return VIEW_KNOWN_NAMES.get(input) ?? null;
-}
-
-// ../../packages/core/dist-esm/host/adapters/lsp-format-adapter.js
-init_parse_document();
-
-// ../../packages/core/dist-esm/host/adapters/local-parse-adapter.js
-init_format_aware_parse();
-
-// ../../packages/core/dist-esm/host/adapters/local-format-adapter.js
-init_l2_to_l3();
-init_l3_to_l2();
-init_parse_document();
-
 // ../../packages/cli/dist/view-alias.js
 var CANONICAL_VIEWS = ["working", "simple", "decided", "original", "raw"];
 
@@ -29909,7 +30558,7 @@ async function loadConfig(projectDir) {
   const configPath = await findConfigFile(projectDir);
   if (!configPath) {
     console.error(`changedown: no .changedown/config.toml found (searched from ${projectDir} to /), using defaults`);
-    return structuredClone(DEFAULT_CONFIG2);
+    return structuredClone(DEFAULT_UNCONFIGURED_CONFIG);
   }
   let raw;
   try {
@@ -29983,11 +30632,28 @@ var DEFAULT_CONFIG2 = {
     batch_reasoning: "optional"
   }
 };
+var DEFAULT_UNCONFIGURED_CONFIG = {
+  ...DEFAULT_CONFIG2,
+  tracking: {
+    ...DEFAULT_CONFIG2.tracking,
+    include: [],
+    include_absolute: [],
+    default: "untracked",
+    auto_header: false
+  },
+  hooks: {
+    ...DEFAULT_CONFIG2.hooks,
+    intercept_tools: false,
+    intercept_bash: false,
+    patch_wrap_experimental: false
+  },
+  policy: {
+    ...DEFAULT_CONFIG2.policy,
+    creation_tracking: "none"
+  }
+};
 
 // ../../packages/cli/dist/engine/config-resolver.js
-import * as path2 from "node:path";
-import * as fs2 from "node:fs/promises";
-import { existsSync, realpathSync, watch } from "node:fs";
 var ConfigResolver = class _ConfigResolver {
   /** Map from project root path → cached config */
   cache = /* @__PURE__ */ new Map();
@@ -30038,7 +30704,7 @@ var ConfigResolver = class _ConfigResolver {
       this.watchConfig(projectRoot);
       return { config: config2, projectDir: projectRoot };
     }
-    return { config: structuredClone(DEFAULT_CONFIG2), projectDir: this.resolveDir() };
+    return { config: structuredClone(DEFAULT_UNCONFIGURED_CONFIG), projectDir: this.resolveDir() };
   }
   /**
    * Resolve a file path argument from a tool call.
@@ -30135,7 +30801,7 @@ var ConfigResolver = class _ConfigResolver {
       this.watchConfig(projectRoot);
       return config2;
     }
-    return structuredClone(DEFAULT_CONFIG2);
+    return structuredClone(DEFAULT_UNCONFIGURED_CONFIG);
   }
   /**
    * Walk up from `startDir` looking for a directory containing `.changedown/`.
@@ -30422,6 +31088,13 @@ var SessionState = class {
     });
   }
   /**
+   * Returns all absolute paths that have been read via `read_tracked_file`
+   * in this session. Used by `FileBackend.list()` to enumerate resources.
+   */
+  getAccessedPaths() {
+    return Array.from(this.fileRecords.keys());
+  }
+  /**
    * Returns the view name from the last read_tracked_file call for this file,
    * or undefined if the file has not been read in this session.
    */
@@ -30577,6 +31250,9 @@ var SessionState = class {
    * and appends remaining segments.
    */
   normalizePath(filePath) {
+    if (/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(filePath)) {
+      return filePath;
+    }
     const resolved = path3.resolve(filePath);
     try {
       return realpathSync2(resolved);
@@ -30600,1560 +31276,32 @@ var SessionState = class {
   }
 };
 
-// ../../packages/cli/dist/engine/state-utils.js
-init_dist_esm();
-async function rerecordState(state, filePath, content, config2) {
-  if (!state)
-    return void 0;
-  if (!config2.hashline.enabled) {
-    state.resetFile(filePath);
-    return void 0;
-  }
-  await initHashline();
-  const lastView = state.getLastReadView(filePath) ?? "raw";
-  const changes = parseForFormat(content).getChanges();
-  const sessionHashesResult = buildSessionHashes(content, changes);
-  const hashes = [];
-  for (const [rawLineNum, sh] of sessionHashesResult.byRawLine) {
-    let lineNumInView;
-    switch (lastView) {
-      case "working":
-      case "raw":
-      case "original":
-        lineNumInView = rawLineNum;
-        break;
-      case "simple":
-        lineNumInView = sessionHashesResult.currentLineByRaw.get(rawLineNum);
-        break;
-      case "decided":
-        lineNumInView = sessionHashesResult.decidedLineByRaw.get(rawLineNum);
-        break;
-    }
-    if (lineNumInView === void 0)
-      continue;
-    if (lastView === "raw" || lastView === "original") {
-      hashes.push({ line: lineNumInView, raw: sh.raw, rawLineNum });
-    } else {
-      hashes.push({
-        line: lineNumInView,
-        raw: sh.raw,
-        committed: sh.committed,
-        currentView: sh.currentView,
-        rawLineNum
-      });
-    }
-  }
-  state.rerecordAfterWrite(filePath, content, hashes);
-  if (lastView === "decided") {
-    return { decidedView: sessionHashesResult.decidedResult };
-  }
-  if (lastView === "simple" || lastView === "working") {
-    return { currentView: sessionHashesResult.currentResult };
-  }
-  return void 0;
-}
-
-// ../../packages/cli/dist/engine/author.js
-var AUTHOR_ENV_KEY = "CHANGEDOWN_AUTHOR";
-var AUTHOR_FORMAT = /^[a-z][a-z0-9]*:[a-zA-Z0-9_.-]+$/;
-var SYSTEM_FALLBACK = "unknown";
-function validateAuthorFormat(author) {
-  if (author === SYSTEM_FALLBACK) {
-    return null;
-  }
-  if (!AUTHOR_FORMAT.test(author)) {
-    return {
-      author: "",
-      error: {
-        isError: true,
-        message: `Invalid author format: '${author}'. Expected namespace:identifier (e.g., ai:claude-opus-4.6, human:alice).`
-      }
-    };
-  }
-  return null;
-}
-function resolveAuthor(explicitAuthor, config2, toolName) {
-  if (explicitAuthor) {
-    const formatError3 = validateAuthorFormat(explicitAuthor);
-    if (formatError3)
-      return formatError3;
-    return { author: explicitAuthor };
-  }
-  const fromEnv = process.env[AUTHOR_ENV_KEY]?.trim();
-  if (config2.author.enforcement === "required") {
-    if (fromEnv) {
-      const formatError3 = validateAuthorFormat(fromEnv);
-      if (formatError3)
-        return formatError3;
-      return { author: fromEnv };
-    }
-    return {
-      author: "",
-      error: {
-        isError: true,
-        message: `${toolName} requires an author parameter. This project has [author] enforcement = "required". Pass author in the tool call (e.g. author: "ai:claude-opus-4.6") or set ${AUTHOR_ENV_KEY} in the MCP server env (e.g. in Cursor mcp.json).`
-      }
-    };
-  }
-  const fallback = fromEnv || config2.author.default || "unknown";
-  const formatError2 = validateAuthorFormat(fallback);
-  if (formatError2)
-    return formatError2;
-  return { author: fallback };
-}
-
-// ../../packages/cli/dist/engine/scope.js
-init_dist_esm();
-import * as fs3 from "node:fs/promises";
-async function resolveTrackingStatus(filePath, config2, projectDir) {
-  const projectDefault = config2.tracking.default;
-  const autoHeader = config2.tracking.auto_header;
-  let fileContent = null;
-  try {
-    fileContent = await fs3.readFile(filePath, "utf-8");
-  } catch {
-  }
-  if (fileContent !== null) {
-    const header = parseTrackingHeader(fileContent);
-    if (header !== null) {
-      return {
-        status: header.status,
-        source: "file_header",
-        header_present: true,
-        project_default: projectDefault,
-        auto_header: autoHeader
-      };
-    }
-  }
-  if (isFileInScope(filePath, config2, projectDir)) {
-    return {
-      status: projectDefault,
-      source: "project_config",
-      header_present: false,
-      project_default: projectDefault,
-      auto_header: autoHeader
-    };
-  }
-  return {
-    status: "untracked",
-    source: "global_default",
-    header_present: false,
-    project_default: projectDefault,
-    auto_header: autoHeader
-  };
-}
-
-// ../../packages/cli/dist/engine/path-utils.js
-import * as path4 from "node:path";
-function toRelativePath(projectDir, filePath) {
-  return path4.relative(projectDir, filePath);
-}
-
-// ../../packages/cli/dist/engine/guide-composer.js
-function composeGuide(config2) {
-  const sections = [];
-  const protocolMode = resolveProtocolMode(config2.protocol.mode);
-  sections.push(composeProtocolSection(protocolMode, config2));
-  sections.push(composeAuthorSection(config2));
-  if (config2.reasoning?.propose?.agent === true) {
-    sections.push("**Annotations**: Required on every change. Append `{>>reason` to your `op` string, or include reasoning in your propose call.");
-  }
-  sections.push("**Chaining edits**: Each `propose_change` response shows your changes applied. The `applied` array includes `preview` (the line with your edit) and coordinates for follow-up edits. `affected_lines` shows neighboring lines with fresh coordinates. No re-read needed between edits. Re-read only after review (accept/reject).");
-  sections.push("**Revising proposals**: Re-proposing over your own earlier changes auto-supersedes them. No need to reject first. The response includes a `superseded` array with the IDs of replaced changes.");
-  sections.push(composeViewSection(config2));
-  return `---
-## How to edit this file
-
-${sections.join("\n\n")}
----`;
-}
-function composeProtocolSection(mode, config2) {
-  if (mode === "classic") {
-    return "**Editing**: Use `propose_change` with `old_text` (exact text to replace) and `new_text`.\nFor insertions, use `insert_after` to place new text after an anchor string.\nGroup related changes: `propose_change(file, changes=[{old_text:..., new_text:...}, ...])`";
-  }
-  const lines = [
-    "**Editing**: Use `propose_change` with `at` (LINE:HASH from the margin) and `op`:",
-    "  Substitute: `{~~old~>new~~}`  Insert: `{++text++}`  Delete: `{--text--}`",
-    "  Highlight: `{==text==}`  Comment: `{>>reason`"
-  ];
-  if (config2.reasoning?.propose?.agent !== true) {
-    lines.push("  Annotate: `{~~old~>new~~}{>>reason`  (append {>> to any op)");
-  } else {
-    lines.push("  Annotate (required): `{~~old~>new~~}{>>reason`  (append {>> to any op)");
-  }
-  lines.push('Group: `propose_change(file, changes=[{at:"3:a1", op:"{~~old~>new~~}{>>reason"}, ...])`', "Include enough context in your `op` to disambiguate repeated text on the same line.");
-  lines.push('Range replace: `at:"5:a1-20:b3"` + `op:"{~~~>new content~~}"` replaces the entire range.');
-  lines.push("Multi-line ops: use real newlines in your op string \u2014 the MCP transport handles encoding.");
-  return lines.join("\n");
-}
-function composeAuthorSection(config2) {
-  if (config2.author.enforcement === "required") {
-    return '**Author**: Required. Pass `author="ai:YOUR-ACTUAL-MODEL"` on every propose/review call.\nDo not copy example identities from documentation.';
-  }
-  return '**Author**: Recommended. Pass `author="ai:YOUR-MODEL"` for clear attribution.';
-}
-function composeViewSection(config2) {
-  const defaultView = config2.policy.default_view ?? "working";
-  switch (defaultView) {
-    case "working":
-      return "**You're seeing**: working view \u2014 full deliberation context. CriticMarkup shows proposals inline, [cn-N] anchors link to end-of-line metadata.\nOther views: `simple` (clean prose + P/A flags), `decided` (decided-changes-only preview).";
-    case "simple":
-      return "**You're seeing**: simple view \u2014 current projection text with P/A flags in the margin. Proposals are summarized, not shown inline.\nOther views: `working` (full deliberation context), `decided` (decided-changes-only preview).";
-    case "decided":
-      return "**You're seeing**: decided view \u2014 the document with only decided changes applied. Proposed deletions are not visible.\nOther views: `working` (full deliberation context), `simple` (current text + P/A flags).";
-    default:
-      return `**Current view**: ${defaultView}.`;
-  }
-}
-
-// ../../packages/cli/dist/engine/index.js
-init_file_ops2();
-
-// ../../packages/cli/dist/engine/args.js
-function strArg(args, snake, camel, defaultValue = "") {
-  const v = args[snake] ?? args[camel];
-  return v ?? defaultValue;
-}
-function optionalStrArg(args, snake, camel) {
-  const v = args[snake] ?? args[camel];
-  if (v === void 0 || v === null)
-    return void 0;
-  return String(v);
-}
-
-// ../../packages/cli/dist/engine/tool-schemas.js
-var compactProposeChangeSchema = {
-  name: "propose_change",
-  description: "Propose tracked changes to a markdown file. Each change uses at (LINE:HASH coordinate) and op (edit operation). For multiple changes, pass a changes array \u2014 all applied atomically against the pre-change state.",
-  inputSchema: {
-    type: "object",
-    properties: {
-      file: { type: "string", description: "Path to the file (absolute or relative to project root)" },
-      author: { type: "string", description: "Author identity (e.g., ai:claude-opus-4.6, human:alice). Required when project has author enforcement." },
-      at: { type: "string", description: 'Target coordinate from read_tracked_file. Single line: "LINE:HASH". Range: "LINE:HASH-LINE:HASH".' },
-      op: { type: "string", description: "Edit operation. Substitute: {~~old~>new~~}. Insert: {++text++}. Delete: {--text--}. Highlight: {==text==}. Comment: {>>reason. Append {>> to annotate any op." },
-      changes: {
-        type: "array",
-        description: "Multiple changes applied atomically with grouped IDs. All coordinates reference the pre-change state.",
-        items: {
-          type: "object",
-          properties: {
-            at: { type: "string", description: "LINE:HASH or LINE:HASH-LINE:HASH coordinate." },
-            op: { type: "string", description: "{~~old~>new~~} | {++text++} | {--text--} | {==text==}. Append {>> to annotate." }
-          },
-          required: ["at", "op"]
-        }
-      },
-      raw: { type: "boolean", description: "When true, bypasses CriticMarkup wrapping (policy-gated). Denied in strict mode." }
-    },
-    required: ["file"]
-  }
-};
-var classicProposeChangeSchema = {
-  name: "propose_change",
-  description: "Propose tracked changes to a markdown file. Each change uses old_text/new_text for text matching. For multiple changes, pass a changes array \u2014 all applied atomically against the pre-change state.",
-  inputSchema: {
-    type: "object",
-    properties: {
-      file: { type: "string", description: "Path to the file (absolute or relative to project root)" },
-      author: { type: "string", description: "Author identity (e.g., ai:claude-opus-4.6, human:alice). Required when project has author enforcement." },
-      old_text: { type: "string", description: "Text to replace. Empty string for pure insertion. Must match file content exactly." },
-      new_text: { type: "string", description: "Replacement text. Empty string for pure deletion." },
-      reason: { type: "string", description: "Annotation for the change (adds a discussion comment to the change thread)." },
-      insert_after: { type: "string", description: "For insertions: insert new text after this anchor text." },
-      changes: {
-        type: "array",
-        description: "Multiple changes applied atomically with grouped IDs.",
-        items: {
-          type: "object",
-          properties: {
-            old_text: { type: "string", description: "Text to replace." },
-            new_text: { type: "string", description: "Replacement text." },
-            reason: { type: "string", description: "Annotation for this change." },
-            insert_after: { type: "string", description: "Insertion anchor text." }
-          },
-          required: ["old_text", "new_text"]
-        }
-      },
-      raw: { type: "boolean", description: "When true, bypasses CriticMarkup wrapping (policy-gated). Denied in strict mode." }
-    },
-    required: ["file"]
-  }
-};
-
-// ../../packages/cli/dist/engine/handlers/review-changes.js
-import * as fs4 from "node:fs/promises";
+// ../../packages/cli/dist/engine/handlers/propose-change.js
+import * as fs6 from "node:fs/promises";
 import * as path5 from "node:path";
 
-// ../../packages/cli/dist/engine/shared/error-result.js
-function errorResult(message) {
-  return {
-    content: [{ type: "text", text: message }],
-    isError: true
-  };
-}
-
-// ../../packages/cli/dist/engine/handlers/review-changes.js
+// ../../packages/cli/dist/engine/write-tracked-file.js
 init_dist_esm();
-
-// ../../packages/cli/dist/engine/shared/blocking-annotation.js
-init_dist_esm();
-function applyBlockingAnnotation(content, changeId, author, label, shouldBlock) {
-  const lines = content.split("\n");
-  const block = findFootnoteBlock(lines, changeId);
-  if (!block)
-    return content;
-  const insertIdx = findReviewInsertionIndex(lines, block.headerLine, block.blockEnd);
-  if (label && insertIdx >= block.headerLine) {
-    const rcLine = lines[insertIdx];
-    if (rcLine.trimStart().startsWith("request-changes:")) {
-      lines[insertIdx] = rcLine + ` [${label}]`;
-    }
-  }
-  if (shouldBlock) {
-    lines.splice(insertIdx + 1, 0, `    blocked: @${author}`);
-  }
-  return lines.join("\n");
+import { promises as fs3, writeFileSync } from "fs";
+var WRITE_BLOCKING_KINDS = /* @__PURE__ */ new Set([
+  "coordinate_failed",
+  "anchor_ambiguous",
+  "anchor_missing",
+  "record_orphaned",
+  "structural_invalid"
+]);
+function getWriteBlockingViolations(content) {
+  return validateStructuralIntegrity(content).filter((violation) => WRITE_BLOCKING_KINDS.has(violation.kind));
 }
-
-// ../../packages/cli/dist/engine/handlers/settle.js
-init_dist_esm();
-function applyAcceptedChanges2(fileContent) {
-  return applyAcceptedChanges(fileContent);
-}
-function applyRejectedChanges2(fileContent) {
-  return applyRejectedChanges(fileContent);
-}
-
-// ../../packages/cli/dist/engine/handlers/propose-utils.js
-init_dist_esm();
-function computeAffectedLines(modifiedText, affectedStartLine, affectedEndLine, options) {
-  const lines = modifiedText.split("\n");
-  const result = [];
-  const ctx = options.contextLines ?? 2;
-  const start = Math.max(1, affectedStartLine - ctx);
-  const end = Math.min(lines.length, affectedEndLine + ctx);
-  for (let lineNum = start; lineNum <= end; lineNum++) {
-    const lineContent = lines[lineNum - 1];
-    if (options.viewProjection) {
-      const viewEntry = options.viewProjection.rawToView.get(lineNum);
-      if (!viewEntry) {
-        continue;
-      }
-      const entry = {
-        line: viewEntry.viewLine,
-        content: viewEntry.viewContent
-      };
-      if (options.hashlineEnabled) {
-        entry.hash = viewEntry.viewHash;
-      }
-      if (lineContent.match(/\{\+\+|\{--|\{~~|\{==/)) {
-        entry.flag = "P";
-      }
-      result.push(entry);
-    } else {
-      const entry = {
-        line: lineNum,
-        content: lineContent
-      };
-      if (options.hashlineEnabled) {
-        entry.hash = computeLineHash(lineNum - 1, lineContent, lines);
-      }
-      if (lineContent.match(/\{\+\+|\{--|\{~~|\{==/)) {
-        entry.flag = "P";
-      }
-      result.push(entry);
-    }
-  }
-  return result;
-}
-
-// ../../packages/cli/dist/engine/handlers/review-changes.js
-var reviewChangesTool = {
-  name: "review_changes",
-  description: "Review existing changes: accept/reject decisions and thread responses. Pass reviews for accept/reject or responses for thread replies. Accepted changes are compacted by the server per project config (no separate settle step). When status_updated is false, a reason field explains why (already_accepted, already_rejected, request_changes_no_status_change).",
-  inputSchema: {
-    type: "object",
-    properties: {
-      file: {
-        type: "string",
-        description: "Path to the file (absolute or relative to project root)"
-      },
-      reviews: {
-        type: "array",
-        items: {
-          type: "object",
-          properties: {
-            change_id: {
-              type: "string",
-              description: "e.g., 'cn-7' or 'cn-7.2'"
-            },
-            decision: {
-              type: "string",
-              enum: ["approve", "reject", "request_changes", "withdraw"],
-              description: "The review decision"
-            },
-            reason: {
-              type: "string",
-              description: "Why this decision. Required."
-            },
-            blocking: {
-              type: "boolean",
-              description: "When true with request_changes, adds a blocked: line preventing acceptance until withdrawn."
-            },
-            label: {
-              type: "string",
-              description: 'Optional label for the review (e.g. "security", "performance").'
-            }
-          },
-          required: ["change_id", "decision", "reason"]
-        },
-        description: "Array of review decisions to apply"
-      },
-      author: {
-        type: "string",
-        description: "Who is making this change. Recommended: always pass your model/agent identity (e.g. ai:composer) for clear attribution. Required when this project has author enforcement."
-      },
-      responses: {
-        type: "array",
-        description: "Thread responses. Each: {change_id, response, label?}.",
-        items: {
-          type: "object",
-          properties: {
-            change_id: { type: "string" },
-            response: { type: "string" },
-            label: { type: "string", enum: ["suggestion", "issue", "question", "praise", "todo", "thought", "nitpick"] }
-          },
-          required: ["change_id", "response"]
-        }
-      }
-    },
-    required: ["file"]
-  }
-};
-async function handleReviewChanges(args, resolver, state) {
-  try {
-    const file2 = optionalStrArg(args, "file", "file");
-    let reviewsRaw = args.reviews;
-    let responsesRaw = args.responses;
-    const settleFlag = args.settle === true || args.settle === "true";
-    const authorArg = optionalStrArg(args, "author", "author");
-    if (!file2) {
-      return errorResult('Missing required argument: "file"');
-    }
-    if (typeof reviewsRaw === "string") {
-      try {
-        const parsed = JSON.parse(reviewsRaw);
-        if (Array.isArray(parsed)) {
-          reviewsRaw = parsed;
-        } else {
-          return errorResult(`The "reviews" parameter was received as a JSON string but parsed to ${typeof parsed}, not an array. Send reviews as a JSON array of objects, e.g.: reviews: [{ "change_id": "cn-1", "decision": "approve", "reason": "looks good" }]`);
-        }
-      } catch {
-        return errorResult('The "reviews" parameter was received as a string but could not be parsed as JSON. Send reviews as a JSON array of objects, e.g.: reviews: [{ "change_id": "cn-1", "decision": "approve", "reason": "looks good" }]');
-      }
-    }
-    if (typeof responsesRaw === "string") {
-      try {
-        const parsed = JSON.parse(responsesRaw);
-        if (Array.isArray(parsed)) {
-          responsesRaw = parsed;
-        } else {
-          return errorResult(`The "responses" parameter was received as a JSON string but parsed to ${typeof parsed}, not an array. Send responses as a JSON array of objects, e.g.: responses: [{ "change_id": "cn-1", "response": "addressed in latest revision" }]`);
-        }
-      } catch {
-        return errorResult('The "responses" parameter was received as a string but could not be parsed as JSON. Send responses as a JSON array of objects, e.g.: responses: [{ "change_id": "cn-1", "response": "addressed in latest revision" }]');
-      }
-    }
-    const hasReviews = Array.isArray(reviewsRaw) && reviewsRaw.length > 0;
-    const hasResponses = Array.isArray(responsesRaw) && responsesRaw.length > 0;
-    if (!hasReviews && !hasResponses && !settleFlag) {
-      return errorResult('At least one of "reviews", "responses", or "settle" must be provided.\n\nExample:\n  review_changes(file: "doc.md", reviews: [{ change_id: "cn-1", decision: "approve", reason: "looks good" }])\n\nRequired fields per review: change_id, decision (approve|reject|request_changes|withdraw), reason.');
-    }
-    const filePath = resolver.resolveFilePath(file2);
-    const { config: config2, projectDir } = await resolver.forFile(filePath);
-    if (!isFileInScope(filePath, config2, projectDir)) {
-      return errorResult(`File is not in scope for tracking: "${filePath}". Check .changedown/config.toml include/exclude patterns.`);
-    }
-    let fileContent;
-    let originalContent;
-    try {
-      fileContent = await fs4.readFile(filePath, "utf-8");
-      originalContent = fileContent;
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      return errorResult(`File not found or unreadable: ${msg}`);
-    }
-    const { author, error: authorError } = resolveAuthor(authorArg, config2, "review_changes");
-    if (authorError) {
-      return errorResult(authorError.message);
-    }
-    const successes = [];
-    const errors = [];
-    let results = [];
-    if (hasReviews) {
-      const lines = fileContent.split("\n");
-      const inputOrderChangeIds = [];
-      const withPosition = [];
-      const validationErrors = [];
-      for (let idx = 0; idx < reviewsRaw.length; idx++) {
-        const r = reviewsRaw[idx];
-        if (r === null || r === void 0 || typeof r !== "object" || Array.isArray(r)) {
-          validationErrors.push(`Review item #${idx} must be an object, got ${r === null ? "null" : Array.isArray(r) ? "array" : typeof r}`);
-          continue;
-        }
-        const rObj = r;
-        const changeId = rObj.change_id;
-        const decision = rObj.decision;
-        const reason = rObj.reason;
-        const missingFields = [];
-        if (!changeId)
-          missingFields.push("'change_id'");
-        if (!decision)
-          missingFields.push("'decision'");
-        if (!reason) {
-          if (rObj.reasoning) {
-            missingFields.push("'reason' (did you mean 'reason'? You passed 'reasoning' which is not the correct field name)");
-          } else {
-            missingFields.push("'reason'");
-          }
-        }
-        if (missingFields.length > 0) {
-          validationErrors.push(`Review item #${idx} missing required field(s): ${missingFields.join(", ")}`);
-          continue;
-        }
-        inputOrderChangeIds.push(changeId);
-        const block = findFootnoteBlock(lines, changeId);
-        withPosition.push({
-          review: {
-            change_id: changeId,
-            decision,
-            reason,
-            blocking: rObj.blocking === true ? true : void 0,
-            label: typeof rObj.label === "string" ? rObj.label : void 0
-          },
-          headerLine: block ? block.headerLine : -1
-        });
-      }
-      withPosition.sort((a, b) => b.headerLine - a.headerLine);
-      const resultByChangeId = /* @__PURE__ */ new Map();
-      for (const { review } of withPosition) {
-        if (!VALID_DECISIONS.includes(review.decision)) {
-          resultByChangeId.set(review.change_id, {
-            change_id: review.change_id,
-            error: `Invalid decision: "${review.decision}". Must be one of: approve, reject, request_changes, withdraw`
-          });
-          continue;
-        }
-        const applied = applyReview(fileContent, review.change_id, review.decision, review.reason, author, config2);
-        if ("error" in applied) {
-          resultByChangeId.set(review.change_id, { change_id: review.change_id, error: applied.error });
-          continue;
-        }
-        if (review.decision === "request_changes" && (review.blocking || review.label)) {
-          const autoBlock = review.label ? config2.review.blocking_labels[review.label] === true : false;
-          const shouldBlock = review.blocking || autoBlock;
-          applied.updatedContent = applyBlockingAnnotation(applied.updatedContent, review.change_id, author, review.label, shouldBlock);
-        }
-        resultByChangeId.set(review.change_id, applied.result);
-        fileContent = applied.updatedContent;
-      }
-      results = inputOrderChangeIds.map((id) => resultByChangeId.get(id));
-      if (validationErrors.length > 0) {
-        errors.push(...validationErrors);
-      }
-    }
-    if (hasResponses) {
-      const VALID_LABELS = ["suggestion", "issue", "question", "praise", "todo", "thought", "nitpick"];
-      for (let rIdx = 0; rIdx < responsesRaw.length; rIdx++) {
-        const resp = responsesRaw[rIdx];
-        if (resp === null || resp === void 0 || typeof resp !== "object" || Array.isArray(resp)) {
-          errors.push(`Response item #${rIdx} must be an object, got ${resp === null ? "null" : Array.isArray(resp) ? "array" : typeof resp}`);
-          continue;
-        }
-        const respObj = resp;
-        const respChangeId = respObj.change_id;
-        const respText = respObj.response;
-        const respLabel = respObj.label;
-        if (!respChangeId || !respText) {
-          const missing = [];
-          if (!respChangeId)
-            missing.push("'change_id'");
-          if (!respText)
-            missing.push("'response'");
-          errors.push(`Response item #${rIdx} missing required field(s): ${missing.join(", ")}`);
-          continue;
-        }
-        if (respLabel && !VALID_LABELS.includes(respLabel)) {
-          errors.push(`Response to ${respChangeId}: Invalid label "${respLabel}". Must be one of: ${VALID_LABELS.join(", ")}`);
-          continue;
-        }
-        const lines = fileContent.split("\n");
-        const block = findFootnoteBlock(lines, respChangeId);
-        if (!block) {
-          errors.push(`Response to ${respChangeId}: Change "${respChangeId}" not found in file.`);
-          continue;
-        }
-        const insertionIdx = findDiscussionInsertionIndex(lines, block.headerLine, block.blockEnd) + 1;
-        const ts = nowTimestamp();
-        const labelPart = respLabel ? ` [${respLabel}]` : "";
-        const responseLines = respText.split("\n");
-        const indent = "    ";
-        const continuationIndent = "      ";
-        const firstLine = `${indent}@${author} ${ts.raw}${labelPart}: ${responseLines[0]}`;
-        const formatted = [firstLine];
-        for (let li = 1; li < responseLines.length; li++) {
-          formatted.push(`${continuationIndent}${responseLines[li]}`);
-        }
-        lines.splice(insertionIdx, 0, ...formatted);
-        fileContent = lines.join("\n");
-        successes.push(`Responded to ${respChangeId}`);
-      }
-    }
-    let settlementInfo;
-    if (config2.settlement.auto_on_approve && hasReviews) {
-      const hasApprovals = results.some((r) => "decision" in r && r.decision === "approve");
-      if (hasApprovals) {
-        const { currentContent, appliedIds } = applyAcceptedChanges2(fileContent);
-        if (appliedIds.length > 0) {
-          fileContent = currentContent;
-          settlementInfo = { appliedIds };
-        }
-      }
-    }
-    if (config2.settlement.auto_on_reject && hasReviews) {
-      const hasRejections = results.some((r) => "decision" in r && r.decision === "reject");
-      if (hasRejections) {
-        const { currentContent, appliedIds } = applyRejectedChanges2(fileContent);
-        if (appliedIds.length > 0) {
-          fileContent = currentContent;
-          if (settlementInfo) {
-            const existingSet = new Set(settlementInfo.appliedIds);
-            for (const id of appliedIds) {
-              if (!existingSet.has(id)) {
-                settlementInfo.appliedIds.push(id);
-              }
-            }
-          } else {
-            settlementInfo = { appliedIds };
-          }
-        }
-      }
-    }
-    if (settleFlag) {
-      const { currentContent, appliedIds } = applyAcceptedChanges2(fileContent);
-      if (appliedIds.length > 0) {
-        fileContent = currentContent;
-        if (settlementInfo) {
-          const existingSet = new Set(settlementInfo.appliedIds);
-          for (const id of appliedIds) {
-            if (!existingSet.has(id)) {
-              settlementInfo.appliedIds.push(id);
-            }
-          }
-        } else {
-          settlementInfo = { appliedIds };
-        }
-      }
-      successes.push("Settled all accepted changes (Layer 1 compaction)");
-    }
-    let affectedLines;
-    if (settlementInfo && settlementInfo.appliedIds.length > 0) {
-      const postLines = fileContent.split("\n");
-      const settledIdSet = new Set(settlementInfo.appliedIds);
-      const footnoteStart = postLines.findIndex((l) => /^\[\^cn-/.test(l));
-      const contentEnd = footnoteStart > 0 ? footnoteStart : postLines.length;
-      let minLine = Infinity;
-      let maxLine = -Infinity;
-      for (let i = 0; i < contentEnd; i++) {
-        const lineNum = i + 1;
-        for (const id of settledIdSet) {
-          if (postLines[i].includes(`[^${id}]`)) {
-            if (lineNum < minLine)
-              minLine = lineNum;
-            if (lineNum > maxLine)
-              maxLine = lineNum;
-          }
-        }
-      }
-      if (minLine !== Infinity && maxLine !== -Infinity) {
-        if (config2.hashline.enabled) {
-          await initHashline();
-        }
-        try {
-          affectedLines = computeAffectedLines(fileContent, minLine, maxLine, {
-            hashlineEnabled: config2.hashline.enabled
-          });
-        } catch {
-          affectedLines = [];
-        }
-      }
-    }
-    if (fileContent !== originalContent) {
-      await fs4.writeFile(filePath, fileContent, "utf-8");
-      await rerecordState(state, filePath, fileContent, config2);
-    }
-    const response = { file: path5.relative(projectDir, filePath) };
-    if (results.length > 0) {
-      response.results = results;
-    }
-    if (successes.length > 0) {
-      response.successes = successes;
-    }
-    if (errors.length > 0) {
-      response.errors = errors;
-    }
-    if (settlementInfo) {
-      response.settled = settlementInfo.appliedIds;
-      response.settlement_note = `${settlementInfo.appliedIds.length} change(s) settled to clean text. The file now contains clean prose where those changes were. Proposed changes remain as markup.`;
-    }
-    if (affectedLines && config2.response?.affected_lines) {
-      response.affected_lines = affectedLines;
-    }
-    const remaining = countFootnoteHeadersWithStatus(fileContent, "proposed");
-    response.document_state = {
-      remaining_proposed: remaining,
-      all_resolved: remaining === 0
-    };
-    if (remaining === 0) {
-      response.note = "All changes in this file are now resolved (accepted or rejected). No proposed changes remain.";
-    }
-    return {
-      content: [
-        {
-          type: "text",
-          text: JSON.stringify(response)
-        }
-      ]
-    };
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    return errorResult(msg);
-  }
-}
-
-// ../../packages/cli/dist/engine/handlers/read-tracked-file.js
-init_dist_esm();
-import * as fs5 from "node:fs/promises";
-import * as path6 from "node:path";
-var DEFAULT_LIMIT = 500;
-var MAX_LIMIT = 2e3;
-var readTrackedFileTool = {
-  name: "read_tracked_file",
-  description: "Read a tracked file with deliberation-aware projection. Default view (working) shows inline metadata annotations at point of contact with a deliberation summary header. Use view=simple for text with P/A flags, view=decided for clean decided text, view=raw for literal file bytes.",
-  inputSchema: {
-    type: "object",
-    properties: {
-      file: {
-        type: "string",
-        description: "Path to the file (absolute or relative to project root)"
-      },
-      offset: {
-        type: "number",
-        description: "Line number to start reading from (1-indexed, default: 1)"
-      },
-      limit: {
-        type: "number",
-        description: "Maximum number of lines to return (default: 500, max: 2000). Use with offset for pagination."
-      },
-      view: {
-        type: "string",
-        enum: ["working", "simple", "decided", "raw"],
-        description: "working (default, agent-optimized with inline annotations), simple (current projection with P/A flags), decided (clean text with only decided changes applied), raw (literal file bytes)."
-      },
-      include_meta: {
-        type: "boolean",
-        description: "If true, include change levels line and full tip. Default: false (compact)."
-      },
-      include_guide: {
-        type: "boolean",
-        description: "If true, include the editing guide regardless of whether it was already shown this session. Use when spawning subagents that need protocol context."
-      }
-    },
-    required: ["file"]
-  }
-};
-function formatLineNumberedContent(lines, startLine) {
-  return lines.map((line, i) => {
-    const n = startLine + i;
-    const pad = n < 10 ? "  " : n < 100 ? " " : "";
-    return `${pad}${n}| ${line}`;
-  }).join("\n");
-}
-function formatChangeLevelsLine(content) {
-  const parser = new CriticMarkupParser();
-  const doc = parser.parse(content);
-  const changes = doc.getChanges();
-  if (changes.length === 0)
-    return null;
-  const parts = changes.map((c) => `${c.id}=${c.level}`);
-  return `## change levels: ${parts.join(", ")}`;
-}
-function maybeComposeGuide(state, config2, explicit = false) {
-  if (!explicit && state.isGuideSuppressed())
-    return "";
-  const mode = resolveProtocolMode(config2.protocol.mode);
-  if (!explicit && state.getGuideShownForMode() === mode)
-    return "";
-  state.setGuideShown(mode);
-  return "\n\n" + composeGuide(config2);
-}
-function computeEffectiveRange(offset, requestedLimit, totalLines) {
-  const effectiveStart = Math.max(1, offset);
-  const limit = Math.min(requestedLimit ?? DEFAULT_LIMIT, MAX_LIMIT);
-  const effectiveEnd = Math.min(effectiveStart + limit - 1, totalLines);
-  return { effectiveStart, effectiveEnd };
-}
-function buildTruncationMessage(effectiveStart, effectiveEnd, totalLines) {
-  if (effectiveEnd >= totalLines)
-    return null;
-  return `
-
---- showing lines ${effectiveStart}-${effectiveEnd} of ${totalLines} | use offset/limit to paginate ---`;
-}
-function findSafePaginationEnd(lines, effectiveEnd) {
-  let end = effectiveEnd;
-  while (end < lines.length && lines[end]?.continuesChange) {
-    end++;
-  }
-  return end;
-}
-function findSafePaginationEndFromText(contentLines, effectiveEnd, totalLines) {
-  const continuations = computeContinuationLines(contentLines.join("\n"));
-  let end = effectiveEnd;
-  while (end < totalLines && continuations.has(end)) {
-    end++;
-  }
-  return end;
-}
-async function handleReadTrackedFile(args, resolver, state) {
-  try {
-    await initHashline();
-    const file2 = optionalStrArg(args, "file", "file");
-    if (!file2) {
-      return errorResult('Missing required argument: "file"');
-    }
-    const offset = args.offset ?? 1;
-    const requestedLimit = args.limit;
-    const requestedView = optionalStrArg(args, "view", "view");
-    const resolved = requestedView !== void 0 ? resolveView(requestedView) : null;
-    if (requestedView !== void 0 && resolved === null) {
-      return errorResult(`Unknown view '${requestedView}'. Valid views: ${CANONICAL_VIEWS.join(", ")}`);
-    }
-    const includeMeta = args.include_meta === true;
-    const includeGuide = args.include_guide === true;
-    const filePath = resolver.resolveFilePath(file2);
-    const { config: config2, projectDir } = await resolver.forFile(filePath);
-    const defaultView = resolveView(config2.policy.default_view ?? "working") ?? "working";
-    const viewPolicy = config2.policy.view_policy ?? "suggest";
-    let canonicalView;
-    if (requestedView === void 0) {
-      canonicalView = defaultView;
-    } else {
-      canonicalView = resolved;
-      if (viewPolicy === "require" && canonicalView !== defaultView) {
-        return errorResult(`This project requires view "${config2.policy.default_view}" (view_policy = "require"). Requested view "${requestedView}" is not allowed. Change view_policy to "suggest" in .changedown/config.toml to allow view selection.`);
-      }
-    }
-    let fileContent;
-    try {
-      fileContent = await fs5.readFile(filePath, "utf-8");
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      return errorResult(`File not found or unreadable: ${msg}`);
-    }
-    const trackingStatus = await resolveTrackingStatus(filePath, config2, projectDir);
-    const displayPath = path6.relative(projectDir, filePath);
-    if (!config2.hashline.enabled) {
-      if (canonicalView === "simple") {
-        return errorResult("Simple view requires hashline mode. Enable hashline in .changedown/config.toml: [hashline] enabled = true");
-      }
-      if (canonicalView === "working") {
-        const protocolMode2 = resolveProtocolMode(config2.protocol.mode);
-        const doc2 = buildViewDocument(fileContent, canonicalView, {
-          filePath: displayPath,
-          trackingStatus: trackingStatus.status,
-          protocolMode: protocolMode2,
-          defaultView: "working",
-          viewPolicy: config2.policy.view_policy ?? "suggest"
-        });
-        const sessionHashes2 = doc2.lines.map((l) => ({
-          line: l.margin.lineNumber,
-          raw: l.sessionHashes.raw,
-          committed: l.sessionHashes.committed,
-          currentView: l.sessionHashes.currentView,
-          rawLineNum: l.rawLineNumber
-        }));
-        state.recordAfterRead(filePath, canonicalView, sessionHashes2, fileContent);
-        const totalLines2 = doc2.lines.length;
-        const { effectiveStart: effectiveStart2, effectiveEnd: effectiveEnd2 } = computeEffectiveRange(offset, requestedLimit, totalLines2);
-        const adjustedEnd3 = findSafePaginationEnd(doc2.lines, effectiveEnd2);
-        const paginatedDoc2 = {
-          ...doc2,
-          lines: doc2.lines.slice(effectiveStart2 - 1, adjustedEnd3),
-          header: {
-            ...doc2.header,
-            lineRange: { start: effectiveStart2, end: adjustedEnd3, total: totalLines2 }
-          }
-        };
-        const metaOutput = formatPlainText(paginatedDoc2);
-        const guide3 = maybeComposeGuide(state, config2, includeGuide);
-        const content3 = [{ type: "text", text: metaOutput }];
-        const truncation3 = buildTruncationMessage(effectiveStart2, adjustedEnd3, totalLines2);
-        if (truncation3) {
-          content3[content3.length - 1].text += truncation3;
-        }
-        if (guide3)
-          content3.unshift({ type: "text", text: guide3 });
-        return { content: content3 };
-      }
-      let header = formatTrackedHeader(displayPath, fileContent, trackingStatus.status);
-      if (includeMeta) {
-        const levelsLine = formatChangeLevelsLine(fileContent);
-        if (levelsLine)
-          header = header + "\n" + levelsLine;
-      }
-      header = header.replace(/## tracking: (tracked|untracked)/, `## policy: ${config2.policy.mode} | tracking: $1`);
-      let headerWithoutHashlineTip = header.replace(/## tip:.*/, "## tip: Hashline addressing is disabled. Edits use text matching; re-read for current content if propose_change fails.");
-      const nonHashProtocolMode = resolveProtocolMode(config2.protocol.mode);
-      if (nonHashProtocolMode === "compact") {
-        headerWithoutHashlineTip = headerWithoutHashlineTip.replace(/## tip:.*/, "## tip: Hashline addressing is disabled but compact mode requires it. Enable in .changedown/config.toml: [hashline] enabled = true");
-      }
-      const contentToShow = canonicalView === "decided" ? computeCurrentText(fileContent) : fileContent;
-      const allContentLines = contentToShow.split("\n");
-      const totalContentLines = allContentLines.length;
-      const { effectiveStart: effStart, effectiveEnd: effEnd } = computeEffectiveRange(offset, requestedLimit, totalContentLines);
-      const adjustedEnd2 = findSafePaginationEndFromText(allContentLines, effEnd, totalContentLines);
-      const slicedLines = allContentLines.slice(effStart - 1, adjustedEnd2);
-      const lineNumbered = formatLineNumberedContent(slicedLines, effStart);
-      const output2 = `${headerWithoutHashlineTip}
-
-${lineNumbered}`;
-      state.recordAfterRead(filePath, canonicalView, [], fileContent);
-      const guide2 = maybeComposeGuide(state, config2, includeGuide);
-      const content2 = [{ type: "text", text: output2 }];
-      const truncation2 = buildTruncationMessage(effStart, adjustedEnd2, totalContentLines);
-      if (truncation2) {
-        content2[content2.length - 1].text += truncation2;
-      }
-      if (guide2)
-        content2.unshift({ type: "text", text: guide2 });
-      return { content: content2 };
-    }
-    const protocolMode = resolveProtocolMode(config2.protocol.mode);
-    const doc = buildViewDocument(fileContent, canonicalView, {
-      filePath: displayPath,
-      trackingStatus: trackingStatus.status,
-      protocolMode,
-      defaultView: "working",
-      viewPolicy: config2.policy.view_policy ?? "suggest"
-    });
-    const sessionHashes = doc.lines.map((l) => ({
-      line: l.margin.lineNumber,
-      raw: l.sessionHashes.raw,
-      committed: l.sessionHashes.committed,
-      currentView: l.sessionHashes.currentView,
-      rawLineNum: l.rawLineNumber
-    }));
-    state.recordAfterRead(filePath, canonicalView, sessionHashes, fileContent);
-    const totalLines = doc.lines.length;
-    const { effectiveStart, effectiveEnd } = computeEffectiveRange(offset, requestedLimit, totalLines);
-    const adjustedEnd = findSafePaginationEnd(doc.lines, effectiveEnd);
-    const paginatedDoc = {
-      ...doc,
-      lines: doc.lines.slice(effectiveStart - 1, adjustedEnd),
-      header: {
-        ...doc.header,
-        lineRange: { start: effectiveStart, end: adjustedEnd, total: totalLines }
-      }
-    };
-    let output = formatPlainText(paginatedDoc);
-    if (includeMeta) {
-      const levelsLine = formatChangeLevelsLine(fileContent);
-      if (levelsLine) {
-        output = output.replace(/^---$/m, `${levelsLine}
----`);
-      }
-    }
-    const guide = maybeComposeGuide(state, config2, includeGuide);
-    const content = [{ type: "text", text: output }];
-    const truncation = buildTruncationMessage(effectiveStart, adjustedEnd, totalLines);
-    if (truncation) {
-      content[content.length - 1].text += truncation;
-    }
-    if (guide)
-      content.unshift({ type: "text", text: guide });
-    return { content };
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    return errorResult(msg);
-  }
-}
-
-// ../../packages/cli/dist/engine/handlers/amend-change.js
-init_dist_esm();
-import * as fs6 from "node:fs/promises";
-var amendChangeTool = {
-  name: "amend_change",
-  description: "Revise your own proposed change. Same-author enforcement. Preserves change ID and adds revision history. new_text accepts the same escape normalization as propose_change.",
-  inputSchema: {
-    type: "object",
-    properties: {
-      file: {
-        type: "string",
-        description: "Path to the file (absolute or relative to project root)"
-      },
-      change_id: {
-        type: "string",
-        description: "The change ID to amend (e.g., 'cn-7' or 'cn-7.2')"
-      },
-      new_text: {
-        type: "string",
-        description: "The new proposed text. For substitutions: replaces the 'new' side (after ~>). For insertions: replaces the inserted text. For deletions: not applicable (amend reason only via reason param)."
-      },
-      old_text: {
-        type: "string",
-        description: "Optional. Expands the scope of a substitution by replacing the OLD side. Must contain the original old text as a substring."
-      },
-      reason: {
-        type: "string",
-        description: "Why this amendment is being made. Recorded as a 'revised:' entry in the footnote."
-      },
-      author: {
-        type: "string",
-        description: "Who is making this change. Recommended: always pass your model/agent identity (e.g. ai:composer); must match the original change author. Required when this project has author enforcement."
-      }
-    },
-    required: ["file", "change_id"]
-  }
-};
-async function handleAmendChange(args, resolver, state) {
-  try {
-    const file2 = args.file;
-    const changeId = optionalStrArg(args, "change_id", "changeId");
-    const newText = strArg(args, "new_text", "newText");
-    const oldText = optionalStrArg(args, "old_text", "oldText");
-    const reasoning = optionalStrArg(args, "reason", "reason");
-    if (!file2) {
-      return errorResult('Missing required argument: "file"');
-    }
-    if (!changeId) {
-      return errorResult('Missing required argument: "change_id"');
-    }
-    const filePath = resolver.resolveFilePath(file2);
-    const { config: config2, projectDir } = await resolver.forFile(filePath);
-    if (!isFileInScope(filePath, config2, projectDir)) {
-      return errorResult(`File is not in scope for tracking: "${filePath}". Check .changedown/config.toml include/exclude patterns.`);
-    }
-    let fileContent;
-    try {
-      fileContent = await fs6.readFile(filePath, "utf-8");
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      return errorResult(`File not found or unreadable: ${msg}`);
-    }
-    const { author, error: authorError } = resolveAuthor(args.author, config2, "amend_change");
-    if (authorError) {
-      return errorResult(authorError.message);
-    }
-    const doc = parseForFormat(fileContent);
-    const originalChange = doc.getChanges().find((c) => c.id === changeId);
-    if (originalChange) {
-      const originalAuthor = originalChange.metadata?.author?.replace(/^@/, "") ?? "";
-      const normalizedAuthor = (author ?? "").replace(/^@/, "");
-      if (originalAuthor && normalizedAuthor && originalAuthor !== normalizedAuthor) {
-        return errorResult(`Cannot amend change "${changeId}": you (${normalizedAuthor}) are not the original author (${originalAuthor}). Use supersede_change to propose a replacement by a different author.`);
-      }
-    }
-    const result = await computeSupersedeResult(fileContent, changeId, {
-      newText,
-      oldText,
-      reason: reasoning,
-      author
-    });
-    if (result.isError) {
-      return errorResult(result.error);
-    }
-    await fs6.writeFile(filePath, result.text, "utf-8");
-    await rerecordState(state, filePath, result.text, config2);
-    const responseData = {
-      change_id: changeId,
-      new_change_id: result.newChangeId,
-      file: toRelativePath(projectDir, filePath),
-      amended: true,
-      new_text: newText
-    };
-    return {
-      content: [{ type: "text", text: JSON.stringify(responseData) }]
-    };
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    return errorResult(msg);
-  }
-}
-
-// ../../packages/cli/dist/engine/handlers/list-changes.js
-init_dist_esm();
-import * as fs7 from "node:fs/promises";
-init_dist_esm();
-
-// ../../packages/cli/dist/engine/handlers/change-utils.js
-init_dist_esm();
-var TYPE_MAP = {
-  [ChangeType.Insertion]: "ins",
-  [ChangeType.Deletion]: "del",
-  [ChangeType.Substitution]: "sub",
-  [ChangeType.Highlight]: "highlight",
-  [ChangeType.Comment]: "comment"
-};
-function offsetToLineNumber2(text, offset) {
-  let line = 1;
-  for (let i = 0; i < offset && i < text.length; i++) {
-    if (text[i] === "\n")
-      line++;
-  }
-  return line;
-}
-
-// ../../packages/cli/dist/engine/handlers/list-changes.js
-var listChangesTool = {
-  name: "list_changes",
-  description: "List tracked changes in a file with configurable detail levels. Returns change_id, type, status, author, line, preview. Filters by status. detail=context adds surrounding lines; detail=full adds threads and group info. Fetch specific changes via change_id/change_ids (replaces get_change).",
-  inputSchema: {
-    type: "object",
-    properties: {
-      file: {
-        type: "string",
-        description: "Path to the file (absolute or relative to project root)"
-      },
-      status: {
-        type: "string",
-        enum: ["proposed", "accepted", "rejected"],
-        description: "Filter changes by status. If omitted, all changes are returned."
-      },
-      detail: {
-        type: "string",
-        enum: ["summary", "context", "full"],
-        description: "Detail level: 'summary' (default \u2014 lightweight metadata only), 'context' (adds surrounding lines and markup), 'full' (adds discussion threads, group info, revision history)."
-      },
-      context_lines: {
-        type: "number",
-        description: "Number of surrounding lines for context/full detail. Default: 3."
-      },
-      change_id: {
-        type: "string",
-        description: "Single change ID to fetch details for (e.g., 'cn-7'). Implies detail=full if not set."
-      },
-      change_ids: {
-        type: "array",
-        items: { type: "string" },
-        description: "Batch of change IDs to fetch details for (e.g., ['cn-5', 'cn-7']). Implies detail=full if not set."
-      }
-    },
-    required: ["file"]
-  }
-};
-var MAX_PREVIEW_LENGTH = 80;
-function buildPreview(change) {
-  let preview = "";
-  switch (change.type) {
-    case ChangeType.Substitution:
-      preview = `${change.originalText ?? ""}~>${change.modifiedText ?? ""}`;
-      break;
-    case ChangeType.Insertion:
-      preview = change.modifiedText ?? "";
-      break;
-    case ChangeType.Deletion:
-      preview = change.originalText ?? "";
-      break;
-    case ChangeType.Highlight:
-      preview = change.originalText ?? change.modifiedText ?? "";
-      break;
-    case ChangeType.Comment:
-      preview = change.originalText ?? change.modifiedText ?? "";
-      break;
-  }
-  if (preview.length > MAX_PREVIEW_LENGTH) {
-    preview = preview.slice(0, MAX_PREVIEW_LENGTH - 3) + "...";
-  }
-  return preview;
-}
-function buildContextEntry(change, fileContent, lines, summary, contextN) {
-  const startLine = offsetToLineNumber2(fileContent, change.range.start);
-  const endLine = offsetToLineNumber2(fileContent, change.range.end);
-  const markup = fileContent.slice(change.range.start, change.range.end);
-  const contextBefore = lines.slice(Math.max(0, startLine - 1 - contextN), startLine - 1);
-  const contextAfter = lines.slice(endLine, Math.min(lines.length, endLine + contextN));
-  return {
-    ...summary,
-    markup,
-    original_text: change.type === ChangeType.Insertion ? null : change.originalText ?? null,
-    modified_text: change.type === ChangeType.Deletion ? null : change.modifiedText ?? null,
-    context_before: contextBefore,
-    context_after: contextAfter
-  };
-}
-function buildFullDetailEntry(change, fileContent, lines, doc, summary, contextN) {
-  const ctx = buildContextEntry(change, fileContent, lines, summary, contextN);
-  const meta3 = change.metadata;
-  const footnoteAuthor = meta3?.author ?? "";
-  const footnoteDate = meta3?.date ?? "";
-  const discussionCount = meta3?.discussion?.length ?? 0;
-  const reasoning = meta3?.discussion?.[0]?.text ?? null;
-  const approvals = (meta3?.approvals ?? []).map((a) => a.author);
-  const rejections = (meta3?.rejections ?? []).map((a) => a.author);
-  const requestChanges = (meta3?.requestChanges ?? []).map((a) => a.author);
-  const participantsSet = /* @__PURE__ */ new Set();
-  if (meta3?.author)
-    participantsSet.add(meta3.author);
-  meta3?.discussion?.forEach((d) => participantsSet.add(d.author));
-  meta3?.approvals?.forEach((a) => participantsSet.add(a.author));
-  meta3?.rejections?.forEach((a) => participantsSet.add(a.author));
-  meta3?.requestChanges?.forEach((a) => participantsSet.add(a.author));
-  const changeId = change.id;
-  const dotIndex = changeId.lastIndexOf(".");
-  let group = null;
-  if (dotIndex > 0) {
-    const parentId = changeId.slice(0, dotIndex);
-    const parentBlock = findFootnoteBlock(lines, parentId);
-    let description = null;
-    if (parentBlock) {
-      for (let i = parentBlock.headerLine + 1; i <= parentBlock.blockEnd; i++) {
-        const trimmed = lines[i].trim();
-        if (trimmed.startsWith("reason:") || trimmed.startsWith("context:"))
-          continue;
-        if (trimmed && !trimmed.startsWith("approved:") && !trimmed.startsWith("rejected:") && !trimmed.startsWith("request-changes:")) {
-          description = trimmed;
-          break;
-        }
-      }
-    }
-    const siblings = doc.getChanges().filter((c) => (c.groupId === parentId || c.id.startsWith(parentId + ".")) && c.id !== parentId).map((c) => c.id);
-    group = { parent_id: parentId, description, siblings };
-  }
-  return {
-    ...ctx,
-    footnote: {
-      author: footnoteAuthor,
-      date: footnoteDate,
-      reasoning,
-      discussion_count: discussionCount,
-      approvals,
-      rejections,
-      request_changes: requestChanges
-    },
-    participants: [...participantsSet],
-    group
-  };
-}
-async function handleListChanges(args, resolver, _state) {
-  try {
-    const fileArg = args.file;
-    const statusFilter = args.status;
-    const changeIdArg = args.change_id;
-    const changeIdsArg = args.change_ids;
-    const hasIds = !!(changeIdArg || changeIdsArg);
-    const detail = args.detail ?? (hasIds ? "full" : "summary");
-    const contextLines = args.context_lines ?? 3;
-    if (fileArg === void 0 || fileArg === "") {
-      return errorResult('Missing required argument: "file".');
-    }
-    const filePath = resolver.resolveFilePath(fileArg);
-    const { config: config2, projectDir } = await resolver.forFile(filePath);
-    try {
-      const stat4 = await fs7.stat(filePath);
-      if (!stat4.isFile()) {
-        return errorResult(`Not a file: "${filePath}"`);
-      }
-    } catch {
-      return errorResult(`File not found or unreadable: "${filePath}"`);
-    }
-    if (!isFileInScope(filePath, config2, projectDir)) {
-      return errorResult(`File is not in scope for tracking: "${filePath}". Check .changedown/config.toml include/exclude patterns.`);
-    }
-    let fileContent;
-    try {
-      fileContent = await fs7.readFile(filePath, "utf-8");
-    } catch {
-      return errorResult(`Could not read file: "${filePath}"`);
-    }
-    const doc = parseForFormat(fileContent);
-    const allChanges = doc.getChanges();
-    const lines = fileContent.split("\n");
-    const contextN = Math.max(0, contextLines);
-    if (hasIds) {
-      const targetIds = /* @__PURE__ */ new Set();
-      if (changeIdArg)
-        targetIds.add(changeIdArg);
-      if (changeIdsArg)
-        changeIdsArg.forEach((id) => targetIds.add(id));
-      const changeMap = /* @__PURE__ */ new Map();
-      for (const c of allChanges) {
-        if (targetIds.has(c.id))
-          changeMap.set(c.id, c);
-      }
-      const results = [];
-      for (const id of targetIds) {
-        const change = changeMap.get(id);
-        if (!change) {
-          const settledBlock = findFootnoteBlock(lines, id);
-          if (settledBlock) {
-            const header = parseFootnoteHeader(settledBlock.headerContent);
-            results.push({
-              change_id: id,
-              error: `Change settled (status: ${header?.status ?? "unknown"})`
-            });
-          } else {
-            results.push({ change_id: id, error: "Change not found" });
-          }
-          continue;
-        }
-        const summary = buildSummaryEntry(change, fileContent);
-        results.push(buildDetailForLevel(detail, change, fileContent, lines, doc, summary, contextN));
-      }
-      const response2 = {
-        file: toRelativePath(projectDir, filePath),
-        total_count: allChanges.length,
-        filtered_count: results.length,
-        changes: results
-      };
-      return {
-        content: [{ type: "text", text: JSON.stringify(response2) }]
-      };
-    }
-    const entries = [];
-    for (const change of allChanges) {
-      const summary = buildSummaryEntry(change, fileContent);
-      entries.push(buildDetailForLevel(detail, change, fileContent, lines, doc, summary, contextN));
-    }
-    const totalCount = entries.length;
-    const filtered = statusFilter ? entries.filter((s) => s.status === statusFilter) : entries;
-    const response = {
-      file: toRelativePath(projectDir, filePath),
-      total_count: totalCount,
-      filtered_count: filtered.length,
-      changes: filtered
-    };
-    return {
-      content: [{ type: "text", text: JSON.stringify(response) }]
-    };
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    return errorResult(msg);
-  }
-}
-function buildSummaryEntry(change, fileContent) {
-  const typeStr = TYPE_MAP[change.type];
-  const lineNumber = offsetToLineNumber2(fileContent, change.range.start);
-  const author = change.metadata?.author ?? "";
-  const status = change.metadata?.status ?? change.status.toLowerCase();
-  return {
-    change_id: change.id,
-    type: typeStr,
-    status,
-    author,
-    line: lineNumber,
-    preview: buildPreview(change),
-    level: change.level,
-    anchored: change.anchored,
-    ...change.consumedBy ? { consumed_by: change.consumedBy } : {}
-  };
-}
-function buildDetailForLevel(detail, change, fileContent, lines, doc, summary, contextN) {
-  switch (detail) {
-    case "context":
-      return buildContextEntry(change, fileContent, lines, summary, contextN);
-    case "full":
-      return buildFullDetailEntry(change, fileContent, lines, doc, summary, contextN);
-    default:
-      return summary;
-  }
-}
-
-// ../../packages/cli/dist/engine/handlers/supersede-change.js
-import * as fs8 from "node:fs/promises";
-init_dist_esm();
-var supersedeChangeTool = {
-  name: "supersede_change",
-  description: "Atomically reject an existing proposed change and propose a replacement. The old change is rejected and the new change's footnote includes a `supersedes: cn-N` link. Use this instead of separate reject + propose calls when replacing a change with a better version.",
-  inputSchema: {
-    type: "object",
-    properties: {
-      file: {
-        type: "string",
-        description: "Path to the file (absolute or relative to project root)"
-      },
-      change_id: {
-        type: "string",
-        description: "The change ID to supersede (e.g., 'cn-1'). Must be in proposed status."
-      },
-      old_text: {
-        type: "string",
-        description: "Text to replace in the (possibly settled) file. If the rejected change was settled (compacted), this targets the resulting clean text. If not settled, targets text in the current file."
-      },
-      new_text: {
-        type: "string",
-        description: "Replacement text for the new proposed change."
-      },
-      reason: {
-        type: "string",
-        description: "Why this change supersedes the old one."
-      },
-      insert_after: {
-        type: "string",
-        description: "For insertions (empty old_text): insert new text after this anchor text."
-      },
-      author: {
-        type: "string",
-        description: "Who is making this change. Recommended: always pass your model/agent identity (e.g. ai:composer) for clear attribution. Required when this project has author enforcement."
-      }
-    },
-    required: ["file", "change_id", "old_text", "new_text"]
-  }
-};
-async function handleSupersedeChange(args, resolver, state) {
-  try {
-    const file2 = args.file;
-    const changeId = optionalStrArg(args, "change_id", "changeId");
-    const oldText = strArg(args, "old_text", "oldText");
-    const newText = strArg(args, "new_text", "newText");
-    const reasoning = optionalStrArg(args, "reason", "reason");
-    const insertAfter = optionalStrArg(args, "insert_after", "insertAfter");
-    if (!file2) {
-      return errorResult('Missing required argument: "file"');
-    }
-    if (!changeId) {
-      return errorResult('Missing required argument: "change_id"');
-    }
-    if (oldText === "" && newText === "") {
-      return errorResult("Both old_text and new_text are empty \u2014 nothing to change.");
-    }
-    const filePath = resolver.resolveFilePath(file2);
-    const { config: config2, projectDir } = await resolver.forFile(filePath);
-    if (!isFileInScope(filePath, config2, projectDir)) {
-      return errorResult(`File is not in scope for tracking: "${filePath}". Check .changedown/config.toml include/exclude patterns.`);
-    }
-    let fileContent;
-    try {
-      fileContent = await fs8.readFile(filePath, "utf-8");
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      return errorResult(`File not found or unreadable: ${msg}`);
-    }
-    const { author, error: authorError } = resolveAuthor(args.author, config2, "supersede_change");
-    if (authorError) {
-      return errorResult(authorError.message);
-    }
-    const result = await computeSupersedeResult(fileContent, changeId, {
-      newText,
-      oldText,
-      reason: reasoning,
-      author,
-      insertAfter: insertAfter ?? void 0
-    });
-    if (result.isError) {
-      return errorResult(result.error);
-    }
-    fileContent = result.text;
-    if (config2.settlement.auto_on_reject) {
-      const { currentContent } = applyRejectedChanges2(fileContent);
-      fileContent = currentContent;
-    }
-    await fs8.writeFile(filePath, fileContent, "utf-8");
-    await rerecordState(state, filePath, fileContent, config2);
-    const relativePath = toRelativePath(projectDir, filePath);
-    const footnoteCount = (fileContent.match(/^\[\^cn-\d+(?:\.\d+)?\]:/gm) || []).length;
-    const proposedCount = countFootnoteHeadersWithStatus(fileContent, "proposed");
-    const acceptedCount = countFootnoteHeadersWithStatus(fileContent, "accepted");
-    const rejectedCount = countFootnoteHeadersWithStatus(fileContent, "rejected");
-    const changeType = oldText === "" ? "ins" : newText === "" ? "del" : "sub";
-    const responseData = {
-      old_change_id: changeId,
-      new_change_id: result.newChangeId,
-      file: relativePath,
-      type: changeType,
-      supersedes: changeId,
-      document_state: {
-        total_changes: footnoteCount,
-        proposed: proposedCount,
-        accepted: acceptedCount,
-        rejected: rejectedCount
-      }
-    };
-    return {
-      content: [{ type: "text", text: JSON.stringify(responseData) }]
-    };
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    return errorResult(msg);
-  }
-}
-
-// ../../packages/cli/dist/engine/handlers/resolve-thread.js
-init_dist_esm();
-var resolveThreadTool = {
-  name: "resolve_thread",
-  description: "Resolve or unresolve a change thread. Resolving marks the discussion as complete.",
-  inputSchema: {
-    type: "object",
-    properties: {
-      file: {
-        type: "string",
-        description: "Path to the file (absolute or relative to project root)"
-      },
-      change_id: {
-        type: "string",
-        description: "e.g., cn-7"
-      },
-      action: {
-        type: "string",
-        enum: ["resolve", "unresolve"],
-        description: "Whether to resolve or unresolve the thread. Defaults to resolve."
-      },
-      author: {
-        type: "string",
-        description: "Who is resolving/unresolving. Recommended: always pass your model/agent identity (e.g. ai:composer) for clear attribution. Required when this project has author enforcement."
-      }
-    },
-    required: ["file", "change_id"]
-  }
-};
-
-// ../../packages/cli/dist/engine/listed-tools.js
-function getListedTools(mode = "classic") {
-  const proposeChange = mode === "compact" ? compactProposeChangeSchema : classicProposeChangeSchema;
-  return [
-    { name: readTrackedFileTool.name, description: readTrackedFileTool.description, inputSchema: readTrackedFileTool.inputSchema },
-    { name: proposeChange.name, description: proposeChange.description, inputSchema: proposeChange.inputSchema },
-    { name: reviewChangesTool.name, description: reviewChangesTool.description, inputSchema: reviewChangesTool.inputSchema },
-    { name: amendChangeTool.name, description: amendChangeTool.description, inputSchema: amendChangeTool.inputSchema },
-    { name: listChangesTool.name, description: listChangesTool.description, inputSchema: listChangesTool.inputSchema },
-    { name: supersedeChangeTool.name, description: supersedeChangeTool.description, inputSchema: supersedeChangeTool.inputSchema },
-    { name: resolveThreadTool.name, description: resolveThreadTool.description, inputSchema: resolveThreadTool.inputSchema }
-  ];
-}
-var AUTHOR_REQUIRED_SUFFIX = " In this project author is required.";
-function getListedToolsWithConfig(config2, mode = "classic") {
-  const tools = getListedTools(mode);
-  const suffix = config2.author?.enforcement === "required" ? AUTHOR_REQUIRED_SUFFIX : "";
-  if (!suffix)
-    return tools;
-  return tools.map((t2) => {
-    const schema = t2.inputSchema;
-    if (!schema?.properties?.author?.description)
-      return t2;
-    const cloned = JSON.parse(JSON.stringify(t2.inputSchema));
-    if (cloned.properties?.author?.description) {
-      cloned.properties.author.description += suffix;
-    }
-    return { name: t2.name, description: t2.description, inputSchema: cloned };
-  });
+async function writeTrackedFile(filePath, content) {
+  const violations = getWriteBlockingViolations(content);
+  if (violations.length > 0)
+    throw new StructuralIntegrityError(violations);
+  await fs3.writeFile(filePath, content, "utf-8");
 }
 
 // ../../packages/cli/dist/engine/handlers/propose-change.js
 init_dist_esm();
-import * as fs10 from "node:fs/promises";
-import * as path7 from "node:path";
 
 // ../../packages/cli/dist/engine/handlers/hashline-relocate.js
 init_dist_esm();
@@ -32230,12 +31378,33 @@ function validateOrAutoRemap(ref, fileLines, paramName, relocations, autoRemap) 
 init_dist_esm();
 
 // ../../packages/cli/dist/engine/handlers/propose-batch.js
+import * as fs5 from "node:fs/promises";
 init_dist_esm();
-import * as fs9 from "node:fs/promises";
 
 // ../../packages/cli/dist/engine/handlers/resolve-and-apply.js
 init_dist_esm();
 init_file_ops2();
+
+// ../../packages/cli/dist/engine/handlers/change-utils.js
+init_dist_esm();
+var TYPE_MAP = {
+  [ChangeType.Insertion]: "ins",
+  [ChangeType.Deletion]: "del",
+  [ChangeType.Substitution]: "sub",
+  [ChangeType.Highlight]: "highlight",
+  [ChangeType.Comment]: "comment",
+  [ChangeType.Move]: "move"
+};
+function offsetToLineNumber2(text, offset) {
+  let line = 1;
+  for (let i = 0; i < offset && i < text.length; i++) {
+    if (text[i] === "\n")
+      line++;
+  }
+  return line;
+}
+
+// ../../packages/cli/dist/engine/handlers/resolve-and-apply.js
 function resolveCoordinates(op, fileContent, fileLines, state, filePath, config2) {
   const relocations = [];
   const remaps = [];
@@ -32246,7 +31415,13 @@ function resolveCoordinates(op, fileContent, fileLines, state, filePath, config2
   let endLine = parsed.endLine;
   let endHash = parsed.endHash;
   let viewResolved;
-  const startResolution = state.resolveHash(filePath, startLine, startHash);
+  const rawStartMatches = startLine >= 1 && startLine <= fileLines.length && computeLineHash(startLine - 1, fileLines[startLine - 1], fileLines) === startHash;
+  const rawEndMatches = endLine >= 1 && endLine <= fileLines.length && computeLineHash(endLine - 1, fileLines[endLine - 1], fileLines) === endHash;
+  const skipViewTranslation = rawStartMatches && (parsed.startLine === parsed.endLine || rawEndMatches);
+  if (skipViewTranslation && state.getLastReadView(filePath) === "raw") {
+    viewResolved = "raw";
+  }
+  const startResolution = skipViewTranslation ? void 0 : state.resolveHash(filePath, startLine, startHash);
   if (startResolution?.match) {
     viewResolved = startResolution.view;
     const rawStart = startResolution.rawLineNum;
@@ -32257,7 +31432,7 @@ function resolveCoordinates(op, fileContent, fileLines, state, filePath, config2
     startHash = computeLineHash(rawStart - 1, fileLines[rawStart - 1], fileLines);
   }
   if (parsed.startLine !== parsed.endLine) {
-    const endResolution = state.resolveHash(filePath, endLine, endHash);
+    const endResolution = skipViewTranslation ? void 0 : state.resolveHash(filePath, endLine, endHash);
     if (endResolution?.match) {
       viewResolved = viewResolved ?? endResolution.view;
       const rawEnd = endResolution.rawLineNum;
@@ -32578,10 +31753,218 @@ function resolveAndApply(op, fileContent, fileLines, state, filePath, config2, c
   return applyCompactOp(resolved, op, fileContent, fileLines, changeId, author, config2);
 }
 
+// ../../packages/cli/dist/engine/author.js
+var AUTHOR_ENV_KEY = "CHANGEDOWN_AUTHOR";
+var AUTHOR_FORMAT = /^[a-z][a-z0-9]*:[a-zA-Z0-9_.-]+$/;
+var SYSTEM_FALLBACK = "unknown";
+function validateAuthorFormat(author) {
+  if (author === SYSTEM_FALLBACK) {
+    return null;
+  }
+  if (!AUTHOR_FORMAT.test(author)) {
+    return {
+      author: "",
+      error: {
+        isError: true,
+        message: `Invalid author format: '${author}'. Expected namespace:identifier (e.g., ai:claude-opus-4.6, human:alice).`
+      }
+    };
+  }
+  return null;
+}
+function resolveAuthor(explicitAuthor, config2, toolName) {
+  if (explicitAuthor) {
+    const formatError3 = validateAuthorFormat(explicitAuthor);
+    if (formatError3)
+      return formatError3;
+    return { author: explicitAuthor };
+  }
+  const fromEnv = process.env[AUTHOR_ENV_KEY]?.trim();
+  if (config2.author.enforcement === "required") {
+    if (fromEnv) {
+      const formatError3 = validateAuthorFormat(fromEnv);
+      if (formatError3)
+        return formatError3;
+      return { author: fromEnv };
+    }
+    return {
+      author: "",
+      error: {
+        isError: true,
+        message: `${toolName} requires an author parameter. This project has [author] enforcement = "required". Pass author in the tool call (e.g. author: "ai:claude-opus-4.6") or set ${AUTHOR_ENV_KEY} in the MCP server env (e.g. in Cursor mcp.json).`
+      }
+    };
+  }
+  const fallback = fromEnv || config2.author.default || "unknown";
+  const formatError2 = validateAuthorFormat(fallback);
+  if (formatError2)
+    return formatError2;
+  return { author: fallback };
+}
+
+// ../../packages/cli/dist/engine/args.js
+function strArg(args, snake, camel, defaultValue = "") {
+  const v = args[snake] ?? args[camel];
+  return v ?? defaultValue;
+}
+function optionalStrArg(args, snake, camel) {
+  const v = args[snake] ?? args[camel];
+  if (v === void 0 || v === null)
+    return void 0;
+  return String(v);
+}
+
 // ../../packages/cli/dist/engine/handlers/propose-batch.js
 init_file_ops2();
+
+// ../../packages/cli/dist/engine/handlers/propose-utils.js
 init_dist_esm();
-function errorResult2(message, details) {
+function computeAffectedLines(modifiedText, affectedStartLine, affectedEndLine, options) {
+  const lines = modifiedText.split("\n");
+  const result = [];
+  const ctx = options.contextLines ?? 2;
+  const start = Math.max(1, affectedStartLine - ctx);
+  const end = Math.min(lines.length, affectedEndLine + ctx);
+  for (let lineNum = start; lineNum <= end; lineNum++) {
+    const lineContent = lines[lineNum - 1];
+    if (options.viewProjection) {
+      const viewEntry = options.viewProjection.rawToView.get(lineNum);
+      if (!viewEntry) {
+        continue;
+      }
+      const entry = {
+        line: viewEntry.viewLine,
+        content: viewEntry.viewContent
+      };
+      if (options.hashlineEnabled) {
+        entry.hash = viewEntry.viewHash;
+      }
+      if (lineContent.match(/\{\+\+|\{--|\{~~|\{==/)) {
+        entry.flag = "P";
+      }
+      result.push(entry);
+    } else {
+      const entry = {
+        line: lineNum,
+        content: lineContent
+      };
+      if (options.hashlineEnabled) {
+        entry.hash = computeLineHash(lineNum - 1, lineContent, lines);
+      }
+      if (lineContent.match(/\{\+\+|\{--|\{~~|\{==/)) {
+        entry.flag = "P";
+      }
+      result.push(entry);
+    }
+  }
+  return result;
+}
+
+// ../../packages/cli/dist/engine/path-utils.js
+import * as path4 from "node:path";
+function toRelativePath(projectDir, filePath) {
+  return path4.relative(projectDir, filePath);
+}
+
+// ../../packages/cli/dist/engine/scope.js
+init_dist_esm();
+import * as fs4 from "node:fs/promises";
+async function resolveTrackingStatus(filePath, config2, projectDir) {
+  const projectDefault = config2.tracking.default;
+  const autoHeader = config2.tracking.auto_header;
+  let fileContent = null;
+  try {
+    fileContent = await fs4.readFile(filePath, "utf-8");
+  } catch {
+  }
+  if (fileContent !== null) {
+    const header = parseTrackingHeader(fileContent);
+    if (header !== null) {
+      return {
+        status: header.status,
+        source: "file_header",
+        header_present: true,
+        project_default: projectDefault,
+        auto_header: autoHeader
+      };
+    }
+  }
+  if (isFileInScope(filePath, config2, projectDir)) {
+    return {
+      status: projectDefault,
+      source: "project_config",
+      header_present: false,
+      project_default: projectDefault,
+      auto_header: autoHeader
+    };
+  }
+  return {
+    status: "untracked",
+    source: "global_default",
+    header_present: false,
+    project_default: projectDefault,
+    auto_header: autoHeader
+  };
+}
+
+// ../../packages/cli/dist/engine/handlers/propose-batch.js
+init_dist_esm();
+
+// ../../packages/cli/dist/engine/state-utils.js
+init_dist_esm();
+async function rerecordState(state, filePath, content, config2) {
+  if (!state)
+    return void 0;
+  if (!config2.hashline.enabled) {
+    state.resetFile(filePath);
+    return void 0;
+  }
+  await initHashline();
+  const lastView = state.getLastReadView(filePath) ?? "raw";
+  const changes = parseForFormat(content).getChanges();
+  const sessionHashesResult = buildSessionHashes(content, changes);
+  const hashes = [];
+  for (const [rawLineNum, sh] of sessionHashesResult.byRawLine) {
+    let lineNumInView;
+    switch (lastView) {
+      case "working":
+      case "raw":
+      case "original":
+        lineNumInView = rawLineNum;
+        break;
+      case "simple":
+        lineNumInView = sessionHashesResult.currentLineByRaw.get(rawLineNum);
+        break;
+      case "decided":
+        lineNumInView = sessionHashesResult.decidedLineByRaw.get(rawLineNum);
+        break;
+    }
+    if (lineNumInView === void 0)
+      continue;
+    if (lastView === "raw" || lastView === "original") {
+      hashes.push({ line: lineNumInView, raw: sh.raw, rawLineNum });
+    } else {
+      hashes.push({
+        line: lineNumInView,
+        raw: sh.raw,
+        committed: sh.committed,
+        currentView: sh.currentView,
+        rawLineNum
+      });
+    }
+  }
+  state.rerecordAfterWrite(filePath, content, hashes);
+  if (lastView === "decided") {
+    return { decidedView: sessionHashesResult.decidedResult };
+  }
+  if (lastView === "simple" || lastView === "working") {
+    return { currentView: sessionHashesResult.currentResult };
+  }
+  return void 0;
+}
+
+// ../../packages/cli/dist/engine/handlers/propose-batch.js
+function errorResult(message, details) {
   const content = [{ type: "text", text: message }];
   if (details) {
     content.push({ type: "text", text: JSON.stringify({ error: { message, ...details } }) });
@@ -32604,7 +31987,7 @@ async function handleProposeBatch(args, resolver, state) {
     const reasoning = args.reason;
     let changesRaw = args.changes;
     if (!file2) {
-      return errorResult2('Missing required argument: "file"');
+      return errorResult('Missing required argument: "file"');
     }
     if (typeof changesRaw === "string") {
       try {
@@ -32612,23 +31995,23 @@ async function handleProposeBatch(args, resolver, state) {
         if (Array.isArray(parsed)) {
           changesRaw = parsed;
         } else {
-          return errorResult2(`The "changes" parameter was received as a JSON string but parsed to ${typeof parsed}, not an array. Send changes as a JSON array of objects.`);
+          return errorResult(`The "changes" parameter was received as a JSON string but parsed to ${typeof parsed}, not an array. Send changes as a JSON array of objects.`);
         }
       } catch {
-        return errorResult2('The "changes" parameter was received as a string but could not be parsed as JSON. Send changes as a JSON array of objects.');
+        return errorResult('The "changes" parameter was received as a string but could not be parsed as JSON. Send changes as a JSON array of objects.');
       }
     }
     if (!Array.isArray(changesRaw) || changesRaw.length === 0) {
-      return errorResult2("changes must be a non-empty array.");
+      return errorResult("changes must be a non-empty array.");
     }
     const MAX_BATCH_SIZE = 100;
     if (changesRaw.length > MAX_BATCH_SIZE) {
-      return errorResult2(`Batch too large: ${changesRaw.length} changes exceeds maximum of ${MAX_BATCH_SIZE}. Split into smaller batches.`);
+      return errorResult(`Batch too large: ${changesRaw.length} changes exceeds maximum of ${MAX_BATCH_SIZE}. Split into smaller batches.`);
     }
     for (let i = 0; i < changesRaw.length; i++) {
       const elem = changesRaw[i];
       if (elem === null || elem === void 0 || typeof elem !== "object" || Array.isArray(elem)) {
-        return errorResult2(`changes[${i}] must be an object, got ${elem === null ? "null" : Array.isArray(elem) ? "array" : typeof elem}.`);
+        return errorResult(`changes[${i}] must be an object, got ${elem === null ? "null" : Array.isArray(elem) ? "array" : typeof elem}.`);
       }
     }
     const filePath = resolver.resolveFilePath(file2);
@@ -32636,21 +32019,29 @@ async function handleProposeBatch(args, resolver, state) {
     const relativePath = toRelativePath(projectDir, filePath);
     const trackingStatus = await resolveTrackingStatus(filePath, config2, projectDir);
     if (trackingStatus.status !== "tracked") {
-      return errorResult2(`File is not tracked for propose_batch: "${filePath}".`, { file: relativePath, tracking_status: trackingStatus });
+      return errorResult(`File is not tracked for propose_batch: "${filePath}".`, { file: relativePath, tracking_status: trackingStatus });
     }
     if (state.hasActiveGroup()) {
-      return errorResult2("End your current change group before calling propose_batch.");
+      return errorResult("End your current change group before calling propose_batch.");
     }
     let fileContent;
     try {
-      fileContent = await fs9.readFile(filePath, "utf-8");
+      fileContent = await fs5.readFile(filePath, "utf-8");
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      return errorResult2(`File not found or unreadable: ${msg}`, { file: relativePath });
+      return errorResult(`File not found or unreadable: ${msg}`, { file: relativePath });
+    }
+    try {
+      assertResolved(parseForFormat(fileContent));
+    } catch (err) {
+      if (err instanceof UnresolvedChangesError) {
+        return errorResult(`Document has ${err.diagnostics.length} unresolved change(s); run 'cd repair' or amend the failing change.`, { diagnostics: err.diagnostics });
+      }
+      throw err;
     }
     const { author, error: authorError } = resolveAuthor(args.author, config2, "propose_batch");
     if (authorError) {
-      return errorResult2(authorError.message);
+      return errorResult(authorError.message);
     }
     let headerLineDelta = 0;
     if (config2.tracking.auto_header) {
@@ -32666,15 +32057,15 @@ async function handleProposeBatch(args, resolver, state) {
     const protocolMode = resolveProtocolMode(config2.protocol?.mode ?? "classic");
     const hasCompactOpsInBatch = changesRaw.some((op) => typeof op.at === "string" || typeof op.op === "string");
     if (protocolMode === "classic" && hasCompactOpsInBatch) {
-      return errorResult2('Protocol mode is "classic" but batch contains compact params (at/op). Use old_text/new_text instead, or set protocol.mode = "compact" in config.');
+      return errorResult('Protocol mode is "classic" but batch contains compact params (at/op). Use old_text/new_text instead, or set protocol.mode = "compact" in config.');
     }
     if (protocolMode === "compact" && !hasCompactOpsInBatch) {
       const hasClassicOpsInBatch = changesRaw.some((op) => typeof op.old_text === "string" && op.old_text !== "" || typeof op.new_text === "string" && op.new_text !== "");
       if (hasClassicOpsInBatch) {
-        return errorResult2('Protocol mode is "compact" but batch contains classic params (old_text/new_text). Use at/op instead, or set protocol.mode = "classic" in config.');
+        return errorResult('Protocol mode is "compact" but batch contains classic params (old_text/new_text). Use at/op instead, or set protocol.mode = "classic" in config.');
       }
     }
-    const partial2 = args.atomic !== true;
+    const partial2 = args.partial === true;
     const validationFailures = [];
     const fileLines = fileContent.split("\n");
     const relocations = [];
@@ -32682,7 +32073,7 @@ async function handleProposeBatch(args, resolver, state) {
     const autoRemap = config2.hashline.auto_remap ?? true;
     const hasHashlineInBatch = changesRaw.some((op) => hasHashlineParams(op));
     if (hasHashlineInBatch && !config2.hashline.enabled) {
-      return errorResult2("Hashline addressing in batch requires [hashline] enabled = true in .changedown/config.toml", { file: relativePath });
+      return errorResult("Hashline addressing in batch requires [hashline] enabled = true in .changedown/config.toml", { file: relativePath });
     }
     if (hasHashlineInBatch) {
       await initHashline();
@@ -32855,7 +32246,7 @@ async function handleProposeBatch(args, resolver, state) {
           continue;
         }
         if (validationErr instanceof OpValidationError) {
-          return errorResult2(validationErr.message, {
+          return errorResult(validationErr.message, {
             operation_index: i,
             total_operations: changesRaw.length
           });
@@ -32870,7 +32261,7 @@ async function handleProposeBatch(args, resolver, state) {
         const curr = sorted[j];
         const next = sorted[j + 1];
         if (curr.endOffset > next.startOffset) {
-          return errorResult2(`Batch changes overlap: operation ${curr.index} (offsets ${curr.startOffset}-${curr.endOffset}) and operation ${next.index} (offsets ${next.startOffset}-${next.endOffset}) target overlapping text. Split into separate propose_change calls or adjust old_text to non-overlapping regions.`, {
+          return errorResult(`Batch changes overlap: operation ${curr.index} (offsets ${curr.startOffset}-${curr.endOffset}) and operation ${next.index} (offsets ${next.startOffset}-${next.endOffset}) target overlapping text. Split into separate propose_change calls or adjust old_text to non-overlapping regions.`, {
             overlapping_operations: [curr.index, next.index],
             total_operations: changesRaw.length
           });
@@ -32878,7 +32269,7 @@ async function handleProposeBatch(args, resolver, state) {
       }
     }
     if (partial2 && skippedIndices.size === changesRaw.length) {
-      return errorResult2("All operations failed in partial batch.", {
+      return errorResult("All operations failed in partial batch.", {
         failed: validationFailures,
         total_operations: changesRaw.length
       });
@@ -32957,7 +32348,7 @@ async function handleProposeBatch(args, resolver, state) {
         const msg = err instanceof Error ? err.message : String(err);
         if (!partial2) {
           state.endGroup();
-          return errorResult2(`Operation ${originalIndex}: ${msg}`, { phase: "application", operation_index: originalIndex, total_operations: changesRaw.length });
+          return errorResult(`Operation ${originalIndex}: ${msg}`, { phase: "application", operation_index: originalIndex, total_operations: changesRaw.length });
         }
         applicationFailures.push({ index: originalIndex, reason: msg });
       }
@@ -32965,7 +32356,7 @@ async function handleProposeBatch(args, resolver, state) {
     const allFailures = [...validationFailures, ...applicationFailures];
     if (partial2 && results.length === 0) {
       state.endGroup();
-      return errorResult2("All operations failed in partial batch.", {
+      return errorResult("All operations failed in partial batch.", {
         failed: allFailures,
         total_operations: changesRaw.length
       });
@@ -32978,7 +32369,7 @@ async function handleProposeBatch(args, resolver, state) {
     @${author} ${ts.raw}: ${groupInfo.reasoning ?? groupInfo.description}` : "";
     const groupFootnoteBlock = footnoteHeader + reasonLine;
     currentText = appendFootnote(currentText, groupFootnoteBlock);
-    await fs9.writeFile(filePath, currentText, "utf-8");
+    await writeTrackedFile(filePath, currentText);
     await rerecordState(state, filePath, currentText, config2);
     await initHashline();
     const affectedLineSet = /* @__PURE__ */ new Set();
@@ -33019,8 +32410,8 @@ async function handleProposeBatch(args, resolver, state) {
     const footnoteCount = (currentText.match(/^\[\^cn-\d+(?:\.\d+)?\]:/gm) || []).length;
     const proposedCount = (currentText.match(/\|\s*proposed\s*$/gm) || []).length;
     const acceptedCount = (currentText.match(/\|\s*accepted\s*$/gm) || []).length;
-    const authorMatches = currentText.match(/^\[\^cn-\d+(?:\.\d+)?\]:\s*@([^\s|]+)/gm) || [];
-    const uniqueAuthors = new Set(authorMatches.map((m) => m.match(/@([^\s|]+)/)?.[1]).filter(Boolean));
+    const authorMatches2 = currentText.match(/^\[\^cn-\d+(?:\.\d+)?\]:\s*@([^\s|]+)/gm) || [];
+    const uniqueAuthors = new Set(authorMatches2.map((m) => m.match(/@([^\s|]+)/)?.[1]).filter(Boolean));
     const responseData = {
       group_id: groupId,
       file: relativePath,
@@ -33046,7 +32437,7 @@ async function handleProposeBatch(args, resolver, state) {
     };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    return errorResult2(msg);
+    return errorResult(msg);
   }
 }
 
@@ -33060,7 +32451,7 @@ function checkReasoningRequired(author, reasoning, config2, compact2) {
   if (reasoning)
     return null;
   const hint = compact2 ? "Append {>>reason to your op string, or include a reason parameter in your propose_change call." : "Include a reason parameter in your propose_change call.";
-  return errorResult3(`This project requires reasoning on proposals. ${hint}`, "REASONING_REQUIRED");
+  return errorResult2(`This project requires reasoning on proposals. ${hint}`, "REASONING_REQUIRED");
 }
 function hasHashlineParams2(args) {
   return args.start_line !== void 0 || args.start_hash !== void 0 || args.after_line !== void 0 || args.after_hash !== void 0;
@@ -33197,40 +32588,40 @@ async function handleProposeChange(args, resolver, state) {
         if (Array.isArray(parsed)) {
           changesArray = parsed;
         } else {
-          return errorResult3(`The "changes" parameter was received as a JSON string but parsed to ${typeof parsed}, not an array. Send changes as a JSON array of objects, e.g.: changes: [{ "at": "5:a1b2", "op": "{~~old~>new~~}" }]`, "VALIDATION_ERROR");
+          return errorResult2(`The "changes" parameter was received as a JSON string but parsed to ${typeof parsed}, not an array. Send changes as a JSON array of objects, e.g.: changes: [{ "at": "5:a1b2", "op": "{~~old~>new~~}" }]`, "VALIDATION_ERROR");
         }
       } catch {
-        return errorResult3('The "changes" parameter was received as a string but could not be parsed as JSON. Send changes as a JSON array of objects, e.g.: changes: [{ "at": "5:a1b2", "op": "{~~old~>new~~}" }]', "VALIDATION_ERROR");
+        return errorResult2('The "changes" parameter was received as a string but could not be parsed as JSON. Send changes as a JSON array of objects, e.g.: changes: [{ "at": "5:a1b2", "op": "{~~old~>new~~}" }]', "VALIDATION_ERROR");
       }
     } else if (args.changes !== void 0) {
-      return errorResult3(`The "changes" parameter must be an array of objects, got ${typeof args.changes}. Send changes as a JSON array, e.g.: changes: [{ "at": "5:a1b2", "op": "{~~old~>new~~}" }]`, "VALIDATION_ERROR");
+      return errorResult2(`The "changes" parameter must be an array of objects, got ${typeof args.changes}. Send changes as a JSON array, e.g.: changes: [{ "at": "5:a1b2", "op": "{~~old~>new~~}" }]`, "VALIDATION_ERROR");
     }
     const rawMode = args.raw === true;
     if (rawMode) {
       const file3 = args.file;
       if (!file3) {
-        return errorResult3('Missing required argument: "file"', "MISSING_ARGUMENT");
+        return errorResult2('Missing required argument: "file"', "MISSING_ARGUMENT");
       }
       const filePath2 = resolver.resolveFilePath(file3);
       const { config: config3 } = await resolver.forFile(filePath2);
       const policyMode = config3.policy?.mode ?? "safety-net";
       if (policyMode === "strict") {
-        return errorResult3("Raw edit denied: project policy is strict. Raw edits bypass CriticMarkup tracking and are not allowed in strict mode.", "VALIDATION_ERROR");
+        return errorResult2("Raw edit denied: project policy is strict. Raw edits bypass CriticMarkup tracking and are not allowed in strict mode.", "VALIDATION_ERROR");
       }
     }
     if (changesArray) {
       if (changesArray.length === 0) {
-        return errorResult3("No changes provided: changes array is empty.", "VALIDATION_ERROR");
+        return errorResult2("No changes provided: changes array is empty.", "VALIDATION_ERROR");
       }
       for (let i = 0; i < changesArray.length; i++) {
         const elem = changesArray[i];
         if (elem === null || elem === void 0 || typeof elem !== "object" || Array.isArray(elem)) {
-          return errorResult3(`changes[${i}] must be an object, got ${elem === null ? "null" : Array.isArray(elem) ? "array" : typeof elem}.`, "VALIDATION_ERROR");
+          return errorResult2(`changes[${i}] must be an object, got ${elem === null ? "null" : Array.isArray(elem) ? "array" : typeof elem}.`, "VALIDATION_ERROR");
         }
       }
       const file3 = args.file;
       if (!file3) {
-        return errorResult3('Missing required argument: "file"', "MISSING_ARGUMENT");
+        return errorResult2('Missing required argument: "file"', "MISSING_ARGUMENT");
       }
       if (rawMode) {
         return handleRawChanges(changesArray, file3, resolver, state);
@@ -33274,7 +32665,8 @@ async function handleProposeChange(args, resolver, state) {
         file: args.file,
         reason: args.reason,
         author: args.author,
-        changes: changesArray
+        changes: changesArray,
+        partial: true
       };
       const batchResult = await handleProposeBatch(batchArgs, resolver, state);
       return batchResult;
@@ -33282,12 +32674,12 @@ async function handleProposeChange(args, resolver, state) {
     if (rawMode) {
       const file3 = args.file;
       if (!file3) {
-        return errorResult3('Missing required argument: "file"', "MISSING_ARGUMENT");
+        return errorResult2('Missing required argument: "file"', "MISSING_ARGUMENT");
       }
       const oldText2 = strArg(args, "old_text", "oldText");
       const newText2 = strArg(args, "new_text", "newText");
       if (oldText2 === "" && newText2 === "") {
-        return errorResult3("Both old_text and new_text are empty \u2014 nothing to change.", "VALIDATION_ERROR");
+        return errorResult2("Both old_text and new_text are empty \u2014 nothing to change.", "VALIDATION_ERROR");
       }
       return handleRawChanges([{ old_text: oldText2, new_text: newText2 }], file3, resolver, state);
     }
@@ -33306,14 +32698,14 @@ async function handleProposeChange(args, resolver, state) {
         const receivedKeys = Object.keys(args ?? {}).join(", ") || "(none)";
         const oldLen = typeof args.old_text === "string" ? args.old_text.length : typeof args.oldText === "string" ? args.oldText.length : "missing";
         const newLen = typeof args.new_text === "string" ? args.new_text.length : typeof args.newText === "string" ? args.newText.length : "missing";
-        return errorResult3(`Both old_text and new_text are empty \u2014 nothing to change. Received argument keys: [${receivedKeys}]. old_text/oldText length: ${String(oldLen)}, new_text/newText length: ${String(newLen)}. Use old_text and new_text (snake_case) or oldText and newText (camelCase).`, "VALIDATION_ERROR", { received_keys: Object.keys(args ?? {}), old_text_length: oldLen, new_text_length: newLen });
+        return errorResult2(`Both old_text and new_text are empty \u2014 nothing to change. Received argument keys: [${receivedKeys}]. old_text/oldText length: ${String(oldLen)}, new_text/newText length: ${String(newLen)}. Use old_text and new_text (snake_case) or oldText and newText (camelCase).`, "VALIDATION_ERROR", { received_keys: Object.keys(args ?? {}), old_text_length: oldLen, new_text_length: newLen });
       }
     }
     if (oldText && newText) {
       const strippedOld = oldText.replace(/\[\^?cn-\d+(?:\.\d+)?\]/g, "").trim();
       const strippedNew = newText.replace(/\[\^?cn-\d+(?:\.\d+)?\]/g, "").trim();
       if (strippedOld === strippedNew) {
-        return errorResult3("No prose changes detected (only footnote references differ). Footnote references are structural links to change history \u2014 use review_changes to manage them, not propose_change.", "VALIDATION_ERROR");
+        return errorResult2("No prose changes detected (only footnote references differ). Footnote references are structural links to change history \u2014 use review_changes to manage them, not propose_change.", "VALIDATION_ERROR");
       }
     }
     let endLine = args.end_line;
@@ -33321,20 +32713,20 @@ async function handleProposeChange(args, resolver, state) {
     let afterLine = args.after_line;
     const afterHash = args.after_hash;
     if (!file2) {
-      return errorResult3('Missing required argument: "file"', "MISSING_ARGUMENT");
+      return errorResult2('Missing required argument: "file"', "MISSING_ARGUMENT");
     }
     const filePath = resolver.resolveFilePath(file2);
     const { config: config2, projectDir } = await resolver.forFile(filePath);
     const relativePath = toRelativePath(projectDir, filePath);
     const trackingStatus = await resolveTrackingStatus(filePath, config2, projectDir);
     if (hasHashlineParams2(args) && !config2.hashline.enabled) {
-      return errorResult3("Hashline addressing requires [hashline] enabled = true in .changedown/config.toml", "HASHLINE_DISABLED", {
+      return errorResult2("Hashline addressing requires [hashline] enabled = true in .changedown/config.toml", "HASHLINE_DISABLED", {
         file: relativePath,
         hashline_enabled: config2.hashline.enabled
       });
     }
     if (trackingStatus.status !== "tracked") {
-      return errorResult3(`File is not tracked for propose_change: "${filePath}".`, "TRACKING_UNTRACKED_FILE", {
+      return errorResult2(`File is not tracked for propose_change: "${filePath}".`, "TRACKING_UNTRACKED_FILE", {
         file: relativePath,
         tracking_status: trackingStatus
       });
@@ -33342,25 +32734,35 @@ async function handleProposeChange(args, resolver, state) {
     let fileContent;
     let isNewFile = false;
     try {
-      fileContent = await fs10.readFile(filePath, "utf-8");
+      fileContent = await fs6.readFile(filePath, "utf-8");
     } catch (err) {
       if (oldText === "" && !insertAfter && !hasHashlineParams2(args)) {
         fileContent = "";
         isNewFile = true;
       } else {
         const msg = err instanceof Error ? err.message : String(err);
-        return errorResult3(`File not found or unreadable: ${msg}`, "FILE_UNREADABLE", {
+        return errorResult2(`File not found or unreadable: ${msg}`, "FILE_UNREADABLE", {
           file: relativePath
         });
+      }
+    }
+    if (!isNewFile) {
+      try {
+        assertResolved(parseForFormat(fileContent));
+      } catch (err) {
+        if (err instanceof UnresolvedChangesError) {
+          return errorResult2(`Document has ${err.diagnostics.length} unresolved change(s); run 'cd repair' or amend the failing change.`, "VALIDATION_ERROR", { diagnostics: err.diagnostics });
+        }
+        throw err;
       }
     }
     const protocolMode = resolveProtocolMode(config2.protocol?.mode ?? "classic");
     const hasClassicParams = typeof args.old_text === "string" && args.old_text !== "" || typeof args.new_text === "string" && args.new_text !== "" || typeof args.insert_after === "string";
     if (protocolMode === "classic" && hasCompactParams) {
-      return errorResult3("This project uses classic mode. Use old_text/new_text parameters instead of at/op.", "PROTOCOL_MODE_MISMATCH");
+      return errorResult2("This project uses classic mode. Use old_text/new_text parameters instead of at/op.", "PROTOCOL_MODE_MISMATCH");
     }
     if (protocolMode === "compact" && hasClassicParams && !hasCompactParams) {
-      return errorResult3("This project uses compact mode. Use at/op parameters instead of old_text/new_text.", "PROTOCOL_MODE_MISMATCH");
+      return errorResult2("This project uses compact mode. Use at/op parameters instead of old_text/new_text.", "PROTOCOL_MODE_MISMATCH");
     }
     if (protocolMode === "compact" && hasCompactParams) {
       return await handleCompactProposeChange(args, filePath, relativePath, config2, state, fileContent);
@@ -33411,7 +32813,7 @@ async function handleProposeChange(args, resolver, state) {
     const changeId = state.getNextId(filePath, fileContent);
     const { author, error: authorError } = resolveAuthor(args.author, config2, "propose_change");
     if (authorError) {
-      return errorResult3(authorError.message, "AUTHOR_RESOLUTION_FAILED");
+      return errorResult2(authorError.message, "AUTHOR_RESOLUTION_FAILED");
     }
     const reasoningError = checkReasoningRequired(author, reasoning, config2, false);
     if (reasoningError)
@@ -33441,7 +32843,7 @@ async function handleProposeChange(args, resolver, state) {
           } catch (err) {
             const message = err instanceof Error ? err.message : String(err);
             const { staleLine, currentHash } = extractQuickFixFromError(err, afterLine);
-            return errorResult3(message, classifyHashlineValidationError(message), {
+            return errorResult2(message, classifyHashlineValidationError(message), {
               file: relativePath,
               quick_fix: buildQuickFix(filePath, staleLine, currentHash)
             });
@@ -33489,7 +32891,7 @@ async function handleProposeChange(args, resolver, state) {
           } catch (err) {
             const message = err instanceof Error ? err.message : String(err);
             const { staleLine, currentHash } = extractQuickFixFromError(err, startLine);
-            return errorResult3(message, classifyHashlineValidationError(message), {
+            return errorResult2(message, classifyHashlineValidationError(message), {
               file: relativePath,
               quick_fix: buildQuickFix(filePath, staleLine, currentHash)
             });
@@ -33497,7 +32899,7 @@ async function handleProposeChange(args, resolver, state) {
         }
         if (viewResolved === void 0 && (effectiveEndLine !== startLine || endHash !== void 0 && endHash !== startHash)) {
           if (!effectiveEndHash) {
-            return errorResult3("end_line requires end_hash for verification.", "VALIDATION_ERROR", { file: relativePath });
+            return errorResult2("end_line requires end_hash for verification.", "VALIDATION_ERROR", { file: relativePath });
           }
           try {
             const endResult = validateOrAutoRemap({ line: effectiveEndLine, hash: effectiveEndHash }, fileLines, "end_line", relocations, autoRemap);
@@ -33507,7 +32909,7 @@ async function handleProposeChange(args, resolver, state) {
           } catch (err) {
             const message = err instanceof Error ? err.message : String(err);
             const { staleLine, currentHash } = extractQuickFixFromError(err, effectiveEndLine);
-            return errorResult3(message, classifyHashlineValidationError(message), {
+            return errorResult2(message, classifyHashlineValidationError(message), {
               file: relativePath,
               quick_fix: buildQuickFix(filePath, staleLine, currentHash)
             });
@@ -33549,7 +32951,7 @@ async function handleProposeChange(args, resolver, state) {
           modifiedText = fileContent.slice(0, absPos) + inlineMarkup + fileContent.slice(absEnd);
         } else {
           if (/\{\+\+|\{--|\{~~|\{==|\{>>/.test(extracted.content)) {
-            return errorResult3("Line range contains existing CriticMarkup. Use hybrid mode (provide old_text to target specific text within the range) or accept/reject the existing change first.", "VALIDATION_ERROR", { file: relativePath });
+            return errorResult2("Line range contains existing CriticMarkup. Use hybrid mode (provide old_text to target specific text within the range) or accept/reject the existing change first.", "VALIDATION_ERROR", { file: relativePath });
           }
           let cleanedNewText = newText;
           let newTextLines = cleanedNewText.split("\n");
@@ -33591,7 +32993,7 @@ async function handleProposeChange(args, resolver, state) {
           affectedLines = [];
         }
       } else {
-        return errorResult3("Internal error: hashline mode detected but no valid params.", "INTERNAL_ERROR");
+        return errorResult2("Internal error: hashline mode detected but no valid params.", "INTERNAL_ERROR");
       }
     } else if (isNewFile && oldText === "" && !insertAfter) {
       changeType = "ins";
@@ -33603,7 +33005,7 @@ async function handleProposeChange(args, resolver, state) {
       const reasonLine = reasoning ? `
     @${author} ${ts.raw}: ${reasoning}` : "";
       const footnoteBlock = footnoteHeader + reasonLine;
-      await fs10.mkdir(path7.dirname(filePath), { recursive: true });
+      await fs6.mkdir(path5.dirname(filePath), { recursive: true });
       modifiedText = level === 2 ? fileContent + inlineMarkup + footnoteBlock : fileContent + inlineMarkup;
     } else {
       if (oldText && !insertAfter) {
@@ -33644,7 +33046,7 @@ async function handleProposeChange(args, resolver, state) {
         affectedLines = [];
       }
     }
-    await fs10.writeFile(filePath, modifiedText, "utf-8");
+    await writeTrackedFile(filePath, modifiedText);
     await rerecordState(state, filePath, modifiedText, config2);
     const responseData = {
       change_id: changeId,
@@ -33663,8 +33065,8 @@ async function handleProposeChange(args, resolver, state) {
     const footnoteCount = (modifiedText.match(/^\[\^cn-\d+(?:\.\d+)?\]:/gm) || []).length;
     const proposedCount = (modifiedText.match(/\|\s*proposed\s*$/gm) || []).length;
     const acceptedCount = (modifiedText.match(/\|\s*accepted\s*$/gm) || []).length;
-    const authorMatches = modifiedText.match(/^\[\^cn-\d+(?:\.\d+)?\]:\s*@([^\s|]+)/gm) || [];
-    const uniqueAuthors = new Set(authorMatches.map((m) => m.match(/@([^\s|]+)/)?.[1]).filter(Boolean));
+    const authorMatches2 = modifiedText.match(/^\[\^cn-\d+(?:\.\d+)?\]:\s*@([^\s|]+)/gm) || [];
+    const uniqueAuthors = new Set(authorMatches2.map((m) => m.match(/@([^\s|]+)/)?.[1]).filter(Boolean));
     responseData.document_state = {
       total_changes: footnoteCount,
       proposed: proposedCount,
@@ -33677,7 +33079,7 @@ async function handleProposeChange(args, resolver, state) {
     };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    return errorResult3(msg, "INTERNAL_ERROR");
+    return errorResult2(msg, "INTERNAL_ERROR");
   }
 }
 async function handleRawChanges(changes, file2, resolver, state) {
@@ -33686,10 +33088,10 @@ async function handleRawChanges(changes, file2, resolver, state) {
   const relativePath = toRelativePath(projectDir, filePath);
   let fileContent;
   try {
-    fileContent = await fs10.readFile(filePath, "utf-8");
+    fileContent = await fs6.readFile(filePath, "utf-8");
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    return errorResult3(`File not found or unreadable: ${msg}`, "FILE_UNREADABLE", {
+    return errorResult2(`File not found or unreadable: ${msg}`, "FILE_UNREADABLE", {
       file: relativePath
     });
   }
@@ -33699,28 +33101,28 @@ async function handleRawChanges(changes, file2, resolver, state) {
     const oldText = change.old_text ?? "";
     const newText = change.new_text ?? "";
     if (oldText === "" && newText === "") {
-      return errorResult3(`Raw change ${i}: both old_text and new_text are empty.`, "VALIDATION_ERROR");
+      return errorResult2(`Raw change ${i}: both old_text and new_text are empty.`, "VALIDATION_ERROR");
     }
     if (oldText === "") {
       const afterText = change.after_text ?? change.insert_after ?? "";
       if (afterText === "") {
-        return errorResult3(`Raw change ${i}: Raw insertion requires after_text to specify insertion point (or use non-empty old_text for replacement).`, "VALIDATION_ERROR", { file: relativePath });
+        return errorResult2(`Raw change ${i}: Raw insertion requires after_text to specify insertion point (or use non-empty old_text for replacement).`, "VALIDATION_ERROR", { file: relativePath });
       }
       const anchorIdx = modifiedText.indexOf(afterText);
       if (anchorIdx === -1) {
-        return errorResult3(`Raw change ${i}: after_text anchor not found in file.`, "VALIDATION_ERROR", { file: relativePath });
+        return errorResult2(`Raw change ${i}: after_text anchor not found in file.`, "VALIDATION_ERROR", { file: relativePath });
       }
       const insertPos = anchorIdx + afterText.length;
       modifiedText = modifiedText.slice(0, insertPos) + newText + modifiedText.slice(insertPos);
     } else {
       const idx = modifiedText.indexOf(oldText);
       if (idx === -1) {
-        return errorResult3(`Raw change ${i}: old_text not found in file.`, "VALIDATION_ERROR", { file: relativePath });
+        return errorResult2(`Raw change ${i}: old_text not found in file.`, "VALIDATION_ERROR", { file: relativePath });
       }
       modifiedText = modifiedText.slice(0, idx) + newText + modifiedText.slice(idx + oldText.length);
     }
   }
-  await fs10.writeFile(filePath, modifiedText, "utf-8");
+  await writeTrackedFile(filePath, modifiedText);
   if (state) {
     state.resetFile(filePath);
   }
@@ -33730,25 +33132,25 @@ async function handleRawChanges(changes, file2, resolver, state) {
 }
 async function handleCompactProposeChange(args, filePath, relativePath, config2, state, fileContent) {
   if (args.start_line || args.end_line || args.after_line) {
-    return errorResult3("Use at parameter for line addressing. start_line/end_line/after_line are not supported in compact mode.", "DEPRECATED_PARAMS");
+    return errorResult2("Use at parameter for line addressing. start_line/end_line/after_line are not supported in compact mode.", "DEPRECATED_PARAMS");
   }
   const at = args.at;
   const op = args.op;
   if (!at || !op) {
-    return errorResult3('Compact mode requires both "at" and "op" parameters.', "MISSING_ARGUMENT");
+    return errorResult2('Compact mode requires both "at" and "op" parameters.', "MISSING_ARGUMENT");
   }
   let parsed;
   try {
     parsed = parseOp(op);
   } catch (err) {
-    return errorResult3(err instanceof Error ? err.message : String(err), "VALIDATION_ERROR");
+    return errorResult2(err instanceof Error ? err.message : String(err), "VALIDATION_ERROR");
   }
   let fileLines = fileContent.split("\n");
   await initHashline();
   const changeId = state.getNextId(filePath, fileContent);
   const { author, error: authorError } = resolveAuthor(args.author, config2, "propose_change");
   if (authorError) {
-    return errorResult3(authorError.message, "AUTHOR_RESOLUTION_FAILED");
+    return errorResult2(authorError.message, "AUTHOR_RESOLUTION_FAILED");
   }
   const reasoning = parsed.reasoning ?? args.reason;
   const reasoningError = checkReasoningRequired(author, reasoning, config2, true);
@@ -33769,7 +33171,7 @@ async function handleCompactProposeChange(args, filePath, relativePath, config2,
     applyResult = resolveAndApply(op2, fileContent, fileLines, state, filePath, config2, changeId, author);
   } catch (err) {
     const { staleLine, currentHash } = extractQuickFixFromError(err);
-    return errorResult3(err instanceof Error ? err.message : String(err), "HASHLINE_REFERENCE_UNRESOLVED", {
+    return errorResult2(err instanceof Error ? err.message : String(err), "HASHLINE_REFERENCE_UNRESOLVED", {
       file: relativePath,
       quick_fix: buildQuickFix(filePath, staleLine, currentHash)
     });
@@ -33779,7 +33181,7 @@ async function handleCompactProposeChange(args, filePath, relativePath, config2,
   supersededIds.push(...applyResult.supersededIds);
   fileContent = applyResult.modifiedText;
   fileLines = fileContent.split("\n");
-  await fs10.writeFile(filePath, modifiedText, "utf-8");
+  await writeTrackedFile(filePath, modifiedText);
   const viewResult = await rerecordState(state, filePath, modifiedText, config2);
   let viewProjection;
   if (viewResult?.currentView) {
@@ -33798,8 +33200,8 @@ async function handleCompactProposeChange(args, filePath, relativePath, config2,
   const footnoteCount = (modifiedText.match(/^\[\^cn-\d+(?:\.\d+)?\]:/gm) || []).length;
   const proposedCount = (modifiedText.match(/\|\s*proposed\s*$/gm) || []).length;
   const acceptedCount = (modifiedText.match(/\|\s*accepted\s*$/gm) || []).length;
-  const authorMatches = modifiedText.match(/^\[\^cn-\d+(?:\.\d+)?\]:\s*@([^\s|]+)/gm) || [];
-  const uniqueAuthors = new Set(authorMatches.map((m) => m.match(/@([^\s|]+)/)?.[1]).filter(Boolean));
+  const authorMatches2 = modifiedText.match(/^\[\^cn-\d+(?:\.\d+)?\]:\s*@([^\s|]+)/gm) || [];
+  const uniqueAuthors = new Set(authorMatches2.map((m) => m.match(/@([^\s|]+)/)?.[1]).filter(Boolean));
   const responseData = {
     change_id: changeId,
     file: relativePath,
@@ -33828,7 +33230,7 @@ async function handleCompactProposeChange(args, filePath, relativePath, config2,
     content: [{ type: "text", text: JSON.stringify(responseData) }]
   };
 }
-function errorResult3(message, code, details) {
+function errorResult2(message, code, details) {
   const quickFix = details?.quick_fix;
   const errorDetails = details ? { ...details } : void 0;
   if (errorDetails) {
@@ -33850,21 +33252,1899 @@ function errorResult3(message, code, details) {
   };
 }
 
+// ../../packages/cli/dist/engine/handlers/review-changes.js
+import * as fs7 from "node:fs/promises";
+import * as path6 from "node:path";
+
+// ../../packages/cli/dist/engine/shared/error-result.js
+function errorResult3(message) {
+  return {
+    content: [{ type: "text", text: message }],
+    isError: true
+  };
+}
+
+// ../../packages/cli/dist/engine/handlers/review-changes.js
+init_dist_esm();
+
+// ../../packages/cli/dist/engine/shared/blocking-annotation.js
+init_dist_esm();
+function applyBlockingAnnotation(content, changeId, author, label, shouldBlock) {
+  const lines = content.split("\n");
+  const block = findFootnoteBlock(lines, changeId);
+  if (!block)
+    return content;
+  const insertIdx = findReviewInsertionIndex(lines, block.headerLine, block.blockEnd);
+  if (label && insertIdx >= block.headerLine) {
+    const rcLine = lines[insertIdx];
+    if (rcLine.trimStart().startsWith("request-changes:")) {
+      lines[insertIdx] = rcLine + ` [${label}]`;
+    }
+  }
+  if (shouldBlock) {
+    lines.splice(insertIdx + 1, 0, `    blocked: @${author}`);
+  }
+  return lines.join("\n");
+}
+
+// ../../packages/cli/dist/engine/handlers/settle.js
+init_dist_esm();
+function applyAcceptedChanges2(fileContent) {
+  return applyAcceptedChanges(fileContent);
+}
+function applyRejectedChanges2(fileContent) {
+  return applyRejectedChanges(fileContent);
+}
+
+// ../../packages/cli/dist/engine/handlers/review-changes.js
+var reviewChangesTool = {
+  name: "review_changes",
+  description: "Review existing changes: accept/reject decisions and thread responses. Pass reviews for accept/reject or responses for thread replies. Accepted changes are compacted by the server per project config (no separate settle step). When status_updated is false, a reason field explains why (already_accepted, already_rejected, request_changes_no_status_change).",
+  inputSchema: {
+    type: "object",
+    properties: {
+      file: {
+        type: "string",
+        description: "Path, file:// URI, or active Word session URI (word://sess-...). Use resources/list to discover Word sessions."
+      },
+      reviews: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: {
+            change_id: {
+              type: "string",
+              description: "e.g., 'cn-7' or 'cn-7.2'"
+            },
+            decision: {
+              type: "string",
+              enum: ["approve", "reject", "request_changes", "withdraw"],
+              description: "The review decision"
+            },
+            reason: {
+              type: "string",
+              description: "Why this decision. Required."
+            },
+            blocking: {
+              type: "boolean",
+              description: "When true with request_changes, adds a blocked: line preventing acceptance until withdrawn."
+            },
+            label: {
+              type: "string",
+              description: 'Optional label for the review (e.g. "security", "performance").'
+            }
+          },
+          required: ["change_id", "decision", "reason"]
+        },
+        description: "Array of review decisions to apply"
+      },
+      author: {
+        type: "string",
+        description: "Who is making this change. Recommended: always pass your model/agent identity (e.g. ai:composer) for clear attribution. Required when this project has author enforcement."
+      },
+      responses: {
+        type: "array",
+        description: "Thread responses. Each: {change_id, response, label?}.",
+        items: {
+          type: "object",
+          properties: {
+            change_id: { type: "string" },
+            response: { type: "string" },
+            label: { type: "string", enum: ["suggestion", "issue", "question", "praise", "todo", "thought", "nitpick"] }
+          },
+          required: ["change_id", "response"]
+        }
+      }
+    },
+    required: ["file"]
+  }
+};
+async function handleReviewChanges(args, resolver, state) {
+  try {
+    const file2 = optionalStrArg(args, "file", "file");
+    let reviewsRaw = args.reviews;
+    let responsesRaw = args.responses;
+    const settleFlag = args.settle === true || args.settle === "true";
+    const authorArg = optionalStrArg(args, "author", "author");
+    if (!file2) {
+      return errorResult3('Missing required argument: "file"');
+    }
+    if (typeof reviewsRaw === "string") {
+      try {
+        const parsed = JSON.parse(reviewsRaw);
+        if (Array.isArray(parsed)) {
+          reviewsRaw = parsed;
+        } else {
+          return errorResult3(`The "reviews" parameter was received as a JSON string but parsed to ${typeof parsed}, not an array. Send reviews as a JSON array of objects, e.g.: reviews: [{ "change_id": "cn-1", "decision": "approve", "reason": "looks good" }]`);
+        }
+      } catch {
+        return errorResult3('The "reviews" parameter was received as a string but could not be parsed as JSON. Send reviews as a JSON array of objects, e.g.: reviews: [{ "change_id": "cn-1", "decision": "approve", "reason": "looks good" }]');
+      }
+    }
+    if (typeof responsesRaw === "string") {
+      try {
+        const parsed = JSON.parse(responsesRaw);
+        if (Array.isArray(parsed)) {
+          responsesRaw = parsed;
+        } else {
+          return errorResult3(`The "responses" parameter was received as a JSON string but parsed to ${typeof parsed}, not an array. Send responses as a JSON array of objects, e.g.: responses: [{ "change_id": "cn-1", "response": "addressed in latest revision" }]`);
+        }
+      } catch {
+        return errorResult3('The "responses" parameter was received as a string but could not be parsed as JSON. Send responses as a JSON array of objects, e.g.: responses: [{ "change_id": "cn-1", "response": "addressed in latest revision" }]');
+      }
+    }
+    const hasReviews = Array.isArray(reviewsRaw) && reviewsRaw.length > 0;
+    const hasResponses = Array.isArray(responsesRaw) && responsesRaw.length > 0;
+    if (!hasReviews && !hasResponses && !settleFlag) {
+      return errorResult3('At least one of "reviews", "responses", or "settle" must be provided.\n\nExample:\n  review_changes(file: "doc.md", reviews: [{ change_id: "cn-1", decision: "approve", reason: "looks good" }])\n\nRequired fields per review: change_id, decision (approve|reject|request_changes|withdraw), reason.');
+    }
+    const filePath = resolver.resolveFilePath(file2);
+    const { config: config2, projectDir } = await resolver.forFile(filePath);
+    if (!isFileInScope(filePath, config2, projectDir)) {
+      return errorResult3(`File is not in scope for tracking: "${filePath}". Check .changedown/config.toml include/exclude patterns.`);
+    }
+    let fileContent;
+    let originalContent;
+    try {
+      fileContent = await fs7.readFile(filePath, "utf-8");
+      originalContent = fileContent;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return errorResult3(`File not found or unreadable: ${msg}`);
+    }
+    try {
+      assertResolved(parseForFormat(fileContent));
+    } catch (err) {
+      if (err instanceof UnresolvedChangesError) {
+        return errorResult3(`Document has ${err.diagnostics.length} unresolved change(s); run 'cd repair' or amend the failing change. Diagnostics: ${JSON.stringify(err.diagnostics)}`);
+      }
+      throw err;
+    }
+    const { author, error: authorError } = resolveAuthor(authorArg, config2, "review_changes");
+    if (authorError) {
+      return errorResult3(authorError.message);
+    }
+    const successes = [];
+    const errors = [];
+    let results = [];
+    if (hasReviews) {
+      const lines = fileContent.split("\n");
+      const inputOrderChangeIds = [];
+      const withPosition = [];
+      const validationErrors = [];
+      for (let idx = 0; idx < reviewsRaw.length; idx++) {
+        const r = reviewsRaw[idx];
+        if (r === null || r === void 0 || typeof r !== "object" || Array.isArray(r)) {
+          validationErrors.push(`Review item #${idx} must be an object, got ${r === null ? "null" : Array.isArray(r) ? "array" : typeof r}`);
+          continue;
+        }
+        const rObj = r;
+        const changeId = rObj.change_id;
+        const decision = rObj.decision;
+        const reason = rObj.reason;
+        const missingFields = [];
+        if (!changeId)
+          missingFields.push("'change_id'");
+        if (!decision)
+          missingFields.push("'decision'");
+        if (!reason) {
+          if (rObj.reasoning) {
+            missingFields.push("'reason' (did you mean 'reason'? You passed 'reasoning' which is not the correct field name)");
+          } else {
+            missingFields.push("'reason'");
+          }
+        }
+        if (missingFields.length > 0) {
+          validationErrors.push(`Review item #${idx} missing required field(s): ${missingFields.join(", ")}`);
+          continue;
+        }
+        inputOrderChangeIds.push(changeId);
+        const block = findFootnoteBlock(lines, changeId);
+        withPosition.push({
+          review: {
+            change_id: changeId,
+            decision,
+            reason,
+            blocking: rObj.blocking === true ? true : void 0,
+            label: typeof rObj.label === "string" ? rObj.label : void 0
+          },
+          headerLine: block ? block.headerLine : -1
+        });
+      }
+      withPosition.sort((a, b) => b.headerLine - a.headerLine);
+      const resultByChangeId = /* @__PURE__ */ new Map();
+      for (const { review } of withPosition) {
+        if (!VALID_DECISIONS.includes(review.decision)) {
+          resultByChangeId.set(review.change_id, {
+            change_id: review.change_id,
+            error: `Invalid decision: "${review.decision}". Must be one of: approve, reject, request_changes, withdraw`
+          });
+          continue;
+        }
+        const applied = applyReview(fileContent, review.change_id, review.decision, review.reason, author, config2);
+        if ("error" in applied) {
+          resultByChangeId.set(review.change_id, { change_id: review.change_id, error: applied.error });
+          continue;
+        }
+        if (review.decision === "request_changes" && (review.blocking || review.label)) {
+          const autoBlock = review.label ? config2.review.blocking_labels[review.label] === true : false;
+          const shouldBlock = review.blocking || autoBlock;
+          applied.updatedContent = applyBlockingAnnotation(applied.updatedContent, review.change_id, author, review.label, shouldBlock);
+        }
+        resultByChangeId.set(review.change_id, applied.result);
+        fileContent = applied.updatedContent;
+      }
+      results = inputOrderChangeIds.map((id) => resultByChangeId.get(id));
+      if (validationErrors.length > 0) {
+        errors.push(...validationErrors);
+      }
+    }
+    if (hasResponses) {
+      const VALID_LABELS = ["suggestion", "issue", "question", "praise", "todo", "thought", "nitpick"];
+      for (let rIdx = 0; rIdx < responsesRaw.length; rIdx++) {
+        const resp = responsesRaw[rIdx];
+        if (resp === null || resp === void 0 || typeof resp !== "object" || Array.isArray(resp)) {
+          errors.push(`Response item #${rIdx} must be an object, got ${resp === null ? "null" : Array.isArray(resp) ? "array" : typeof resp}`);
+          continue;
+        }
+        const respObj = resp;
+        const respChangeId = respObj.change_id;
+        const respText = respObj.response;
+        const respLabel = respObj.label;
+        if (!respChangeId || !respText) {
+          const missing = [];
+          if (!respChangeId)
+            missing.push("'change_id'");
+          if (!respText)
+            missing.push("'response'");
+          errors.push(`Response item #${rIdx} missing required field(s): ${missing.join(", ")}`);
+          continue;
+        }
+        if (respLabel && !VALID_LABELS.includes(respLabel)) {
+          errors.push(`Response to ${respChangeId}: Invalid label "${respLabel}". Must be one of: ${VALID_LABELS.join(", ")}`);
+          continue;
+        }
+        const lines = fileContent.split("\n");
+        const block = findFootnoteBlock(lines, respChangeId);
+        if (!block) {
+          errors.push(`Response to ${respChangeId}: Change "${respChangeId}" not found in file.`);
+          continue;
+        }
+        const insertionIdx = findDiscussionInsertionIndex(lines, block.headerLine, block.blockEnd) + 1;
+        const ts = nowTimestamp();
+        const labelPart = respLabel ? ` [${respLabel}]` : "";
+        const responseLines = respText.split("\n");
+        const indent = "    ";
+        const continuationIndent = "      ";
+        const firstLine = `${indent}@${author} ${ts.raw}${labelPart}: ${responseLines[0]}`;
+        const formatted = [firstLine];
+        for (let li = 1; li < responseLines.length; li++) {
+          formatted.push(`${continuationIndent}${responseLines[li]}`);
+        }
+        lines.splice(insertionIdx, 0, ...formatted);
+        fileContent = lines.join("\n");
+        successes.push(`Responded to ${respChangeId}`);
+      }
+    }
+    let settlementInfo;
+    if (config2.settlement.auto_on_approve && hasReviews) {
+      const hasApprovals = results.some((r) => "decision" in r && r.decision === "approve");
+      if (hasApprovals) {
+        await initHashline();
+        const { currentContent, appliedIds } = applyAcceptedChanges2(fileContent);
+        if (appliedIds.length > 0) {
+          fileContent = currentContent;
+          settlementInfo = { appliedIds };
+        }
+      }
+    }
+    if (config2.settlement.auto_on_reject && hasReviews) {
+      const hasRejections = results.some((r) => "decision" in r && r.decision === "reject");
+      if (hasRejections) {
+        await initHashline();
+        const { currentContent, appliedIds } = applyRejectedChanges2(fileContent);
+        if (appliedIds.length > 0) {
+          fileContent = currentContent;
+          if (settlementInfo) {
+            const existingSet = new Set(settlementInfo.appliedIds);
+            for (const id of appliedIds) {
+              if (!existingSet.has(id)) {
+                settlementInfo.appliedIds.push(id);
+              }
+            }
+          } else {
+            settlementInfo = { appliedIds };
+          }
+        }
+      }
+    }
+    if (settleFlag) {
+      await initHashline();
+      const { currentContent, appliedIds } = applyAcceptedChanges2(fileContent);
+      if (appliedIds.length > 0) {
+        fileContent = currentContent;
+        if (settlementInfo) {
+          const existingSet = new Set(settlementInfo.appliedIds);
+          for (const id of appliedIds) {
+            if (!existingSet.has(id)) {
+              settlementInfo.appliedIds.push(id);
+            }
+          }
+        } else {
+          settlementInfo = { appliedIds };
+        }
+      }
+      successes.push("Settled all accepted changes (Layer 1 compaction)");
+    }
+    let affectedLines;
+    if (settlementInfo && settlementInfo.appliedIds.length > 0) {
+      const postLines = fileContent.split("\n");
+      const settledIdSet = new Set(settlementInfo.appliedIds);
+      const footnoteStart = postLines.findIndex((l) => /^\[\^cn-/.test(l));
+      const contentEnd = footnoteStart > 0 ? footnoteStart : postLines.length;
+      let minLine = Infinity;
+      let maxLine = -Infinity;
+      for (let i = 0; i < contentEnd; i++) {
+        const lineNum = i + 1;
+        for (const id of settledIdSet) {
+          if (postLines[i].includes(`[^${id}]`)) {
+            if (lineNum < minLine)
+              minLine = lineNum;
+            if (lineNum > maxLine)
+              maxLine = lineNum;
+          }
+        }
+      }
+      if (minLine !== Infinity && maxLine !== -Infinity) {
+        if (config2.hashline.enabled) {
+          await initHashline();
+        }
+        try {
+          affectedLines = computeAffectedLines(fileContent, minLine, maxLine, {
+            hashlineEnabled: config2.hashline.enabled
+          });
+        } catch {
+          affectedLines = [];
+        }
+      }
+    }
+    if (fileContent !== originalContent) {
+      await writeTrackedFile(filePath, fileContent);
+      await rerecordState(state, filePath, fileContent, config2);
+    }
+    const response = { file: path6.relative(projectDir, filePath) };
+    if (results.length > 0) {
+      response.results = results;
+    }
+    if (successes.length > 0) {
+      response.successes = successes;
+    }
+    if (errors.length > 0) {
+      response.errors = errors;
+    }
+    if (settlementInfo) {
+      response.settled = settlementInfo.appliedIds;
+      response.settlement_note = `${settlementInfo.appliedIds.length} change(s) settled to clean text. The file now contains clean prose where those changes were. Proposed changes remain as markup.`;
+    }
+    if (affectedLines && config2.response?.affected_lines) {
+      response.affected_lines = affectedLines;
+    }
+    const remaining = countFootnoteHeadersWithStatus(fileContent, "proposed");
+    response.document_state = {
+      remaining_proposed: remaining,
+      all_resolved: remaining === 0
+    };
+    if (remaining === 0) {
+      response.note = "All changes in this file are now resolved (accepted or rejected). No proposed changes remain.";
+    }
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(response)
+        }
+      ]
+    };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return errorResult3(msg);
+  }
+}
+
+// ../../packages/cli/dist/engine/handlers/read-tracked-file.js
+init_dist_esm();
+import * as fs8 from "node:fs/promises";
+import * as path7 from "node:path";
+
+// ../../packages/cli/dist/engine/guide-composer.js
+function composeGuide(config2) {
+  const sections = [];
+  const protocolMode = resolveProtocolMode(config2.protocol.mode);
+  sections.push(composeProtocolSection(protocolMode, config2));
+  sections.push(composeAuthorSection(config2));
+  if (config2.reasoning?.propose?.agent === true) {
+    sections.push("**Annotations**: Required on every change. Append `{>>reason` to your `op` string, or include reasoning in your propose call.");
+  }
+  sections.push("**Chaining edits**: Each `propose_change` response shows your changes applied. The `applied` array includes `preview` (the line with your edit) and coordinates for follow-up edits. `affected_lines` shows neighboring lines with fresh coordinates. No re-read needed between edits. Re-read only after review (accept/reject).");
+  sections.push("**Revising proposals**: Re-proposing over your own earlier changes auto-supersedes them. No need to reject first. The response includes a `superseded` array with the IDs of replaced changes.");
+  sections.push(composeViewSection(config2));
+  return `---
+## How to edit this file
+
+${sections.join("\n\n")}
+---`;
+}
+function composeProtocolSection(mode, config2) {
+  if (mode === "classic") {
+    return "**Editing**: Use `propose_change` with `old_text` (exact text to replace) and `new_text`.\nFor insertions, use `insert_after` to place new text after an anchor string.\nGroup related changes: `propose_change(file, changes=[{old_text:..., new_text:...}, ...])`";
+  }
+  const lines = [
+    "**Editing**: Use `propose_change` with `at` (LINE:HASH from the margin) and `op`:",
+    "  Substitute: `{~~old~>new~~}`  Insert: `{++text++}`  Delete: `{--text--}`",
+    "  Highlight: `{==text==}`  Comment: `{>>reason`"
+  ];
+  if (config2.reasoning?.propose?.agent !== true) {
+    lines.push("  Annotate: `{~~old~>new~~}{>>reason`  (append {>> to any op)");
+  } else {
+    lines.push("  Annotate (required): `{~~old~>new~~}{>>reason`  (append {>> to any op)");
+  }
+  lines.push('Group: `propose_change(file, changes=[{at:"3:a1", op:"{~~old~>new~~}{>>reason"}, ...])`', "Include enough context in your `op` to disambiguate repeated text on the same line.");
+  lines.push('Range replace: `at:"5:a1-20:b3"` + `op:"{~~~>new content~~}"` replaces the entire range.');
+  lines.push("Multi-line ops: use real newlines in your op string \u2014 the MCP transport handles encoding.");
+  return lines.join("\n");
+}
+function composeAuthorSection(config2) {
+  if (config2.author.enforcement === "required") {
+    return '**Author**: Required. Pass `author="ai:YOUR-ACTUAL-MODEL"` on every propose/review call.\nDo not copy example identities from documentation.';
+  }
+  return '**Author**: Recommended. Pass `author="ai:YOUR-MODEL"` for clear attribution.';
+}
+function composeViewSection(config2) {
+  const defaultView = config2.policy.default_view ?? "working";
+  switch (defaultView) {
+    case "working":
+      return "**You're seeing**: working view \u2014 full deliberation context. CriticMarkup shows proposals inline, [cn-N] anchors link to end-of-line metadata.\nOther views: `simple` (clean prose + P/A flags), `decided` (decided-changes-only preview).";
+    case "simple":
+      return "**You're seeing**: simple view \u2014 current projection text with P/A flags in the margin. Proposals are summarized, not shown inline.\nOther views: `working` (full deliberation context), `decided` (decided-changes-only preview).";
+    case "decided":
+      return "**You're seeing**: decided view \u2014 the document with only decided changes applied. Proposed deletions are not visible.\nOther views: `working` (full deliberation context), `simple` (current text + P/A flags).";
+    default:
+      return `**Current view**: ${defaultView}.`;
+  }
+}
+
+// ../../packages/cli/dist/engine/handlers/read-tracked-file.js
+var DEFAULT_LIMIT = 500;
+var MAX_LIMIT = 2e3;
+var HASHLINE_DISABLED_TIP_DEFAULT = "## tip: Hashline addressing is disabled. Edits use text matching; re-read for current content if propose_change fails.";
+var HASHLINE_DISABLED_TIP_COMPACT = "## tip: Hashline addressing is disabled but compact mode requires it. Enable in .changedown/config.toml: [hashline] enabled = true";
+var readTrackedFileTool = {
+  name: "read_tracked_file",
+  description: "Read a tracked document: file path, file:// URI, or word:// session from resources/list. Default working view shows inline metadata plus LINE:HASH coordinates usable by propose_change. Other views: simple, decided, raw. Response carries diagnostics[] for coordinate failures.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      file: {
+        type: "string",
+        description: "Path, file:// URI, or active Word session URI (word://sess-...). Use resources/list to discover Word sessions."
+      },
+      offset: {
+        type: "number",
+        description: "Line number to start reading from (1-indexed, default: 1)"
+      },
+      limit: {
+        type: "number",
+        description: "Maximum number of lines to return (default: 500, max: 2000). Use with offset for pagination."
+      },
+      view: {
+        type: "string",
+        enum: ["working", "simple", "decided", "raw"],
+        description: "working (default, agent-optimized with inline annotations), simple (current projection with P/A flags), decided (clean text with only decided changes applied), raw (literal file bytes)."
+      },
+      include_meta: {
+        type: "boolean",
+        description: "If true, include change levels line and full tip. Default: false (compact)."
+      },
+      include_guide: {
+        type: "boolean",
+        description: "If true, include the editing guide regardless of whether it was already shown this session. Use when spawning subagents that need protocol context."
+      }
+    },
+    required: ["file"]
+  }
+};
+function formatChangeLevelsLine(content) {
+  const parser = new CriticMarkupParser();
+  const doc = parser.parse(content);
+  const changes = doc.getChanges();
+  if (changes.length === 0)
+    return null;
+  const parts = changes.map((c) => `${c.id}=${c.level}`);
+  return `## change levels: ${parts.join(", ")}`;
+}
+function maybeComposeGuide(state, config2, explicit = false) {
+  if (!explicit && state.isGuideSuppressed())
+    return "";
+  const mode = resolveProtocolMode(config2.protocol.mode);
+  if (!explicit && state.getGuideShownForMode() === mode)
+    return "";
+  state.setGuideShown(mode);
+  return "\n\n" + composeGuide(config2);
+}
+function computeEffectiveRange(offset, requestedLimit, totalLines) {
+  const effectiveStart = Math.max(1, offset);
+  const limit = Math.min(requestedLimit ?? DEFAULT_LIMIT, MAX_LIMIT);
+  const effectiveEnd = Math.min(effectiveStart + limit - 1, totalLines);
+  return { effectiveStart, effectiveEnd };
+}
+function buildTruncationMessage(effectiveStart, effectiveEnd, totalLines) {
+  if (effectiveEnd >= totalLines)
+    return null;
+  return `
+
+--- showing lines ${effectiveStart}-${effectiveEnd} of ${totalLines} | use offset/limit to paginate ---`;
+}
+function findSafePaginationEnd(lines, effectiveEnd) {
+  let end = effectiveEnd;
+  while (end < lines.length && lines[end]?.continuesChange) {
+    end++;
+  }
+  return end;
+}
+function buildAndFormatPaginatedDoc(fileContent, canonicalView, opts, pagination, state, absolutePath) {
+  const doc = buildViewDocument(fileContent, canonicalView, opts);
+  const sessionHashes = doc.lines.map((l) => ({
+    line: l.margin.lineNumber,
+    raw: l.sessionHashes.raw,
+    committed: l.sessionHashes.committed,
+    currentView: l.sessionHashes.currentView,
+    rawLineNum: l.rawLineNumber
+  }));
+  state.recordAfterRead(absolutePath, canonicalView, sessionHashes, fileContent);
+  const totalLines = doc.lines.length;
+  const { effectiveStart, effectiveEnd } = computeEffectiveRange(pagination.offset, pagination.requestedLimit, totalLines);
+  const adjustedEnd = findSafePaginationEnd(doc.lines, effectiveEnd);
+  const paginatedDoc = {
+    ...doc,
+    lines: doc.lines.slice(effectiveStart - 1, adjustedEnd),
+    header: {
+      ...doc.header,
+      lineRange: { start: effectiveStart, end: adjustedEnd, total: totalLines }
+    }
+  };
+  return {
+    output: formatPlainText(paginatedDoc),
+    paginatedDoc,
+    effectiveStart,
+    adjustedEnd,
+    totalLines
+  };
+}
+async function handleReadTrackedFile(args, resolver, state) {
+  try {
+    await initHashline();
+    const file2 = optionalStrArg(args, "file", "file");
+    if (!file2) {
+      return errorResult3('Missing required argument: "file"');
+    }
+    const offset = args.offset ?? 1;
+    const requestedLimit = args.limit;
+    const requestedView = optionalStrArg(args, "view", "view");
+    const resolved = requestedView !== void 0 ? resolveView(requestedView) : null;
+    if (requestedView !== void 0 && resolved === null) {
+      return errorResult3(`Unknown view '${requestedView}'. Valid views: ${CANONICAL_VIEWS.join(", ")}`);
+    }
+    const includeMeta = args.include_meta === true;
+    const includeGuide = args.include_guide === true;
+    const filePath = resolver.resolveFilePath(file2);
+    const { config: config2, projectDir } = await resolver.forFile(filePath);
+    const defaultView = resolveView(config2.policy.default_view ?? "working") ?? "working";
+    const viewPolicy = config2.policy.view_policy ?? "suggest";
+    let canonicalView;
+    if (requestedView === void 0) {
+      canonicalView = defaultView;
+    } else {
+      canonicalView = resolved;
+      if (viewPolicy === "require" && canonicalView !== defaultView) {
+        return errorResult3(`This project requires view "${config2.policy.default_view}" (view_policy = "require"). Requested view "${requestedView}" is not allowed. Change view_policy to "suggest" in .changedown/config.toml to allow view selection.`);
+      }
+    }
+    let fileContent;
+    try {
+      fileContent = await fs8.readFile(filePath, "utf-8");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return errorResult3(`File not found or unreadable: ${msg}`);
+    }
+    const trackingStatus = await resolveTrackingStatus(filePath, config2, projectDir);
+    const parsedDoc = parseForFormat(fileContent);
+    const fileDiagnostics = parsedDoc.getDiagnostics();
+    const displayPath = path7.relative(projectDir, filePath);
+    if (!config2.hashline.enabled) {
+      if (canonicalView === "simple") {
+        return errorResult3("Simple view requires hashline mode. Enable hashline in .changedown/config.toml: [hashline] enabled = true");
+      }
+      const protocolMode2 = resolveProtocolMode(config2.protocol.mode);
+      const { output: rawOutput2, effectiveStart: effectiveStart2, adjustedEnd: adjustedEnd2, totalLines: totalLines2 } = buildAndFormatPaginatedDoc(fileContent, canonicalView, { filePath: displayPath, trackingStatus: trackingStatus.status, protocolMode: protocolMode2, defaultView: "working", viewPolicy: config2.policy.view_policy ?? "suggest" }, { offset, requestedLimit }, state, filePath);
+      let output2 = rawOutput2;
+      const truncation2 = buildTruncationMessage(effectiveStart2, adjustedEnd2, totalLines2);
+      if (truncation2)
+        output2 += truncation2;
+      const hashlineTip = protocolMode2 === "compact" ? HASHLINE_DISABLED_TIP_COMPACT : HASHLINE_DISABLED_TIP_DEFAULT;
+      output2 = output2 + "\n" + hashlineTip;
+      const guide2 = maybeComposeGuide(state, config2, includeGuide);
+      const content2 = [{ type: "text", text: output2 }];
+      if (guide2)
+        content2.unshift({ type: "text", text: guide2 });
+      return { content: content2, diagnostics: fileDiagnostics };
+    }
+    const protocolMode = resolveProtocolMode(config2.protocol.mode);
+    const { output: rawOutput, effectiveStart, adjustedEnd, totalLines } = buildAndFormatPaginatedDoc(fileContent, canonicalView, { filePath: displayPath, trackingStatus: trackingStatus.status, protocolMode, defaultView: "working", viewPolicy: config2.policy.view_policy ?? "suggest" }, { offset, requestedLimit }, state, filePath);
+    let output = rawOutput;
+    if (includeMeta) {
+      const levelsLine = formatChangeLevelsLine(fileContent);
+      if (levelsLine) {
+        output = output.replace(/^---$/m, `${levelsLine}
+---`);
+      }
+    }
+    const guide = maybeComposeGuide(state, config2, includeGuide);
+    const content = [{ type: "text", text: output }];
+    const truncation = buildTruncationMessage(effectiveStart, adjustedEnd, totalLines);
+    if (truncation) {
+      content[content.length - 1].text += truncation;
+    }
+    if (guide)
+      content.unshift({ type: "text", text: guide });
+    return { content, diagnostics: fileDiagnostics };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return errorResult3(msg);
+  }
+}
+
+// ../../packages/cli/dist/engine/handlers/amend-change.js
+import * as fs9 from "node:fs/promises";
+init_dist_esm();
+var amendChangeTool = {
+  name: "amend_change",
+  description: "Revise your own proposed change. Same-author enforcement. Preserves change ID and adds revision history. new_text accepts the same escape normalization as propose_change.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      file: {
+        type: "string",
+        description: "Path, file:// URI, or active Word session URI (word://sess-...). Use resources/list to discover Word sessions."
+      },
+      change_id: {
+        type: "string",
+        description: "The change ID to amend (e.g., 'cn-7' or 'cn-7.2')"
+      },
+      new_text: {
+        type: "string",
+        description: "The new proposed text. For substitutions: replaces the 'new' side (after ~>). For insertions: replaces the inserted text. For deletions: not applicable (amend reason only via reason param)."
+      },
+      old_text: {
+        type: "string",
+        description: "Optional. Expands the scope of a substitution by replacing the OLD side. Must contain the original old text as a substring."
+      },
+      reason: {
+        type: "string",
+        description: "Why this amendment is being made. Recorded as a 'revised:' entry in the footnote."
+      },
+      author: {
+        type: "string",
+        description: "Who is making this change. Recommended: always pass your model/agent identity (e.g. ai:composer); must match the original change author. Required when this project has author enforcement."
+      }
+    },
+    required: ["file", "change_id"]
+  }
+};
+async function handleAmendChange(args, resolver, state) {
+  try {
+    const file2 = args.file;
+    const changeId = optionalStrArg(args, "change_id", "changeId");
+    const newText = strArg(args, "new_text", "newText");
+    const oldText = optionalStrArg(args, "old_text", "oldText");
+    const reasoning = optionalStrArg(args, "reason", "reason");
+    if (!file2) {
+      return errorResult3('Missing required argument: "file"');
+    }
+    if (!changeId) {
+      return errorResult3('Missing required argument: "change_id"');
+    }
+    const filePath = resolver.resolveFilePath(file2);
+    const { config: config2, projectDir } = await resolver.forFile(filePath);
+    if (!isFileInScope(filePath, config2, projectDir)) {
+      return errorResult3(`File is not in scope for tracking: "${filePath}". Check .changedown/config.toml include/exclude patterns.`);
+    }
+    let fileContent;
+    try {
+      fileContent = await fs9.readFile(filePath, "utf-8");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return errorResult3(`File not found or unreadable: ${msg}`);
+    }
+    const { author, error: authorError } = resolveAuthor(args.author, config2, "amend_change");
+    if (authorError) {
+      return errorResult3(authorError.message);
+    }
+    const doc = parseForFormat(fileContent);
+    try {
+      assertResolved(doc);
+    } catch (err) {
+      if (err instanceof UnresolvedChangesError) {
+        return errorResult3(`Document has ${err.diagnostics.length} unresolved change(s); run 'cd repair' or amend the failing change. Diagnostics: ${JSON.stringify(err.diagnostics)}`);
+      }
+      throw err;
+    }
+    const originalChange = doc.getChanges().find((c) => c.id === changeId);
+    if (originalChange) {
+      const originalAuthor = originalChange.metadata?.author?.replace(/^@/, "") ?? "";
+      const normalizedAuthor = (author ?? "").replace(/^@/, "");
+      if (originalAuthor && normalizedAuthor && originalAuthor !== normalizedAuthor) {
+        return errorResult3(`Cannot amend change "${changeId}": you (${normalizedAuthor}) are not the original author (${originalAuthor}). Use supersede_change to propose a replacement by a different author.`);
+      }
+    }
+    const result = await computeSupersedeResult(fileContent, changeId, {
+      newText,
+      oldText,
+      reason: reasoning,
+      author
+    });
+    if (result.isError) {
+      return errorResult3(result.error);
+    }
+    await writeTrackedFile(filePath, result.text);
+    await rerecordState(state, filePath, result.text, config2);
+    const responseData = {
+      change_id: changeId,
+      new_change_id: result.newChangeId,
+      file: toRelativePath(projectDir, filePath),
+      amended: true,
+      new_text: newText
+    };
+    return {
+      content: [{ type: "text", text: JSON.stringify(responseData) }]
+    };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return errorResult3(msg);
+  }
+}
+
+// ../../packages/cli/dist/engine/handlers/list-changes.js
+init_dist_esm();
+import * as fs10 from "node:fs/promises";
+init_dist_esm();
+var listChangesTool = {
+  name: "list_changes",
+  description: "List tracked changes in a file with configurable detail. Returns change_id, type, status, author, line, preview, anchored, resolved. Top-level diagnostics[] reports coordinate_failed zombie changes. Filters by status. detail=context adds nearby lines; detail=full adds threads/group info. Fetch specific changes via change_id/change_ids.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      file: {
+        type: "string",
+        description: "Path, file:// URI, or active Word session URI (word://sess-...). Use resources/list to discover Word sessions."
+      },
+      status: {
+        type: "string",
+        enum: ["proposed", "accepted", "rejected"],
+        description: "Filter changes by status. If omitted, all changes are returned."
+      },
+      detail: {
+        type: "string",
+        enum: ["summary", "context", "full"],
+        description: "Detail level: 'summary' (default \u2014 lightweight metadata only), 'context' (adds surrounding lines and markup), 'full' (adds discussion threads, group info, revision history)."
+      },
+      context_lines: {
+        type: "number",
+        description: "Number of surrounding lines for context/full detail. Default: 3."
+      },
+      change_id: {
+        type: "string",
+        description: "Single change ID to fetch details for (e.g., 'cn-7'). Implies detail=full if not set."
+      },
+      change_ids: {
+        type: "array",
+        items: { type: "string" },
+        description: "Batch of change IDs to fetch details for (e.g., ['cn-5', 'cn-7']). Implies detail=full if not set."
+      }
+    },
+    required: ["file"]
+  }
+};
+var MAX_PREVIEW_LENGTH = 80;
+function buildPreview(change) {
+  let preview = "";
+  switch (change.type) {
+    case ChangeType.Substitution:
+      preview = `${change.originalText ?? ""}~>${change.modifiedText ?? ""}`;
+      break;
+    case ChangeType.Insertion:
+      preview = change.modifiedText ?? "";
+      break;
+    case ChangeType.Deletion:
+      preview = change.originalText ?? "";
+      break;
+    case ChangeType.Highlight:
+      preview = change.originalText ?? change.modifiedText ?? "";
+      break;
+    case ChangeType.Comment:
+      preview = change.originalText ?? change.modifiedText ?? "";
+      break;
+  }
+  if (preview.length > MAX_PREVIEW_LENGTH) {
+    preview = preview.slice(0, MAX_PREVIEW_LENGTH - 3) + "...";
+  }
+  return preview;
+}
+function buildContextEntry(change, fileContent, lines, summary, contextN) {
+  const startLine = offsetToLineNumber2(fileContent, change.range.start);
+  const endLine = offsetToLineNumber2(fileContent, change.range.end);
+  const markup = fileContent.slice(change.range.start, change.range.end);
+  const contextBefore = lines.slice(Math.max(0, startLine - 1 - contextN), startLine - 1);
+  const contextAfter = lines.slice(endLine, Math.min(lines.length, endLine + contextN));
+  return {
+    ...summary,
+    markup,
+    original_text: change.type === ChangeType.Insertion ? null : change.originalText ?? null,
+    modified_text: change.type === ChangeType.Deletion ? null : change.modifiedText ?? null,
+    context_before: contextBefore,
+    context_after: contextAfter
+  };
+}
+function buildFullDetailEntry(change, fileContent, lines, doc, summary, contextN) {
+  const ctx = buildContextEntry(change, fileContent, lines, summary, contextN);
+  const meta3 = change.metadata;
+  const footnoteAuthor = meta3?.author ?? "";
+  const footnoteDate = meta3?.date ?? "";
+  const discussionCount = meta3?.discussion?.length ?? 0;
+  const reasoning = meta3?.discussion?.[0]?.text ?? null;
+  const approvals = (meta3?.approvals ?? []).map((a) => a.author);
+  const rejections = (meta3?.rejections ?? []).map((a) => a.author);
+  const requestChanges = (meta3?.requestChanges ?? []).map((a) => a.author);
+  const participantsSet = /* @__PURE__ */ new Set();
+  if (meta3?.author)
+    participantsSet.add(meta3.author);
+  meta3?.discussion?.forEach((d) => participantsSet.add(d.author));
+  meta3?.approvals?.forEach((a) => participantsSet.add(a.author));
+  meta3?.rejections?.forEach((a) => participantsSet.add(a.author));
+  meta3?.requestChanges?.forEach((a) => participantsSet.add(a.author));
+  const changeId = change.id;
+  const dotIndex = changeId.lastIndexOf(".");
+  let group = null;
+  if (dotIndex > 0) {
+    const parentId = changeId.slice(0, dotIndex);
+    const parentBlock = findFootnoteBlock(lines, parentId);
+    let description = null;
+    if (parentBlock) {
+      for (let i = parentBlock.headerLine + 1; i <= parentBlock.blockEnd; i++) {
+        const trimmed = lines[i].trim();
+        if (trimmed.startsWith("reason:") || trimmed.startsWith("context:"))
+          continue;
+        if (trimmed && !trimmed.startsWith("approved:") && !trimmed.startsWith("rejected:") && !trimmed.startsWith("request-changes:")) {
+          description = trimmed;
+          break;
+        }
+      }
+    }
+    const siblings = doc.getChanges().filter((c) => (c.groupId === parentId || c.id.startsWith(parentId + ".")) && c.id !== parentId).map((c) => c.id);
+    group = { parent_id: parentId, description, siblings };
+  }
+  return {
+    ...ctx,
+    footnote: {
+      author: footnoteAuthor,
+      date: footnoteDate,
+      reasoning,
+      discussion_count: discussionCount,
+      approvals,
+      rejections,
+      request_changes: requestChanges
+    },
+    participants: [...participantsSet],
+    group
+  };
+}
+async function handleListChanges(args, resolver, _state) {
+  try {
+    const fileArg = args.file;
+    const statusFilter = args.status;
+    const changeIdArg = args.change_id;
+    const changeIdsArg = args.change_ids;
+    const hasIds = !!(changeIdArg || changeIdsArg);
+    const detail = args.detail ?? (hasIds ? "full" : "summary");
+    const contextLines = args.context_lines ?? 3;
+    if (fileArg === void 0 || fileArg === "") {
+      return errorResult3('Missing required argument: "file".');
+    }
+    const filePath = resolver.resolveFilePath(fileArg);
+    const { config: config2, projectDir } = await resolver.forFile(filePath);
+    try {
+      const stat4 = await fs10.stat(filePath);
+      if (!stat4.isFile()) {
+        return errorResult3(`Not a file: "${filePath}"`);
+      }
+    } catch {
+      return errorResult3(`File not found or unreadable: "${filePath}"`);
+    }
+    if (!isFileInScope(filePath, config2, projectDir)) {
+      return errorResult3(`File is not in scope for tracking: "${filePath}". Check .changedown/config.toml include/exclude patterns.`);
+    }
+    let fileContent;
+    try {
+      fileContent = await fs10.readFile(filePath, "utf-8");
+    } catch {
+      return errorResult3(`Could not read file: "${filePath}"`);
+    }
+    const doc = parseForFormat(fileContent);
+    const allChanges = doc.getChanges();
+    const lines = fileContent.split("\n");
+    const contextN = Math.max(0, contextLines);
+    if (hasIds) {
+      const targetIds = /* @__PURE__ */ new Set();
+      if (changeIdArg)
+        targetIds.add(changeIdArg);
+      if (changeIdsArg)
+        changeIdsArg.forEach((id) => targetIds.add(id));
+      const changeMap = /* @__PURE__ */ new Map();
+      for (const c of allChanges) {
+        if (targetIds.has(c.id))
+          changeMap.set(c.id, c);
+      }
+      const results = [];
+      for (const id of targetIds) {
+        const change = changeMap.get(id);
+        if (!change) {
+          const settledBlock = findFootnoteBlock(lines, id);
+          if (settledBlock) {
+            const header = parseFootnoteHeader(settledBlock.headerContent);
+            results.push({
+              change_id: id,
+              error: `Change settled (status: ${header?.status ?? "unknown"})`
+            });
+          } else {
+            results.push({ change_id: id, error: "Change not found" });
+          }
+          continue;
+        }
+        const summary = buildSummaryEntry(change, fileContent);
+        results.push(buildDetailForLevel(detail, change, fileContent, lines, doc, summary, contextN));
+      }
+      const response2 = {
+        file: toRelativePath(projectDir, filePath),
+        total_count: allChanges.length,
+        filtered_count: results.length,
+        changes: results,
+        diagnostics: doc.getDiagnostics()
+      };
+      return {
+        content: [{ type: "text", text: JSON.stringify(response2) }]
+      };
+    }
+    const entries = [];
+    for (const change of allChanges) {
+      const summary = buildSummaryEntry(change, fileContent);
+      entries.push(buildDetailForLevel(detail, change, fileContent, lines, doc, summary, contextN));
+    }
+    const totalCount = entries.length;
+    const filtered = statusFilter ? entries.filter((s) => s.status === statusFilter) : entries;
+    const response = {
+      file: toRelativePath(projectDir, filePath),
+      total_count: totalCount,
+      filtered_count: filtered.length,
+      changes: filtered,
+      diagnostics: doc.getDiagnostics()
+    };
+    return {
+      content: [{ type: "text", text: JSON.stringify(response) }]
+    };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return errorResult3(msg);
+  }
+}
+function buildSummaryEntry(change, fileContent) {
+  const typeStr = TYPE_MAP[change.type];
+  const lineNumber = offsetToLineNumber2(fileContent, change.range.start);
+  const author = change.metadata?.author ?? "";
+  const status = change.metadata?.status ?? change.status.toLowerCase();
+  return {
+    change_id: change.id,
+    type: typeStr,
+    status,
+    author,
+    line: lineNumber,
+    preview: buildPreview(change),
+    level: change.level,
+    anchored: change.anchored,
+    resolved: change.resolved ?? true,
+    ...change.consumedBy ? { consumed_by: change.consumedBy } : {}
+  };
+}
+function buildDetailForLevel(detail, change, fileContent, lines, doc, summary, contextN) {
+  switch (detail) {
+    case "context":
+      return buildContextEntry(change, fileContent, lines, summary, contextN);
+    case "full":
+      return buildFullDetailEntry(change, fileContent, lines, doc, summary, contextN);
+    default:
+      return summary;
+  }
+}
+
+// ../../packages/cli/dist/engine/handlers/supersede-change.js
+import * as fs11 from "node:fs/promises";
+init_dist_esm();
+var supersedeChangeTool = {
+  name: "supersede_change",
+  description: "Atomically reject an existing proposed change and propose a replacement. The old change is rejected and the new change's footnote includes a `supersedes: cn-N` link. Use this instead of separate reject + propose calls when replacing a change with a better version.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      file: {
+        type: "string",
+        description: "Path, file:// URI, or active Word session URI (word://sess-...). Use resources/list to discover Word sessions."
+      },
+      change_id: {
+        type: "string",
+        description: "The change ID to supersede (e.g., 'cn-1'). Must be in proposed status."
+      },
+      old_text: {
+        type: "string",
+        description: "Text to replace in the (possibly settled) file. If the rejected change was settled (compacted), this targets the resulting clean text. If not settled, targets text in the current file."
+      },
+      new_text: {
+        type: "string",
+        description: "Replacement text for the new proposed change."
+      },
+      reason: {
+        type: "string",
+        description: "Why this change supersedes the old one."
+      },
+      insert_after: {
+        type: "string",
+        description: "For insertions (empty old_text): insert new text after this anchor text."
+      },
+      author: {
+        type: "string",
+        description: "Who is making this change. Recommended: always pass your model/agent identity (e.g. ai:composer) for clear attribution. Required when this project has author enforcement."
+      }
+    },
+    required: ["file", "change_id", "old_text", "new_text"]
+  }
+};
+async function handleSupersedeChange(args, resolver, state) {
+  try {
+    const file2 = args.file;
+    const changeId = optionalStrArg(args, "change_id", "changeId");
+    const oldText = strArg(args, "old_text", "oldText");
+    const newText = strArg(args, "new_text", "newText");
+    const reasoning = optionalStrArg(args, "reason", "reason");
+    const insertAfter = optionalStrArg(args, "insert_after", "insertAfter");
+    if (!file2) {
+      return errorResult3('Missing required argument: "file"');
+    }
+    if (!changeId) {
+      return errorResult3('Missing required argument: "change_id"');
+    }
+    if (oldText === "" && newText === "") {
+      return errorResult3("Both old_text and new_text are empty \u2014 nothing to change.");
+    }
+    const filePath = resolver.resolveFilePath(file2);
+    const { config: config2, projectDir } = await resolver.forFile(filePath);
+    if (!isFileInScope(filePath, config2, projectDir)) {
+      return errorResult3(`File is not in scope for tracking: "${filePath}". Check .changedown/config.toml include/exclude patterns.`);
+    }
+    let fileContent;
+    try {
+      fileContent = await fs11.readFile(filePath, "utf-8");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return errorResult3(`File not found or unreadable: ${msg}`);
+    }
+    const { author, error: authorError } = resolveAuthor(args.author, config2, "supersede_change");
+    if (authorError) {
+      return errorResult3(authorError.message);
+    }
+    try {
+      assertResolved(parseForFormat(fileContent));
+    } catch (err) {
+      if (err instanceof UnresolvedChangesError) {
+        return errorResult3(`Document has ${err.diagnostics.length} unresolved change(s); run 'cd repair' or amend the failing change. Diagnostics: ${JSON.stringify(err.diagnostics)}`);
+      }
+      throw err;
+    }
+    const result = await computeSupersedeResult(fileContent, changeId, {
+      newText,
+      oldText,
+      reason: reasoning,
+      author,
+      insertAfter: insertAfter ?? void 0
+    });
+    if (result.isError) {
+      return errorResult3(result.error);
+    }
+    fileContent = result.text;
+    if (config2.settlement.auto_on_reject) {
+      const { currentContent } = applyRejectedChanges2(fileContent);
+      fileContent = currentContent;
+    }
+    await writeTrackedFile(filePath, fileContent);
+    await rerecordState(state, filePath, fileContent, config2);
+    const relativePath = toRelativePath(projectDir, filePath);
+    const footnoteCount = (fileContent.match(/^\[\^cn-\d+(?:\.\d+)?\]:/gm) || []).length;
+    const proposedCount = countFootnoteHeadersWithStatus(fileContent, "proposed");
+    const acceptedCount = countFootnoteHeadersWithStatus(fileContent, "accepted");
+    const rejectedCount = countFootnoteHeadersWithStatus(fileContent, "rejected");
+    const changeType = oldText === "" ? "ins" : newText === "" ? "del" : "sub";
+    const responseData = {
+      old_change_id: changeId,
+      new_change_id: result.newChangeId,
+      file: relativePath,
+      type: changeType,
+      supersedes: changeId,
+      document_state: {
+        total_changes: footnoteCount,
+        proposed: proposedCount,
+        accepted: acceptedCount,
+        rejected: rejectedCount
+      }
+    };
+    return {
+      content: [{ type: "text", text: JSON.stringify(responseData) }]
+    };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return errorResult3(msg);
+  }
+}
+
+// ../../packages/cli/dist/engine/handlers/resolve-thread.js
+import * as fs12 from "node:fs/promises";
+init_dist_esm();
+var resolveThreadTool = {
+  name: "resolve_thread",
+  description: "Resolve or unresolve a change thread. Resolving marks the discussion as complete.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      file: {
+        type: "string",
+        description: "Path, file:// URI, or active Word session URI (word://sess-...). Use resources/list to discover Word sessions."
+      },
+      change_id: {
+        type: "string",
+        description: "e.g., cn-7"
+      },
+      action: {
+        type: "string",
+        enum: ["resolve", "unresolve"],
+        description: "Whether to resolve or unresolve the thread. Defaults to resolve."
+      },
+      author: {
+        type: "string",
+        description: "Who is resolving/unresolving. Recommended: always pass your model/agent identity (e.g. ai:composer) for clear attribution. Required when this project has author enforcement."
+      }
+    },
+    required: ["file", "change_id"]
+  }
+};
+function applyTextEdit(text, edit) {
+  return text.slice(0, edit.offset) + edit.newText + text.slice(edit.offset + edit.length);
+}
+async function handleResolveThread(args, resolver, state) {
+  try {
+    const file2 = args.file;
+    const changeId = optionalStrArg(args, "change_id", "changeId");
+    const action = optionalStrArg(args, "action", "action") ?? "resolve";
+    if (!file2) {
+      return errorResult3('Missing required argument: "file"');
+    }
+    if (!changeId) {
+      return errorResult3('Missing required argument: "change_id"');
+    }
+    const VALID_ACTIONS = ["resolve", "unresolve"];
+    if (!VALID_ACTIONS.includes(action)) {
+      return errorResult3(`Invalid action: "${action}". Must be one of: resolve, unresolve`);
+    }
+    const filePath = resolver.resolveFilePath(file2);
+    const { config: config2, projectDir } = await resolver.forFile(filePath);
+    if (!isFileInScope(filePath, config2, projectDir)) {
+      return errorResult3(`File is not in scope for tracking: "${filePath}". Check .changedown/config.toml include/exclude patterns.`);
+    }
+    let fileContent;
+    try {
+      fileContent = await fs12.readFile(filePath, "utf-8");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return errorResult3(`File not found or unreadable: ${msg}`);
+    }
+    const { author, error: authorError } = resolveAuthor(args.author, config2, "resolve_thread");
+    if (authorError) {
+      return errorResult3(authorError.message);
+    }
+    try {
+      assertResolved(parseForFormat(fileContent));
+    } catch (err) {
+      if (err instanceof UnresolvedChangesError) {
+        return errorResult3(`Document has ${err.diagnostics.length} unresolved change(s); run 'cd repair' or amend the failing change. Diagnostics: ${JSON.stringify(err.diagnostics)}`);
+      }
+      throw err;
+    }
+    let edit;
+    if (action === "resolve") {
+      edit = computeResolutionEdit(fileContent, changeId, { author });
+    } else {
+      edit = computeUnresolveEdit(fileContent, changeId);
+    }
+    if (!edit) {
+      if (action === "resolve") {
+        return errorResult3(`Change "${changeId}" not found in file.`);
+      }
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({
+              change_id: changeId,
+              action,
+              success: false,
+              reason: `No resolved line found for "${changeId}".`
+            })
+          }
+        ]
+      };
+    }
+    const updatedContent = applyTextEdit(fileContent, edit);
+    await writeTrackedFile(filePath, updatedContent);
+    await rerecordState(state, filePath, updatedContent, config2);
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify({
+            change_id: changeId,
+            action,
+            success: true
+          })
+        }
+      ]
+    };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return errorResult3(msg);
+  }
+}
+
+// ../../packages/cli/dist/engine/handlers/respond-to-thread.js
+import * as fs13 from "node:fs/promises";
+init_dist_esm();
+async function handleRespondToThread(args, resolver, _state) {
+  try {
+    const file2 = args.file;
+    const changeId = optionalStrArg(args, "change_id", "changeId");
+    const response = optionalStrArg(args, "response", "response");
+    const label = optionalStrArg(args, "label", "label");
+    if (!file2) {
+      return errorResult3('Missing required argument: "file"');
+    }
+    if (!changeId) {
+      return errorResult3('Missing required argument: "change_id"');
+    }
+    if (!response) {
+      return errorResult3('Missing required argument: "response"');
+    }
+    const VALID_LABELS = ["suggestion", "issue", "question", "praise", "todo", "thought", "nitpick"];
+    if (label && !VALID_LABELS.includes(label)) {
+      return errorResult3(`Invalid label: "${label}". Must be one of: ${VALID_LABELS.join(", ")}`);
+    }
+    const filePath = resolver.resolveFilePath(file2);
+    const { config: config2, projectDir } = await resolver.forFile(filePath);
+    if (!isFileInScope(filePath, config2, projectDir)) {
+      return errorResult3(`File is not in scope for tracking: "${filePath}". Check .changedown/config.toml include/exclude patterns.`);
+    }
+    let fileContent;
+    try {
+      fileContent = await fs13.readFile(filePath, "utf-8");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return errorResult3(`File not found or unreadable: ${msg}`);
+    }
+    const { author, error: authorError } = resolveAuthor(args.author, config2, "respond_to_thread");
+    if (authorError) {
+      return errorResult3(authorError.message);
+    }
+    try {
+      assertResolved(parseForFormat(fileContent));
+    } catch (err) {
+      if (err instanceof UnresolvedChangesError) {
+        return errorResult3(`Document has ${err.diagnostics.length} unresolved change(s); run 'cd repair' or amend the failing change. Diagnostics: ${JSON.stringify(err.diagnostics)}`);
+      }
+      throw err;
+    }
+    const result = computeReplyEdit(fileContent, changeId, {
+      text: response,
+      author,
+      label
+    });
+    if (result.isError) {
+      return errorResult3(result.error);
+    }
+    await writeTrackedFile(filePath, result.text);
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify({
+            change_id: changeId,
+            comment_added: true
+          })
+        }
+      ]
+    };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return errorResult3(msg);
+  }
+}
+
+// ../../packages/cli/dist/engine/backends/file-backend.js
+var WATCH_DEBOUNCE_MS = 100;
+var FileBackend = class {
+  schemes = ["file"];
+  resolver;
+  state;
+  /**
+   * Construct a FileBackend rooted at `projectDir`.
+   *
+   * FileBackend owns its own ConfigResolver and SessionState. When this
+   * backend is invoked through the MCP server, the server's `instanceof
+   * FileBackend` fast-path calls the engine handlers directly with the
+   * server's resolver and state, so FileBackend's internal pair is only
+   * used when a consumer calls `read`/`applyChange`/`listChanges`
+   * directly on the backend — for example, from tests, or from a future
+   * consumer that doesn't know it's holding a FileBackend.
+   *
+   * If that pattern grows, refactor to accept the resolver and state as
+   * constructor injections.
+   */
+  constructor(projectDir) {
+    this.resolver = new ConfigResolver(projectDir);
+    this.state = new SessionState();
+    this.state.enableGuide();
+  }
+  // ─── list() ────────────────────────────────────────────────────────────────
+  list() {
+    const paths = this.state.getAccessedPaths();
+    return paths.map((absPath) => ({
+      uri: `file://${absPath}`,
+      name: absPath.split("/").pop() ?? absPath,
+      mimeType: "text/markdown",
+      // version intentionally omitted; per-path version tracking is a follow-up.
+      // Adding this would require SessionState to expose a per-record version stamp.
+      version: void 0
+    }));
+  }
+  // ─── URI → path ───────────────────────────────────────────────────────────
+  refToPath(ref) {
+    const { uri } = ref;
+    if (!uri.startsWith("file://")) {
+      const scheme = uri.split(":")[0] ?? "(none)";
+      throw new Error(`FileBackend: expected file:// URI, got scheme '${scheme}'`);
+    }
+    try {
+      return fileURLToPath2(uri);
+    } catch (err) {
+      throw new Error(`FileBackend: cannot resolve URI to path: ${uri} \u2014 ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+  // ─── read() ────────────────────────────────────────────────────────────────
+  async read(ref) {
+    const filePath = this.refToPath(ref);
+    const result = await handleReadTrackedFile({ file: filePath }, this.resolver, this.state);
+    if (result.isError) {
+      throw new Error(result.content[0]?.text ?? "FileBackend.read: unknown error");
+    }
+    const text = result.content.map((c) => c.text).join("");
+    let version3 = "";
+    try {
+      const stat4 = await fs14.promises.stat(filePath);
+      version3 = stat4.mtimeMs.toString();
+    } catch {
+    }
+    return { text, format: "L2", version: version3 };
+  }
+  // ─── listChanges() ─────────────────────────────────────────────────────────
+  async listChanges(ref, filter = {}) {
+    const filePath = this.refToPath(ref);
+    const result = await handleListChanges({ file: filePath, ...filter }, this.resolver, this.state);
+    if (result.isError) {
+      throw new Error(result.content[0]?.text ?? "FileBackend.listChanges: unknown error");
+    }
+    try {
+      const raw = JSON.parse(result.content[0]?.text ?? "{}");
+      const changes = raw.changes;
+      if (!Array.isArray(changes))
+        return [];
+      return changes.map((c) => ({
+        changeId: String(c.change_id ?? c.changeId ?? ""),
+        type: String(c.type ?? ""),
+        status: String(c.status ?? ""),
+        author: String(c.author ?? ""),
+        line: Number(c.line ?? 0),
+        preview: String(c.preview ?? "")
+      }));
+    } catch (err) {
+      console.warn("[FileBackend.listChanges] handler returned non-JSON success response; returning []", err instanceof Error ? err.message : err);
+      return [];
+    }
+  }
+  // ─── applyChange() ─────────────────────────────────────────────────────────
+  async applyChange(ref, op) {
+    const filePath = this.refToPath(ref);
+    const args = { file: filePath, ...op.args };
+    let rawResult;
+    switch (op.kind) {
+      case "propose":
+        rawResult = await handleProposeChange(args, this.resolver, this.state);
+        break;
+      case "review":
+        rawResult = await handleReviewChanges(args, this.resolver, this.state);
+        break;
+      case "amend":
+        rawResult = await handleAmendChange(args, this.resolver, this.state);
+        break;
+      case "supersede":
+        rawResult = await handleSupersedeChange(args, this.resolver, this.state);
+        break;
+      case "resolve_thread":
+        rawResult = await handleResolveThread(args, this.resolver, this.state);
+        break;
+      case "respond":
+        rawResult = await handleRespondToThread(args, this.resolver, this.state);
+        break;
+      default: {
+        const _kind = op;
+        throw new Error(`Unknown ChangeOp kind: ${_kind.kind}`);
+      }
+    }
+    if (rawResult.isError) {
+      return { applied: false, text: rawResult.content[0]?.text };
+    }
+    const text = rawResult.content[0]?.text ?? "";
+    let changeId;
+    try {
+      const parsed = JSON.parse(text);
+      if (typeof parsed.change_id === "string")
+        changeId = parsed.change_id;
+    } catch {
+    }
+    return { applied: true, changeId, text };
+  }
+  // ─── subscribe() ───────────────────────────────────────────────────────────
+  subscribe(ref, listener) {
+    const filePath = this.refToPath(ref);
+    let debounceTimer = null;
+    let watcher = null;
+    try {
+      watcher = fs14.watch(filePath, () => {
+        if (debounceTimer !== null)
+          clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(async () => {
+          debounceTimer = null;
+          let version3 = "";
+          try {
+            const stat4 = await fs14.promises.stat(filePath);
+            version3 = stat4.mtimeMs.toString();
+          } catch {
+            listener({ kind: "backend_disconnected" });
+            return;
+          }
+          listener({ kind: "document_changed", version: version3 });
+        }, WATCH_DEBOUNCE_MS);
+      });
+    } catch {
+    }
+    return () => {
+      if (debounceTimer !== null) {
+        clearTimeout(debounceTimer);
+        debounceTimer = null;
+      }
+      watcher?.close();
+    };
+  }
+};
+
+// ../../packages/cli/dist/engine/index.js
+init_file_ops2();
+
+// ../../packages/cli/dist/engine/tool-schemas.js
+var compactProposeChangeSchema = {
+  name: "propose_change",
+  description: "Propose tracked changes to a document target (file path, file:// URI, or word:// session). Each change uses at (LINE:HASH coordinate) and op (edit operation). For multiple changes, pass a changes array \u2014 all applied atomically against the pre-change state.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      file: { type: "string", description: "Path, file:// URI, or active Word session URI (word://sess-...). Use resources/list to discover Word sessions." },
+      author: { type: "string", description: "Author identity (e.g., ai:claude-opus-4.6, human:alice). Required when project has author enforcement." },
+      at: { type: "string", description: 'Target coordinate from read_tracked_file. Single line: "LINE:HASH". Range: "LINE:HASH-LINE:HASH".' },
+      op: { type: "string", description: "Edit operation. Substitute: {~~old~>new~~}. Insert: {++text++}. Delete: {--text--}. Highlight: {==text==}. Comment: {>>reason. Append {>> to annotate any op." },
+      changes: {
+        type: "array",
+        description: "Multiple changes applied atomically with grouped IDs. All coordinates reference the pre-change state.",
+        items: {
+          type: "object",
+          properties: {
+            at: { type: "string", description: "LINE:HASH or LINE:HASH-LINE:HASH coordinate." },
+            op: { type: "string", description: "{~~old~>new~~} | {++text++} | {--text--} | {==text==}. Append {>> to annotate." }
+          },
+          required: ["at", "op"]
+        }
+      },
+      raw: { type: "boolean", description: "When true, bypasses CriticMarkup wrapping (policy-gated). Denied in strict mode." }
+    },
+    required: ["file"]
+  }
+};
+var classicProposeChangeSchema = {
+  name: "propose_change",
+  description: "Propose tracked changes to a document target (file path, file:// URI, or word:// session). Each change uses old_text/new_text for text matching. For multiple changes, pass a changes array \u2014 all applied atomically against the pre-change state.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      file: { type: "string", description: "Path, file:// URI, or active Word session URI (word://sess-...). Use resources/list to discover Word sessions." },
+      author: { type: "string", description: "Author identity (e.g., ai:claude-opus-4.6, human:alice). Required when project has author enforcement." },
+      old_text: { type: "string", description: "Text to replace. Empty string for pure insertion. Must match file content exactly." },
+      new_text: { type: "string", description: "Replacement text. Empty string for pure deletion." },
+      reason: { type: "string", description: "Annotation for the change (adds a discussion comment to the change thread)." },
+      insert_after: { type: "string", description: "For insertions: insert new text after this anchor text." },
+      changes: {
+        type: "array",
+        description: "Multiple changes applied atomically with grouped IDs.",
+        items: {
+          type: "object",
+          properties: {
+            old_text: { type: "string", description: "Text to replace." },
+            new_text: { type: "string", description: "Replacement text." },
+            reason: { type: "string", description: "Annotation for this change." },
+            insert_after: { type: "string", description: "Insertion anchor text." }
+          },
+          required: ["old_text", "new_text"]
+        }
+      },
+      raw: { type: "boolean", description: "When true, bypasses CriticMarkup wrapping (policy-gated). Denied in strict mode." }
+    },
+    required: ["file"]
+  }
+};
+
+// ../../packages/cli/dist/engine/listed-tools.js
+function getListedTools(mode = "classic") {
+  const proposeChange = mode === "compact" ? compactProposeChangeSchema : classicProposeChangeSchema;
+  return [
+    { name: readTrackedFileTool.name, description: readTrackedFileTool.description, inputSchema: readTrackedFileTool.inputSchema },
+    { name: proposeChange.name, description: proposeChange.description, inputSchema: proposeChange.inputSchema },
+    { name: reviewChangesTool.name, description: reviewChangesTool.description, inputSchema: reviewChangesTool.inputSchema },
+    { name: amendChangeTool.name, description: amendChangeTool.description, inputSchema: amendChangeTool.inputSchema },
+    { name: listChangesTool.name, description: listChangesTool.description, inputSchema: listChangesTool.inputSchema },
+    { name: supersedeChangeTool.name, description: supersedeChangeTool.description, inputSchema: supersedeChangeTool.inputSchema },
+    { name: resolveThreadTool.name, description: resolveThreadTool.description, inputSchema: resolveThreadTool.inputSchema }
+  ];
+}
+var AUTHOR_REQUIRED_SUFFIX = " In this project author is required.";
+function getListedToolsWithConfig(config2, mode = "classic") {
+  const tools = getListedTools(mode);
+  const suffix = config2.author?.enforcement === "required" ? AUTHOR_REQUIRED_SUFFIX : "";
+  if (!suffix)
+    return tools;
+  return tools.map((t2) => {
+    const schema = t2.inputSchema;
+    if (!schema?.properties?.author?.description)
+      return t2;
+    const cloned = JSON.parse(JSON.stringify(t2.inputSchema));
+    if (cloned.properties?.author?.description) {
+      cloned.properties.author.description += suffix;
+    }
+    return { name: t2.name, description: t2.description, inputSchema: cloned };
+  });
+}
+
+// ../../packages/cli/dist/engine/handlers/propose-compact-memory.js
+init_dist_esm();
+function fail(message, code = "VALIDATION_ERROR", details) {
+  const content = [{ type: "text", text: message }];
+  content.push({ type: "text", text: JSON.stringify({ error: { message, code, ...details ?? {} } }) });
+  return { ok: false, toolResult: { content, isError: true } };
+}
+function checkReasoningRequired2(reasoning, config2) {
+  if (config2.protocol.reasoning !== "required")
+    return null;
+  if (reasoning)
+    return null;
+  return {
+    content: [{
+      type: "text",
+      text: "This project requires reasoning on proposals. Append {>>reason to your op string, or include a reason parameter in your propose_change call."
+    }],
+    isError: true
+  };
+}
+function documentState(modifiedText) {
+  const footnoteCount = (modifiedText.match(/^\[\^cn-\d+(?:\.\d+)?\]:/gm) || []).length;
+  const proposedCount = (modifiedText.match(/\|\s*proposed\s*$/gm) || []).length;
+  const acceptedCount = (modifiedText.match(/\|\s*accepted\s*$/gm) || []).length;
+  const authorMatches2 = modifiedText.match(/^\[\^cn-\d+(?:\.\d+)?\]:\s*@([^\s|]+)/gm) || [];
+  const uniqueAuthors = new Set(authorMatches2.map((m) => m.match(/@([^\s|]+)/)?.[1]).filter(Boolean));
+  return {
+    total_changes: footnoteCount,
+    proposed: proposedCount,
+    accepted: acceptedCount,
+    authors: uniqueAuthors.size
+  };
+}
+function effectiveStatus(change) {
+  return change.metadata?.status ?? change.inlineMetadata?.status ?? change.status;
+}
+function authorMatches(a, b) {
+  if (!a)
+    return false;
+  return a.replace(/^@/, "") === b.replace(/^@/, "");
+}
+function replaceUnique2(haystack, needle, replacement) {
+  if (needle === "")
+    return void 0;
+  const first = haystack.indexOf(needle);
+  if (first < 0)
+    return void 0;
+  if (haystack.indexOf(needle, first + needle.length) !== -1)
+    return void 0;
+  return haystack.slice(0, first) + replacement + haystack.slice(first + needle.length);
+}
+async function trySupersedeContainingInsertion(input) {
+  if (input.op.type !== "sub" && input.op.type !== "del")
+    return void 0;
+  const doc = parseForFormat(input.fileContent, { skipCodeBlocks: false });
+  const containing = doc.getChanges().find((change) => {
+    if (change.type !== ChangeType.Insertion)
+      return false;
+    if (effectiveStatus(change) !== ChangeStatus.Proposed && effectiveStatus(change) !== "proposed")
+      return false;
+    if (!authorMatches(change.metadata?.author ?? change.inlineMetadata?.author, input.author))
+      return false;
+    const payload = change.modifiedText ?? "";
+    return payload.includes(input.op.oldText);
+  });
+  if (!containing)
+    return void 0;
+  const previous = containing.modifiedText ?? "";
+  const revised = input.op.type === "sub" ? replaceUnique2(previous, input.op.oldText, input.op.newText) : replaceUnique2(previous, input.op.oldText, "");
+  if (revised === void 0)
+    return void 0;
+  const supersede = await computeSupersedeResult(input.fileContent, containing.id, {
+    newText: revised,
+    reason: input.op.reasoning ?? `Revise ${containing.id} instead of nesting inside it`,
+    author: input.author
+  });
+  if (supersede.isError)
+    return void 0;
+  return {
+    modifiedText: supersede.text,
+    changeType: "ins",
+    supersededIds: [containing.id],
+    affectedStartLine: 1,
+    affectedEndLine: input.fileContent.split("\n").length,
+    relocations: [],
+    remaps: [],
+    settled: false
+  };
+}
+async function tryCommentOnContainingInsertion(input) {
+  if (input.op.type !== "comment")
+    return void 0;
+  const text = input.op.reasoning?.trim();
+  if (!text)
+    return void 0;
+  const fileLines = input.fileContent.split("\n");
+  let resolved;
+  try {
+    resolved = resolveCoordinates(input.op, input.fileContent, fileLines, input.state, input.filePath, input.config);
+  } catch {
+    return void 0;
+  }
+  const doc = parseForFormat(input.fileContent, { skipCodeBlocks: false });
+  const containing = doc.getChanges().find((change) => {
+    if (change.type !== ChangeType.Insertion)
+      return false;
+    if (effectiveStatus(change) !== ChangeStatus.Proposed && effectiveStatus(change) !== "proposed")
+      return false;
+    return change.range.start <= resolved.endOffset && change.range.end >= resolved.startOffset;
+  });
+  if (!containing)
+    return void 0;
+  const reply = computeReplyEdit(input.fileContent, containing.id, {
+    text,
+    author: input.author
+  });
+  if (reply.isError)
+    return void 0;
+  return {
+    targetChangeId: containing.id,
+    text,
+    applyResult: {
+      modifiedText: reply.text,
+      changeType: "comment",
+      supersededIds: [],
+      affectedStartLine: resolved.rawStartLine,
+      affectedEndLine: resolved.rawEndLine,
+      relocations: resolved.relocations,
+      remaps: resolved.remaps,
+      viewResolved: resolved.viewResolved,
+      settled: false
+    }
+  };
+}
+async function prepareCompactProposeChange(input) {
+  const { args, filePath, relativePath, fileContent, config: config2, state } = input;
+  if (args.start_line || args.end_line || args.after_line) {
+    return fail("Use at parameter for line addressing. start_line/end_line/after_line are not supported in compact mode.", "DEPRECATED_PARAMS");
+  }
+  const at = args.at;
+  const opText = args.op;
+  if (!at || !opText) {
+    return fail('Compact mode requires both "at" and "op" parameters.', "MISSING_ARGUMENT");
+  }
+  let parsed;
+  try {
+    parsed = parseOp(opText);
+  } catch (err) {
+    return fail(err instanceof Error ? err.message : String(err));
+  }
+  await initHashline();
+  const { author, error: authorError } = resolveAuthor(args.author, config2, "propose_change");
+  if (authorError || !author) {
+    return fail(authorError?.message ?? "Author resolution failed", "AUTHOR_RESOLUTION_FAILED");
+  }
+  const reasoning = parsed.reasoning ?? args.reason;
+  const reasoningError = checkReasoningRequired2(reasoning, config2);
+  if (reasoningError)
+    return { ok: false, toolResult: reasoningError };
+  const compactOp = {
+    at,
+    type: parsed.type,
+    oldText: parsed.oldText,
+    newText: parsed.newText,
+    reasoning
+  };
+  const threadComment = await tryCommentOnContainingInsertion({
+    fileContent,
+    op: compactOp,
+    author,
+    state,
+    filePath,
+    config: config2
+  });
+  if (threadComment) {
+    const responseData2 = {
+      change_id: threadComment.targetChangeId,
+      file: relativePath,
+      type: "comment",
+      comment_added: true,
+      threaded_on: threadComment.targetChangeId,
+      document_state: documentState(threadComment.applyResult.modifiedText)
+    };
+    const ds2 = responseData2.document_state;
+    responseData2.state_summary = `\u{1F4CB} ${ds2.total_changes} tracked change(s) | ${ds2.proposed} proposed, ${ds2.accepted} accepted | ${ds2.authors} author(s)`;
+    return {
+      ok: true,
+      changeId: threadComment.targetChangeId,
+      author,
+      reasoning,
+      oldL2: fileContent,
+      newL2: threadComment.applyResult.modifiedText,
+      responseData: responseData2,
+      toolResult: { content: [{ type: "text", text: JSON.stringify(responseData2) }] },
+      normalizedOp: compactOp,
+      applyResult: threadComment.applyResult,
+      threadReply: {
+        changeId: threadComment.targetChangeId,
+        text: threadComment.text,
+        author
+      }
+    };
+  }
+  const changeId = state.getNextId(filePath, fileContent);
+  let applyResult;
+  try {
+    applyResult = resolveAndApply(compactOp, fileContent, fileContent.split("\n"), state, filePath, config2, changeId, author);
+  } catch (err) {
+    const supersedeResult = await trySupersedeContainingInsertion({
+      fileContent,
+      op: compactOp,
+      changeId,
+      author
+    });
+    if (supersedeResult) {
+      applyResult = supersedeResult;
+    } else {
+      return fail(err instanceof Error ? err.message : String(err), "HASHLINE_REFERENCE_UNRESOLVED", {
+        file: relativePath,
+        quick_fix: { action: "re_read", file: filePath }
+      });
+    }
+  }
+  let affectedLines = [];
+  try {
+    affectedLines = computeAffectedLines(applyResult.modifiedText, applyResult.affectedStartLine, applyResult.affectedEndLine, {
+      hashlineEnabled: config2.hashline.enabled
+    });
+  } catch {
+    affectedLines = [];
+  }
+  const responseData = {
+    change_id: changeId,
+    file: relativePath,
+    type: applyResult.changeType,
+    ...applyResult.relocations.length > 0 ? { relocated: applyResult.relocations } : {},
+    ...applyResult.remaps.length > 0 ? { remaps: applyResult.remaps } : {},
+    ...applyResult.supersededIds.length > 0 ? { superseded: applyResult.supersededIds } : {},
+    document_state: documentState(applyResult.modifiedText)
+  };
+  if (affectedLines.length > 0 && config2.response?.affected_lines) {
+    responseData.affected_lines = affectedLines;
+  }
+  const ds = responseData.document_state;
+  responseData.state_summary = `\u{1F4CB} ${ds.total_changes} tracked change(s) | ${ds.proposed} proposed, ${ds.accepted} accepted | ${ds.authors} author(s)`;
+  return {
+    ok: true,
+    changeId,
+    author,
+    reasoning,
+    oldL2: fileContent,
+    newL2: applyResult.modifiedText,
+    responseData,
+    toolResult: { content: [{ type: "text", text: JSON.stringify(responseData) }] },
+    normalizedOp: compactOp,
+    applyResult
+  };
+}
+
 // ../../packages/cli/dist/engine/handlers/begin-change-group.js
 init_dist_esm();
-import * as fs11 from "node:fs/promises";
+import * as fs15 from "node:fs/promises";
 import * as path8 from "node:path";
 async function scanProjectForMaxId(projectDir, config2) {
   let max = 0;
   try {
-    const entries = await fs11.readdir(projectDir, { recursive: true });
+    const entries = await fs15.readdir(projectDir, { recursive: true });
     for (const rawEntry of entries) {
       const entry = typeof rawEntry === "string" ? rawEntry : String(rawEntry);
       const fullPath = path8.join(projectDir, entry);
       if (!isFileInScope(fullPath, config2, projectDir))
         continue;
       try {
-        const content = await fs11.readFile(fullPath, "utf-8");
+        const content = await fs15.readFile(fullPath, "utf-8");
         const fileMax = scanMaxCnId(content);
         if (fileMax > max)
           max = fileMax;
@@ -33880,7 +35160,7 @@ async function handleBeginChangeGroup(args, resolver, state) {
     const description = optionalStrArg(args, "description", "description");
     const reasoning = optionalStrArg(args, "reason", "reason");
     if (!description) {
-      return errorResult('Missing required argument: "description"');
+      return errorResult3('Missing required argument: "description"');
     }
     const projectDir = resolver.resolveDir();
     const config2 = await resolver.lastConfig();
@@ -33896,14 +35176,14 @@ async function handleBeginChangeGroup(args, resolver, state) {
     };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    return errorResult(msg);
+    return errorResult3(msg);
   }
 }
 
 // ../../packages/cli/dist/engine/handlers/end-change-group.js
-init_dist_esm();
-import * as fs12 from "node:fs/promises";
+import * as fs16 from "node:fs/promises";
 import * as path9 from "node:path";
+init_dist_esm();
 init_file_ops2();
 async function handleEndChangeGroup(args, resolver, state) {
   try {
@@ -33912,7 +35192,7 @@ async function handleEndChangeGroup(args, resolver, state) {
     const projectDir = resolver.resolveDir();
     const { author, error: authorError } = resolveAuthor(args.author, config2, "end_change_group");
     if (authorError) {
-      return errorResult(authorError.message);
+      return errorResult3(authorError.message);
     }
     const groupInfo = state.endGroup();
     if (groupInfo.files.length > 0) {
@@ -33924,9 +35204,17 @@ async function handleEndChangeGroup(args, resolver, state) {
       const summaryLine = summary ? `
     summary: ${summary}` : "";
       const footnoteBlock = footnoteHeader + reasonLine + summaryLine;
-      const fileContent = await fs12.readFile(targetFile, "utf-8");
+      const fileContent = await fs16.readFile(targetFile, "utf-8");
+      try {
+        assertResolved(parseForFormat(fileContent));
+      } catch (err) {
+        if (err instanceof UnresolvedChangesError) {
+          return errorResult3(`Document has ${err.diagnostics.length} unresolved change(s); run 'cd repair' or amend the failing change. Diagnostics: ${JSON.stringify(err.diagnostics)}`);
+        }
+        throw err;
+      }
       const modifiedText = appendFootnote(fileContent, footnoteBlock);
-      await fs12.writeFile(targetFile, modifiedText, "utf-8");
+      await writeTrackedFile(targetFile, modifiedText);
     }
     const filesList = groupInfo.files.length > 0 ? `Modified files:
 ${groupInfo.files.map((f) => path9.relative(projectDir, f)).join("\n")}
@@ -33947,12 +35235,12 @@ Share this list with the user so they know which file(s) to open or read.` : "";
     };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    return errorResult(msg);
+    return errorResult3(msg);
   }
 }
 
 // ../../packages/cli/dist/engine/handlers/review-change.js
-import * as fs13 from "node:fs/promises";
+import * as fs17 from "node:fs/promises";
 init_dist_esm();
 init_dist_esm();
 async function handleReviewChange(args, resolver, state) {
@@ -33962,40 +35250,48 @@ async function handleReviewChange(args, resolver, state) {
     const decision = optionalStrArg(args, "decision", "decision");
     const reasoning = optionalStrArg(args, "reason", "reason");
     if (!file2) {
-      return errorResult('Missing required argument: "file"');
+      return errorResult3('Missing required argument: "file"');
     }
     if (!changeId) {
-      return errorResult('Missing required argument: "change_id"');
+      return errorResult3('Missing required argument: "change_id"');
     }
     if (!decision) {
-      return errorResult('Missing required argument: "decision"');
+      return errorResult3('Missing required argument: "decision"');
     }
     if (!reasoning) {
-      return errorResult('Missing required argument: "reason"');
+      return errorResult3('Missing required argument: "reason"');
     }
     if (!VALID_DECISIONS.includes(decision)) {
-      return errorResult(`Invalid decision: "${decision}". Must be one of: approve, reject, request_changes, withdraw`);
+      return errorResult3(`Invalid decision: "${decision}". Must be one of: approve, reject, request_changes, withdraw`);
     }
     const typedDecision = decision;
     const filePath = resolver.resolveFilePath(file2);
     const { config: config2, projectDir } = await resolver.forFile(filePath);
     if (!isFileInScope(filePath, config2, projectDir)) {
-      return errorResult(`File is not in scope for tracking: "${filePath}". Check .changedown/config.toml include/exclude patterns.`);
+      return errorResult3(`File is not in scope for tracking: "${filePath}". Check .changedown/config.toml include/exclude patterns.`);
     }
     let fileContent;
     try {
-      fileContent = await fs13.readFile(filePath, "utf-8");
+      fileContent = await fs17.readFile(filePath, "utf-8");
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      return errorResult(`File not found or unreadable: ${msg}`);
+      return errorResult3(`File not found or unreadable: ${msg}`);
     }
     const { author, error: authorError } = resolveAuthor(args.author, config2, "review_change");
     if (authorError) {
-      return errorResult(authorError.message);
+      return errorResult3(authorError.message);
+    }
+    try {
+      assertResolved(parseForFormat(fileContent));
+    } catch (err) {
+      if (err instanceof UnresolvedChangesError) {
+        return errorResult3(`Document has ${err.diagnostics.length} unresolved change(s); run 'cd repair' or amend the failing change. Diagnostics: ${JSON.stringify(err.diagnostics)}`);
+      }
+      throw err;
     }
     const applied = applyReview(fileContent, changeId, typedDecision, reasoning, author, config2);
     if ("error" in applied) {
-      return errorResult(applied.error);
+      return errorResult3(applied.error);
     }
     if (typedDecision === "request_changes") {
       const blockingArg = args.blocking === true;
@@ -34008,13 +35304,13 @@ async function handleReviewChange(args, resolver, state) {
     }
     if (applied.updatedContent !== fileContent) {
       fileContent = applied.updatedContent;
-      await fs13.writeFile(filePath, fileContent, "utf-8");
+      await writeTrackedFile(filePath, fileContent);
     }
     let settlementInfo;
     if (config2.settlement.auto_on_approve && typedDecision === "approve") {
       const { currentContent, appliedIds } = applyAcceptedChanges2(fileContent);
       if (appliedIds.length > 0) {
-        await fs13.writeFile(filePath, currentContent, "utf-8");
+        await writeTrackedFile(filePath, currentContent);
         fileContent = currentContent;
         settlementInfo = { appliedIds };
       }
@@ -34022,7 +35318,7 @@ async function handleReviewChange(args, resolver, state) {
     if (config2.settlement.auto_on_reject && typedDecision === "reject") {
       const { currentContent, appliedIds } = applyRejectedChanges2(fileContent);
       if (appliedIds.length > 0) {
-        await fs13.writeFile(filePath, currentContent, "utf-8");
+        await writeTrackedFile(filePath, currentContent);
         fileContent = currentContent;
         settlementInfo = { appliedIds };
       }
@@ -34044,86 +35340,22 @@ async function handleReviewChange(args, resolver, state) {
     };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    return errorResult(msg);
+    return errorResult3(msg);
   }
 }
 
 // ../../packages/cli/dist/engine/index.js
 init_dist_esm();
 
-// ../../packages/cli/dist/engine/handlers/respond-to-thread.js
-import * as fs14 from "node:fs/promises";
-init_dist_esm();
-async function handleRespondToThread(args, resolver, _state) {
-  try {
-    const file2 = args.file;
-    const changeId = optionalStrArg(args, "change_id", "changeId");
-    const response = optionalStrArg(args, "response", "response");
-    const label = optionalStrArg(args, "label", "label");
-    if (!file2) {
-      return errorResult('Missing required argument: "file"');
-    }
-    if (!changeId) {
-      return errorResult('Missing required argument: "change_id"');
-    }
-    if (!response) {
-      return errorResult('Missing required argument: "response"');
-    }
-    const VALID_LABELS = ["suggestion", "issue", "question", "praise", "todo", "thought", "nitpick"];
-    if (label && !VALID_LABELS.includes(label)) {
-      return errorResult(`Invalid label: "${label}". Must be one of: ${VALID_LABELS.join(", ")}`);
-    }
-    const filePath = resolver.resolveFilePath(file2);
-    const { config: config2, projectDir } = await resolver.forFile(filePath);
-    if (!isFileInScope(filePath, config2, projectDir)) {
-      return errorResult(`File is not in scope for tracking: "${filePath}". Check .changedown/config.toml include/exclude patterns.`);
-    }
-    let fileContent;
-    try {
-      fileContent = await fs14.readFile(filePath, "utf-8");
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      return errorResult(`File not found or unreadable: ${msg}`);
-    }
-    const { author, error: authorError } = resolveAuthor(args.author, config2, "respond_to_thread");
-    if (authorError) {
-      return errorResult(authorError.message);
-    }
-    const result = computeReplyEdit(fileContent, changeId, {
-      text: response,
-      author,
-      label
-    });
-    if (result.isError) {
-      return errorResult(result.error);
-    }
-    await fs14.writeFile(filePath, result.text, "utf-8");
-    return {
-      content: [
-        {
-          type: "text",
-          text: JSON.stringify({
-            change_id: changeId,
-            comment_added: true
-          })
-        }
-      ]
-    };
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    return errorResult(msg);
-  }
-}
-
 // ../../packages/cli/dist/engine/handlers/list-open-threads.js
 init_dist_esm();
-import * as fs15 from "node:fs/promises";
+import * as fs18 from "node:fs/promises";
 import * as path10 from "node:path";
 var TRACKING_HEADER_TRACKED = "<!-- changedown.com/v1: tracked -->";
 var VALID_STATUSES = ["proposed", "accepted", "rejected"];
 async function hasTrackingHeader(filePath) {
   try {
-    const fd = await fs15.open(filePath, "r");
+    const fd = await fs18.open(filePath, "r");
     const buf = Buffer.alloc(400);
     const { bytesRead } = await fd.read(buf, 0, 400, 0);
     await fd.close();
@@ -34136,14 +35368,14 @@ async function hasTrackingHeader(filePath) {
 async function collectTrackedMdFiles(dirPath, config2, projectDir) {
   const out = [];
   try {
-    const entries = await fs15.readdir(dirPath, { recursive: true });
+    const entries = await fs18.readdir(dirPath, { recursive: true });
     for (const raw of entries) {
       const entry = typeof raw === "string" ? raw : String(raw);
       const full = path10.join(dirPath, entry);
       if (!entry.endsWith(".md"))
         continue;
       try {
-        const stat4 = await fs15.stat(full);
+        const stat4 = await fs18.stat(full);
         if (!stat4.isFile())
           continue;
       } catch {
@@ -34165,25 +35397,25 @@ async function handleListOpenThreads(args, resolver, _state) {
     const authorFilter = optionalStrArg(args, "author", "author");
     const statusParam = args.status;
     if (pathArg === void 0 || pathArg === "") {
-      return errorResult('Missing required argument: "path". Pass a file or directory to list open threads for.');
+      return errorResult3('Missing required argument: "path". Pass a file or directory to list open threads for.');
     }
     const resolvedPath = resolver.resolveFilePath(pathArg);
     const { config: config2, projectDir } = await resolver.forFile(resolvedPath);
     let filesToScan = [];
     try {
-      const stat4 = await fs15.stat(resolvedPath);
+      const stat4 = await fs18.stat(resolvedPath);
       if (stat4.isFile()) {
         if (!isFileInScope(resolvedPath, config2, projectDir)) {
-          return errorResult(`File is not in scope for tracking: "${resolvedPath}". Check .changedown/config.toml include/exclude patterns.`);
+          return errorResult3(`File is not in scope for tracking: "${resolvedPath}". Check .changedown/config.toml include/exclude patterns.`);
         }
         filesToScan = [resolvedPath];
       } else if (stat4.isDirectory()) {
         filesToScan = await collectTrackedMdFiles(resolvedPath, config2, projectDir);
       } else {
-        return errorResult(`Path is not a file or directory: "${resolvedPath}"`);
+        return errorResult3(`Path is not a file or directory: "${resolvedPath}"`);
       }
     } catch {
-      return errorResult(`File not found or unreadable: "${resolvedPath}"`);
+      return errorResult3(`File not found or unreadable: "${resolvedPath}"`);
     }
     const statusFilter = Array.isArray(statusParam) && statusParam.length > 0 ? statusParam.filter((s) => typeof s === "string" && VALID_STATUSES.includes(s)) : ["proposed"];
     if (statusFilter.length === 0) {
@@ -34194,7 +35426,7 @@ async function handleListOpenThreads(args, resolver, _state) {
     for (const fp of filesToScan) {
       let content;
       try {
-        content = await fs15.readFile(fp, "utf-8");
+        content = await fs18.readFile(fp, "utf-8");
       } catch {
         continue;
       }
@@ -34265,14 +35497,15 @@ async function handleListOpenThreads(args, resolver, _state) {
     };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    return errorResult(msg);
+    return errorResult3(msg);
   }
 }
 
 // ../../packages/cli/dist/engine/handlers/raw-edit.js
-import * as fs16 from "node:fs/promises";
+import * as fs19 from "node:fs/promises";
 import * as path11 from "node:path";
 init_file_ops2();
+init_dist_esm();
 var MARKUP_OPENERS = [/\{\+\+/g, /\{\-\-/g, /\{\~\~/g];
 var FOOTNOTE_REF = /\[\^cn-\d+(?:\.\d+)?\]/g;
 function countMarkupInText(text) {
@@ -34295,35 +35528,43 @@ async function handleRawEdit(args, resolver) {
     const newText = optionalStrArg(args, "new_text", "newText");
     const reason = optionalStrArg(args, "reason", "reason");
     if (!file2) {
-      return errorResult('Missing required argument: "file"');
+      return errorResult3('Missing required argument: "file"');
     }
     if (oldText === void 0) {
-      return errorResult('Missing required argument: "old_text"');
+      return errorResult3('Missing required argument: "old_text"');
     }
     if (newText === void 0) {
-      return errorResult('Missing required argument: "new_text"');
+      return errorResult3('Missing required argument: "new_text"');
     }
     if (!reason || String(reason).trim() === "") {
-      return errorResult('Missing or empty required argument: "reason". Justify why this edit must bypass tracking.');
+      return errorResult3('Missing or empty required argument: "reason". Justify why this edit must bypass tracking.');
     }
     const filePath = resolver.resolveFilePath(file2);
     const { config: config2, projectDir } = await resolver.forFile(filePath);
     if (!isFileInScope(filePath, config2, projectDir)) {
-      return errorResult("File is outside the configured tracking scope.");
+      return errorResult3("File is outside the configured tracking scope.");
     }
     const policyMode = config2.policy?.mode ?? "safety-net";
     if (policyMode === "strict") {
-      return errorResult("Raw edit denied: project policy is strict. Raw edits bypass CriticMarkup tracking and are not allowed in strict mode. Use propose_change instead.");
+      return errorResult3("Raw edit denied: project policy is strict. Raw edits bypass CriticMarkup tracking and are not allowed in strict mode. Use propose_change instead.");
     }
     let fileContent;
     try {
-      fileContent = await fs16.readFile(filePath, "utf-8");
+      fileContent = await fs19.readFile(filePath, "utf-8");
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      return errorResult(`File not found or unreadable: ${msg}`);
+      return errorResult3(`File not found or unreadable: ${msg}`);
+    }
+    try {
+      assertResolved(parseForFormat(fileContent));
+    } catch (err) {
+      if (err instanceof UnresolvedChangesError) {
+        return errorResult3(`Document has ${err.diagnostics.length} unresolved change(s); run 'cd repair' or amend the failing change. Diagnostics: ${JSON.stringify(err.diagnostics)}`);
+      }
+      throw err;
     }
     const modifiedText = replaceUnique(fileContent, oldText, newText);
-    await fs16.writeFile(filePath, modifiedText, "utf-8");
+    await writeTrackedFile(filePath, modifiedText);
     console.error(`[changedown] raw_edit bypassed tracking: ${reason}`);
     const { annotations, footnotes } = countMarkupInText(oldText);
     const baseWarning = "This edit is untracked.";
@@ -34344,12 +35585,12 @@ async function handleRawEdit(args, resolver) {
     };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    return errorResult(msg);
+    return errorResult3(msg);
   }
 }
 
 // ../../packages/cli/dist/engine/handlers/get-tracking-status.js
-import * as fs17 from "node:fs/promises";
+import * as fs20 from "node:fs/promises";
 import * as path12 from "node:path";
 init_dist_esm();
 var import_picomatch2 = __toESM(require_picomatch2(), 1);
@@ -34374,16 +35615,30 @@ async function handleGetTrackingStatus(args, resolver, state) {
       if (isTracked) {
         let content;
         try {
-          content = await fs17.readFile(filePath, "utf-8");
+          content = await fs20.readFile(filePath, "utf-8");
         } catch {
           content = "";
         }
         const beforeSettle = countFootnoteHeadersWithStatus(content, "accepted");
         out.accepted_unsettled_count = beforeSettle;
         if (settleAccepted && beforeSettle > 0) {
+          try {
+            assertResolved(parseForFormat(content));
+          } catch (err) {
+            if (err instanceof UnresolvedChangesError) {
+              return {
+                content: [{
+                  type: "text",
+                  text: `Document has ${err.diagnostics.length} unresolved change(s); run 'cd repair' or amend the failing change. Diagnostics: ${JSON.stringify(err.diagnostics)}`
+                }],
+                isError: true
+              };
+            }
+            throw err;
+          }
           const { currentContent, appliedIds } = applyAcceptedChanges2(content);
           if (appliedIds.length > 0) {
-            await fs17.writeFile(filePath, currentContent, "utf-8");
+            await writeTrackedFile(filePath, currentContent);
             out.settled = true;
             out.settled_ids = appliedIds;
             await rerecordState(state, filePath, currentContent, config3);
@@ -34426,7 +35681,7 @@ async function handleGetTrackingStatus(args, resolver, state) {
 
 // ../../packages/cli/dist/engine/handlers/get-change.js
 init_dist_esm();
-import * as fs18 from "node:fs/promises";
+import * as fs21 from "node:fs/promises";
 init_dist_esm();
 function buildGroupInfo(doc, lines, parentId) {
   const parentBlock = findFootnoteBlock(lines, parentId);
@@ -34464,7 +35719,7 @@ async function handleGetChange(args, resolver) {
     const filePath = resolver.resolveFilePath(fileArg);
     const { config: config2, projectDir } = await resolver.forFile(filePath);
     try {
-      const stat4 = await fs18.stat(filePath);
+      const stat4 = await fs21.stat(filePath);
       if (!stat4.isFile()) {
         return errorResult4(`Not a file: "${filePath}"`);
       }
@@ -34476,7 +35731,7 @@ async function handleGetChange(args, resolver) {
     }
     let fileContent;
     try {
-      fileContent = await fs18.readFile(filePath, "utf-8");
+      fileContent = await fs21.readFile(filePath, "utf-8");
     } catch {
       return errorResult4(`Could not read file: "${filePath}"`);
     }
@@ -34588,7 +35843,2862 @@ function errorResult4(message, code, details) {
 // ../../packages/cli/dist/engine/handlers/compact-changes.js
 init_dist_esm();
 
+// ../../packages/cli/dist/engine/index.js
+function makeDefaultRegistry(projectDir) {
+  const registry2 = new BackendRegistry();
+  registry2.register(new FileBackend(projectDir));
+  return registry2;
+}
+
+// src/transport/fixed-port-leader.ts
+import * as http from "node:http";
+import * as https from "node:https";
+import * as fs22 from "node:fs";
+import * as os2 from "node:os";
+import * as path13 from "node:path";
+var DEV_CERT_DIR = path13.join(os2.homedir(), ".office-addin-dev-certs");
+var DEV_CERT_REPAIR_COMMAND = "npx office-addin-dev-certs install";
+var SERVICE_NAME = "changedown-mcp";
+function loadDevCertOptions() {
+  const dir = DEV_CERT_DIR;
+  const certPath = path13.join(dir, "localhost.crt");
+  const keyPath = path13.join(dir, "localhost.key");
+  const caPath = path13.join(dir, "ca.crt");
+  try {
+    const leaf = fs22.readFileSync(certPath);
+    const ca = fs22.readFileSync(caPath);
+    const bundle = Buffer.concat([leaf, Buffer.from("\n"), ca]);
+    return { cert: bundle, key: fs22.readFileSync(keyPath) };
+  } catch {
+    return void 0;
+  }
+}
+var PortConflictError = class extends Error {
+  constructor(port, service) {
+    super(
+      `PortConflictError: port ${port} is held by a different service ("${service}"). Free the port or configure a different one.`
+    );
+    this.port = port;
+    this.service = service;
+    this.name = "PortConflictError";
+  }
+};
+var HttpsRequiredError = class extends Error {
+  constructor() {
+    super(
+      `HTTPS is required for hosted Word pane mode, but this server is configured to use HTTP or Office add-in dev certificates were not found. Expected localhost.crt, localhost.key, and ca.crt under ${DEV_CERT_DIR}. Run \`${DEV_CERT_REPAIR_COMMAND}\`, trust the generated certificates if prompted, then start changedown-mcp again.`
+    );
+    this.name = "HttpsRequiredError";
+  }
+};
+var devCerts = loadDevCertOptions();
+function envRequiresHttps() {
+  const requireHttps = process.env.CHANGEDOWN_MCP_REQUIRE_HTTPS?.toLowerCase();
+  return requireHttps === "1" || requireHttps === "true";
+}
+function shouldRequireHttps(options) {
+  return options?.requireHttps ?? envRequiresHttps();
+}
+function resolveUseHttps(options) {
+  const forceHttp = process.env.CHANGEDOWN_MCP_USE_HTTP?.toLowerCase();
+  if (forceHttp === "1" || forceHttp === "true") return false;
+  const forceHttps = process.env.CHANGEDOWN_MCP_USE_HTTPS?.toLowerCase();
+  if (forceHttps === "1" || forceHttps === "true") return true;
+  return options?.useHttps ?? false;
+}
+function assertCanBindHttps(bindWithHttps) {
+  if (bindWithHttps && !devCerts) {
+    throw new HttpsRequiredError();
+  }
+}
+async function probeHealth(port, probeWithHttps = false) {
+  return new Promise((resolve6, reject) => {
+    const getter = probeWithHttps ? https.get : http.get;
+    const req = getter(
+      {
+        hostname: "127.0.0.1",
+        port,
+        path: "/health",
+        timeout: 2e3,
+        // Self-signed dev cert — we trust the loopback address, not the chain.
+        rejectUnauthorized: false
+      },
+      (res) => {
+        let raw = "";
+        res.on("data", (c) => {
+          raw += c.toString();
+        });
+        res.on("end", () => {
+          try {
+            resolve6(JSON.parse(raw));
+          } catch {
+            reject(new Error("Invalid JSON from /health"));
+          }
+        });
+      }
+    );
+    req.on("error", reject);
+    req.on("timeout", () => {
+      req.destroy();
+      reject(new Error("health probe timeout"));
+    });
+  });
+}
+function tryBind(port, bindWithHttps = false) {
+  return new Promise((resolve6, reject) => {
+    const server = bindWithHttps ? https.createServer({ cert: devCerts.cert, key: devCerts.key }) : http.createServer();
+    server.on("connection", (sock) => {
+      console.error(`[pane-endpoint] TCP connect from ${sock.remoteAddress}:${sock.remotePort}`);
+    });
+    if (bindWithHttps) {
+      server.on("tlsClientError", (err, sock) => {
+        console.error(
+          `[pane-endpoint] TLS handshake failed from ${sock.remoteAddress}:${sock.remotePort}: ${err.message}`
+        );
+      });
+    }
+    server.listen(port, "127.0.0.1", () => resolve6(server));
+    server.once("error", reject);
+  });
+}
+function makeHeartbeat(hostUrl, defaults, bindOptions) {
+  return (override) => new Promise((resolve6) => {
+    const opts = {
+      intervalMs: override?.intervalMs ?? defaults.intervalMs,
+      failThreshold: override?.failThreshold ?? defaults.failThreshold
+    };
+    const hostPort = parseInt(new URL(hostUrl).port, 10);
+    let failures = 0;
+    let inFlight = false;
+    const timer = setInterval(async () => {
+      if (inFlight) return;
+      inFlight = true;
+      try {
+        await probeHealth(hostPort, new URL(hostUrl).protocol === "https:");
+        failures = 0;
+      } catch {
+        failures++;
+        if (failures >= opts.failThreshold) {
+          clearInterval(timer);
+          try {
+            const promoted = await bindOrForward(hostPort, bindOptions);
+            resolve6(promoted);
+          } catch {
+            const raced = await bindOrForward(hostPort, bindOptions);
+            resolve6(raced);
+          }
+        }
+      } finally {
+        inFlight = false;
+      }
+    }, opts.intervalMs);
+  });
+}
+async function bindOrForward(port, options = {}) {
+  const requireHttps = shouldRequireHttps(options);
+  if (requireHttps && options.useHttps === false) {
+    throw new HttpsRequiredError();
+  }
+  const bindWithHttps = requireHttps ? true : resolveUseHttps(options);
+  if (requireHttps && !devCerts) {
+    try {
+      const health = await probeHealth(port, true);
+      if (health.service !== SERVICE_NAME) {
+        throw new PortConflictError(port, health.service);
+      }
+      const hostUrl = `https://127.0.0.1:${port}`;
+      const startHeartbeat = makeHeartbeat(hostUrl, {
+        intervalMs: 2e3,
+        failThreshold: 2
+      }, options);
+      return { mode: "client", hostUrl, startHeartbeat };
+    } catch (err) {
+      if (err instanceof PortConflictError) throw err;
+      throw new HttpsRequiredError();
+    }
+  }
+  try {
+    assertCanBindHttps(bindWithHttps);
+    const server = await tryBind(port, bindWithHttps);
+    process.stdin.on("end", () => {
+      server.close(() => process.exit(0));
+      setTimeout(() => process.exit(0), 1e3).unref();
+    });
+    process.stdin.on("error", () => process.exit(0));
+    process.stdin.resume();
+    return { mode: "host", server };
+  } catch (err) {
+    const code = err.code;
+    if (code !== "EADDRINUSE") throw err;
+    let health;
+    try {
+      health = await probeHealth(port, requireHttps ? true : bindWithHttps);
+    } catch {
+      throw new PortConflictError(port, "<unreachable \u2014 not an HTTP server>");
+    }
+    if (health.service !== SERVICE_NAME) {
+      throw new PortConflictError(port, health.service);
+    }
+    const scheme = requireHttps || bindWithHttps ? "https" : "http";
+    const hostUrl = `${scheme}://127.0.0.1:${port}`;
+    const HEARTBEAT_INTERVAL_MS = 2e3;
+    const HEARTBEAT_MISS_THRESHOLD = 2;
+    const startHeartbeat = makeHeartbeat(hostUrl, {
+      intervalMs: HEARTBEAT_INTERVAL_MS,
+      failThreshold: HEARTBEAT_MISS_THRESHOLD
+    }, options);
+    return { mode: "client", hostUrl, startHeartbeat };
+  }
+}
+
+// src/transport/streamable-http.ts
+import { randomUUID } from "node:crypto";
+
+// ../../node_modules/@hono/node-server/dist/index.mjs
+import { Http2ServerRequest as Http2ServerRequest2, constants as h2constants } from "http2";
+import { Http2ServerRequest } from "http2";
+import { Readable } from "stream";
+import crypto2 from "crypto";
+var RequestError = class extends Error {
+  constructor(message, options) {
+    super(message, options);
+    this.name = "RequestError";
+  }
+};
+var toRequestError = (e2) => {
+  if (e2 instanceof RequestError) {
+    return e2;
+  }
+  return new RequestError(e2.message, { cause: e2 });
+};
+var GlobalRequest = global.Request;
+var Request = class extends GlobalRequest {
+  constructor(input, options) {
+    if (typeof input === "object" && getRequestCache in input) {
+      input = input[getRequestCache]();
+    }
+    if (typeof options?.body?.getReader !== "undefined") {
+      ;
+      options.duplex ??= "half";
+    }
+    super(input, options);
+  }
+};
+var newHeadersFromIncoming = (incoming) => {
+  const headerRecord = [];
+  const rawHeaders = incoming.rawHeaders;
+  for (let i = 0; i < rawHeaders.length; i += 2) {
+    const { [i]: key, [i + 1]: value } = rawHeaders;
+    if (key.charCodeAt(0) !== /*:*/
+    58) {
+      headerRecord.push([key, value]);
+    }
+  }
+  return new Headers(headerRecord);
+};
+var wrapBodyStream = /* @__PURE__ */ Symbol("wrapBodyStream");
+var newRequestFromIncoming = (method, url2, headers, incoming, abortController) => {
+  const init = {
+    method,
+    headers,
+    signal: abortController.signal
+  };
+  if (method === "TRACE") {
+    init.method = "GET";
+    const req = new Request(url2, init);
+    Object.defineProperty(req, "method", {
+      get() {
+        return "TRACE";
+      }
+    });
+    return req;
+  }
+  if (!(method === "GET" || method === "HEAD")) {
+    if ("rawBody" in incoming && incoming.rawBody instanceof Buffer) {
+      init.body = new ReadableStream({
+        start(controller) {
+          controller.enqueue(incoming.rawBody);
+          controller.close();
+        }
+      });
+    } else if (incoming[wrapBodyStream]) {
+      let reader;
+      init.body = new ReadableStream({
+        async pull(controller) {
+          try {
+            reader ||= Readable.toWeb(incoming).getReader();
+            const { done, value } = await reader.read();
+            if (done) {
+              controller.close();
+            } else {
+              controller.enqueue(value);
+            }
+          } catch (error2) {
+            controller.error(error2);
+          }
+        }
+      });
+    } else {
+      init.body = Readable.toWeb(incoming);
+    }
+  }
+  return new Request(url2, init);
+};
+var getRequestCache = /* @__PURE__ */ Symbol("getRequestCache");
+var requestCache = /* @__PURE__ */ Symbol("requestCache");
+var incomingKey = /* @__PURE__ */ Symbol("incomingKey");
+var urlKey = /* @__PURE__ */ Symbol("urlKey");
+var headersKey = /* @__PURE__ */ Symbol("headersKey");
+var abortControllerKey = /* @__PURE__ */ Symbol("abortControllerKey");
+var getAbortController = /* @__PURE__ */ Symbol("getAbortController");
+var requestPrototype = {
+  get method() {
+    return this[incomingKey].method || "GET";
+  },
+  get url() {
+    return this[urlKey];
+  },
+  get headers() {
+    return this[headersKey] ||= newHeadersFromIncoming(this[incomingKey]);
+  },
+  [getAbortController]() {
+    this[getRequestCache]();
+    return this[abortControllerKey];
+  },
+  [getRequestCache]() {
+    this[abortControllerKey] ||= new AbortController();
+    return this[requestCache] ||= newRequestFromIncoming(
+      this.method,
+      this[urlKey],
+      this.headers,
+      this[incomingKey],
+      this[abortControllerKey]
+    );
+  }
+};
+[
+  "body",
+  "bodyUsed",
+  "cache",
+  "credentials",
+  "destination",
+  "integrity",
+  "mode",
+  "redirect",
+  "referrer",
+  "referrerPolicy",
+  "signal",
+  "keepalive"
+].forEach((k) => {
+  Object.defineProperty(requestPrototype, k, {
+    get() {
+      return this[getRequestCache]()[k];
+    }
+  });
+});
+["arrayBuffer", "blob", "clone", "formData", "json", "text"].forEach((k) => {
+  Object.defineProperty(requestPrototype, k, {
+    value: function() {
+      return this[getRequestCache]()[k]();
+    }
+  });
+});
+Object.setPrototypeOf(requestPrototype, Request.prototype);
+var newRequest = (incoming, defaultHostname) => {
+  const req = Object.create(requestPrototype);
+  req[incomingKey] = incoming;
+  const incomingUrl = incoming.url || "";
+  if (incomingUrl[0] !== "/" && // short-circuit for performance. most requests are relative URL.
+  (incomingUrl.startsWith("http://") || incomingUrl.startsWith("https://"))) {
+    if (incoming instanceof Http2ServerRequest) {
+      throw new RequestError("Absolute URL for :path is not allowed in HTTP/2");
+    }
+    try {
+      const url22 = new URL(incomingUrl);
+      req[urlKey] = url22.href;
+    } catch (e2) {
+      throw new RequestError("Invalid absolute URL", { cause: e2 });
+    }
+    return req;
+  }
+  const host = (incoming instanceof Http2ServerRequest ? incoming.authority : incoming.headers.host) || defaultHostname;
+  if (!host) {
+    throw new RequestError("Missing host header");
+  }
+  let scheme;
+  if (incoming instanceof Http2ServerRequest) {
+    scheme = incoming.scheme;
+    if (!(scheme === "http" || scheme === "https")) {
+      throw new RequestError("Unsupported scheme");
+    }
+  } else {
+    scheme = incoming.socket && incoming.socket.encrypted ? "https" : "http";
+  }
+  const url2 = new URL(`${scheme}://${host}${incomingUrl}`);
+  if (url2.hostname.length !== host.length && url2.hostname !== host.replace(/:\d+$/, "")) {
+    throw new RequestError("Invalid host header");
+  }
+  req[urlKey] = url2.href;
+  return req;
+};
+var responseCache = /* @__PURE__ */ Symbol("responseCache");
+var getResponseCache = /* @__PURE__ */ Symbol("getResponseCache");
+var cacheKey = /* @__PURE__ */ Symbol("cache");
+var GlobalResponse = global.Response;
+var Response2 = class _Response {
+  #body;
+  #init;
+  [getResponseCache]() {
+    delete this[cacheKey];
+    return this[responseCache] ||= new GlobalResponse(this.#body, this.#init);
+  }
+  constructor(body, init) {
+    let headers;
+    this.#body = body;
+    if (init instanceof _Response) {
+      const cachedGlobalResponse = init[responseCache];
+      if (cachedGlobalResponse) {
+        this.#init = cachedGlobalResponse;
+        this[getResponseCache]();
+        return;
+      } else {
+        this.#init = init.#init;
+        headers = new Headers(init.#init.headers);
+      }
+    } else {
+      this.#init = init;
+    }
+    if (typeof body === "string" || typeof body?.getReader !== "undefined" || body instanceof Blob || body instanceof Uint8Array) {
+      ;
+      this[cacheKey] = [init?.status || 200, body, headers || init?.headers];
+    }
+  }
+  get headers() {
+    const cache = this[cacheKey];
+    if (cache) {
+      if (!(cache[2] instanceof Headers)) {
+        cache[2] = new Headers(
+          cache[2] || { "content-type": "text/plain; charset=UTF-8" }
+        );
+      }
+      return cache[2];
+    }
+    return this[getResponseCache]().headers;
+  }
+  get status() {
+    return this[cacheKey]?.[0] ?? this[getResponseCache]().status;
+  }
+  get ok() {
+    const status = this.status;
+    return status >= 200 && status < 300;
+  }
+};
+["body", "bodyUsed", "redirected", "statusText", "trailers", "type", "url"].forEach((k) => {
+  Object.defineProperty(Response2.prototype, k, {
+    get() {
+      return this[getResponseCache]()[k];
+    }
+  });
+});
+["arrayBuffer", "blob", "clone", "formData", "json", "text"].forEach((k) => {
+  Object.defineProperty(Response2.prototype, k, {
+    value: function() {
+      return this[getResponseCache]()[k]();
+    }
+  });
+});
+Object.setPrototypeOf(Response2, GlobalResponse);
+Object.setPrototypeOf(Response2.prototype, GlobalResponse.prototype);
+async function readWithoutBlocking(readPromise) {
+  return Promise.race([readPromise, Promise.resolve().then(() => Promise.resolve(void 0))]);
+}
+function writeFromReadableStreamDefaultReader(reader, writable, currentReadPromise) {
+  const cancel = (error2) => {
+    reader.cancel(error2).catch(() => {
+    });
+  };
+  writable.on("close", cancel);
+  writable.on("error", cancel);
+  (currentReadPromise ?? reader.read()).then(flow, handleStreamError);
+  return reader.closed.finally(() => {
+    writable.off("close", cancel);
+    writable.off("error", cancel);
+  });
+  function handleStreamError(error2) {
+    if (error2) {
+      writable.destroy(error2);
+    }
+  }
+  function onDrain() {
+    reader.read().then(flow, handleStreamError);
+  }
+  function flow({ done, value }) {
+    try {
+      if (done) {
+        writable.end();
+      } else if (!writable.write(value)) {
+        writable.once("drain", onDrain);
+      } else {
+        return reader.read().then(flow, handleStreamError);
+      }
+    } catch (e2) {
+      handleStreamError(e2);
+    }
+  }
+}
+function writeFromReadableStream(stream, writable) {
+  if (stream.locked) {
+    throw new TypeError("ReadableStream is locked.");
+  } else if (writable.destroyed) {
+    return;
+  }
+  return writeFromReadableStreamDefaultReader(stream.getReader(), writable);
+}
+var buildOutgoingHttpHeaders = (headers) => {
+  const res = {};
+  if (!(headers instanceof Headers)) {
+    headers = new Headers(headers ?? void 0);
+  }
+  const cookies = [];
+  for (const [k, v] of headers) {
+    if (k === "set-cookie") {
+      cookies.push(v);
+    } else {
+      res[k] = v;
+    }
+  }
+  if (cookies.length > 0) {
+    res["set-cookie"] = cookies;
+  }
+  res["content-type"] ??= "text/plain; charset=UTF-8";
+  return res;
+};
+var X_ALREADY_SENT = "x-hono-already-sent";
+if (typeof global.crypto === "undefined") {
+  global.crypto = crypto2;
+}
+var outgoingEnded = /* @__PURE__ */ Symbol("outgoingEnded");
+var incomingDraining = /* @__PURE__ */ Symbol("incomingDraining");
+var DRAIN_TIMEOUT_MS = 500;
+var MAX_DRAIN_BYTES = 64 * 1024 * 1024;
+var drainIncoming = (incoming) => {
+  const incomingWithDrainState = incoming;
+  if (incoming.destroyed || incomingWithDrainState[incomingDraining]) {
+    return;
+  }
+  incomingWithDrainState[incomingDraining] = true;
+  if (incoming instanceof Http2ServerRequest2) {
+    try {
+      ;
+      incoming.stream?.close?.(h2constants.NGHTTP2_NO_ERROR);
+    } catch {
+    }
+    return;
+  }
+  let bytesRead = 0;
+  const cleanup = () => {
+    clearTimeout(timer);
+    incoming.off("data", onData);
+    incoming.off("end", cleanup);
+    incoming.off("error", cleanup);
+  };
+  const forceClose = () => {
+    cleanup();
+    const socket = incoming.socket;
+    if (socket && !socket.destroyed) {
+      socket.destroySoon();
+    }
+  };
+  const timer = setTimeout(forceClose, DRAIN_TIMEOUT_MS);
+  timer.unref?.();
+  const onData = (chunk) => {
+    bytesRead += chunk.length;
+    if (bytesRead > MAX_DRAIN_BYTES) {
+      forceClose();
+    }
+  };
+  incoming.on("data", onData);
+  incoming.on("end", cleanup);
+  incoming.on("error", cleanup);
+  incoming.resume();
+};
+var handleRequestError = () => new Response(null, {
+  status: 400
+});
+var handleFetchError = (e2) => new Response(null, {
+  status: e2 instanceof Error && (e2.name === "TimeoutError" || e2.constructor.name === "TimeoutError") ? 504 : 500
+});
+var handleResponseError = (e2, outgoing) => {
+  const err = e2 instanceof Error ? e2 : new Error("unknown error", { cause: e2 });
+  if (err.code === "ERR_STREAM_PREMATURE_CLOSE") {
+    console.info("The user aborted a request.");
+  } else {
+    console.error(e2);
+    if (!outgoing.headersSent) {
+      outgoing.writeHead(500, { "Content-Type": "text/plain" });
+    }
+    outgoing.end(`Error: ${err.message}`);
+    outgoing.destroy(err);
+  }
+};
+var flushHeaders = (outgoing) => {
+  if ("flushHeaders" in outgoing && outgoing.writable) {
+    outgoing.flushHeaders();
+  }
+};
+var responseViaCache = async (res, outgoing) => {
+  let [status, body, header] = res[cacheKey];
+  let hasContentLength = false;
+  if (!header) {
+    header = { "content-type": "text/plain; charset=UTF-8" };
+  } else if (header instanceof Headers) {
+    hasContentLength = header.has("content-length");
+    header = buildOutgoingHttpHeaders(header);
+  } else if (Array.isArray(header)) {
+    const headerObj = new Headers(header);
+    hasContentLength = headerObj.has("content-length");
+    header = buildOutgoingHttpHeaders(headerObj);
+  } else {
+    for (const key in header) {
+      if (key.length === 14 && key.toLowerCase() === "content-length") {
+        hasContentLength = true;
+        break;
+      }
+    }
+  }
+  if (!hasContentLength) {
+    if (typeof body === "string") {
+      header["Content-Length"] = Buffer.byteLength(body);
+    } else if (body instanceof Uint8Array) {
+      header["Content-Length"] = body.byteLength;
+    } else if (body instanceof Blob) {
+      header["Content-Length"] = body.size;
+    }
+  }
+  outgoing.writeHead(status, header);
+  if (typeof body === "string" || body instanceof Uint8Array) {
+    outgoing.end(body);
+  } else if (body instanceof Blob) {
+    outgoing.end(new Uint8Array(await body.arrayBuffer()));
+  } else {
+    flushHeaders(outgoing);
+    await writeFromReadableStream(body, outgoing)?.catch(
+      (e2) => handleResponseError(e2, outgoing)
+    );
+  }
+  ;
+  outgoing[outgoingEnded]?.();
+};
+var isPromise = (res) => typeof res.then === "function";
+var responseViaResponseObject = async (res, outgoing, options = {}) => {
+  if (isPromise(res)) {
+    if (options.errorHandler) {
+      try {
+        res = await res;
+      } catch (err) {
+        const errRes = await options.errorHandler(err);
+        if (!errRes) {
+          return;
+        }
+        res = errRes;
+      }
+    } else {
+      res = await res.catch(handleFetchError);
+    }
+  }
+  if (cacheKey in res) {
+    return responseViaCache(res, outgoing);
+  }
+  const resHeaderRecord = buildOutgoingHttpHeaders(res.headers);
+  if (res.body) {
+    const reader = res.body.getReader();
+    const values = [];
+    let done = false;
+    let currentReadPromise = void 0;
+    if (resHeaderRecord["transfer-encoding"] !== "chunked") {
+      let maxReadCount = 2;
+      for (let i = 0; i < maxReadCount; i++) {
+        currentReadPromise ||= reader.read();
+        const chunk = await readWithoutBlocking(currentReadPromise).catch((e2) => {
+          console.error(e2);
+          done = true;
+        });
+        if (!chunk) {
+          if (i === 1) {
+            await new Promise((resolve6) => setTimeout(resolve6));
+            maxReadCount = 3;
+            continue;
+          }
+          break;
+        }
+        currentReadPromise = void 0;
+        if (chunk.value) {
+          values.push(chunk.value);
+        }
+        if (chunk.done) {
+          done = true;
+          break;
+        }
+      }
+      if (done && !("content-length" in resHeaderRecord)) {
+        resHeaderRecord["content-length"] = values.reduce((acc, value) => acc + value.length, 0);
+      }
+    }
+    outgoing.writeHead(res.status, resHeaderRecord);
+    values.forEach((value) => {
+      ;
+      outgoing.write(value);
+    });
+    if (done) {
+      outgoing.end();
+    } else {
+      if (values.length === 0) {
+        flushHeaders(outgoing);
+      }
+      await writeFromReadableStreamDefaultReader(reader, outgoing, currentReadPromise);
+    }
+  } else if (resHeaderRecord[X_ALREADY_SENT]) {
+  } else {
+    outgoing.writeHead(res.status, resHeaderRecord);
+    outgoing.end();
+  }
+  ;
+  outgoing[outgoingEnded]?.();
+};
+var getRequestListener = (fetchCallback, options = {}) => {
+  const autoCleanupIncoming = options.autoCleanupIncoming ?? true;
+  if (options.overrideGlobalObjects !== false && global.Request !== Request) {
+    Object.defineProperty(global, "Request", {
+      value: Request
+    });
+    Object.defineProperty(global, "Response", {
+      value: Response2
+    });
+  }
+  return async (incoming, outgoing) => {
+    let res, req;
+    try {
+      req = newRequest(incoming, options.hostname);
+      let incomingEnded = !autoCleanupIncoming || incoming.method === "GET" || incoming.method === "HEAD";
+      if (!incomingEnded) {
+        ;
+        incoming[wrapBodyStream] = true;
+        incoming.on("end", () => {
+          incomingEnded = true;
+        });
+        if (incoming instanceof Http2ServerRequest2) {
+          ;
+          outgoing[outgoingEnded] = () => {
+            if (!incomingEnded) {
+              setTimeout(() => {
+                if (!incomingEnded) {
+                  setTimeout(() => {
+                    drainIncoming(incoming);
+                  });
+                }
+              });
+            }
+          };
+        }
+        outgoing.on("finish", () => {
+          if (!incomingEnded) {
+            drainIncoming(incoming);
+          }
+        });
+      }
+      outgoing.on("close", () => {
+        const abortController = req[abortControllerKey];
+        if (abortController) {
+          if (incoming.errored) {
+            req[abortControllerKey].abort(incoming.errored.toString());
+          } else if (!outgoing.writableFinished) {
+            req[abortControllerKey].abort("Client connection prematurely closed.");
+          }
+        }
+        if (!incomingEnded) {
+          setTimeout(() => {
+            if (!incomingEnded) {
+              setTimeout(() => {
+                drainIncoming(incoming);
+              });
+            }
+          });
+        }
+      });
+      res = fetchCallback(req, { incoming, outgoing });
+      if (cacheKey in res) {
+        return responseViaCache(res, outgoing);
+      }
+    } catch (e2) {
+      if (!res) {
+        if (options.errorHandler) {
+          res = await options.errorHandler(req ? e2 : toRequestError(e2));
+          if (!res) {
+            return;
+          }
+        } else if (!req) {
+          res = handleRequestError();
+        } else {
+          res = handleFetchError(e2);
+        }
+      } else {
+        return handleResponseError(e2, outgoing);
+      }
+    }
+    try {
+      return await responseViaResponseObject(res, outgoing, options);
+    } catch (e2) {
+      return handleResponseError(e2, outgoing);
+    }
+  };
+};
+
+// ../../node_modules/@modelcontextprotocol/sdk/dist/esm/server/webStandardStreamableHttp.js
+var WebStandardStreamableHTTPServerTransport = class {
+  constructor(options = {}) {
+    this._started = false;
+    this._hasHandledRequest = false;
+    this._streamMapping = /* @__PURE__ */ new Map();
+    this._requestToStreamMapping = /* @__PURE__ */ new Map();
+    this._requestResponseMap = /* @__PURE__ */ new Map();
+    this._initialized = false;
+    this._enableJsonResponse = false;
+    this._standaloneSseStreamId = "_GET_stream";
+    this.sessionIdGenerator = options.sessionIdGenerator;
+    this._enableJsonResponse = options.enableJsonResponse ?? false;
+    this._eventStore = options.eventStore;
+    this._onsessioninitialized = options.onsessioninitialized;
+    this._onsessionclosed = options.onsessionclosed;
+    this._allowedHosts = options.allowedHosts;
+    this._allowedOrigins = options.allowedOrigins;
+    this._enableDnsRebindingProtection = options.enableDnsRebindingProtection ?? false;
+    this._retryInterval = options.retryInterval;
+  }
+  /**
+   * Starts the transport. This is required by the Transport interface but is a no-op
+   * for the Streamable HTTP transport as connections are managed per-request.
+   */
+  async start() {
+    if (this._started) {
+      throw new Error("Transport already started");
+    }
+    this._started = true;
+  }
+  /**
+   * Helper to create a JSON error response
+   */
+  createJsonErrorResponse(status, code, message, options) {
+    const error2 = { code, message };
+    if (options?.data !== void 0) {
+      error2.data = options.data;
+    }
+    return new Response(JSON.stringify({
+      jsonrpc: "2.0",
+      error: error2,
+      id: null
+    }), {
+      status,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers
+      }
+    });
+  }
+  /**
+   * Validates request headers for DNS rebinding protection.
+   * @returns Error response if validation fails, undefined if validation passes.
+   */
+  validateRequestHeaders(req) {
+    if (!this._enableDnsRebindingProtection) {
+      return void 0;
+    }
+    if (this._allowedHosts && this._allowedHosts.length > 0) {
+      const hostHeader = req.headers.get("host");
+      if (!hostHeader || !this._allowedHosts.includes(hostHeader)) {
+        const error2 = `Invalid Host header: ${hostHeader}`;
+        this.onerror?.(new Error(error2));
+        return this.createJsonErrorResponse(403, -32e3, error2);
+      }
+    }
+    if (this._allowedOrigins && this._allowedOrigins.length > 0) {
+      const originHeader = req.headers.get("origin");
+      if (originHeader && !this._allowedOrigins.includes(originHeader)) {
+        const error2 = `Invalid Origin header: ${originHeader}`;
+        this.onerror?.(new Error(error2));
+        return this.createJsonErrorResponse(403, -32e3, error2);
+      }
+    }
+    return void 0;
+  }
+  /**
+   * Handles an incoming HTTP request, whether GET, POST, or DELETE
+   * Returns a Response object (Web Standard)
+   */
+  async handleRequest(req, options) {
+    if (!this.sessionIdGenerator && this._hasHandledRequest) {
+      throw new Error("Stateless transport cannot be reused across requests. Create a new transport per request.");
+    }
+    this._hasHandledRequest = true;
+    const validationError = this.validateRequestHeaders(req);
+    if (validationError) {
+      return validationError;
+    }
+    switch (req.method) {
+      case "POST":
+        return this.handlePostRequest(req, options);
+      case "GET":
+        return this.handleGetRequest(req);
+      case "DELETE":
+        return this.handleDeleteRequest(req);
+      default:
+        return this.handleUnsupportedRequest();
+    }
+  }
+  /**
+   * Writes a priming event to establish resumption capability.
+   * Only sends if eventStore is configured (opt-in for resumability) and
+   * the client's protocol version supports empty SSE data (>= 2025-11-25).
+   */
+  async writePrimingEvent(controller, encoder2, streamId, protocolVersion) {
+    if (!this._eventStore) {
+      return;
+    }
+    if (protocolVersion < "2025-11-25") {
+      return;
+    }
+    const primingEventId = await this._eventStore.storeEvent(streamId, {});
+    let primingEvent = `id: ${primingEventId}
+data: 
+
+`;
+    if (this._retryInterval !== void 0) {
+      primingEvent = `id: ${primingEventId}
+retry: ${this._retryInterval}
+data: 
+
+`;
+    }
+    controller.enqueue(encoder2.encode(primingEvent));
+  }
+  /**
+   * Handles GET requests for SSE stream
+   */
+  async handleGetRequest(req) {
+    const acceptHeader = req.headers.get("accept");
+    if (!acceptHeader?.includes("text/event-stream")) {
+      this.onerror?.(new Error("Not Acceptable: Client must accept text/event-stream"));
+      return this.createJsonErrorResponse(406, -32e3, "Not Acceptable: Client must accept text/event-stream");
+    }
+    const sessionError = this.validateSession(req);
+    if (sessionError) {
+      return sessionError;
+    }
+    const protocolError = this.validateProtocolVersion(req);
+    if (protocolError) {
+      return protocolError;
+    }
+    if (this._eventStore) {
+      const lastEventId = req.headers.get("last-event-id");
+      if (lastEventId) {
+        return this.replayEvents(lastEventId);
+      }
+    }
+    if (this._streamMapping.get(this._standaloneSseStreamId) !== void 0) {
+      this.onerror?.(new Error("Conflict: Only one SSE stream is allowed per session"));
+      return this.createJsonErrorResponse(409, -32e3, "Conflict: Only one SSE stream is allowed per session");
+    }
+    const encoder2 = new TextEncoder();
+    let streamController;
+    const readable = new ReadableStream({
+      start: (controller) => {
+        streamController = controller;
+      },
+      cancel: () => {
+        this._streamMapping.delete(this._standaloneSseStreamId);
+      }
+    });
+    const headers = {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache, no-transform",
+      Connection: "keep-alive"
+    };
+    if (this.sessionId !== void 0) {
+      headers["mcp-session-id"] = this.sessionId;
+    }
+    this._streamMapping.set(this._standaloneSseStreamId, {
+      controller: streamController,
+      encoder: encoder2,
+      cleanup: () => {
+        this._streamMapping.delete(this._standaloneSseStreamId);
+        try {
+          streamController.close();
+        } catch {
+        }
+      }
+    });
+    return new Response(readable, { headers });
+  }
+  /**
+   * Replays events that would have been sent after the specified event ID
+   * Only used when resumability is enabled
+   */
+  async replayEvents(lastEventId) {
+    if (!this._eventStore) {
+      this.onerror?.(new Error("Event store not configured"));
+      return this.createJsonErrorResponse(400, -32e3, "Event store not configured");
+    }
+    try {
+      let streamId;
+      if (this._eventStore.getStreamIdForEventId) {
+        streamId = await this._eventStore.getStreamIdForEventId(lastEventId);
+        if (!streamId) {
+          this.onerror?.(new Error("Invalid event ID format"));
+          return this.createJsonErrorResponse(400, -32e3, "Invalid event ID format");
+        }
+        if (this._streamMapping.get(streamId) !== void 0) {
+          this.onerror?.(new Error("Conflict: Stream already has an active connection"));
+          return this.createJsonErrorResponse(409, -32e3, "Conflict: Stream already has an active connection");
+        }
+      }
+      const headers = {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache, no-transform",
+        Connection: "keep-alive"
+      };
+      if (this.sessionId !== void 0) {
+        headers["mcp-session-id"] = this.sessionId;
+      }
+      const encoder2 = new TextEncoder();
+      let streamController;
+      const readable = new ReadableStream({
+        start: (controller) => {
+          streamController = controller;
+        },
+        cancel: () => {
+        }
+      });
+      const replayedStreamId = await this._eventStore.replayEventsAfter(lastEventId, {
+        send: async (eventId, message) => {
+          const success2 = this.writeSSEEvent(streamController, encoder2, message, eventId);
+          if (!success2) {
+            this.onerror?.(new Error("Failed replay events"));
+            try {
+              streamController.close();
+            } catch {
+            }
+          }
+        }
+      });
+      this._streamMapping.set(replayedStreamId, {
+        controller: streamController,
+        encoder: encoder2,
+        cleanup: () => {
+          this._streamMapping.delete(replayedStreamId);
+          try {
+            streamController.close();
+          } catch {
+          }
+        }
+      });
+      return new Response(readable, { headers });
+    } catch (error2) {
+      this.onerror?.(error2);
+      return this.createJsonErrorResponse(500, -32e3, "Error replaying events");
+    }
+  }
+  /**
+   * Writes an event to an SSE stream via controller with proper formatting
+   */
+  writeSSEEvent(controller, encoder2, message, eventId) {
+    try {
+      let eventData = `event: message
+`;
+      if (eventId) {
+        eventData += `id: ${eventId}
+`;
+      }
+      eventData += `data: ${JSON.stringify(message)}
+
+`;
+      controller.enqueue(encoder2.encode(eventData));
+      return true;
+    } catch (error2) {
+      this.onerror?.(error2);
+      return false;
+    }
+  }
+  /**
+   * Handles unsupported requests (PUT, PATCH, etc.)
+   */
+  handleUnsupportedRequest() {
+    this.onerror?.(new Error("Method not allowed."));
+    return new Response(JSON.stringify({
+      jsonrpc: "2.0",
+      error: {
+        code: -32e3,
+        message: "Method not allowed."
+      },
+      id: null
+    }), {
+      status: 405,
+      headers: {
+        Allow: "GET, POST, DELETE",
+        "Content-Type": "application/json"
+      }
+    });
+  }
+  /**
+   * Handles POST requests containing JSON-RPC messages
+   */
+  async handlePostRequest(req, options) {
+    try {
+      const acceptHeader = req.headers.get("accept");
+      if (!acceptHeader?.includes("application/json") || !acceptHeader.includes("text/event-stream")) {
+        this.onerror?.(new Error("Not Acceptable: Client must accept both application/json and text/event-stream"));
+        return this.createJsonErrorResponse(406, -32e3, "Not Acceptable: Client must accept both application/json and text/event-stream");
+      }
+      const ct = req.headers.get("content-type");
+      if (!ct || !ct.includes("application/json")) {
+        this.onerror?.(new Error("Unsupported Media Type: Content-Type must be application/json"));
+        return this.createJsonErrorResponse(415, -32e3, "Unsupported Media Type: Content-Type must be application/json");
+      }
+      const requestInfo = {
+        headers: Object.fromEntries(req.headers.entries()),
+        url: new URL(req.url)
+      };
+      let rawMessage;
+      if (options?.parsedBody !== void 0) {
+        rawMessage = options.parsedBody;
+      } else {
+        try {
+          rawMessage = await req.json();
+        } catch {
+          this.onerror?.(new Error("Parse error: Invalid JSON"));
+          return this.createJsonErrorResponse(400, -32700, "Parse error: Invalid JSON");
+        }
+      }
+      let messages;
+      try {
+        if (Array.isArray(rawMessage)) {
+          messages = rawMessage.map((msg) => JSONRPCMessageSchema.parse(msg));
+        } else {
+          messages = [JSONRPCMessageSchema.parse(rawMessage)];
+        }
+      } catch {
+        this.onerror?.(new Error("Parse error: Invalid JSON-RPC message"));
+        return this.createJsonErrorResponse(400, -32700, "Parse error: Invalid JSON-RPC message");
+      }
+      const isInitializationRequest = messages.some(isInitializeRequest);
+      if (isInitializationRequest) {
+        if (this._initialized && this.sessionId !== void 0) {
+          this.onerror?.(new Error("Invalid Request: Server already initialized"));
+          return this.createJsonErrorResponse(400, -32600, "Invalid Request: Server already initialized");
+        }
+        if (messages.length > 1) {
+          this.onerror?.(new Error("Invalid Request: Only one initialization request is allowed"));
+          return this.createJsonErrorResponse(400, -32600, "Invalid Request: Only one initialization request is allowed");
+        }
+        this.sessionId = this.sessionIdGenerator?.();
+        this._initialized = true;
+        if (this.sessionId && this._onsessioninitialized) {
+          await Promise.resolve(this._onsessioninitialized(this.sessionId));
+        }
+      }
+      if (!isInitializationRequest) {
+        const sessionError = this.validateSession(req);
+        if (sessionError) {
+          return sessionError;
+        }
+        const protocolError = this.validateProtocolVersion(req);
+        if (protocolError) {
+          return protocolError;
+        }
+      }
+      const hasRequests = messages.some(isJSONRPCRequest);
+      if (!hasRequests) {
+        for (const message of messages) {
+          this.onmessage?.(message, { authInfo: options?.authInfo, requestInfo });
+        }
+        return new Response(null, { status: 202 });
+      }
+      const streamId = crypto.randomUUID();
+      const initRequest = messages.find((m) => isInitializeRequest(m));
+      const clientProtocolVersion = initRequest ? initRequest.params.protocolVersion : req.headers.get("mcp-protocol-version") ?? DEFAULT_NEGOTIATED_PROTOCOL_VERSION;
+      if (this._enableJsonResponse) {
+        return new Promise((resolve6) => {
+          this._streamMapping.set(streamId, {
+            resolveJson: resolve6,
+            cleanup: () => {
+              this._streamMapping.delete(streamId);
+            }
+          });
+          for (const message of messages) {
+            if (isJSONRPCRequest(message)) {
+              this._requestToStreamMapping.set(message.id, streamId);
+            }
+          }
+          for (const message of messages) {
+            this.onmessage?.(message, { authInfo: options?.authInfo, requestInfo });
+          }
+        });
+      }
+      const encoder2 = new TextEncoder();
+      let streamController;
+      const readable = new ReadableStream({
+        start: (controller) => {
+          streamController = controller;
+        },
+        cancel: () => {
+          this._streamMapping.delete(streamId);
+        }
+      });
+      const headers = {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        Connection: "keep-alive"
+      };
+      if (this.sessionId !== void 0) {
+        headers["mcp-session-id"] = this.sessionId;
+      }
+      for (const message of messages) {
+        if (isJSONRPCRequest(message)) {
+          this._streamMapping.set(streamId, {
+            controller: streamController,
+            encoder: encoder2,
+            cleanup: () => {
+              this._streamMapping.delete(streamId);
+              try {
+                streamController.close();
+              } catch {
+              }
+            }
+          });
+          this._requestToStreamMapping.set(message.id, streamId);
+        }
+      }
+      await this.writePrimingEvent(streamController, encoder2, streamId, clientProtocolVersion);
+      for (const message of messages) {
+        let closeSSEStream;
+        let closeStandaloneSSEStream;
+        if (isJSONRPCRequest(message) && this._eventStore && clientProtocolVersion >= "2025-11-25") {
+          closeSSEStream = () => {
+            this.closeSSEStream(message.id);
+          };
+          closeStandaloneSSEStream = () => {
+            this.closeStandaloneSSEStream();
+          };
+        }
+        this.onmessage?.(message, { authInfo: options?.authInfo, requestInfo, closeSSEStream, closeStandaloneSSEStream });
+      }
+      return new Response(readable, { status: 200, headers });
+    } catch (error2) {
+      this.onerror?.(error2);
+      return this.createJsonErrorResponse(400, -32700, "Parse error", { data: String(error2) });
+    }
+  }
+  /**
+   * Handles DELETE requests to terminate sessions
+   */
+  async handleDeleteRequest(req) {
+    const sessionError = this.validateSession(req);
+    if (sessionError) {
+      return sessionError;
+    }
+    const protocolError = this.validateProtocolVersion(req);
+    if (protocolError) {
+      return protocolError;
+    }
+    await Promise.resolve(this._onsessionclosed?.(this.sessionId));
+    await this.close();
+    return new Response(null, { status: 200 });
+  }
+  /**
+   * Validates session ID for non-initialization requests.
+   * Returns Response error if invalid, undefined otherwise
+   */
+  validateSession(req) {
+    if (this.sessionIdGenerator === void 0) {
+      return void 0;
+    }
+    if (!this._initialized) {
+      this.onerror?.(new Error("Bad Request: Server not initialized"));
+      return this.createJsonErrorResponse(400, -32e3, "Bad Request: Server not initialized");
+    }
+    const sessionId = req.headers.get("mcp-session-id");
+    if (!sessionId) {
+      this.onerror?.(new Error("Bad Request: Mcp-Session-Id header is required"));
+      return this.createJsonErrorResponse(400, -32e3, "Bad Request: Mcp-Session-Id header is required");
+    }
+    if (sessionId !== this.sessionId) {
+      this.onerror?.(new Error("Session not found"));
+      return this.createJsonErrorResponse(404, -32001, "Session not found");
+    }
+    return void 0;
+  }
+  /**
+   * Validates the MCP-Protocol-Version header on incoming requests.
+   *
+   * For initialization: Version negotiation handles unknown versions gracefully
+   * (server responds with its supported version).
+   *
+   * For subsequent requests with MCP-Protocol-Version header:
+   * - Accept if in supported list
+   * - 400 if unsupported
+   *
+   * For HTTP requests without the MCP-Protocol-Version header:
+   * - Accept and default to the version negotiated at initialization
+   */
+  validateProtocolVersion(req) {
+    const protocolVersion = req.headers.get("mcp-protocol-version");
+    if (protocolVersion !== null && !SUPPORTED_PROTOCOL_VERSIONS.includes(protocolVersion)) {
+      this.onerror?.(new Error(`Bad Request: Unsupported protocol version: ${protocolVersion} (supported versions: ${SUPPORTED_PROTOCOL_VERSIONS.join(", ")})`));
+      return this.createJsonErrorResponse(400, -32e3, `Bad Request: Unsupported protocol version: ${protocolVersion} (supported versions: ${SUPPORTED_PROTOCOL_VERSIONS.join(", ")})`);
+    }
+    return void 0;
+  }
+  async close() {
+    this._streamMapping.forEach(({ cleanup }) => {
+      cleanup();
+    });
+    this._streamMapping.clear();
+    this._requestResponseMap.clear();
+    this.onclose?.();
+  }
+  /**
+   * Close an SSE stream for a specific request, triggering client reconnection.
+   * Use this to implement polling behavior during long-running operations -
+   * client will reconnect after the retry interval specified in the priming event.
+   */
+  closeSSEStream(requestId) {
+    const streamId = this._requestToStreamMapping.get(requestId);
+    if (!streamId)
+      return;
+    const stream = this._streamMapping.get(streamId);
+    if (stream) {
+      stream.cleanup();
+    }
+  }
+  /**
+   * Close the standalone GET SSE stream, triggering client reconnection.
+   * Use this to implement polling behavior for server-initiated notifications.
+   */
+  closeStandaloneSSEStream() {
+    const stream = this._streamMapping.get(this._standaloneSseStreamId);
+    if (stream) {
+      stream.cleanup();
+    }
+  }
+  async send(message, options) {
+    let requestId = options?.relatedRequestId;
+    if (isJSONRPCResultResponse(message) || isJSONRPCErrorResponse(message)) {
+      requestId = message.id;
+    }
+    if (requestId === void 0) {
+      if (isJSONRPCResultResponse(message) || isJSONRPCErrorResponse(message)) {
+        throw new Error("Cannot send a response on a standalone SSE stream unless resuming a previous client request");
+      }
+      let eventId;
+      if (this._eventStore) {
+        eventId = await this._eventStore.storeEvent(this._standaloneSseStreamId, message);
+      }
+      const standaloneSse = this._streamMapping.get(this._standaloneSseStreamId);
+      if (standaloneSse === void 0) {
+        return;
+      }
+      if (standaloneSse.controller && standaloneSse.encoder) {
+        this.writeSSEEvent(standaloneSse.controller, standaloneSse.encoder, message, eventId);
+      }
+      return;
+    }
+    const streamId = this._requestToStreamMapping.get(requestId);
+    if (!streamId) {
+      throw new Error(`No connection established for request ID: ${String(requestId)}`);
+    }
+    const stream = this._streamMapping.get(streamId);
+    if (!this._enableJsonResponse && stream?.controller && stream?.encoder) {
+      let eventId;
+      if (this._eventStore) {
+        eventId = await this._eventStore.storeEvent(streamId, message);
+      }
+      this.writeSSEEvent(stream.controller, stream.encoder, message, eventId);
+    }
+    if (isJSONRPCResultResponse(message) || isJSONRPCErrorResponse(message)) {
+      this._requestResponseMap.set(requestId, message);
+      const relatedIds = Array.from(this._requestToStreamMapping.entries()).filter(([_, sid]) => sid === streamId).map(([id]) => id);
+      const allResponsesReady = relatedIds.every((id) => this._requestResponseMap.has(id));
+      if (allResponsesReady) {
+        if (!stream) {
+          throw new Error(`No connection established for request ID: ${String(requestId)}`);
+        }
+        if (this._enableJsonResponse && stream.resolveJson) {
+          const headers = {
+            "Content-Type": "application/json"
+          };
+          if (this.sessionId !== void 0) {
+            headers["mcp-session-id"] = this.sessionId;
+          }
+          const responses = relatedIds.map((id) => this._requestResponseMap.get(id));
+          if (responses.length === 1) {
+            stream.resolveJson(new Response(JSON.stringify(responses[0]), { status: 200, headers }));
+          } else {
+            stream.resolveJson(new Response(JSON.stringify(responses), { status: 200, headers }));
+          }
+        } else {
+          stream.cleanup();
+        }
+        for (const id of relatedIds) {
+          this._requestResponseMap.delete(id);
+          this._requestToStreamMapping.delete(id);
+        }
+      }
+    }
+  }
+};
+
+// ../../node_modules/@modelcontextprotocol/sdk/dist/esm/server/streamableHttp.js
+var StreamableHTTPServerTransport = class {
+  constructor(options = {}) {
+    this._requestContext = /* @__PURE__ */ new WeakMap();
+    this._webStandardTransport = new WebStandardStreamableHTTPServerTransport(options);
+    this._requestListener = getRequestListener(async (webRequest) => {
+      const context = this._requestContext.get(webRequest);
+      return this._webStandardTransport.handleRequest(webRequest, {
+        authInfo: context?.authInfo,
+        parsedBody: context?.parsedBody
+      });
+    }, { overrideGlobalObjects: false });
+  }
+  /**
+   * Gets the session ID for this transport instance.
+   */
+  get sessionId() {
+    return this._webStandardTransport.sessionId;
+  }
+  /**
+   * Sets callback for when the transport is closed.
+   */
+  set onclose(handler) {
+    this._webStandardTransport.onclose = handler;
+  }
+  get onclose() {
+    return this._webStandardTransport.onclose;
+  }
+  /**
+   * Sets callback for transport errors.
+   */
+  set onerror(handler) {
+    this._webStandardTransport.onerror = handler;
+  }
+  get onerror() {
+    return this._webStandardTransport.onerror;
+  }
+  /**
+   * Sets callback for incoming messages.
+   */
+  set onmessage(handler) {
+    this._webStandardTransport.onmessage = handler;
+  }
+  get onmessage() {
+    return this._webStandardTransport.onmessage;
+  }
+  /**
+   * Starts the transport. This is required by the Transport interface but is a no-op
+   * for the Streamable HTTP transport as connections are managed per-request.
+   */
+  async start() {
+    return this._webStandardTransport.start();
+  }
+  /**
+   * Closes the transport and all active connections.
+   */
+  async close() {
+    return this._webStandardTransport.close();
+  }
+  /**
+   * Sends a JSON-RPC message through the transport.
+   */
+  async send(message, options) {
+    return this._webStandardTransport.send(message, options);
+  }
+  /**
+   * Handles an incoming HTTP request, whether GET or POST.
+   *
+   * This method converts Node.js HTTP objects to Web Standard Request/Response
+   * and delegates to the underlying WebStandardStreamableHTTPServerTransport.
+   *
+   * @param req - Node.js IncomingMessage, optionally with auth property from middleware
+   * @param res - Node.js ServerResponse
+   * @param parsedBody - Optional pre-parsed body from body-parser middleware
+   */
+  async handleRequest(req, res, parsedBody) {
+    const authInfo = req.auth;
+    const handler = getRequestListener(async (webRequest) => {
+      return this._webStandardTransport.handleRequest(webRequest, {
+        authInfo,
+        parsedBody
+      });
+    }, { overrideGlobalObjects: false });
+    await handler(req, res);
+  }
+  /**
+   * Close an SSE stream for a specific request, triggering client reconnection.
+   * Use this to implement polling behavior during long-running operations -
+   * client will reconnect after the retry interval specified in the priming event.
+   */
+  closeSSEStream(requestId) {
+    this._webStandardTransport.closeSSEStream(requestId);
+  }
+  /**
+   * Close the standalone GET SSE stream, triggering client reconnection.
+   * Use this to implement polling behavior for server-initiated notifications.
+   */
+  closeStandaloneSSEStream() {
+    this._webStandardTransport.closeStandaloneSSEStream();
+  }
+};
+
+// src/resources/subscription-manager.ts
+var SubscriptionManager = class {
+  /** uri → Set<sessionId> */
+  subs = /* @__PURE__ */ new Map();
+  /** sessionId → Set<uri> (reverse index for removeSession) */
+  bySess = /* @__PURE__ */ new Map();
+  /** Paused sessions accumulate notifications here */
+  queues = /* @__PURE__ */ new Map();
+  paused = /* @__PURE__ */ new Set();
+  maxQueue;
+  dropCallback = null;
+  constructor(opts = {}) {
+    this.maxQueue = opts.maxQueuedNotificationsPerSession ?? 50;
+  }
+  subscribe(sessionId, uri) {
+    if (!this.subs.has(uri)) this.subs.set(uri, /* @__PURE__ */ new Set());
+    this.subs.get(uri).add(sessionId);
+    if (!this.bySess.has(sessionId)) this.bySess.set(sessionId, /* @__PURE__ */ new Set());
+    this.bySess.get(sessionId).add(uri);
+  }
+  unsubscribe(sessionId, uri) {
+    this.subs.get(uri)?.delete(sessionId);
+    this.bySess.get(sessionId)?.delete(uri);
+  }
+  subscribersFor(uri) {
+    return Array.from(this.subs.get(uri) ?? []);
+  }
+  removeSession(sessionId) {
+    const uris = this.bySess.get(sessionId);
+    if (uris) {
+      for (const uri of uris) {
+        this.subs.get(uri)?.delete(sessionId);
+      }
+    }
+    this.bySess.delete(sessionId);
+    this.queues.delete(sessionId);
+    this.paused.delete(sessionId);
+  }
+  onDrop(cb) {
+    this.dropCallback = cb;
+  }
+  markSessionPaused(sessionId) {
+    this.paused.add(sessionId);
+    if (!this.queues.has(sessionId)) this.queues.set(sessionId, []);
+  }
+  markSessionResumed(sessionId) {
+    this.paused.delete(sessionId);
+  }
+  /**
+   * Enqueue a notification for a paused session. Drops oldest when the queue
+   * exceeds the configured limit so slow consumers don't grow unbounded.
+   */
+  enqueue(sessionId, notification) {
+    const queue = this.queues.get(sessionId) ?? [];
+    this.queues.set(sessionId, queue);
+    if (queue.length >= this.maxQueue) {
+      const dropped = queue.shift();
+      this.dropCallback?.(sessionId, dropped);
+    }
+    queue.push(notification);
+  }
+  /**
+   * Fan-out a resources/updated notification to all subscribed sessions.
+   * Paused sessions get the notification enqueued; active sessions get the
+   * callback fired immediately (the callback writes to their SSE stream).
+   */
+  fanOut(uri, send, version3) {
+    const notification = {
+      method: "notifications/resources/updated",
+      params: version3 === void 0 ? { uri } : { uri, version: version3 }
+    };
+    for (const sessionId of this.subscribersFor(uri)) {
+      if (this.paused.has(sessionId)) {
+        this.enqueue(sessionId, notification);
+      } else {
+        send(sessionId, notification);
+      }
+    }
+  }
+  /**
+   * Drain queued notifications for a session that just resumed.
+   * Calls send() for each queued notification in order.
+   */
+  drain(sessionId, send) {
+    const queue = this.queues.get(sessionId);
+    if (!queue || queue.length === 0) return;
+    this.queues.set(sessionId, []);
+    for (const notification of queue) {
+      send(sessionId, notification);
+    }
+  }
+};
+
+// src/transport/streamable-http.ts
+function getSessionClientInfo(sessionId) {
+  return _sessions.get(sessionId)?.clientInfo;
+}
+function getAllSessionClientInfos() {
+  const result = /* @__PURE__ */ new Map();
+  for (const [sid, rec] of _sessions) {
+    if (rec.clientInfo !== void 0) {
+      result.set(sid, rec.clientInfo);
+    }
+  }
+  return result;
+}
+var _sessions = /* @__PURE__ */ new Map();
+var subManager = new SubscriptionManager({ maxQueuedNotificationsPerSession: 50 });
+function cloneHandlers(template, target) {
+  const src = template;
+  const dst = target;
+  for (const [method, handler] of src._requestHandlers) {
+    if (!dst._requestHandlers.has(method)) {
+      dst._requestHandlers.set(method, handler);
+    }
+  }
+  for (const [method, handler] of src._notificationHandlers) {
+    if (!dst._notificationHandlers.has(method)) {
+      dst._notificationHandlers.set(method, handler);
+    }
+  }
+}
+function sendSseEvent(res, event, data) {
+  const payload = `event: ${event}
+data: ${data}
+
+`;
+  return res.write(payload);
+}
+var sessionSseResponses = /* @__PURE__ */ new Map();
+function sendNotificationToSession(sessionId, notification) {
+  const sseRes = sessionSseResponses.get(sessionId);
+  if (!sseRes) return;
+  const ok = sendSseEvent(sseRes, "message", JSON.stringify(notification));
+  if (!ok) {
+    subManager.markSessionPaused(sessionId);
+  }
+}
+async function attachStreamableHttp(mcpServer, httpServer) {
+  const sessions = _sessions;
+  const sessionCloseCallbacks = [];
+  const sessionReadyCallbacks = [];
+  async function handlePost(req, res) {
+    const sid = req.headers["mcp-session-id"];
+    if (!sid) {
+      const src = mcpServer;
+      const sessionServer = new Server(
+        src._serverInfo,
+        { capabilities: src._capabilities }
+      );
+      cloneHandlers(mcpServer, sessionServer);
+      let pendingSessionId;
+      const transport2 = new StreamableHTTPServerTransport({
+        sessionIdGenerator: () => randomUUID(),
+        enableJsonResponse: true,
+        onsessioninitialized: (newSid) => {
+          pendingSessionId = newSid;
+          sessions.set(newSid, { transport: transport2, server: sessionServer });
+        }
+      });
+      sessionServer.oninitialized = () => {
+        const sid2 = pendingSessionId;
+        if (!sid2) return;
+        const raw = sessionServer.getClientVersion();
+        if (raw?.name) {
+          const rec = sessions.get(sid2);
+          if (rec) rec.clientInfo = { name: raw.name, version: raw.version };
+        }
+        for (const cb of sessionReadyCallbacks) {
+          try {
+            cb(sid2);
+          } catch {
+          }
+        }
+      };
+      await sessionServer.connect(transport2);
+      res.setHeader("Connection", "close");
+      await transport2.handleRequest(req, res);
+      return;
+    }
+    if (!sessions.has(sid)) {
+      req.resume();
+      await new Promise((resolve6) => {
+        if (req.readableEnded) {
+          resolve6();
+          return;
+        }
+        req.once("end", resolve6);
+        req.once("error", resolve6);
+      });
+      res.writeHead(400, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({
+        jsonrpc: "2.0",
+        id: null,
+        error: { code: -32600, message: "Missing or unknown Mcp-Session-Id" }
+      }));
+      return;
+    }
+    const { transport } = sessions.get(sid);
+    res.setHeader("Connection", "close");
+    await transport.handleRequest(req, res);
+  }
+  async function handleSseGet(req, res, sessionId) {
+    const session = sessions.get(sessionId);
+    if (!session) {
+      res.writeHead(404);
+      res.end();
+      return;
+    }
+    if (!req.headers["mcp-session-id"]) {
+      req.headers["mcp-session-id"] = sessionId;
+      req.rawHeaders.push("Mcp-Session-Id", sessionId);
+    }
+    sessionSseResponses.set(sessionId, res);
+    res.on("close", () => {
+      sessionSseResponses.delete(sessionId);
+      sessions.delete(sessionId);
+      for (const cb of sessionCloseCallbacks) {
+        try {
+          cb(sessionId);
+        } catch {
+        }
+      }
+    });
+    res.on("drain", () => {
+      subManager.markSessionResumed(sessionId);
+      subManager.drain(sessionId, (sid, notification) => {
+        sendNotificationToSession(sid, notification);
+      });
+    });
+    await session.transport.handleRequest(req, res);
+  }
+  function requestListener(req, res) {
+    if (res.headersSent || res.writableEnded) return;
+    if (process.env.CD_DEBUG_HTTP) {
+      process.stderr.write(`[streamable-http] request: ${req.method} ${req.url}
+`);
+    }
+    const noop = () => {
+    };
+    req.socket?.on("error", noop);
+    req.on("error", noop);
+    res.on("error", noop);
+    const url2 = req.url ?? "";
+    if (url2 === "/mcp" && req.method === "POST") {
+      void handlePost(req, res).catch(() => {
+        if (!res.headersSent) {
+          res.writeHead(500);
+          res.end();
+        }
+      });
+      return;
+    }
+    const sseMatch = url2.match(/^\/mcp\/events\/([^/]+)$/);
+    if (sseMatch && req.method === "GET") {
+      void handleSseGet(req, res, sseMatch[1]).catch((err) => {
+        const benign = ["ECONNRESET", "EPIPE", "ERR_HTTP_HEADERS_SENT"];
+        if (!benign.includes(err.code ?? "")) {
+          if (!res.headersSent) {
+            res.writeHead(500);
+            res.end();
+          }
+        }
+      });
+      return;
+    }
+    if (process.env.CD_DEBUG_HTTP) {
+      process.stderr.write(`[streamable-http] no route matched: ${req.method} ${req.url} (response state: headersSent=${res.headersSent}, writableEnded=${res.writableEnded})
+`);
+    }
+  }
+  return {
+    detach() {
+      for (const { transport } of sessions.values()) {
+        void transport.close();
+      }
+      sessions.clear();
+      sessionSseResponses.clear();
+      sessionCloseCallbacks.length = 0;
+      sessionReadyCallbacks.length = 0;
+    },
+    onSessionClose(cb) {
+      sessionCloseCallbacks.push(cb);
+    },
+    onSessionReady(cb) {
+      sessionReadyCallbacks.push(cb);
+    },
+    handleHttpRequest(req, res) {
+      requestListener(req, res);
+    }
+  };
+}
+
+// src/author.ts
+function synthesizeAuthorFromClientInfo(clientInfo) {
+  if (clientInfo === void 0) return void 0;
+  const raw = clientInfo.name;
+  if (!raw) return void 0;
+  const id = raw.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "");
+  if (!id) return void 0;
+  return `ai:${id}`;
+}
+
+// src/transport/client-proxy.ts
+import * as http2 from "node:http";
+import * as https2 from "node:https";
+import { createInterface } from "node:readline";
+function parseEnvelope(line) {
+  try {
+    const parsed = JSON.parse(line);
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+function hasRequestId(envelope) {
+  return Object.prototype.hasOwnProperty.call(envelope, "id");
+}
+function writeError(stdout, id, message) {
+  stdout.write(JSON.stringify({
+    jsonrpc: "2.0",
+    id: id ?? null,
+    error: { code: -32603, message }
+  }) + "\n");
+}
+async function postToHost(hostUrl, body, sessionId) {
+  const url2 = new URL("/mcp", hostUrl);
+  const headers = {
+    "Content-Type": "application/json",
+    "Content-Length": String(Buffer.byteLength(body)),
+    // MCP Streamable HTTP transport requires both content types in Accept
+    "Accept": "application/json, text/event-stream"
+  };
+  if (sessionId) headers["Mcp-Session-Id"] = sessionId;
+  const isHttps = url2.protocol === "https:";
+  return new Promise((resolve6, reject) => {
+    const requester = isHttps ? https2.request : http2.request;
+    const req = requester(
+      {
+        hostname: url2.hostname,
+        port: parseInt(url2.port, 10),
+        path: url2.pathname,
+        method: "POST",
+        headers,
+        // Self-signed loopback dev cert; trust the address, not the chain.
+        rejectUnauthorized: false
+      },
+      (res) => {
+        let raw = "";
+        res.on("data", (c) => {
+          raw += c;
+        });
+        res.on("end", () => {
+          const newSid = res.headers["mcp-session-id"] ?? null;
+          resolve6({ status: res.statusCode ?? 0, sessionId: newSid, body: raw });
+        });
+      }
+    );
+    req.on("error", reject);
+    req.end(body);
+  });
+}
+async function startClientProxy(opts) {
+  const stdin = opts.stdin ?? process.stdin;
+  const stdout = opts.stdout ?? process.stdout;
+  const hostUrl = opts.hostUrl;
+  let sessionId = null;
+  let stopped = false;
+  const closeCallbacks = [];
+  const rl = createInterface({ input: stdin, crlfDelay: Infinity });
+  rl.on("line", async (line) => {
+    if (stopped || !line.trim()) return;
+    const envelope = parseEnvelope(line);
+    const isRequest = hasRequestId(envelope);
+    try {
+      const result = await postToHost(hostUrl, line, sessionId);
+      if (result.sessionId) sessionId = result.sessionId;
+      const body = result.body.trim();
+      if (result.status < 200 || result.status >= 300) {
+        if (isRequest) {
+          writeError(stdout, envelope.id, `MCP host returned HTTP ${result.status}${body ? `: ${body}` : ""}`);
+        } else if (body) {
+          console.error(`[changedown] MCP notification proxy got HTTP ${result.status}: ${body}`);
+        }
+        return;
+      }
+      if (!body) {
+        if (isRequest) {
+          writeError(stdout, envelope.id, `MCP host returned HTTP ${result.status} with empty response body`);
+        }
+        return;
+      }
+      stdout.write(body + "\n");
+    } catch (err) {
+      if (isRequest) {
+        writeError(stdout, envelope.id, String(err));
+      } else {
+        console.error(`[changedown] MCP notification proxy failed: ${String(err)}`);
+      }
+    }
+  });
+  rl.on("close", () => {
+    stopped = true;
+    for (const cb of closeCallbacks) cb();
+  });
+  return {
+    stop() {
+      stopped = true;
+      rl.close();
+    },
+    onClose(cb) {
+      closeCallbacks.push(cb);
+    }
+  };
+}
+
+// src/transport/pane-endpoint.ts
+import { EventEmitter as EventEmitter2 } from "node:events";
+import { randomUUID as randomUUID2 } from "node:crypto";
+
+// src/version.ts
+var version2 = "0.1.0";
+
+// src/transport/pane-endpoint.ts
+var CAPABILITY_BACKEND_REGISTER = "backend-register";
+var CAPABILITY_MCP_STREAMABLE = "mcp-streamable";
+var HEALTH_RESPONSE = {
+  service: SERVICE_NAME,
+  version: version2,
+  capabilities: [CAPABILITY_BACKEND_REGISTER, CAPABILITY_MCP_STREAMABLE]
+};
+var SSE_GRACE_MS = 5e3;
+var KEEPALIVE_MS = 15e3;
+var TEST_CONTROL_ENABLED = process.env.CHANGEDOWN_MCP_TEST_CONTROL === "1";
+var REGISTRATION_STREAM_TTL_MS = 3e4;
+var DEFAULT_REQUEST_TIMEOUT_MS = 3e4;
+var DEFAULT_ALLOWED_PANE_ORIGINS = [
+  "https://127.0.0.1:3000",
+  "https://localhost:3000",
+  "https://changedown.com"
+];
+function normalizePaneOrigin(value) {
+  const candidate = value.trim();
+  if (!candidate) return void 0;
+  try {
+    const url2 = new URL(candidate);
+    if (url2.protocol !== "https:" && url2.protocol !== "http:") return void 0;
+    return url2.origin;
+  } catch {
+    return void 0;
+  }
+}
+function parsePaneOrigins(value) {
+  if (!value) return [];
+  return value.split(",").map(normalizePaneOrigin).filter((origin) => origin !== void 0);
+}
+function buildAllowedPaneOrigins(options) {
+  return /* @__PURE__ */ new Set([
+    ...DEFAULT_ALLOWED_PANE_ORIGINS,
+    ...parsePaneOrigins(process.env.CHANGEDOWN_PANE_ORIGINS),
+    ...(options.allowedOrigins ?? []).map(normalizePaneOrigin).filter((origin) => origin !== void 0)
+  ]);
+}
+function endJson(res, status, body) {
+  const payload = JSON.stringify(body);
+  res.writeHead(status, {
+    "Content-Type": "application/json",
+    "Content-Length": Buffer.byteLength(payload),
+    "Cache-Control": "no-cache",
+    Connection: "close"
+  });
+  res.end(payload);
+}
+function attachPaneEndpoints(httpServer, options = {}) {
+  const registrations = /* @__PURE__ */ new Map();
+  const emitter = new EventEmitter2();
+  const allowedOrigins = buildAllowedPaneOrigins(options);
+  let keepalivePaused = false;
+  const editCounts = /* @__PURE__ */ new Map();
+  function removeRegistration(registrationId) {
+    const reg = registrations.get(registrationId);
+    if (!reg) return;
+    for (const [, pending] of reg.pendingRequests) {
+      pending.reject(new Error("Pane disconnected"));
+    }
+    for (const pollRes of reg.pendingPolls) {
+      if (!pollRes.writableEnded) {
+        pollRes.writeHead(410, {
+          "Content-Type": "application/json",
+          Connection: "close"
+        });
+        pollRes.end(JSON.stringify({ error: "pane disconnected" }));
+      }
+    }
+    reg.pendingPolls.clear();
+    if (reg.sseRes && !reg.sseRes.writableEnded) {
+      reg.sseRes.end();
+    }
+    reg.sseRes = null;
+    reg._disposable?.dispose();
+    for (const cleanup of reg._listenerCleanups) {
+      cleanup();
+    }
+    reg._listenerCleanups.clear();
+    registrations.delete(registrationId);
+    options.onUnregister?.(registrationId);
+  }
+  async function handleRegister(req, res) {
+    let body = "";
+    for await (const chunk of req) body += chunk;
+    let payload;
+    try {
+      const parsed = JSON.parse(body);
+      if (!parsed || typeof parsed.scheme !== "string" || parsed.scheme.length === 0 || typeof parsed.sessionId !== "string" || parsed.sessionId.length === 0 || !Array.isArray(parsed.capabilities) || !parsed.capabilities.every((capability) => typeof capability === "string")) {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "invalid pane registration payload" }));
+        return;
+      }
+      payload = {
+        scheme: parsed.scheme,
+        sessionId: parsed.sessionId,
+        capabilities: parsed.capabilities
+      };
+    } catch {
+      res.writeHead(400, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "invalid JSON" }));
+      return;
+    }
+    const registrationId = randomUUID2();
+    const reg = {
+      registrationId,
+      scheme: payload.scheme,
+      sessionId: payload.sessionId,
+      capabilities: payload.capabilities,
+      sseRes: null,
+      pendingRequests: /* @__PURE__ */ new Map(),
+      pendingPolls: /* @__PURE__ */ new Set(),
+      nextRequestId: 1,
+      _listenerCleanups: /* @__PURE__ */ new Set()
+    };
+    registrations.set(registrationId, reg);
+    const disposable = options.onRegister?.(reg);
+    if (disposable) reg._disposable = disposable;
+    setTimeout(() => {
+      if (!reg.sseRes) removeRegistration(registrationId);
+    }, REGISTRATION_STREAM_TTL_MS);
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ registrationId, keepaliveMs: KEEPALIVE_MS }));
+  }
+  function handleStream(req, res, registrationId) {
+    const reg = registrations.get(registrationId);
+    if (!reg) {
+      res.writeHead(404);
+      res.end();
+      return;
+    }
+    res.writeHead(200, {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      Connection: "keep-alive"
+    });
+    res.flushHeaders();
+    reg.sseRes = res;
+    res.write('data: {"type":"ping"}\n\n');
+    const keepalive = setInterval(() => {
+      if (!keepalivePaused && !res.writableEnded)
+        res.write('data: {"type":"ping"}\n\n');
+    }, KEEPALIVE_MS);
+    req.on("close", () => {
+      clearInterval(keepalive);
+      reg.sseRes = null;
+      setTimeout(() => {
+        if (!reg.sseRes) {
+          removeRegistration(registrationId);
+        }
+      }, SSE_GRACE_MS);
+    });
+  }
+  async function handleResponse(req, res, registrationId) {
+    const reg = registrations.get(registrationId);
+    if (!reg) {
+      res.writeHead(404);
+      res.end();
+      return;
+    }
+    let body = "";
+    for await (const chunk of req) body += chunk;
+    const payload = JSON.parse(body);
+    const pending = reg.pendingRequests.get(payload.id);
+    if (pending) {
+      reg.pendingRequests.delete(payload.id);
+      if (payload.error) {
+        pending.reject(new Error(String(payload.error)));
+      } else if (payload.ok === false) {
+        pending.reject(
+          new Error("Pane indicated failure without error detail")
+        );
+      } else {
+        pending.resolve(payload.result);
+      }
+    }
+    res.writeHead(200);
+    res.end();
+  }
+  async function handleNotify(req, res, registrationId) {
+    const reg = registrations.get(registrationId);
+    if (!reg) {
+      res.writeHead(404, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "unknown registrationId" }));
+      return;
+    }
+    let body = "";
+    for await (const chunk of req) body += chunk;
+    let payload;
+    try {
+      payload = JSON.parse(body);
+    } catch {
+      res.writeHead(400, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "invalid JSON" }));
+      return;
+    }
+    if (!payload.event || typeof payload.event !== "object") {
+      res.writeHead(400, { "Content-Type": "application/json" });
+      res.end(
+        JSON.stringify({
+          error: "invalid payload: event must be a non-null object"
+        })
+      );
+      return;
+    }
+    emitter.emit("paneNotification", registrationId, payload.event);
+    res.writeHead(204);
+    res.end();
+  }
+  function writePendingPollResponse(reg, res) {
+    for (const [id, pending] of reg.pendingRequests) {
+      if (pending.delivered) continue;
+      if (res.writableEnded) return true;
+      pending.delivered = true;
+      if (process.env.CD_DEBUG_HTTP) {
+        process.stderr.write(
+          `[pane-endpoint] poll delivering ${pending.method} id=${id}
+`
+        );
+      }
+      endJson(res, 200, { id, method: pending.method, params: pending.params });
+      return true;
+    }
+    return false;
+  }
+  function flushPendingPolls(reg) {
+    for (const res of [...reg.pendingPolls]) {
+      if (writePendingPollResponse(reg, res)) {
+        reg.pendingPolls.delete(res);
+      }
+    }
+  }
+  async function handlePoll(req, res, registrationId) {
+    const reg = registrations.get(registrationId);
+    if (!reg) {
+      res.writeHead(404, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "unknown registrationId" }));
+      return;
+    }
+    if (writePendingPollResponse(reg, res)) {
+      return;
+    }
+    reg.pendingPolls.add(res);
+    const timeout = setTimeout(() => {
+      reg.pendingPolls.delete(res);
+      if (!res.writableEnded) {
+        res.writeHead(204, {
+          "Cache-Control": "no-cache",
+          "Content-Length": "0",
+          Connection: "close"
+        });
+        res.end();
+      }
+    }, Math.min(options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS, 15e3));
+    res.on("close", () => {
+      clearTimeout(timeout);
+      reg.pendingPolls.delete(res);
+    });
+  }
+  function applyCors(req, res) {
+    const origin = req.headers.origin;
+    const allowed = typeof origin === "string" && allowedOrigins.has(origin);
+    if (process.env.CD_DEBUG_HTTP) {
+      process.stderr.write(
+        `[pane-endpoint] cors origin=${origin ?? "(none)"} allowed=${allowed} method=${req.method ?? ""} url=${req.url ?? ""}
+`
+      );
+    }
+    if (!allowed || typeof origin !== "string") return;
+    res.setHeader("Access-Control-Allow-Origin", origin);
+    res.setHeader("Vary", "Origin");
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+    res.setHeader("Access-Control-Max-Age", "600");
+    res.setHeader("Access-Control-Allow-Private-Network", "true");
+  }
+  function requestListener(req, res) {
+    if (res.headersSent || res.writableEnded) return;
+    if (process.env.CD_DEBUG_HTTP) {
+      process.stderr.write(
+        `[pane-endpoint] request: ${req.method} ${req.url}
+`
+      );
+    }
+    applyCors(req, res);
+    const url2 = req.url ?? "";
+    const method = req.method ?? "";
+    if (method === "OPTIONS") {
+      res.writeHead(204);
+      res.end();
+      return;
+    }
+    if (url2 === "/health" && method === "GET") {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify(HEALTH_RESPONSE));
+      return;
+    }
+    if (TEST_CONTROL_ENABLED && url2 === "/__tests__/sse-keepalive/pause" && method === "POST") {
+      keepalivePaused = true;
+      res.writeHead(204);
+      res.end();
+      return;
+    }
+    if (TEST_CONTROL_ENABLED && url2 === "/__tests__/sse-keepalive/resume" && method === "POST") {
+      keepalivePaused = false;
+      res.writeHead(204);
+      res.end();
+      return;
+    }
+    if (url2 === "/backend/register" && method === "POST") {
+      if (process.env.CD_DEBUG_HTTP) {
+        process.stderr.write(`[pane-endpoint] handling backend register from origin=${req.headers.origin ?? "(none)"}
+`);
+      }
+      void handleRegister(req, res);
+      return;
+    }
+    const streamMatch = url2.match(/^\/backend\/stream\/([^/]+)$/);
+    if (streamMatch && method === "GET") {
+      handleStream(req, res, streamMatch[1]);
+      return;
+    }
+    const responseMatch = url2.match(/^\/backend\/response\/([^/]+)$/);
+    if (responseMatch && method === "POST") {
+      void handleResponse(req, res, responseMatch[1]);
+      return;
+    }
+    const notifyMatch = url2.match(/^\/backend\/notify\/([^/]+)$/);
+    if (notifyMatch && method === "POST") {
+      void handleNotify(req, res, notifyMatch[1]);
+      return;
+    }
+    const pollMatch = url2.match(/^\/backend\/poll\/([^/]+)$/);
+    if (pollMatch && (method === "GET" || method === "POST")) {
+      void handlePoll(req, res, pollMatch[1]);
+      return;
+    }
+    if (process.env.CD_DEBUG_HTTP) {
+      process.stderr.write(
+        `[pane-endpoint] no route matched: ${req.method} ${req.url} (response state: headersSent=${res.headersSent}, writableEnded=${res.writableEnded})
+`
+      );
+    }
+  }
+  return {
+    detach() {
+      for (const id of [...registrations.keys()]) {
+        removeRegistration(id);
+      }
+    },
+    async sendRequest(registrationId, method, params) {
+      const reg = registrations.get(registrationId);
+      if (!reg) throw new Error(`No registration found: ${registrationId}`);
+      const usePollRpc = reg.capabilities.includes("poll-rpc");
+      if (!usePollRpc && !reg.sseRes)
+        throw new Error(
+          `No active SSE stream for registration: ${registrationId}`
+        );
+      const id = String(reg.nextRequestId++);
+      const event = `data: ${JSON.stringify({ id, method, params })}
+
+`;
+      const timeoutMs = options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
+      let timer;
+      const responsePromise = new Promise((resolve6, reject) => {
+        reg.pendingRequests.set(id, {
+          resolve: resolve6,
+          reject,
+          method,
+          params,
+          delivered: false
+        });
+      });
+      if (reg.sseRes && !reg.sseRes.writableEnded) {
+        const wrote = reg.sseRes.write(event);
+        if (process.env.CD_DEBUG_HTTP) {
+          process.stderr.write(
+            `[pane-endpoint] sendRequest ${method} id=${id} via=sse+${usePollRpc ? "poll" : "only"} wrote=${wrote} regId=${registrationId}
+`
+          );
+        }
+        if (!wrote && reg.sseRes.writableEnded) {
+          reg.pendingRequests.delete(id);
+          throw new Error(
+            `SSE stream ended while sending Word bridge request (method: ${method})`
+          );
+        }
+      } else if (!usePollRpc) {
+        reg.pendingRequests.delete(id);
+        throw new Error(
+          `No active SSE stream for registration: ${registrationId}`
+        );
+      } else if (process.env.CD_DEBUG_HTTP) {
+        process.stderr.write(
+          `[pane-endpoint] sendRequest ${method} id=${id} via=poll-only regId=${registrationId}
+`
+        );
+      }
+      flushPendingPolls(reg);
+      const timeoutPromise = new Promise((_, reject) => {
+        timer = setTimeout(() => {
+          reg.pendingRequests.delete(id);
+          reject(
+            new Error(
+              `Word bridge request timed out after ${timeoutMs} ms (method: ${method})`
+            )
+          );
+        }, timeoutMs);
+      });
+      try {
+        const result = await Promise.race([responsePromise, timeoutPromise]);
+        return result;
+      } finally {
+        if (timer) clearTimeout(timer);
+      }
+    },
+    broadcastAgentsUpdated(sessionClientInfos) {
+      const agents = Array.from(sessionClientInfos.entries()).map(
+        ([sid, info]) => ({
+          sessionId: sid,
+          name: info.name,
+          editCount: editCounts.get(sid) ?? 0
+        })
+      );
+      const payload = `data: ${JSON.stringify({
+        method: AGENTS_UPDATED_METHOD,
+        params: { agents }
+      })}
+
+`;
+      for (const reg of registrations.values()) {
+        if (!reg.sseRes || reg.sseRes.writableEnded) continue;
+        reg.sseRes.write(payload);
+      }
+    },
+    incrementEditCount(sessionId, sessionClientInfos) {
+      editCounts.set(sessionId, (editCounts.get(sessionId) ?? 0) + 1);
+      this.broadcastAgentsUpdated(sessionClientInfos);
+    },
+    pruneEditCounts(liveSessionIds) {
+      const liveIds = new Set(liveSessionIds.keys());
+      for (const sid of editCounts.keys()) {
+        if (!liveIds.has(sid)) editCounts.delete(sid);
+      }
+    },
+    handleHttpRequest(req, res) {
+      requestListener(req, res);
+    },
+    /**
+     * Register a callback invoked whenever the pane POSTs a notification for
+     * the given registrationId.
+     *
+     * **Important**: if `registrationId` is not currently registered, this
+     * method returns a no-op Disposable immediately — no handler is attached to
+     * the emitter and `dispose()` is safe to call but does nothing.  Callers
+     * that race pane registration must subscribe *after* registration completes.
+     */
+    onPaneNotification(registrationId, cb) {
+      const reg = registrations.get(registrationId);
+      if (!reg) {
+        return {
+          dispose: () => {
+          }
+        };
+      }
+      const handler = (id, event) => {
+        if (id === registrationId) cb(event);
+      };
+      emitter.on("paneNotification", handler);
+      const cleanup = () => emitter.off("paneNotification", handler);
+      reg._listenerCleanups.add(cleanup);
+      return {
+        dispose: () => {
+          cleanup();
+          registrations.get(registrationId)?._listenerCleanups.delete(cleanup);
+        }
+      };
+    }
+  };
+}
+
+// src/pane-registration.ts
+var WordPaneMuxBackend = class {
+  constructor(getPaneHandle) {
+    this.getPaneHandle = getPaneHandle;
+  }
+  schemes = ["word"];
+  sessions = /* @__PURE__ */ new Map();
+  addSession(session) {
+    this.sessions.set(session.sessionUri, session);
+  }
+  removeRegistration(registrationId) {
+    for (const [sessionUri, session] of this.sessions) {
+      if (session.registrationId !== registrationId) continue;
+      this.sessions.delete(sessionUri);
+      return true;
+    }
+    return false;
+  }
+  isEmpty() {
+    return this.sessions.size === 0;
+  }
+  list() {
+    return Array.from(this.sessions.values()).map((session) => ({
+      uri: session.sessionUri,
+      name: wordSessionResourceName(session.sessionUri),
+      mimeType: "text/markdown",
+      version: session.version
+    }));
+  }
+  async read(ref) {
+    const session = this.resolve(ref);
+    const snapshot = await this.getPaneHandle().sendRequest(
+      session.registrationId,
+      "read",
+      {}
+    );
+    session.version = snapshot.version;
+    return snapshot;
+  }
+  async listChanges(ref, _filter) {
+    return this.getPaneHandle().sendRequest(
+      this.resolve(ref).registrationId,
+      "listChanges",
+      _filter ?? {}
+    );
+  }
+  async applyChange(ref, op) {
+    return this.getPaneHandle().sendRequest(
+      this.resolve(ref).registrationId,
+      "applyChange",
+      { op }
+    );
+  }
+  subscribe(ref, listener) {
+    const session = this.resolve(ref);
+    this.getPaneHandle().sendRequest(session.registrationId, "subscribe", {}).catch((err) => console.warn("[WordPaneMuxBackend] subscribe ack failed:", err));
+    const disposable = this.getPaneHandle().onPaneNotification(session.registrationId, (event) => {
+      if (event.kind === "document_changed") session.version = event.version;
+      listener(event);
+    });
+    return () => disposable.dispose();
+  }
+  resolve(ref) {
+    const session = this.sessions.get(ref.uri);
+    if (!session) {
+      const known = Array.from(this.sessions.keys()).join(", ") || "(none)";
+      throw new Error(`WordSessionNotFoundError: no active pane for ${ref.uri}; known sessions: ${known}`);
+    }
+    return session;
+  }
+};
+function createPaneRegistrationCallbacks(getPaneHandle, registry2) {
+  const backend = new WordPaneMuxBackend(getPaneHandle);
+  let registered = false;
+  return {
+    onRegister(info) {
+      const sessionUri = info.sessionId.includes("://") ? info.sessionId : `${info.scheme}://${info.sessionId}`;
+      backend.addSession({ registrationId: info.registrationId, sessionUri });
+      if (!registered) {
+        registry2.register(backend);
+        registered = true;
+      } else {
+        registry2.register(backend);
+      }
+      console.error(
+        `[changedown] pane registered \u2014 scheme="${info.scheme}" session="${info.sessionId}" regId="${info.registrationId}"`
+      );
+      return {
+        dispose() {
+        }
+      };
+    },
+    onUnregister(registrationId) {
+      const removed = backend.removeRegistration(registrationId);
+      if (!removed) {
+        console.error(
+          `[changedown] stale unregister ignored \u2014 regId="${registrationId}" not active`
+        );
+        return;
+      }
+      if (backend.isEmpty()) {
+        registry2.unregister("word");
+        registered = false;
+      } else {
+        registry2.register(backend);
+      }
+      console.error(
+        `[changedown] pane unregistered \u2014 regId="${registrationId}"`
+      );
+    }
+  };
+}
+
+// src/resources/resource-lister.ts
+var ResourceLister = class {
+  constructor(registry2) {
+    this.registry = registry2;
+  }
+  list() {
+    return this.registry.listResources();
+  }
+};
+
+// src/resources/resource-reader.ts
+var ResourceReader = class {
+  constructor(registry2, formatSnapshot) {
+    this.registry = registry2;
+    this.formatSnapshot = formatSnapshot;
+  }
+  async read(uri) {
+    const backend = this.registry.resolve(uri);
+    const ref = { uri };
+    const snapshot = await backend.read(ref);
+    const text = this.formatSnapshot ? await this.formatSnapshot(uri, snapshot) : snapshot.text;
+    return {
+      contents: [{
+        uri,
+        mimeType: "text/markdown",
+        text
+      }]
+    };
+  }
+};
+
+// src/word-review.ts
+var VALID_DECISIONS2 = /* @__PURE__ */ new Set(["approve", "reject", "request_changes", "withdraw"]);
+function parseMaybeJsonArray(value, name) {
+  if (value === void 0) return void 0;
+  if (Array.isArray(value)) return value;
+  if (typeof value !== "string") {
+    return { ok: false, message: `Word review_changes expected "${name}" to be an array.` };
+  }
+  try {
+    const parsed = JSON.parse(value);
+    if (!Array.isArray(parsed)) {
+      return { ok: false, message: `Word review_changes "${name}" JSON parsed to ${typeof parsed}, not an array.` };
+    }
+    return parsed;
+  } catch {
+    return { ok: false, message: `Word review_changes "${name}" was a string but not valid JSON.` };
+  }
+}
+function prepareWordReviewChanges(args) {
+  const responses = parseMaybeJsonArray(args.responses, "responses");
+  if (responses && "ok" in responses) return responses;
+  if (responses && responses.length > 0) {
+    return { ok: false, message: "Word review_changes does not support thread responses yet; use the single approve/reject review path only." };
+  }
+  if (args.settle === true || args.settle === "true") {
+    return { ok: false, message: "Word review_changes does not support settle yet; approve/reject mutates native Word tracked changes directly." };
+  }
+  const reviews = parseMaybeJsonArray(args.reviews, "reviews");
+  if (!reviews || "ok" in reviews) {
+    return reviews && "ok" in reviews ? reviews : { ok: false, message: "Word review_changes requires exactly one review item." };
+  }
+  if (reviews.length !== 1) {
+    return { ok: false, message: `Word review_changes basic path supports exactly one review item, got ${reviews.length}.` };
+  }
+  const operations = [];
+  for (let idx = 0; idx < reviews.length; idx++) {
+    const item = reviews[idx];
+    if (item === null || typeof item !== "object" || Array.isArray(item)) {
+      return { ok: false, message: `Word review_changes review item #${idx} must be an object.` };
+    }
+    const review = item;
+    const changeId = typeof review.change_id === "string" ? review.change_id : void 0;
+    const decision = typeof review.decision === "string" ? review.decision : void 0;
+    const reason = typeof review.reason === "string" ? review.reason : void 0;
+    if (!changeId || !decision || !reason) {
+      return { ok: false, message: `Word review_changes review item #${idx} requires change_id, decision, and reason.` };
+    }
+    if (!VALID_DECISIONS2.has(decision)) {
+      return { ok: false, message: `Word review_changes review item #${idx} has invalid decision "${decision}".` };
+    }
+    if (decision !== "approve" && decision !== "reject") {
+      return { ok: false, message: `Word review_changes basic path supports approve/reject only, got "${decision}".` };
+    }
+    operations.push({
+      changeId,
+      decision,
+      reason,
+      blocking: review.blocking === true ? true : void 0,
+      label: typeof review.label === "string" ? review.label : void 0
+    });
+  }
+  return { ok: true, operations };
+}
+async function applyWordReviewChanges(args, backend, uri) {
+  const prepared = prepareWordReviewChanges(args);
+  if (!prepared.ok) throw new Error(prepared.message);
+  const author = typeof args.author === "string" ? args.author : void 0;
+  const results = [];
+  for (const op of prepared.operations) {
+    const result = await backend.applyChange({ uri }, {
+      kind: "review",
+      args: {
+        cnId: op.changeId,
+        decision: op.decision,
+        reason: op.reason,
+        author,
+        blocking: op.blocking,
+        label: op.label
+      }
+    });
+    if (result.applied === false) {
+      throw new Error(result.text ?? `Word review_changes did not apply ${op.changeId}`);
+    }
+    results.push({
+      change_id: op.changeId,
+      decision: op.decision,
+      status_updated: true
+    });
+  }
+  const remaining = (await backend.listChanges({ uri }, { status: "proposed" })).filter((c) => c.status === "proposed" || c.status === "Proposed").length;
+  return {
+    file: uri,
+    results,
+    document_state: {
+      remaining_proposed: remaining,
+      all_resolved: remaining === 0
+    },
+    ...remaining === 0 ? { note: "All changes in this Word session are now resolved. No proposed changes remain." } : {}
+  };
+}
+
+// src/document-target.ts
+import * as path14 from "node:path";
+import { fileURLToPath as fileURLToPath3, pathToFileURL } from "node:url";
+function normalizeDocumentTarget(input, baseDir) {
+  if (input.startsWith("word://")) {
+    return { uri: input };
+  }
+  if (input.startsWith("file://")) {
+    const filePath2 = fileURLToPath3(input);
+    return {
+      uri: pathToFileURL(filePath2).href,
+      filePath: filePath2
+    };
+  }
+  const filePath = path14.isAbsolute(input) ? input : path14.resolve(baseDir, input);
+  return {
+    uri: pathToFileURL(filePath).href,
+    filePath
+  };
+}
+
 // src/index.ts
+var execFileAsync = promisify(execFile);
+var MAX_WORD_LIST_PREVIEW_LENGTH = 80;
+function paneRequestTimeoutMs() {
+  const raw = process.env.CHANGEDOWN_PANE_REQUEST_TIMEOUT_MS;
+  if (!raw) return 6e5;
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 6e5;
+}
+function buildWordListPreview(change) {
+  let preview = "";
+  switch (change.type) {
+    case "Substitution":
+      preview = `${change.originalText ?? ""}~>${change.modifiedText ?? ""}`;
+      break;
+    case "Insertion":
+      preview = change.modifiedText ?? "";
+      break;
+    case "Deletion":
+      preview = change.originalText ?? "";
+      break;
+    default:
+      preview = change.originalText ?? change.modifiedText ?? "";
+      break;
+  }
+  if (preview.length > MAX_WORD_LIST_PREVIEW_LENGTH) {
+    return preview.slice(0, MAX_WORD_LIST_PREVIEW_LENGTH - 3) + "...";
+  }
+  return preview;
+}
+function effectiveChangeStatus(change) {
+  return (change.metadata?.status ?? change.inlineMetadata?.status ?? change.status).toString().toLowerCase();
+}
+function buildWordSummaryEntry(change, text) {
+  return {
+    change_id: change.id,
+    type: TYPE_MAP[change.type],
+    status: effectiveChangeStatus(change),
+    author: change.metadata?.author ?? change.inlineMetadata?.author ?? "",
+    line: offsetToLineNumber2(text, change.range.start),
+    preview: buildWordListPreview(change),
+    level: change.level,
+    anchored: change.anchored,
+    resolved: change.resolved ?? true,
+    ...change.consumedBy ? { consumed_by: change.consumedBy } : {}
+  };
+}
+function buildWordContextEntry(change, text, lines, summary, contextN) {
+  const startLine = offsetToLineNumber2(text, change.range.start);
+  const endLine = offsetToLineNumber2(text, change.range.end);
+  return {
+    ...summary,
+    markup: text.slice(change.range.start, change.range.end),
+    original_text: change.type === "Insertion" ? null : change.originalText ?? null,
+    modified_text: change.type === "Deletion" ? null : change.modifiedText ?? null,
+    context_before: lines.slice(Math.max(0, startLine - 1 - contextN), startLine - 1),
+    context_after: lines.slice(endLine, Math.min(lines.length, endLine + contextN))
+  };
+}
+function buildWordFullDetailEntry(change, text, lines, doc, summary, contextN) {
+  const ctx = buildWordContextEntry(change, text, lines, summary, contextN);
+  const meta3 = change.metadata;
+  const participants = /* @__PURE__ */ new Set();
+  if (meta3?.author) participants.add(meta3.author);
+  meta3?.discussion?.forEach((d) => participants.add(d.author));
+  meta3?.approvals?.forEach((a) => participants.add(a.author));
+  meta3?.rejections?.forEach((a) => participants.add(a.author));
+  meta3?.requestChanges?.forEach((a) => participants.add(a.author));
+  let group = null;
+  const dotIndex = change.id.lastIndexOf(".");
+  if (dotIndex > 0) {
+    const parentId = change.id.slice(0, dotIndex);
+    const parentBlock = findFootnoteBlock(lines, parentId);
+    let description = null;
+    if (parentBlock) {
+      for (let i = parentBlock.headerLine + 1; i <= parentBlock.blockEnd; i++) {
+        const trimmed = lines[i]?.trim() ?? "";
+        if (trimmed.startsWith("reason:") || trimmed.startsWith("context:")) continue;
+        if (trimmed && !trimmed.startsWith("approved:") && !trimmed.startsWith("rejected:") && !trimmed.startsWith("request-changes:")) {
+          description = trimmed;
+          break;
+        }
+      }
+    }
+    const siblings = doc.getChanges().filter((c) => (c.groupId === parentId || c.id.startsWith(parentId + ".")) && c.id !== parentId).map((c) => c.id);
+    group = { parent_id: parentId, description, siblings };
+  }
+  return {
+    ...ctx,
+    footnote: {
+      author: meta3?.author ?? "",
+      date: meta3?.date ?? "",
+      reasoning: meta3?.discussion?.[0]?.text ?? null,
+      discussion_count: meta3?.discussion?.length ?? 0,
+      approvals: (meta3?.approvals ?? []).map((a) => a.author),
+      rejections: (meta3?.rejections ?? []).map((a) => a.author),
+      request_changes: (meta3?.requestChanges ?? []).map((a) => a.author)
+    },
+    participants: [...participants],
+    group
+  };
+}
+function buildWordDetailForLevel(detail, change, text, lines, doc, summary, contextN) {
+  switch (detail) {
+    case "context":
+      return buildWordContextEntry(change, text, lines, summary, contextN);
+    case "full":
+      return buildWordFullDetailEntry(change, text, lines, doc, summary, contextN);
+    default:
+      return summary;
+  }
+}
+async function buildWordListChangesResponse(backend, uri, args) {
+  const snapshot = await backend.read({ uri });
+  const text = snapshot.text;
+  const doc = parseForFormat(text);
+  const allChanges = doc.getChanges();
+  const lines = text.split("\n");
+  const statusFilter = typeof args.status === "string" ? args.status : void 0;
+  const changeIdArg = typeof args.change_id === "string" ? args.change_id : void 0;
+  const changeIdsArg = Array.isArray(args.change_ids) ? args.change_ids.filter((id) => typeof id === "string") : void 0;
+  const hasIds = !!(changeIdArg || changeIdsArg && changeIdsArg.length > 0);
+  const detail = typeof args.detail === "string" ? args.detail : hasIds ? "full" : "summary";
+  const contextN = Math.max(0, typeof args.context_lines === "number" ? args.context_lines : 3);
+  const includeNativeDiagnostics = args.debug === true || args.diagnostics === true || args.native === true;
+  const nativeChanges = includeNativeDiagnostics ? await backend.listChanges({ uri }, args).catch(() => void 0) : void 0;
+  if (hasIds) {
+    const targetIds = /* @__PURE__ */ new Set();
+    if (changeIdArg) targetIds.add(changeIdArg);
+    changeIdsArg?.forEach((id) => targetIds.add(id));
+    const changeMap = new Map(allChanges.map((change) => [change.id, change]));
+    const results = [];
+    for (const id of targetIds) {
+      const change = changeMap.get(id);
+      if (!change) {
+        const settledBlock = findFootnoteBlock(lines, id);
+        if (settledBlock) {
+          const header = parseFootnoteHeader(settledBlock.headerContent);
+          results.push({ change_id: id, error: `Change settled (status: ${header?.status ?? "unknown"})` });
+        } else {
+          results.push({ change_id: id, error: "Change not found" });
+        }
+        continue;
+      }
+      const summary = buildWordSummaryEntry(change, text);
+      results.push(buildWordDetailForLevel(detail, change, text, lines, doc, summary, contextN));
+    }
+    return {
+      file: uri,
+      total_count: allChanges.length,
+      filtered_count: results.length,
+      changes: results,
+      ...nativeChanges ? { native_changes: nativeChanges } : {},
+      diagnostics: doc.getDiagnostics()
+    };
+  }
+  const entries = allChanges.map((change) => {
+    const summary = buildWordSummaryEntry(change, text);
+    return buildWordDetailForLevel(detail, change, text, lines, doc, summary, contextN);
+  });
+  const filtered = statusFilter ? entries.filter((entry) => "status" in entry && entry.status === statusFilter) : entries;
+  return {
+    file: uri,
+    total_count: entries.length,
+    filtered_count: filtered.length,
+    changes: filtered,
+    ...nativeChanges ? { native_changes: nativeChanges } : {},
+    diagnostics: doc.getDiagnostics()
+  };
+}
 function rootUrisToPaths(roots) {
   const paths = [];
   for (const r of roots) {
@@ -34600,15 +38710,32 @@ function rootUrisToPaths(roots) {
   }
   return paths;
 }
-async function main() {
-  await initHashline();
+async function startHostMode(port, httpServer) {
+  let httpHandle;
+  let paneHandle;
+  let resolver;
+  let shutdownCalled = false;
+  function shutdown(signal) {
+    if (shutdownCalled) return;
+    shutdownCalled = true;
+    console.error(`[changedown] ${signal} received \u2014 draining 250 ms then exiting`);
+    httpHandle?.detach();
+    paneHandle?.detach();
+    resolver?.dispose();
+    setTimeout(() => {
+      httpServer.close(() => process.exit(0));
+      setTimeout(() => process.exit(0), 1e3).unref();
+    }, 250);
+  }
+  process.once("SIGINT", () => shutdown("SIGINT"));
+  process.once("SIGTERM", () => shutdown("SIGTERM"));
   const fallbackDir = process.env["CHANGEDOWN_PROJECT_DIR"] || process.env["PWD"] || process.cwd();
-  const resolver = new ConfigResolver(fallbackDir);
+  resolver = new ConfigResolver(fallbackDir);
   const state = new SessionState();
   state.enableGuide();
   const server = new Server(
-    { name: "changedown", version: "0.1.0" },
-    { capabilities: { tools: {} } }
+    { name: "changedown", version: version2 },
+    { capabilities: { tools: {}, resources: { subscribe: true } } }
   );
   server.oninitialized = async () => {
     if (!server.getClientCapabilities()?.roots) return;
@@ -34647,15 +38774,8 @@ async function main() {
     const result = await handler(args);
     return result;
   }
-  const toolHandlers = {
-    // ── Listed tools (6) ──
-    propose_change: (a) => handleProposeChange(a, resolver, state),
-    review_changes: (a) => handleReviewChanges(a, resolver, state),
-    read_tracked_file: (a) => handleReadTrackedFile(a, resolver, state),
-    amend_change: (a) => handleAmendChange(a, resolver, state),
-    list_changes: (a) => handleListChanges(a, resolver, state),
-    supersede_change: (a) => handleSupersedeChange(a, resolver, state),
-    // ── Backward-compat aliases (9, not in tools/list) ──
+  const registry2 = makeDefaultRegistry(fallbackDir);
+  const compatHandlers = {
     get_change: (a) => handleGetChange(a, resolver),
     propose_batch: (a) => handleProposeBatch(a, resolver, state),
     begin_change_group: (a) => handleBeginChangeGroup(a, resolver, state),
@@ -34666,21 +38786,391 @@ async function main() {
     raw_edit: (a) => handleRawEdit(a, resolver),
     get_tracking_status: (a) => handleGetTrackingStatus(a, resolver, state)
   };
-  server.setRequestHandler(CallToolRequestSchema, async (request) => {
-    const { name, arguments: args } = request.params;
-    const handler = toolHandlers[name];
-    if (handler) {
-      return dispatchTool(handler, args ?? {});
+  const kindMap = {
+    propose_change: "propose",
+    review_changes: "review",
+    amend_change: "amend",
+    supersede_change: "supersede",
+    resolve_thread: "resolve_thread"
+  };
+  const fileWriteHandlers = {
+    propose_change: (a) => handleProposeChange(a, resolver, state),
+    review_changes: (a) => handleReviewChanges(a, resolver, state),
+    amend_change: (a) => handleAmendChange(a, resolver, state),
+    supersede_change: (a) => handleSupersedeChange(a, resolver, state),
+    resolve_thread: (a) => handleResolveThread(a, resolver, state)
+  };
+  server.setRequestHandler(CallToolRequestSchema, async (request3, extra) => {
+    const { name, arguments: args } = request3.params;
+    const mutableArgs = { ...args ?? {} };
+    if (!mutableArgs.author) {
+      const sessionId = extra?.sessionId;
+      if (sessionId) {
+        const clientInfo = getSessionClientInfo(sessionId);
+        const synthesized = synthesizeAuthorFromClientInfo(clientInfo);
+        if (synthesized !== void 0) {
+          mutableArgs.author = synthesized;
+        }
+      }
     }
-    return {
-      content: [{ type: "text", text: `Unknown tool: ${name}` }],
-      isError: true
+    const fileArg = mutableArgs.file;
+    const maybeIncrementEditCount = (sid) => {
+      if (!sid || !paneHandle) return;
+      paneHandle.incrementEditCount(sid, getAllSessionClientInfos());
     };
+    if (fileArg !== void 0) {
+      const target = normalizeDocumentTarget(fileArg, fallbackDir);
+      const uri = target.uri;
+      let backend;
+      try {
+        backend = registry2.resolve(uri);
+      } catch (resolveErr) {
+        return errorResult3(resolveErr instanceof Error ? resolveErr.message : String(resolveErr));
+      }
+      const fileArgs = backend instanceof FileBackend && uri.startsWith("file://") ? { ...mutableArgs, file: target.filePath } : mutableArgs;
+      switch (name) {
+        case "read_tracked_file": {
+          if (backend instanceof FileBackend) {
+            return dispatchTool((a) => handleReadTrackedFile(a, resolver, state), fileArgs);
+          }
+          try {
+            const snapshot = await backend.read({ uri });
+            const DEFAULT_LIMIT2 = 500;
+            const MAX_LIMIT2 = 2e3;
+            const requestedView = typeof mutableArgs.view === "string" ? mutableArgs.view : void 0;
+            const offset = typeof mutableArgs.offset === "number" ? mutableArgs.offset : 1;
+            const requestedLimit = typeof mutableArgs.limit === "number" ? mutableArgs.limit : void 0;
+            const resolvedView = requestedView !== void 0 ? resolveView(requestedView) : null;
+            if (requestedView !== void 0 && resolvedView === null) {
+              return errorResult3(
+                `Unknown view '${requestedView}'. Valid views: working, simple, decided, original, raw`
+              );
+            }
+            const config2 = await resolver.lastConfig();
+            const defaultView = resolveView(config2.policy.default_view ?? "working") ?? "working";
+            const viewPolicy = config2.policy.view_policy ?? "suggest";
+            const canonicalView = requestedView === void 0 ? defaultView : resolvedView;
+            if (viewPolicy === "require" && canonicalView !== defaultView) {
+              return errorResult3(
+                `This project requires view "${config2.policy.default_view}" (view_policy = "require"). Requested view "${requestedView}" is not allowed.`
+              );
+            }
+            const protocolMode = resolveProtocolMode(config2.protocol.mode);
+            const doc = buildViewDocument(snapshot.text, canonicalView, {
+              filePath: uri,
+              // e.g. "word://sess-abc" — no filesystem path
+              trackingStatus: "tracked",
+              protocolMode,
+              defaultView,
+              viewPolicy
+            });
+            let sessionHashes = doc.lines.map((l) => ({
+              line: l.margin.lineNumber,
+              raw: l.sessionHashes.raw,
+              committed: l.sessionHashes.committed,
+              currentView: l.sessionHashes.currentView,
+              rawLineNum: l.rawLineNumber
+            }));
+            let syntheticBlankAnchor = null;
+            if (doc.lines.length === 0 && (canonicalView === "working" || canonicalView === "simple")) {
+              const rawLines = snapshot.text.split("\n");
+              const rawLineIndex = rawLines.findIndex((line) => line.trim() === "");
+              const rawLineNum = rawLineIndex >= 0 ? rawLineIndex + 1 : 1;
+              const rawLine = rawLines[rawLineNum - 1] ?? "";
+              const hash2 = computeLineHash(rawLineNum - 1, rawLine, rawLines);
+              syntheticBlankAnchor = ` 1:${hash2}  | `;
+              sessionHashes = [{
+                line: 1,
+                raw: hash2,
+                committed: hash2,
+                currentView: hash2,
+                rawLineNum
+              }];
+            }
+            state.recordAfterRead(uri, canonicalView, sessionHashes, snapshot.text);
+            const totalLines = doc.lines.length;
+            const effectiveStart = Math.max(1, offset);
+            const limit = Math.min(requestedLimit ?? DEFAULT_LIMIT2, MAX_LIMIT2);
+            const effectiveEnd = Math.min(effectiveStart + limit - 1, totalLines);
+            let adjustedEnd = effectiveEnd;
+            while (adjustedEnd < doc.lines.length && doc.lines[adjustedEnd]?.continuesChange) {
+              adjustedEnd++;
+            }
+            const paginatedDoc = {
+              ...doc,
+              lines: doc.lines.slice(effectiveStart - 1, adjustedEnd),
+              header: {
+                ...doc.header,
+                lineRange: { start: effectiveStart, end: adjustedEnd, total: totalLines }
+              }
+            };
+            let output = formatPlainText(paginatedDoc);
+            if (syntheticBlankAnchor !== null) {
+              output = output.endsWith("---") ? `${output}
+${syntheticBlankAnchor}` : `${output}
+${syntheticBlankAnchor}`;
+            }
+            if (adjustedEnd < totalLines) {
+              output += `
+
+--- showing lines ${effectiveStart}-${adjustedEnd} of ${totalLines} | use offset/limit to paginate ---`;
+            }
+            return { content: [{ type: "text", text: output }] };
+          } catch (err) {
+            return errorResult3(err instanceof Error ? err.message : String(err));
+          }
+        }
+        case "list_changes": {
+          if (backend instanceof FileBackend) {
+            return dispatchTool((a) => handleListChanges(a, resolver, state), fileArgs);
+          }
+          try {
+            const response = await buildWordListChangesResponse(backend, uri, mutableArgs);
+            return {
+              content: [{ type: "text", text: JSON.stringify(response) }]
+            };
+          } catch (err) {
+            return errorResult3(err instanceof Error ? err.message : String(err));
+          }
+        }
+        case "propose_change":
+        case "review_changes":
+        case "amend_change":
+        case "supersede_change":
+        case "resolve_thread": {
+          if (backend instanceof FileBackend) {
+            const h = fileWriteHandlers[name];
+            if (h) {
+              const toolResult = await dispatchTool(h, fileArgs);
+              if (!toolResult.isError) maybeIncrementEditCount(extra?.sessionId);
+              return toolResult;
+            }
+          }
+          if (name === "propose_change") {
+            try {
+              if (Object.prototype.hasOwnProperty.call(mutableArgs, "word_spike_direct") || Object.prototype.hasOwnProperty.call(mutableArgs, "word_author_spike") || Object.prototype.hasOwnProperty.call(mutableArgs, "spike")) {
+                return errorResult3("word_spike_direct/word_author_spike/spike are diagnostic-only and are not supported by public word:// propose_change");
+              }
+              const snapshot = await backend.read({ uri });
+              const config2 = await resolver.lastConfig();
+              const prepared = await prepareCompactProposeChange({
+                args: mutableArgs,
+                filePath: uri,
+                relativePath: uri,
+                fileContent: snapshot.text,
+                config: config2,
+                state
+              });
+              if (!prepared.ok) return prepared.toolResult;
+              const result = prepared.threadReply ? await backend.applyChange(
+                { uri },
+                {
+                  kind: "respond",
+                  args: {
+                    cnId: prepared.threadReply.changeId,
+                    text: prepared.threadReply.text,
+                    author: prepared.threadReply.author
+                  }
+                }
+              ) : await backend.applyChange(
+                { uri },
+                {
+                  kind: "propose",
+                  args: {
+                    oldL2: prepared.oldL2,
+                    newL2: prepared.newL2
+                  }
+                }
+              );
+              if (result.applied === false) {
+                return errorResult3(result.text ?? "Word adapter did not apply prepared proposal");
+              }
+              try {
+                const after = await backend.read({ uri });
+                await rerecordState(state, uri, after.text, config2);
+              } catch {
+                await rerecordState(state, uri, prepared.newL2, config2);
+              }
+              maybeIncrementEditCount(extra?.sessionId);
+              return prepared.toolResult;
+            } catch (err) {
+              return errorResult3(err instanceof Error ? err.message : String(err));
+            }
+          }
+          if (name === "review_changes") {
+            try {
+              const config2 = await resolver.lastConfig();
+              const response = await applyWordReviewChanges(mutableArgs, backend, uri);
+              try {
+                const after = await backend.read({ uri });
+                await rerecordState(state, uri, after.text, config2);
+              } catch {
+              }
+              const anyUpdated = Array.isArray(response.results) && response.results.some((r) => {
+                return typeof r === "object" && r !== null && r.status_updated === true;
+              });
+              if (anyUpdated) maybeIncrementEditCount(extra?.sessionId);
+              return { content: [{ type: "text", text: JSON.stringify(response) }] };
+            } catch (err) {
+              return errorResult3(err instanceof Error ? err.message : String(err));
+            }
+          }
+          if (name === "amend_change") {
+            mutableArgs.cnId = mutableArgs.cnId ?? mutableArgs.change_id ?? mutableArgs.changeId;
+            mutableArgs.newText = mutableArgs.newText ?? mutableArgs.new_text;
+          }
+          const kind = kindMap[name];
+          if (!kind) break;
+          try {
+            const result = await backend.applyChange({ uri }, { kind, args: mutableArgs });
+            if (result.applied !== false) maybeIncrementEditCount(extra?.sessionId);
+            return {
+              content: [{ type: "text", text: result.text ?? JSON.stringify(result) }]
+            };
+          } catch (err) {
+            return errorResult3(err instanceof Error ? err.message : String(err));
+          }
+        }
+      }
+    }
+    const compatHandler = compatHandlers[name];
+    if (compatHandler) {
+      return dispatchTool(compatHandler, mutableArgs);
+    }
+    return errorResult3(`Unknown tool: ${name}`);
+  });
+  const resourceLister = new ResourceLister(registry2);
+  const formatSnapshotForAgentRead = async (uri, snapshot) => {
+    const config2 = await resolver.lastConfig();
+    const defaultView = resolveView(config2.policy.default_view ?? "working") ?? "working";
+    const protocolMode = resolveProtocolMode(config2.protocol.mode);
+    const doc = buildViewDocument(snapshot.text, defaultView, {
+      filePath: uri,
+      trackingStatus: "tracked",
+      protocolMode,
+      defaultView,
+      viewPolicy: config2.policy.view_policy ?? "suggest"
+    });
+    state.recordAfterRead(
+      uri,
+      defaultView,
+      doc.lines.map((l) => ({
+        line: l.margin.lineNumber,
+        raw: l.sessionHashes.raw,
+        committed: l.sessionHashes.committed,
+        currentView: l.sessionHashes.currentView,
+        rawLineNum: l.rawLineNumber
+      })),
+      snapshot.text
+    );
+    return formatPlainText(doc);
+  };
+  const resourceReader = new ResourceReader(registry2, formatSnapshotForAgentRead);
+  server.setRequestHandler(ListResourcesRequestSchema, async () => {
+    return { resources: resourceLister.list() };
+  });
+  server.setRequestHandler(ReadResourceRequestSchema, async (request3) => {
+    const { uri } = request3.params;
+    return resourceReader.read(uri);
+  });
+  const uriBackendSubscriptions = /* @__PURE__ */ new Map();
+  server.setRequestHandler(SubscribeRequestSchema, async (request3, extra) => {
+    const { uri } = request3.params;
+    const sessionId = extra?.sessionId;
+    if (!sessionId) {
+      throw new McpError(ErrorCode.InvalidRequest, "Session ID required for subscriptions");
+    }
+    subManager.subscribe(sessionId, uri);
+    if (!uriBackendSubscriptions.has(uri)) {
+      let backend;
+      try {
+        backend = registry2.resolve(uri);
+      } catch {
+        return {};
+      }
+      const unsubscribe = backend.subscribe({ uri }, (event) => {
+        subManager.fanOut(uri, (sid, notification) => {
+          sendNotificationToSession(sid, notification);
+        }, event.kind === "document_changed" ? event.version : void 0);
+      });
+      uriBackendSubscriptions.set(uri, unsubscribe);
+    }
+    return {};
+  });
+  server.setRequestHandler(UnsubscribeRequestSchema, async (request3, extra) => {
+    const { uri } = request3.params;
+    const sessionId = extra?.sessionId;
+    if (sessionId) {
+      subManager.unsubscribe(sessionId, uri);
+      if (subManager.subscribersFor(uri).length === 0) {
+        const unsubscribe = uriBackendSubscriptions.get(uri);
+        unsubscribe?.();
+        uriBackendSubscriptions.delete(uri);
+      }
+    }
+    return {};
+  });
+  paneHandle = attachPaneEndpoints(
+    httpServer,
+    {
+      ...createPaneRegistrationCallbacks(() => paneHandle, registry2),
+      requestTimeoutMs: paneRequestTimeoutMs()
+    }
+  );
+  httpHandle = await attachStreamableHttp(server, httpServer);
+  httpServer.on("request", (req, res) => {
+    const url2 = req.url ?? "";
+    if (url2.startsWith("/mcp")) {
+      httpHandle.handleHttpRequest(req, res);
+    } else {
+      paneHandle.handleHttpRequest(req, res);
+    }
+  });
+  httpHandle.onSessionReady(() => {
+    const infos = getAllSessionClientInfos();
+    paneHandle?.pruneEditCounts(infos);
+    paneHandle?.broadcastAgentsUpdated(infos);
+  });
+  httpHandle.onSessionClose((sessionId) => {
+    subManager.removeSession(sessionId);
+    for (const [uri, unsubscribe] of uriBackendSubscriptions) {
+      if (subManager.subscribersFor(uri).length === 0) {
+        unsubscribe();
+        uriBackendSubscriptions.delete(uri);
+      }
+    }
+    const infos = getAllSessionClientInfos();
+    paneHandle?.pruneEditCounts(infos);
+    paneHandle?.broadcastAgentsUpdated(infos);
   });
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  server.onclose = () => resolver.dispose();
-  console.error("changedown MCP server running on stdio");
+  server.onclose = () => {
+    shutdown("stdio-close");
+  };
+  console.error(`changedown MCP server running \u2014 host on 127.0.0.1:${port}, stdio active`);
+}
+async function main() {
+  await initHashline();
+  const PORT = Number.parseInt(process.env.CHANGEDOWN_MCP_PORT ?? "39990", 10);
+  if (!Number.isInteger(PORT) || PORT <= 0 || PORT > 65535) {
+    throw new Error(`Invalid CHANGEDOWN_MCP_PORT: ${process.env.CHANGEDOWN_MCP_PORT}`);
+  }
+  const leaderResult = await bindOrForward(PORT);
+  if (leaderResult.mode === "client") {
+    console.error(`[changedown] client mode \u2014 forwarding to ${leaderResult.hostUrl}`);
+    const proxy = await startClientProxy({ hostUrl: leaderResult.hostUrl });
+    void leaderResult.startHeartbeat({ intervalMs: 1500, failThreshold: 3 }).then(async (promoted) => {
+      console.error("[changedown] host died \u2014 promoted to host mode");
+      proxy.stop();
+      if (promoted.mode === "host") {
+        await startHostMode(PORT, promoted.server);
+      }
+    });
+    proxy.onClose(() => process.exit(0));
+    return;
+  }
+  await startHostMode(PORT, leaderResult.server);
 }
 main().catch((err) => {
   console.error("Fatal error:", err);

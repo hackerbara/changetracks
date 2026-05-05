@@ -1,0 +1,42 @@
+{
+  "name": "changedown",
+  "version": "0.4.0",
+  "description": "Durable change tracking with reasoning for AI agents.",
+  "author": {
+    "name": "hackerbara"
+  },
+  "homepage": "https://github.com/hackerbara/changedown",
+  "repository": "https://github.com/hackerbara/changedown",
+  "license": "MIT",
+  "keywords": [
+    "markdown",
+    "track-changes",
+    "criticmarkup",
+    "mcp",
+    "ai-agents"
+  ],
+  "skills": "./skills/",
+  "mcpServers": "./codex.mcp.json",
+  "interface": {
+    "displayName": "ChangeDown",
+    "shortDescription": "Track changes in Markdown through MCP tools.",
+    "longDescription": "ChangeDown brings track-changes workflows to Markdown and Word-backed review sessions. It gives Codex tools to read tracked files, propose changes, review changes, list threads, and work through durable CriticMarkup rather than raw edits.",
+    "developerName": "hackerbara",
+    "category": "Productivity",
+    "capabilities": [
+      "Interactive",
+      "Read",
+      "Write"
+    ],
+    "websiteURL": "https://github.com/hackerbara/changedown",
+    "privacyPolicyURL": "https://github.com/hackerbara/changedown",
+    "termsOfServiceURL": "https://github.com/hackerbara/changedown",
+    "defaultPrompt": [
+      "Use ChangeDown to read and propose tracked Markdown edits.",
+      "Review proposed Markdown changes with ChangeDown.",
+      "Inspect active ChangeDown Word sessions."
+    ],
+    "brandColor": "#6B7F3F",
+    "screenshots": []
+  }
+}

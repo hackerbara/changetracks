@@ -16,16 +16,17 @@ import { toRelativePath } from '../path-utils.js';
 export const listChangesTool = {
   name: 'list_changes',
   description:
-    'List tracked changes in a file with configurable detail levels. ' +
-    'Returns change_id, type, status, author, line, preview. Filters by status. ' +
-    'detail=context adds surrounding lines; detail=full adds threads and group info. ' +
-    'Fetch specific changes via change_id/change_ids (replaces get_change).',
+    'List tracked changes in a file with configurable detail. ' +
+    'Returns change_id, type, status, author, line, preview, anchored, resolved. ' +
+    'Top-level diagnostics[] reports coordinate_failed zombie changes. ' +
+    'Filters by status. detail=context adds nearby lines; detail=full adds threads/group info. ' +
+    'Fetch specific changes via change_id/change_ids.',
   inputSchema: {
     type: 'object' as const,
     properties: {
       file: {
         type: 'string',
-        description: 'Path to the file (absolute or relative to project root)',
+        description: 'Path, file:// URI, or active Word session URI (word://sess-...). Use resources/list to discover Word sessions.',
       },
       status: {
         type: 'string',
@@ -60,13 +61,17 @@ export const listChangesTool = {
 
 export interface ChangeSummary {
   change_id: string;
-  type: 'ins' | 'del' | 'sub' | 'highlight' | 'comment';
+  type: 'ins' | 'del' | 'sub' | 'highlight' | 'comment' | 'move';
   status: string;
   author: string;
   line: number;
   preview: string;
   level: 0 | 1 | 2;
   anchored: boolean;
+  /** True if the parser successfully resolved this change to a byte range.
+   *  False signals a zombie (coordinate_failed). Agents should migrate from
+   *  reading anchored:false to reading resolved:false as the authoritative signal. */
+  resolved: boolean;
   consumed_by?: string;
 }
 
@@ -101,6 +106,9 @@ export interface ListChangesResponse {
   total_count: number;
   filtered_count: number;
   changes: Array<ChangeSummary | ChangeContext | ChangeFullDetail>;
+  /** Diagnostics emitted during parsing (e.g., coordinate_failed for zombie changes).
+   *  Agents can use this to detect unresolvable changes before attempting mutations. */
+  diagnostics: readonly Diagnostic[];
 }
 
 export interface ListChangesResult {
@@ -108,6 +116,7 @@ export interface ListChangesResult {
   isError?: boolean;
 }
 
+import type { Diagnostic } from '@changedown/core';
 import { TYPE_MAP, offsetToLineNumber } from './change-utils.js';
 
 const MAX_PREVIEW_LENGTH = 80;
@@ -311,6 +320,7 @@ export async function handleListChanges(
         total_count: allChanges.length,
         filtered_count: results.length,
         changes: results,
+        diagnostics: doc.getDiagnostics(),
       };
 
       return {
@@ -336,6 +346,7 @@ export async function handleListChanges(
       total_count: totalCount,
       filtered_count: filtered.length,
       changes: filtered,
+      diagnostics: doc.getDiagnostics(),
     };
 
     return {
@@ -365,6 +376,7 @@ function buildSummaryEntry(
     preview: buildPreview(change),
     level: change.level,
     anchored: change.anchored,
+    resolved: change.resolved ?? true,
     ...(change.consumedBy ? { consumed_by: change.consumedBy } : {}),
   };
 }

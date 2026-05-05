@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "cd": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["mcp-server/dist/index.js"],
+      "cwd": ".",
+      "env": {
+        "CHANGEDOWN_MCP_REQUIRE_HTTPS": "1"
+      }
+    }
+  }
+}

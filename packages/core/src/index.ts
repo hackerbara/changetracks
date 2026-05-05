@@ -8,10 +8,10 @@ export {
 export { reviewerType, canAccept, canWithdraw, type ParticipantType } from './config/review-permissions.js';
 export { parseTimestamp, nowTimestamp, compareTimestamps, formatTimestamp, type Timestamp } from './timestamp.js';
 export { ChangeType, ChangeStatus, changeTypeToAbbrev, changeTypeToShortCode, OffsetRange, ChangeNode, InlineMetadata, TextEdit, PendingOverlay, Approval, Revision, DiscussionComment, Resolution, isGhostNode, consumptionLabel, nodeStatus, UnresolvedDiagnostic } from './model/types.js';
-export { VirtualDocument } from './model/document.js';
+export { VirtualDocument, assertResolved } from './model/document.js';
 export { TokenType } from './parser/tokens.js';
 export { CriticMarkupParser, type ParseOptions } from './parser/parser.js';
-export { findCodeZones, CodeZone, tryMatchFenceOpen, tryMatchFenceClose, skipInlineCode, isFenceCloserLine } from './parser/code-zones.js';
+export { findCodeZones, buildCodeZoneMask, CodeZone, tryMatchFenceOpen, tryMatchFenceClose, skipInlineCode, isFenceCloserLine } from './parser/code-zones.js';
 export { computeAccept, computeReject, computeAcceptParts, computeRejectParts, AcceptRejectParts, computeFootnoteStatusEdits, computeApprovalLineEdit, computeFootnoteArchiveLineEdit, ApprovalLineOptions } from './operations/accept-reject.js';
 export { computeResolutionEdit, computeUnresolveEdit, ResolutionOptions } from './operations/resolution.js';
 export { computeReplyEdit, type ReplyOptions, type ReplyResult } from './operations/reply.js';
@@ -124,6 +124,8 @@ export {
 export { classifySignal } from './edit-boundary/index.js';
 export { processEvent } from './edit-boundary/index.js';
 export type { ProcessEventContext, ProcessEventResult } from './edit-boundary/index.js';
+export { validateStructuralIntegrity } from './operations/structural-integrity.js';
+export { findMarkupRangeById, removeMarkupById, type MarkupKind, type MarkupRangeById } from './operations/markup-by-id.js';
 export { parseForFormat, stripFootnoteBlocks } from './format-aware-parse.js';
 export { buildSessionHashes } from './renderers/view-builders/session-hashes.js';
 export type { SessionHashes, SessionHashesResult } from './renderers/view-builders/session-hashes.js';
@@ -144,3 +146,25 @@ export type {
 } from './model/footnote.js';
 export type { L2Document, L3Document, Document } from './model/document.js';
 export { parseL2, parseL3, serializeL2, serializeL3 } from './operations/parse-document.js';
+export { changeNodesToL3Document } from './operations/changes-to-document.js';
+export {
+  type DiagnosticKind, type Diagnostic,
+  UnresolvedChangesError, StructuralIntegrityError,
+} from './model/diagnostic.js';
+
+// Backend port — re-exported from the ./backend subpath for consumers that
+// import from the root. The subpath export remains the canonical location.
+export {
+  parseUri,
+  type ParsedUri,
+  type DocumentRef,
+  type DocumentSnapshot,
+  type ChangeOp,
+  type ChangeResult,
+  type ChangeSummary,
+  type BackendEvent,
+  type Unsubscribe,
+  type DocumentBackend,
+  type DocumentResourceDescriptor,
+} from './backend/types.js';
+export { BackendRegistry, type BackendEntry } from './backend/registry.js';

@@ -1,6 +1,6 @@
 {
   "name": "changedown-hooks",
-  "version": "0.1.0",
+  "version": "0.4.0",
   "private": true,
   "type": "module",
   "main": "dist/shared.js",
@@ -13,8 +13,8 @@
     "build:tsc": "tsc"
   },
   "dependencies": {
-    "changedown": "file:../../packages/cli",
-    "@changedown/core": "file:../../packages/core",
+        "@changedown/core": "file:../../packages/core",
+    "@changedown/cli": "file:../../packages/cli",
     "diff": "^8.0.3",
     "llm-jail": "file:../llm-jail",
     "picomatch": "^4.0.0",

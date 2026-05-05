@@ -9,7 +9,7 @@
         "strict": true,
         "skipLibCheck": true,
         "paths": {
-            "changedown/init": ["../../cli/dist/init/index.d.ts"],
+            "@changedown/cli/init": ["../../cli/dist/init/index.d.ts"],
             "changedown-vscode/internals": ["../../vscode-extension/out/internals"],
             "@changedown/lsp-server": ["../../lsp-server/dist/index"],
             "@changedown/lsp-server/internals": ["../../lsp-server/dist/internals"],

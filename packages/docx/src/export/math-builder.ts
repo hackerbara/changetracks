@@ -4,13 +4,19 @@
 // https://github.com/vace/markdown-docx/blob/main/src/extensions/mathml-to-docx.ts
 
 import {
+  Document,
   Math as DocxMath,
   MathRun, MathFraction, MathRadical, MathSuperScript, MathSubScript,
   MathSubSuperScript, MathSum, MathIntegral,
+  MathRoundBrackets, MathSquareBrackets, MathCurlyBrackets,
+  createMathAccentCharacter,
+  Packer,
+  Paragraph,
   XmlComponent,
 } from 'docx';
 import type { MathComponent } from 'docx';
 import { XMLParser } from 'fast-xml-parser';
+import JSZip from 'jszip';
 import katex from 'katex';
 
 // --- Public API ---
@@ -41,9 +47,60 @@ export function latexToDocxMath(latex: string, displayMode: boolean): DocxMath {
   return new DocxMath({ children });
 }
 
+export async function latexToOmmlXml(latex: string, displayMode: boolean): Promise<string> {
+  const math = latexToDocxMath(latex, displayMode);
+  const doc = new Document({
+    sections: [{ children: [new Paragraph({ children: [math] })] }],
+  });
+  const blob = await Packer.toBlob(doc);
+  const zip = await JSZip.loadAsync(await blobToArrayBuffer(blob));
+  const docXml = await zip.file('word/document.xml')?.async('string');
+  if (!docXml) throw new Error('Unable to generate OMML document XML');
+
+  if (displayMode) {
+    const displayMatch = docXml.match(/<m:oMathPara[\s\S]*?<\/m:oMathPara>/);
+    if (displayMatch) return displayMatch[0];
+    const inlineMatch = docXml.match(/<m:oMath[\s\S]*?<\/m:oMath>/);
+    if (inlineMatch) return `<m:oMathPara>${inlineMatch[0]}</m:oMathPara>`;
+  } else {
+    const inlineMatch = docXml.match(/<m:oMath[\s\S]*?<\/m:oMath>/);
+    if (inlineMatch) return inlineMatch[0];
+  }
+
+  throw new Error(`Unable to generate ${displayMode ? 'display' : 'inline'} OMML`);
+}
+
+async function blobToArrayBuffer(blob: Blob): Promise<ArrayBuffer> {
+  if (typeof blob.arrayBuffer === 'function') {
+    return blob.arrayBuffer();
+  }
+  if (typeof FileReader !== 'undefined') {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = () => reject(reader.error ?? new Error('Unable to read DOCX blob'));
+      reader.onload = () => {
+        if (reader.result instanceof ArrayBuffer) {
+          resolve(reader.result);
+        } else {
+          reject(new Error('DOCX blob did not read as an ArrayBuffer'));
+        }
+      };
+      reader.readAsArrayBuffer(blob);
+    });
+  }
+  throw new Error('Blob.arrayBuffer is unavailable in this environment');
+}
+
 // --- Vendored MathML-to-docx walker (adapted from markdown-docx, MIT license) ---
 
 // OMML Matrix helpers
+class MathXmlElement extends XmlComponent {
+  constructor(name: string, children: XmlComponent[] = []) {
+    super(name);
+    for (const child of children) this.root.push(child);
+  }
+}
+
 class MathMatrixElement extends XmlComponent {
   constructor(children: MathComponent[]) {
     super('m:e');
@@ -62,6 +119,17 @@ class MathMatrix extends XmlComponent {
   constructor(rows: MathComponent[][][]) {
     super('m:m');
     for (const row of rows) this.root.push(new MathMatrixRow(row) as unknown as XmlComponent);
+  }
+}
+
+class MathAccent extends XmlComponent {
+  constructor(children: MathComponent[], accent: string) {
+    super('m:acc');
+    const props = new MathXmlElement('m:accPr', [
+      createMathAccentCharacter({ accent }) as unknown as XmlComponent,
+    ]);
+    this.root.push(props);
+    this.root.push(new MathMatrixElement(children) as unknown as XmlComponent);
   }
 }
 
@@ -87,6 +155,31 @@ function walkChildren(nodes: unknown[]): MathComponent[] {
   for (let i = 0; i < nodes.length; i++) {
     const n = nodes[i];
     const tag = tagName(n);
+
+    const next = nodes[i + 1];
+    const afterNext = nodes[i + 2];
+    if (
+      tag === 'mo' &&
+      tagName(next) === 'mtable' &&
+      tagName(afterNext) === 'mo'
+    ) {
+      const open = directText(childrenOf(n));
+      const close = directText(childrenOf(afterNext));
+      const matrix = walkNode(next);
+      const bracketed =
+        open === '(' && close === ')'
+          ? new MathRoundBrackets({ children: matrix })
+          : open === '[' && close === ']'
+          ? new MathSquareBrackets({ children: matrix })
+          : open === '{' && close === '}'
+          ? new MathCurlyBrackets({ children: matrix })
+          : undefined;
+      if (bracketed) {
+        out.push(bracketed);
+        i += 2;
+        continue;
+      }
+    }
 
     // Handle NAry operators with limits
     if (tag === 'munderover' || tag === 'munder' || tag === 'mover') {
@@ -196,6 +289,13 @@ function walkNode(node: unknown): MathComponent[] {
     case 'munder':
     case 'mover': {
       const m = childrenOf(node);
+      if (tag === 'mover') {
+        const [base, accentNode] = firstN(m, 2);
+        const accent = directText(childrenOf(accentNode));
+        if (accent) {
+          return [new MathAccent(walkNode(base), accent) as unknown as MathComponent];
+        }
+      }
       const op = textFrom(childrenOf(findFirst(m, 'mo') || {}));
       const low = tag !== 'mover' ? (m[1] ? walkNode(m[1]) : []) : [];
       const up = tag !== 'munder' ? (m[2] ? walkNode(m[2]) : []) : [];

@@ -5,7 +5,7 @@ import {
   isFileInScope,
   type ChangeDownConfig,
 } from '@changedown/mcp/internals';
-import { expandTrackingAbsolutePattern } from 'changedown/config';
+import { expandTrackingAbsolutePattern } from '@changedown/cli/config';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
@@ -49,14 +49,16 @@ default = "ai:claude-opus-4.6"
   it('returns defaults when config file does not exist', async () => {
     const config = await loadConfig(tmpDir);
 
-    expect(config.tracking.include).toEqual(['**/*.md']);
+    expect(config.tracking.include).toEqual([]);
     expect(config.tracking.exclude).toEqual(['node_modules/**', 'dist/**']);
     expect(config.author.default).toBe('');
-    // New fields should have defaults
-    expect(config.tracking.default).toBe('tracked');
-    expect(config.tracking.auto_header).toBe(true);
+    // Missing config means safe, default-off behavior until project init.
+    expect(config.tracking.default).toBe('untracked');
+    expect(config.tracking.auto_header).toBe(false);
     expect(config.hooks.enforcement).toBe('warn');
+    expect(config.hooks.intercept_tools).toBe(false);
     expect(config.matching.mode).toBe('normalized');
+    expect(config.policy.creation_tracking).toBe('none');
   });
 
   it('finds config in parent directory when started from subdirectory', async () => {

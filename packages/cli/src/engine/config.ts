@@ -7,6 +7,7 @@
 export type { ChangeDownConfig, CLIConfig, PolicyMode, CreationTracking } from '../config/index.js';
 export {
   DEFAULT_CONFIG,
+  DEFAULT_UNCONFIGURED_CONFIG,
   loadConfig,
   parseConfigToml,
   findConfigFile,

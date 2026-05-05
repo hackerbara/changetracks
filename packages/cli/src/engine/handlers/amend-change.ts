@@ -1,5 +1,6 @@
 import * as fs from 'node:fs/promises';
-import { computeSupersedeResult, parseForFormat } from '@changedown/core';
+import { writeTrackedFile } from '../write-tracked-file.js';
+import { computeSupersedeResult, parseForFormat, assertResolved, UnresolvedChangesError } from '@changedown/core';
 import { errorResult } from '../shared/error-result.js';
 import { strArg, optionalStrArg } from '../args.js';
 import { resolveAuthor } from '../author.js';
@@ -19,7 +20,7 @@ export const amendChangeTool = {
     properties: {
       file: {
         type: 'string',
-        description: 'Path to the file (absolute or relative to project root)',
+        description: 'Path, file:// URI, or active Word session URI (word://sess-...). Use resources/list to discover Word sessions.',
       },
       change_id: {
         type: 'string',
@@ -104,6 +105,19 @@ export async function handleAmendChange(
 
     // Same-author enforcement: amend is restricted to the original change's author
     const doc = parseForFormat(fileContent);
+
+    // Assert no unresolved changes before any mutation (zombie-elimination spec §3.4).
+    try {
+      assertResolved(doc);
+    } catch (err) {
+      if (err instanceof UnresolvedChangesError) {
+        return errorResult(
+          `Document has ${err.diagnostics.length} unresolved change(s); run 'cd repair' or amend the failing change. Diagnostics: ${JSON.stringify(err.diagnostics)}`,
+        );
+      }
+      throw err;
+    }
+
     const originalChange = doc.getChanges().find(c => c.id === changeId);
     if (originalChange) {
       const originalAuthor = originalChange.metadata?.author?.replace(/^@/, '') ?? '';
@@ -129,7 +143,7 @@ export async function handleAmendChange(
     }
 
     // Write modified content to disk and sync state
-    await fs.writeFile(filePath, result.text, 'utf-8');
+    await writeTrackedFile(filePath, result.text);
     await rerecordState(state, filePath, result.text, config);
 
     const responseData: Record<string, unknown> = {

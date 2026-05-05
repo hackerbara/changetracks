@@ -1,11 +1,12 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
+import { writeTrackedFile } from '../write-tracked-file.js';
 import { errorResult } from '../shared/error-result.js';
 import { optionalStrArg } from '../args.js';
 import { resolveAuthor } from '../author.js';
 import { isFileInScope } from '../config.js';
 import { ConfigResolver } from '../config-resolver.js';
-import { findFootnoteBlock, findDiscussionInsertionIndex, countFootnoteHeadersWithStatus, initHashline, nowTimestamp, applyReview, VALID_DECISIONS, type Decision } from '@changedown/core';
+import { findFootnoteBlock, findDiscussionInsertionIndex, countFootnoteHeadersWithStatus, initHashline, nowTimestamp, applyReview, VALID_DECISIONS, type Decision, parseForFormat, assertResolved, UnresolvedChangesError } from '@changedown/core';
 import { applyBlockingAnnotation } from '../shared/blocking-annotation.js';
 import { SessionState } from '../state.js';
 import { rerecordState } from '../state-utils.js';
@@ -26,7 +27,7 @@ export const reviewChangesTool = {
     properties: {
       file: {
         type: 'string',
-        description: 'Path to the file (absolute or relative to project root)',
+        description: 'Path, file:// URI, or active Word session URI (word://sess-...). Use resources/list to discover Word sessions.',
       },
       reviews: {
         type: 'array',
@@ -189,6 +190,18 @@ export async function handleReviewChanges(
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       return errorResult(`File not found or unreadable: ${msg}`);
+    }
+
+    // Assert no unresolved changes before any mutation (zombie-elimination spec §3.4).
+    try {
+      assertResolved(parseForFormat(fileContent));
+    } catch (err) {
+      if (err instanceof UnresolvedChangesError) {
+        return errorResult(
+          `Document has ${err.diagnostics.length} unresolved change(s); run 'cd repair' or amend the failing change. Diagnostics: ${JSON.stringify(err.diagnostics)}`,
+        );
+      }
+      throw err;
     }
 
     const { author, error: authorError } = resolveAuthor(
@@ -369,6 +382,7 @@ export async function handleReviewChanges(
     if (config.settlement.auto_on_approve && hasReviews) {
       const hasApprovals = results.some((r) => 'decision' in r && r.decision === 'approve');
       if (hasApprovals) {
+        await initHashline();
         const { currentContent, appliedIds } = applyAcceptedChanges(fileContent);
         if (appliedIds.length > 0) {
           fileContent = currentContent;
@@ -380,6 +394,7 @@ export async function handleReviewChanges(
     if (config.settlement.auto_on_reject && hasReviews) {
       const hasRejections = results.some((r) => 'decision' in r && r.decision === 'reject');
       if (hasRejections) {
+        await initHashline();
         const { currentContent, appliedIds } = applyRejectedChanges(fileContent);
         if (appliedIds.length > 0) {
           fileContent = currentContent;
@@ -401,6 +416,7 @@ export async function handleReviewChanges(
     // ── Phase 4: Explicit settle flag ────────────────────────────────────
 
     if (settleFlag) {
+      await initHashline();
       const { currentContent, appliedIds } = applyAcceptedChanges(fileContent);
       if (appliedIds.length > 0) {
         fileContent = currentContent;
@@ -469,7 +485,7 @@ export async function handleReviewChanges(
     // process is interrupted.
 
     if (fileContent !== originalContent) {
-      await fs.writeFile(filePath, fileContent, 'utf-8');
+      await writeTrackedFile(filePath, fileContent);
       await rerecordState(state, filePath, fileContent, config);
     }
 
@@ -518,4 +534,3 @@ export async function handleReviewChanges(
     return errorResult(msg);
   }
 }
-

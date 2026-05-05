@@ -42,7 +42,7 @@ Quick start guide: [`docs/public/DEMO.md`](docs/public/DEMO.md) | Deep dive: [Ch
 ### Quick start
 
 ```
-npx changedown init
+npx @changedown/cli init
 ```
 
 Interactive setup: detects your editors and agents, creates `.changedown/config.toml`, installs extensions, and opens a getting-started tutorial.
@@ -141,7 +141,7 @@ Without tool instruction overhead, the compact protocol completes **3× faster**
 
 ## Configuration
 
-`npx changedown init` creates `.changedown/config.toml`:
+`npx @changedown/cli init` creates `.changedown/config.toml`:
 
 ```toml
 [tracking]
@@ -173,7 +173,7 @@ Builds all packages (core → cli → lsp-server → extension → mcp-server �
 | `packages/core` | Single-pass CriticMarkup parser and operations library |
 | `packages/lsp-server` | Language Server Protocol server — semantic tokens, diagnostics, code actions |
 | `packages/vscode-extension` | VS Code / Cursor extension — decorations, smart view, tracking, review panel |
-| `packages/cli` | CLI, `npx changedown init`, and the change-tracking engine |
+| `packages/cli` | CLI, `npx @changedown/cli init`, and the change-tracking engine |
 | `packages/docx` | DOCX export with tracked changes |
 | `changedown-plugin` | Claude Code plugin — MCP server + hooks + skill |
 | `packages/opencode-plugin` | OpenCode plugin — tools + hooks + instructions |

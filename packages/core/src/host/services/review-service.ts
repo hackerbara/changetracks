@@ -4,6 +4,8 @@ import { computeSupersedeResult } from '../../operations/supersede.js';
 import { computeResolutionEdit } from '../../operations/resolution.js';
 import { applyAcceptedChanges, applyRejectedChanges } from '../../operations/current-text.js';
 import { parseForFormat } from '../../format-aware-parse.js';
+import { assertResolved } from '../../model/document.js';
+import { UnresolvedChangesError } from '../../model/diagnostic.js';
 import { ChangeStatus } from '../../model/types.js';
 import { EventEmitter } from '../types.js';
 import type { SettlementConfig, Disposable, Event } from '../types.js';
@@ -165,6 +167,24 @@ export class ReviewService implements Disposable {
   ): ReviewOperationResult {
     // Parse to find proposed changes
     const doc = parseForFormat(text);
+
+    // T3.6: guard — refuse batch review on a document with unresolved changes
+    try {
+      assertResolved(doc);
+    } catch (err) {
+      if (err instanceof UnresolvedChangesError) {
+        const summary = err.diagnostics.map(d => d.message).join('; ');
+        const errorResult: ReviewOperationResult = {
+          updatedText: text,
+          affectedChangeIds: [],
+          error: `Cannot apply batch review: document has unresolved changes: ${summary}`,
+        };
+        this._onReviewError.fire({ error: errorResult.error! });
+        return errorResult;
+      }
+      throw err;
+    }
+
     let proposed = doc.getChanges().filter(c => c.status === ChangeStatus.Proposed);
 
     // Filter to specified IDs if provided

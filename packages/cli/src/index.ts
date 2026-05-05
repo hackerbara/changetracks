@@ -3,6 +3,7 @@
 import { Command } from 'commander';
 import * as fs from 'node:fs';
 import { createRequire } from 'node:module';
+import { writeTrackedFileSync } from './engine/write-tracked-file.js';
 const require = createRequire(import.meta.url);
 const CLI_VERSION: string = require('../package.json').version;
 import { computeStatus } from './commands/status.js';
@@ -13,6 +14,7 @@ import { computeSettlement } from './commands/settle.js';
 import { publishSettled } from './commands/publish.js';
 import { handleImport } from './commands/import.js';
 import { handleExport } from './commands/export.js';
+import { runRepair } from './commands/repair.js';
 import { parseGlobalArgs } from './cli-parse.js';
 import { runCommand } from './cli-runner.js';
 import { formatResult } from './cli-output.js';
@@ -33,7 +35,7 @@ if (isGitDiffDriverInvocation(process.argv)) {
 // ---------------------------------------------------------------------------
 
 const USER_COMMANDS = new Set([
-  'status', 'list', 'diff', 'settle', 'publish', 'import', 'export',
+  'status', 'list', 'diff', 'settle', 'publish', 'import', 'export', 'repair',
   '--help', '-h', '--version', '-V',
 ]);
 
@@ -122,7 +124,7 @@ function runUserCommands(): void {
         console.log(`Would settle ${result.appliedCount} change(s).`);
         return;
       }
-      fs.writeFileSync(file, result.currentContent);
+      writeTrackedFileSync(file, result.currentContent);
       console.log(`Settled ${result.appliedCount} change(s).`);
     });
 
@@ -151,6 +153,16 @@ function runUserCommands(): void {
     .option('--comments <filter>', 'Comment filter: all, none, or unresolved', 'all')
     .action(async (file: string, opts: { output?: string; mode?: string; comments?: string }) => {
       await handleExport(file, { output: opts.output, mode: opts.mode, comments: opts.comments });
+    });
+
+  program
+    .command('repair <file>')
+    .description('Detect and optionally repair structural integrity violations (zombie markup)')
+    .option('--dry-run', 'Preview the repair without writing changes')
+    .option('--apply', 'Apply the repair (writes a timestamped backup first)')
+    .action(async (file: string, opts: { dryRun?: boolean; apply?: boolean }) => {
+      const code = await runRepair(file, { dryRun: opts.dryRun, apply: opts.apply });
+      process.exit(code);
     });
 
   program.parse();
@@ -188,6 +200,7 @@ User commands:
   diff       Show file with colored CriticMarkup
   settle     Compact accepted/rejected changes
   publish    Output clean text with all changes applied
+  repair     Detect and repair structural integrity violations
 
 Run 'sc <command> --help' for command-specific usage.
 `;

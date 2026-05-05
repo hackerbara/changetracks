@@ -31,6 +31,8 @@ export function computeAcceptParts(change: ChangeNode): AcceptRejectParts {
       return { offset: change.range.start, length: rangeLength, text: change.originalText ?? '', refId };
     case ChangeType.Comment:
       return { offset: change.range.start, length: rangeLength, text: '', refId: '' };
+    case ChangeType.Move:
+      return { offset: change.range.start, length: rangeLength, text: change.modifiedText ?? '', refId };
   }
 }
 
@@ -49,6 +51,8 @@ export function computeRejectParts(change: ChangeNode): AcceptRejectParts {
       return { offset: change.range.start, length: rangeLength, text: change.originalText ?? '', refId };
     case ChangeType.Comment:
       return { offset: change.range.start, length: rangeLength, text: '', refId: '' };
+    case ChangeType.Move:
+      return { offset: change.range.start, length: rangeLength, text: change.originalText ?? '', refId };
   }
 }
 
@@ -84,6 +88,10 @@ export function computeReject(change: ChangeNode): TextEdit {
       case ChangeType.Comment:
         // Comments are not in the body for L3 — no-op
         return { offset: change.range.start, length: 0, newText: '' };
+      case ChangeType.Move:
+        // Reject a Move at the destination: remove the moved-in text. Mirrors Insertion
+        // rejection. (The paired Move-from half is rejected separately by the caller.)
+        return { offset: change.range.start, length: change.range.end - change.range.start, newText: '' };
     }
   }
   // L2 path (CriticMarkup delimiters present)
@@ -139,6 +147,11 @@ export function computeFootnoteStatusEdits(
   return edits;
 }
 
+
+function formatReviewAuthor(author: string): string {
+  return author.startsWith('@') ? author : `@${author}`;
+}
+
 export interface ApprovalLineOptions {
   author: string;
   date?: string;
@@ -165,7 +178,7 @@ export function computeApprovalLineEdit(
     : 'request-changes:';
   const date = opts.date ?? nowTimestamp().raw;
   const reasonPart = opts.reason !== undefined && opts.reason !== '' ? ` "${opts.reason}"` : '';
-  const line = `    ${keyword} @${opts.author} ${date}${reasonPart}`;
+  const line = `    ${keyword} ${formatReviewAuthor(opts.author)} ${date}${reasonPart}`;
 
   const insertAfterIdx = findReviewInsertionIndex(lines, block.headerLine, block.blockEnd);
   const offset = lines

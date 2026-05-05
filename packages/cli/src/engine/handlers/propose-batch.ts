@@ -1,4 +1,5 @@
 import * as fs from 'node:fs/promises';
+import { writeTrackedFile } from '../write-tracked-file.js';
 import {
   initHashline,
   defaultNormalizer,
@@ -8,6 +9,9 @@ import {
   scanMaxCnId,
   nowTimestamp,
   findFootnoteBlockStart,
+  parseForFormat,
+  assertResolved,
+  UnresolvedChangesError,
 } from '@changedown/core';
 import { validateOrAutoRemap, type RelocationEntry, type AutoRemapResult } from './hashline-relocate.js';
 import { resolveCoordinates, applyCompactOp, type NormalizedCompactOp, type ResolvedCoordinates } from './resolve-and-apply.js';
@@ -31,9 +35,9 @@ import { rerecordState } from '../state-utils.js';
 export const proposeBatchTool = {
   name: 'propose_batch',
   description:
-    'Propose a batch of tracked changes to a single markdown file as one atomic edit. ' +
-    'Use for 3+ related edits in one file: server applies all-or-nothing, adjusts line refs automatically, ' +
-    'and creates one change group. One call = one conceptual edit (ADR-036).',
+    'Propose a batch of tracked changes to one markdown file. Atomic by default (ADR-036 §4): ' +
+    'if any op fails, nothing is written. Pass partial:true to apply good ops and report failures in failed[]. ' +
+    'Server adjusts line refs automatically and creates one change group.',
   inputSchema: {
     type: 'object' as const,
     properties: {
@@ -49,6 +53,12 @@ export const proposeBatchTool = {
         type: 'string',
         description:
           'Who is making this change. Recommended: always pass your model/agent identity (e.g. ai:composer) for clear attribution. Required when this project has author enforcement.',
+      },
+      partial: {
+        type: 'boolean',
+        description:
+          'When true, enables partial-success mode: valid operations are applied and failures are reported in failed[]. ' +
+          'Default false — batch is atomic (all-or-nothing per ADR-036 §4).',
       },
       changes: {
         type: 'array',
@@ -212,6 +222,19 @@ export async function handleProposeBatch(
       return errorResult(`File not found or unreadable: ${msg}`, { file: relativePath });
     }
 
+    // Assert no unresolved changes before any mutation (zombie-elimination spec §3.4).
+    try {
+      assertResolved(parseForFormat(fileContent));
+    } catch (err) {
+      if (err instanceof UnresolvedChangesError) {
+        return errorResult(
+          `Document has ${err.diagnostics.length} unresolved change(s); run 'cd repair' or amend the failing change.`,
+          { diagnostics: err.diagnostics },
+        );
+      }
+      throw err;
+    }
+
     // 5. Resolve author
     const { author, error: authorError } = resolveAuthor(
       args.author as string | undefined,
@@ -269,9 +292,9 @@ export async function handleProposeBatch(
       }
     }
 
-    // 5c. Atomic vs partial: when atomic=true (e.g. propose_change changes array), all-or-nothing.
-    // When atomic=false/undefined (e.g. propose_batch tool), partial success is allowed.
-    const partial = args.atomic !== true;
+    // 5c. Atomic vs partial: propose_batch is atomic by default (ADR-036 §4).
+    // Pass partial:true to opt into partial-success behavior (good ops applied, failures reported).
+    const partial = args.partial === true;
 
     // Track per-operation validation failures for partial mode.
     // Keyed by original index in changesRaw. Structural errors (missing file,
@@ -738,7 +761,7 @@ export async function handleProposeBatch(
       : '';
     const groupFootnoteBlock = footnoteHeader + reasonLine;
     currentText = appendFootnote(currentText, groupFootnoteBlock);
-    await fs.writeFile(filePath, currentText, 'utf-8');
+    await writeTrackedFile(filePath, currentText);
     await rerecordState(state, filePath, currentText, config);
 
     // Compute affected_lines for the final file state so agents have fresh

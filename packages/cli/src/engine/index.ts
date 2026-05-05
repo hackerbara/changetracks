@@ -2,8 +2,11 @@
  * Engine barrel export.
  *
  * Exposes all engine modules (config, state, handlers, utilities) so that
- * the MCP server and other consumers can import from 'changedown/engine'.
+ * the MCP server and other consumers can import from '@changedown/cli/engine'.
  */
+
+import { BackendRegistry } from '@changedown/core/backend';
+import { FileBackend } from './backends/index.js';
 
 // ── Config ──
 export type { ChangeDownConfig, CLIConfig, PolicyMode, CreationTracking } from './config.js';
@@ -88,6 +91,12 @@ export type { ToolResult } from './shared/error-result.js';
 // ── Tool Handlers ──
 export { handleProposeChange } from './handlers/propose-change.js';
 export type { ProposeChangeResult } from './handlers/propose-change.js';
+export { prepareCompactProposeChange } from './handlers/propose-compact-memory.js';
+export type {
+  PrepareCompactProposeInput,
+  PreparedCompactPropose,
+  PrepareCompactProposeResult,
+} from './handlers/propose-compact-memory.js';
 export { handleBeginChangeGroup } from './handlers/begin-change-group.js';
 export { handleEndChangeGroup } from './handlers/end-change-group.js';
 export { handleReviewChange } from './handlers/review-change.js';
@@ -119,3 +128,25 @@ export { TYPE_MAP, offsetToLineNumber } from './handlers/change-utils.js';
 // ── Coordinate Pipeline ──
 export { resolveCoordinates, applyCompactOp, resolveAndApply } from './handlers/resolve-and-apply.js';
 export type { NormalizedCompactOp, ResolvedCoordinates, ApplyResult } from './handlers/resolve-and-apply.js';
+
+// ── Backends ──
+export { FileBackend } from './backends/index.js';
+
+// ── Write chokepoint (Task 6.2) ──
+export { writeTrackedFile, writeTrackedFileSync } from './write-tracked-file.js';
+
+// ── Backend registry ──
+export { BackendRegistry, type BackendEntry } from '@changedown/core/backend';
+
+/**
+ * Build the default BackendRegistry for a CLI/MCP session.
+ * Registers FileBackend for local file:// URIs.
+ *
+ * Word support is handled by RemoteBackend (registered by the pane wiring
+ * in changedown-plugin/mcp-server after the pane endpoint attaches).
+ */
+export function makeDefaultRegistry(projectDir: string): BackendRegistry {
+  const registry = new BackendRegistry();
+  registry.register(new FileBackend(projectDir));
+  return registry;
+}

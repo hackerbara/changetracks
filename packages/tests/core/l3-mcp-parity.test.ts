@@ -8,7 +8,7 @@
  * Invariant A: If findUniqueMatch resolves a target, FootnoteNativeParser
  *   resolves the same op text to the same position.
  * Invariant B: If findUniqueMatch throws (ambiguous), FootnoteNativeParser
- *   sets anchored:false rather than silently choosing a position.
+ *   sets resolved:false with a coordinate_failed diagnostic rather than silently choosing a position.
  * Invariant C: After L2→L3 conversion via convertL2ToL3, the emitted L3
  *   footnote op text is unique on its line so the parser resolves it correctly.
  */
@@ -117,7 +117,7 @@ describe('Invariant A — deterministic parity (MCP compact and L3 parser agree)
 describe('Invariant B — ambiguity parity (both systems reject ambiguous text)', () => {
   const parser = new FootnoteNativeParser();
 
-  it('ambiguous insertion text: MCP throws, L3 parser sets anchored:false', () => {
+  it('ambiguous insertion text: MCP throws, L3 parser sets resolved:false', () => {
     const line = 'the cat and the dog';
     const target = 'the';
 
@@ -136,13 +136,15 @@ describe('Invariant B — ambiguity parity (both systems reject ambiguous text)'
     const doc = parser.parse(l3);
     const ins = doc.getChanges().find(c => c.id === 'cn-1');
     expect(ins).toBeDefined();
-    expect(ins!.anchored).toBe(false);
+    expect(ins!.anchored).toBe(true);
+    expect(ins!.resolved).toBe(false);
+    expect(doc.getDiagnostics().some(d => d.kind === 'coordinate_failed' && d.changeId === 'cn-1')).toBe(true);
     // Must NOT silently use line-start offset
     const lineBodyOffset = '# Doc\n\n'.length;
     expect(ins!.range.start).not.toBe(lineBodyOffset);
   });
 
-  it('ambiguous substitution new-text: MCP throws, L3 parser sets anchored:false', () => {
+  it('ambiguous substitution new-text: MCP throws, L3 parser sets resolved:false', () => {
     const line = 'You can do it, I can too.';
     const target = 'can';
 
@@ -161,7 +163,9 @@ describe('Invariant B — ambiguity parity (both systems reject ambiguous text)'
     const doc = parser.parse(l3);
     const sub = doc.getChanges().find(c => c.id === 'cn-1');
     expect(sub).toBeDefined();
-    expect(sub!.anchored).toBe(false);
+    expect(sub!.anchored).toBe(true);
+    expect(sub!.resolved).toBe(false);
+    expect(doc.getDiagnostics().some(d => d.kind === 'coordinate_failed' && d.changeId === 'cn-1')).toBe(true);
   });
 
   it('ambiguous highlight text: MCP throws, L3 parser does best-effort (comment visible)', () => {
@@ -191,7 +195,7 @@ describe('Invariant B — ambiguity parity (both systems reject ambiguous text)'
     expect(hi!.range.start).toBe(7); // line 3 offset = len("# Doc\n\n") = 7
   });
 
-  it('text not found on line: MCP throws, L3 parser sets anchored:false', () => {
+  it('text not found on line: MCP throws, L3 parser sets resolved:false', () => {
     const line = 'the cat and the dog';
     const target = 'missing';
 
@@ -210,7 +214,9 @@ describe('Invariant B — ambiguity parity (both systems reject ambiguous text)'
     const doc = parser.parse(l3);
     const ins = doc.getChanges().find(c => c.id === 'cn-1');
     expect(ins).toBeDefined();
-    expect(ins!.anchored).toBe(false);
+    expect(ins!.anchored).toBe(true);
+    expect(ins!.resolved).toBe(false);
+    expect(doc.getDiagnostics().some(d => d.kind === 'coordinate_failed' && d.changeId === 'cn-1')).toBe(true);
   });
 });
 

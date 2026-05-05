@@ -3,7 +3,7 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import { initHashline } from '@changedown/core';
-import { runCommand } from 'changedown/cli-runner';
+import { runCommand } from '@changedown/cli/cli-runner';
 
 function makeTrackedFile(text: string): string {
   return `${text}\n\n[^cn-1]: @ai:test | 2026-02-15 | ins | proposed\n`;

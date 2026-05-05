@@ -4,7 +4,7 @@
 // This module re-exports everything so existing imports within hooks-impl continue
 // to work without changes.
 
-export type { ChangeDownConfig, PolicyMode, CreationTracking } from 'changedown/config';
+export type { ChangeDownConfig, PolicyMode, CreationTracking } from '@changedown/cli/config';
 export {
   DEFAULT_CONFIG,
   loadConfig,
@@ -16,4 +16,4 @@ export {
   resolveProtocolMode,
   derivePolicyMode,
   asStringArray,
-} from 'changedown/config';
+} from '@changedown/cli/config';

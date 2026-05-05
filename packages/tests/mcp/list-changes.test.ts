@@ -313,7 +313,10 @@ describe('list_changes tool', () => {
     const consumed = data.changes.find((c: any) => c.consumed_by);
     expect(consumed).toBeDefined();
     expect(consumed.consumed_by).toMatch(/^cn-/);
-    expect(consumed.anchored).toBe(false);
+    // L3 changes keep their footnote anchor even when the operation has been
+    // consumed by a later op; position validity is reported separately.
+    expect(consumed.anchored).toBe(true);
+    expect(consumed.resolved).toBe(false);
   });
 
   it('omits consumed_by field for non-consumed changes', async () => {

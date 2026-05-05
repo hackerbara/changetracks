@@ -2,7 +2,8 @@
  * Step definitions for O8 (Batch Operations) feature file.
  *
  * Covers: batch propose with dotted IDs, per-change reasoning, shared reasoning,
- * coordinate adjustment, batch review, and partial batch review.
+ * coordinate adjustment, batch review, partial batch review, and ADR-036 §4
+ * atomic-default + partial opt-in behavior.
  */
 import { Given, When, Then } from '@cucumber/cucumber';
 import assert from 'node:assert/strict';
@@ -321,6 +322,96 @@ Then(
     await this.ctx.assertFootnoteStatus(filePath, 'cn-1.2', 'rejected');
     // request_changes does not change status from proposed
     await this.ctx.assertFootnoteStatus(filePath, 'cn-1.3', 'proposed');
+  },
+);
+
+// =============================================================================
+// O8: ADR-036 §4 — atomic-default + explicit partial opt-in
+// =============================================================================
+
+When(
+  'I call propose_batch with {int} valid and {int} invalid change',
+  async function (this: ChangeDownWorld, validCount: number, _invalidCount: number) {
+    if (!this.ctx) await this.setupContext();
+    const filePath = this.files.values().next().value;
+    assert.ok(filePath, 'No file in this scenario');
+
+    // Construct changes: valid ops target real text, invalid targets missing text
+    const validChanges = [
+      { old_text: 'alpha', new_text: 'ALPHA', reason: 'cap alpha' },
+      { old_text: 'beta', new_text: 'BETA', reason: 'cap beta' },
+      { old_text: 'gamma', new_text: 'GAMMA', reason: 'cap gamma' },
+    ].slice(0, validCount);
+
+    const changes = [
+      ...validChanges.slice(0, 1),
+      { old_text: 'NONEXISTENT_TEXT_XYZ', new_text: 'nope', reason: 'will fail' },
+      ...validChanges.slice(1),
+    ];
+
+    try {
+      this.lastResult = await this.ctx.proposeBatch(filePath, {
+        changes,
+        reason: 'atomic abort test',
+        // NO partial flag — atomic is the default per ADR-036 §4
+      });
+    } catch (err) {
+      this.lastError = err as Error;
+    }
+  },
+);
+
+When(
+  'I call propose_batch with {int} valid and {int} invalid change and partial:true',
+  async function (this: ChangeDownWorld, validCount: number, _invalidCount: number) {
+    if (!this.ctx) await this.setupContext();
+    const filePath = this.files.values().next().value;
+    assert.ok(filePath, 'No file in this scenario');
+
+    const validChanges = [
+      { old_text: 'alpha', new_text: 'ALPHA', reason: 'cap alpha' },
+      { old_text: 'beta', new_text: 'BETA', reason: 'cap beta' },
+    ].slice(0, validCount);
+
+    const changes = [
+      ...validChanges,
+      { old_text: 'NONEXISTENT_TEXT_XYZ', new_text: 'nope', reason: 'will fail' },
+    ];
+
+    try {
+      this.lastResult = await this.ctx.proposeBatch(filePath, {
+        changes,
+        reason: 'partial opt-in test',
+        partial: true,
+      });
+    } catch (err) {
+      this.lastError = err as Error;
+    }
+  },
+);
+
+Then(
+  'the file is unchanged',
+  async function (this: ChangeDownWorld) {
+    const filePath = this.files.values().next().value;
+    assert.ok(filePath, 'No file in this scenario');
+    const disk = await this.ctx.readDisk(filePath);
+    // File should contain none of the CriticMarkup markers from the batch
+    assert.ok(!disk.includes('{~~alpha~>ALPHA~~}'), 'File should not contain alpha change from aborted batch');
+    assert.ok(!disk.includes('ALPHA'), 'File should not contain ALPHA from aborted batch');
+  },
+);
+
+Then(
+  'the response includes {int} applied and {int} failed',
+  function (this: ChangeDownWorld, appliedCount: number, failedCount: number) {
+    assert.ok(this.lastResult, 'No MCP result available');
+    assert.equal(this.lastResult.isError, undefined, `Expected success but got error: ${this.lastResult.content[0]?.text}`);
+    const data = this.ctx.parseResult(this.lastResult);
+    assert.ok(Array.isArray(data.applied), 'Expected applied array in response');
+    assert.ok(Array.isArray(data.failed), 'Expected failed array in response');
+    assert.equal(data.applied.length, appliedCount, `Expected ${appliedCount} applied ops, got ${(data.applied as unknown[]).length}`);
+    assert.equal(data.failed.length, failedCount, `Expected ${failedCount} failed ops, got ${(data.failed as unknown[]).length}`);
   },
 );
 

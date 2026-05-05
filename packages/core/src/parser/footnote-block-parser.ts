@@ -11,7 +11,7 @@
  */
 
 import type { Footnote, FootnoteLine, FootnoteHeader, EditOp } from '../model/footnote.js';
-import type { DiscussionComment, Resolution, Approval } from '../model/types.js';
+import type { DiscussionComment, Resolution, Approval, Revision } from '../model/types.js';
 import { parseTimestamp } from '../timestamp.js';
 import { FOOTNOTE_DEF_START, FOOTNOTE_L3_EDIT_OP, FOOTNOTE_THREAD_REPLY } from '../footnote-patterns.js';
 import { parseFootnoteHeader } from '../footnote-utils.js';
@@ -20,6 +20,8 @@ import { parseContextualEditOp } from './contextual-edit-op.js';
 // Approval/rejection metadata line patterns (4-space indent).
 const APPROVED_RE = /^ {4}approved:\s+(\S+)\s+(\S+)(?:\s+"([^"]*)")?/;
 const REJECTED_RE = /^ {4}rejected:\s+(\S+)\s+(\S+)(?:\s+"([^"]*)")?/;
+const REQUEST_CHANGES_RE = /^ {4}request-changes:\s+(\S+)\s+(\S+)(?:\s+"([^"]*)")?/;
+const REVISION_RE = /^ {4,}(r\d+)\s+(@?\S+)\s+(\S+):\s+"([^"]*)"$/;
 
 /** Build an Approval record from a regex match (shared by approved/rejected branches). */
 function parseApprovalLine(match: RegExpMatchArray): Approval {
@@ -30,10 +32,13 @@ function parseApprovalLine(match: RegExpMatchArray): Approval {
     reason: match[3] || undefined,
   };
 }
+
 const REASON_RE   = /^ {4}reason:\s+(.*)$/;
 const CONTEXT_RE  = /^ {4}context:\s+(.*)$/;
 const RESOLVED_RE = /^ {4}resolved:\s+(\S+)\s+(\S+)(?:\s+"([^"]*)")?/;
 const OPEN_RE     = /^ {4}open(?:\s+--\s+(.*))?$/;
+const SUPERSEDES_RE    = /^ {4}supersedes:\s+(\S+)\s*$/;
+const SUPERSEDED_BY_RE = /^ {4}superseded-by:\s+(\S+)\s*$/;
 const IMAGE_META_RE    = /^ {4}(image-[\w-]+):\s*(.*)$/;
 const EQUATION_META_RE = /^ {4}(equation-[\w-]+):\s*(.*)$/;
 
@@ -86,9 +91,14 @@ export function parseFootnoteBlock(
     const discussion: DiscussionComment[] = [];
     const approvals: Approval[] = [];
     const rejections: Approval[] = [];
+    const requestChanges: Approval[] = [];
+    const revisions: Revision[] = [];
+    let inRevisions = false;
     let resolution: Resolution | null = null;
     let imageMetadata: Record<string, string> | undefined;
     let equationMetadata: Record<string, string> | undefined;
+    let supersedesTarget: string | undefined;
+    const supersededByTargets: string[] = [];
 
     while (i < lines.length) {
       const body = lines[i];
@@ -147,13 +157,14 @@ export function parseFootnoteBlock(
       }
 
       if (FOOTNOTE_THREAD_REPLY.test(body)) {
-        const replyMatch = body.match(/^\s+@(\S+)\s+(\S+):\s*(.*)$/);
+        const replyMatch = body.match(/^\s+@(\S+)\s+(\S+)(?:\s+\[([^\]]+)\])?:\s*(.*)$/);
         if (replyMatch) {
           const reply: DiscussionComment = {
             author: replyMatch[1],
             date: replyMatch[2],
+            label: replyMatch[3] ?? undefined,   // group 3: optional [label]
             timestamp: parseTimestamp(replyMatch[2]),
-            text: replyMatch[3],
+            text: replyMatch[4],                 // group 4: text (shifted from group 3)
             depth: 0,
           };
           discussion.push(reply);
@@ -178,6 +189,38 @@ export function parseFootnoteBlock(
         i++; continue;
       }
 
+      const requestChangesMatch = body.match(REQUEST_CHANGES_RE);
+      if (requestChangesMatch) {
+        const action = parseApprovalLine(requestChangesMatch);
+        requestChanges.push(action);
+        bodyLines.push({ kind: 'request-changes', action, raw: body });
+        i++; continue;
+      }
+
+      if (body.trim() === 'revisions:') {
+        inRevisions = true;
+        bodyLines.push({ kind: 'revisions-header', raw: body });
+        i++; continue;
+      }
+
+      if (inRevisions) {
+        const revMatch = body.match(REVISION_RE);
+        if (revMatch) {
+          const rev: Revision = {
+            label: revMatch[1],
+            author: revMatch[2],
+            date: revMatch[3],
+            timestamp: parseTimestamp(revMatch[3]),
+            text: revMatch[4],
+          };
+          revisions.push(rev);
+          bodyLines.push({ kind: 'revision', revision: rev, raw: body });
+          i++; continue;
+        }
+        // Non-revision line exits the revisions block (mirrors parser.ts:506)
+        inRevisions = false;
+      }
+
       const resolvedMatch = body.match(RESOLVED_RE);
       if (resolvedMatch) {
         const res: Resolution = {
@@ -197,6 +240,22 @@ export function parseFootnoteBlock(
         const res: Resolution = { type: 'open', reason: openMatch[1] || undefined };
         if (!resolution) resolution = res;
         bodyLines.push({ kind: 'resolution', resolution: res, raw: body });
+        i++; continue;
+      }
+
+      const supersedesMatch = body.match(SUPERSEDES_RE);
+      if (supersedesMatch) {
+        const target = supersedesMatch[1];
+        if (supersedesTarget === undefined) supersedesTarget = target;
+        bodyLines.push({ kind: 'supersedes', target, raw: body });
+        i++; continue;
+      }
+
+      const supersededByMatch = body.match(SUPERSEDED_BY_RE);
+      if (supersededByMatch) {
+        const target = supersededByMatch[1];
+        supersededByTargets.push(target);
+        bodyLines.push({ kind: 'superseded-by', target, raw: body });
         i++; continue;
       }
 
@@ -232,9 +291,13 @@ export function parseFootnoteBlock(
       discussion,
       approvals,
       rejections,
+      requestChanges,
+      revisions,
       resolution,
       imageMetadata: imageMetadata ? Object.freeze(imageMetadata) : undefined,
       equationMetadata: equationMetadata ? Object.freeze(equationMetadata) : undefined,
+      supersedes: supersedesTarget,
+      supersededBy: Object.freeze(supersededByTargets),
       sourceRange: { startLine: startLineOffset + startLine, endLine: startLineOffset + endLine },
     });
   }

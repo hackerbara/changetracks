@@ -100,6 +100,7 @@ Given(
         contentRange: { start: 3, end: lsp.documentText.length - 3 },
         level: 2,
         anchored: true,
+        resolved: true,
       },
     ];
   },
@@ -130,6 +131,7 @@ Given(
       modifiedText: lsp.documentText.substring(cStart, cEnd),
       level: 2,
       anchored: true,
+      resolved: true,
     });
   },
 );
@@ -147,6 +149,7 @@ Given(
       originalText: lsp.documentText.substring(cStart, cEnd),
       level: 2,
       anchored: true,
+      resolved: true,
     });
   },
 );
@@ -164,6 +167,7 @@ Given(
       originalText: lsp.documentText.substring(cStart, cEnd),
       level: 2,
       anchored: true,
+      resolved: true,
     });
   },
 );
@@ -180,6 +184,7 @@ Given(
       contentRange: { start: cStart, end: cEnd },
       level: 2,
       anchored: true,
+      resolved: true,
     });
   },
 );
@@ -200,6 +205,7 @@ Given(
       modifiedText: lsp.documentText.substring(mStart, mEnd),
       level: 2,
       anchored: true,
+      resolved: true,
     });
   },
 );
@@ -218,6 +224,7 @@ Given(
       contentRange: { start: cStart, end: cEnd },
       level: 0,
       anchored: false,
+      resolved: true,
     });
   },
 );
@@ -234,6 +241,7 @@ Given(
       contentRange: { start: cStart, end: cEnd },
       level: 0,
       anchored: false,
+      resolved: true,
     });
   },
 );
@@ -250,6 +258,7 @@ Given(
       contentRange: { start: cStart, end: cEnd },
       level: 0,
       anchored: false,
+      resolved: true,
     });
   },
 );
@@ -266,6 +275,7 @@ Given(
       contentRange: { start: cStart, end: cEnd },
       level: 0,
       anchored: false,
+      resolved: true,
     });
   },
 );
@@ -284,6 +294,7 @@ Given(
       modifiedRange: { start: mStart, end: mEnd },
       level: 0,
       anchored: false,
+      resolved: true,
     });
   },
 );
@@ -300,6 +311,7 @@ Given(
       contentRange: { start: cStart, end: cEnd },
       level: 0,
       anchored: false,
+      resolved: true,
       moveRole: 'to',
       groupId: 'g1',
     });
@@ -318,6 +330,7 @@ Given(
       contentRange: { start: cStart, end: cEnd },
       level: 0,
       anchored: false,
+      resolved: true,
       moveRole: 'from',
       groupId: 'g1',
     });
@@ -339,6 +352,7 @@ Given(
       metadata: { comment },
       level: 0,
       anchored: false,
+      resolved: true,
     });
   },
 );
@@ -356,6 +370,7 @@ Given(
       metadata: { comment: reason },
       level: 0,
       anchored: false,
+      resolved: true,
     });
   },
 );
@@ -378,6 +393,7 @@ Given(
       modifiedText: lsp.documentText.substring(contentStart, contentEnd),
       level: 2,
       anchored: true,
+      resolved: true,
     };
     lsp.changes.push(change);
     lsp.activeDiagnostic = {
@@ -406,6 +422,7 @@ Given(
       originalText: lsp.documentText.substring(contentStart, contentEnd),
       level: 2,
       anchored: true,
+      resolved: true,
     };
     lsp.changes.push(change);
     lsp.activeDiagnostic = {
@@ -446,6 +463,7 @@ Given(
       modifiedText,
       level: 2,
       anchored: true,
+      resolved: true,
     };
     lsp.changes.push(change);
     lsp.activeDiagnostic = {
@@ -474,6 +492,7 @@ Given(
       originalText: lsp.documentText.substring(contentStart, contentEnd),
       level: 2,
       anchored: true,
+      resolved: true,
     };
     lsp.changes.push(change);
     lsp.activeDiagnostic = {
@@ -501,6 +520,7 @@ Given(
       contentRange: { start: contentStart, end: contentEnd },
       level: 2,
       anchored: true,
+      resolved: true,
     };
     lsp.changes.push(change);
     lsp.activeDiagnostic = {
@@ -529,6 +549,7 @@ Given(
       originalText: lsp.documentText.substring(contentStart, contentEnd),
       level: 2,
       anchored: true,
+      resolved: true,
     });
   },
 );
@@ -979,6 +1000,7 @@ function autoParseChanges(text: string): ChangeNode[] {
         contentRange: { start: m.index + 3, end: m.index + 3 + m[1].length },
         level: 0,
         anchored: false,
+        resolved: true,
       };
       if (type === ChangeType.Comment) {
         node.metadata = { comment: m[1] };

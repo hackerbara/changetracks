@@ -28,12 +28,10 @@ Feature: Amend a proposed change
     And the footnote contains "superseded-by: cn-3"
     And the footnote contains "supersedes: cn-2"
 
-  Scenario: Cross-author amendment creates alternative via supersede
+  Scenario: Cross-author amendment is rejected by same-author amend_change
     When I call amend_change with author "ai:other-agent"
-    Then the response is not an error
-    And the footnote for cn-1 has status "rejected"
-    And the footnote contains "superseded-by: cn-2"
-    And the footnote contains "supersedes: cn-1"
+    Then the response is an error
+    And the error mentions "author"
 
   Scenario: Amending accepted change is rejected
     Given cn-1 has been accepted

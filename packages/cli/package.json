@@ -1,6 +1,6 @@
 {
-  "name": "changedown",
-  "version": "0.3.0",
+  "name": "@changedown/cli",
+  "version": "0.4.0",
   "description": "Durable change tracking for editors and AI agents",
   "type": "module",
   "main": "dist/index.js",
@@ -23,17 +23,32 @@
     "./init/gitignore": "./dist/init/gitignore.js",
     "./init/environment": "./dist/init/environment.js",
     "./init/runner": "./dist/init/runner.js",
-    "./internals": "./dist/internals.js"
+    "./internals": "./dist/internals.js",
+    "./commands/repair": "./dist/commands/repair.js",
+    "./agents": "./dist/agents/index.js",
+    "./word/mcp": "./dist/word/mcp.js"
   },
   "bin": {
+    "cli": "./dist/cli-init.js",
     "cdown": "./dist/index.js",
     "changedown": "./dist/cli-init.js"
   },
   "scripts": {
     "build": "tsc"
   },
-  "files": ["dist/", "!dist/test/", "README.md", "LICENSE"],
-  "keywords": ["markdown", "change-tracking", "criticmarkup", "ai-agents", "track-changes"],
+  "files": [
+    "dist/",
+    "!dist/test/",
+    "README.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "markdown",
+    "change-tracking",
+    "criticmarkup",
+    "ai-agents",
+    "track-changes"
+  ],
   "license": "MIT",
   "repository": {
     "type": "git",

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { computeStatus } from 'changedown/internals';
+import { computeStatus } from '@changedown/cli/internals';
 
 describe('computeStatus', () => {
   it('returns all zeros for clean text', () => {

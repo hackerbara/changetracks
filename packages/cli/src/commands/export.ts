@@ -34,6 +34,7 @@ export async function handleExport(
   const baseName = path.basename(file, path.extname(file));
   const outputPath = opts.output ?? `${baseName}.docx`;
 
+  // eslint-disable-next-line changedown/no-direct-tracked-file-write -- DOCX binary output, not a tracked CriticMarkup Markdown file
   fs.writeFileSync(outputPath, buffer);
 
   const totalChanges = stats.insertions + stats.deletions + stats.substitutions;

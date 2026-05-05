@@ -9,4 +9,4 @@ export {
   helpResult,
   usageError,
   invalidJsonError,
-} from 'changedown/cli-helpers';
+} from '@changedown/cli/cli-helpers';

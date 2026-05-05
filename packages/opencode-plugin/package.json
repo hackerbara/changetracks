@@ -1,6 +1,6 @@
 {
   "name": "@changedown/opencode-plugin",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -16,9 +16,9 @@
   },
   "dependencies": {
     "@opencode-ai/plugin": "^1.1.0",
-    "changedown": "file:../cli",
-    "@changedown/core": "file:../core",
+        "@changedown/core": "file:../core",
     "@changedown/mcp": "file:../../changedown-plugin/mcp-server",
+    "@changedown/cli": "file:../cli",
     "picomatch": "^4.0.2",
     "smol-toml": "^1.3.3"
   },

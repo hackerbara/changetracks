@@ -64,6 +64,48 @@ warn() { echo -e "  ${YELLOW}!${RESET} $1"; }
 fail() { echo -e "  ${RED}✗${RESET} $1"; }
 info() { echo -e "  ${DIM}$1${RESET}"; }
 
+validate_word_pane_dist() {
+  local word_dir="$DIST_DIR/word"
+  local required=(
+    "taskpane.html"
+    "commands.html"
+    "manifest.hosted.xml"
+    "assets/icon-16.png"
+    "assets/icon-32.png"
+    "assets/icon-64.png"
+    "assets/icon-80.png"
+  )
+
+  if [[ ! -d "$word_dir" ]]; then
+    fail "Hosted Word pane missing from dist/word"
+    exit 1
+  fi
+
+  for file in "${required[@]}"; do
+    if [[ ! -f "$word_dir/$file" ]]; then
+      fail "Hosted Word pane artifact missing: dist/word/$file"
+      exit 1
+    fi
+  done
+
+  if grep -R "127.0.0.1:3000" "$word_dir" \
+    --include="*.html" --include="*.xml" --include="*.js" \
+    >/dev/null 2>&1; then
+    fail "Hosted Word pane contains dev-server URL 127.0.0.1:3000"
+    exit 1
+  fi
+
+  if ! grep -q "https://changedown.com/word/taskpane.html" "$word_dir/manifest.hosted.xml"; then
+    fail "Hosted Word manifest does not point SourceLocation at changedown.com/word"
+    exit 1
+  fi
+
+  if ! grep -q "<AppDomain>https://127.0.0.1:39990</AppDomain>" "$word_dir/manifest.hosted.xml"; then
+    fail "Hosted Word manifest is missing loopback MCP AppDomain"
+    exit 1
+  fi
+}
+
 confirm() {
   if $DRY_RUN; then
     info "DRY RUN — auto-yes: $1"
@@ -149,7 +191,16 @@ else
     exit 1
   fi
 
-  # Step 3: Build Astro site (generates static HTML pages with SEO metadata)
+  # Step 3: Build Word task pane into public/word so Astro copies it to dist/word.
+  info "Building hosted Word pane..."
+  if (cd "$DEV_ROOT" && node scripts/build-word-pane-for-website.mjs); then
+    ok "Hosted Word pane built"
+  else
+    fail "Hosted Word pane build failed"
+    exit 1
+  fi
+
+  # Step 4: Build Astro site (generates static HTML pages with SEO metadata)
   info "Building Astro site..."
   if (cd "$WEBSITE_DIR" && npx astro build); then
     ok "Astro build succeeded"
@@ -163,6 +214,8 @@ DIST_DIR="$WEBSITE_DIR/dist"
 DIST_FILES=$(find "$DIST_DIR" -type f | wc -l | tr -d ' ')
 DIST_SIZE=$(du -sh "$DIST_DIR" | cut -f1)
 ok "dist/ ready: $DIST_FILES files, $DIST_SIZE"
+validate_word_pane_dist
+ok "Hosted Word pane ready at dist/word/"
 
 # Ensure CNAME is in the build output (GitHub Pages needs this)
 if [[ ! -f "$DIST_DIR/CNAME" ]]; then
@@ -196,6 +249,7 @@ WEBSITE_ARTIFACTS=(
   "app"
   "content"
   "og-images"
+  "word"
   "index.html"
   "CNAME"
   "robots.txt"
@@ -228,6 +282,12 @@ info "Cleaned old website artifacts from docs/ (preserved public/, images/, v1/)
 rsync -a "$DIST_DIR/" "$DOCS_DIR/"
 ok "Copied $DIST_FILES files to docs/"
 
+if [[ ! -f "$DOCS_DIR/word/manifest.hosted.xml" || ! -f "$DOCS_DIR/word/taskpane.html" ]]; then
+  fail "Hosted Word pane was not copied to docs/word"
+  exit 1
+fi
+ok "Hosted Word pane included at docs/word/"
+
 # ═════════════════════════════════════════════════════════════════════════════
 # STEP 5: Verify no private content in deploy
 # ═════════════════════════════════════════════════════════════════════════════
@@ -245,8 +305,8 @@ if [[ -n "$OLD_REFS" ]]; then
   LEAK_COUNT=$((LEAK_COUNT + 1))
 fi
 
-# Check for personal identity leaks (Alex/Bernson/Abernson)
-IDENTITY_LEAKS=$(grep -rli "Bernson\|Abernson\|alex\.c\.bernson\|alex@" "$DOCS_DIR" \
+# Check for personal identity leaks (Hackerbara/Bernson/Abernson)
+IDENTITY_LEAKS=$(grep -rli "Bernson\|Abernson\|hackerbara\.c\.bernson\|hackerbara@" "$DOCS_DIR" \
   --include="*.js" --include="*.html" --include="*.css" --include="*.md" \
   --include="*.json" \
   2>/dev/null || true)
@@ -307,6 +367,8 @@ STAT=$(git diff --cached --stat -- docs/)
 if [[ -z "$STAT" ]]; then
   ok "No changes — website is already up to date"
   echo ""
+  echo -e "  ${DIM}Hosted Word manifest: https://changedown.com/word/manifest.hosted.xml${RESET}"
+  echo ""
   echo -e "${GREEN}${BOLD}Nothing to do!${RESET}"
   exit 0
 fi
@@ -364,5 +426,6 @@ echo ""
 echo -e "${GREEN}${BOLD}═══ Website deployed! ═══${RESET}"
 echo ""
 echo -e "  ${DIM}Live at: https://changedown.com${RESET}"
+echo -e "  ${DIM}Word manifest: https://changedown.com/word/manifest.hosted.xml${RESET}"
 echo -e "  ${DIM}GitHub Pages may take 1-2 minutes to update${RESET}"
 echo ""

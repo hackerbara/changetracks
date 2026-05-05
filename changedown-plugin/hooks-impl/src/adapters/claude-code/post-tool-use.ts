@@ -52,10 +52,16 @@ export async function handlePostToolUse(
   // Creation tracking: handled before augment since it modifies the file.
   // Uses tool_input.content (the authoritative agent-written content) instead of
   // reading back from disk, which races with filesystem flush and can return empty.
+  //
+  // Guard: only markdown files get CriticMarkup creation footnotes. Even if
+  // isFileInScope matches a broader glob (e.g. **/*), non-.md files such as
+  // .vscode/settings.json must never receive tracking header injection because
+  // CriticMarkup syntax is meaningless inside JSON/TOML/YAML/etc.
   if (tool_name.toLowerCase() === 'write' && config.policy.creation_tracking !== 'none') {
     const filePath = (tool_input?.file_path as string) ?? '';
     const agentContent = (tool_input?.content as string) ?? '';
-    if (filePath && agentContent && isFileInScope(filePath, config, projectDir)) {
+    const isMarkdownFile = filePath.endsWith('.md') || filePath.endsWith('.markdown');
+    if (filePath && agentContent && isMarkdownFile && isFileInScope(filePath, config, projectDir)) {
       try {
         const TRACKING_HEADER = '<!-- changedown.com/v1: tracked -->';
         if (!agentContent.startsWith(TRACKING_HEADER)) {

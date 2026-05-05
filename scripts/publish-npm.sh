@@ -7,12 +7,24 @@
 # Usage:
 #   bash scripts/publish-npm.sh             # interactive publish
 #   bash scripts/publish-npm.sh --dry-run   # pack only, don't publish
+#   bash scripts/publish-npm.sh --allow-dirty-package-json
+#   bash scripts/publish-npm.sh --include-mcp
 #
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 DRY_RUN=false
-[[ "${1:-}" == "--dry-run" ]] && DRY_RUN=true
+ALLOW_DIRTY_PACKAGE_JSON=false
+INCLUDE_MCP=false
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --dry-run) DRY_RUN=true; shift ;;
+    --allow-dirty-package-json) ALLOW_DIRTY_PACKAGE_JSON=true; shift ;;
+    --include-mcp) INCLUDE_MCP=true; shift ;;
+    --help|-h) head -12 "$0" | tail -8; exit 0 ;;
+    *) echo "Unknown option: $1"; exit 1 ;;
+  esac
+done
 
 # ── Colors ──────────────────────────────────────────────────────────────────
 RED='\033[0;31m'
@@ -33,6 +45,9 @@ PACKAGES=(
   "packages/cli"
   "packages/lsp-server"
 )
+if $INCLUDE_MCP; then
+  PACKAGES+=("changedown-plugin/mcp-server")
+fi
 
 # ── Preflight checks ───────────────────────────────────────────────────────
 echo -e "\n${BOLD}═══ ChangeDown npm Publish ═══${RESET}"
@@ -41,21 +56,25 @@ echo ""
 
 echo -e "${BOLD}[1/4] Preflight checks${RESET}"
 
-# npm auth
-NPM_USER=$(npm whoami 2>/dev/null || true)
-if [[ -z "$NPM_USER" ]]; then
-  fail "Not logged into npm. Run: npm login"
-  exit 1
-fi
-ok "npm authenticated as ${BOLD}$NPM_USER${RESET}"
+# npm auth (publish only; dry-run still packs/verifies tarballs offline)
+if $DRY_RUN; then
+  info "Skipping npm auth/org checks in dry-run mode"
+else
+  NPM_USER=$(npm whoami 2>/dev/null || true)
+  if [[ -z "$NPM_USER" ]]; then
+    fail "Not logged into npm. Run: npm login"
+    exit 1
+  fi
+  ok "npm authenticated as ${BOLD}$NPM_USER${RESET}"
 
-# Check org access
-if ! npm org ls changedown "$NPM_USER" &>/dev/null; then
-  fail "User '$NPM_USER' is not a member of @changedown org"
-  info "Create org at https://www.npmjs.com/org/create or run: npm org add changedown $NPM_USER"
-  exit 1
+  # Check org access
+  if ! npm org ls changedown "$NPM_USER" &>/dev/null; then
+    fail "User '$NPM_USER' is not a member of @changedown org"
+    info "Create org at https://www.npmjs.com/org/create or run: npm org add changedown $NPM_USER"
+    exit 1
+  fi
+  ok "@changedown org access confirmed"
 fi
-ok "@changedown org access confirmed"
 
 # Check packages are built
 for pkg in "${PACKAGES[@]}"; do
@@ -79,15 +98,32 @@ for pkg in "${PACKAGES[@]}"; do
 done
 ok "LICENSE and README present in all packages"
 
-# Check git is clean (package.json files specifically)
-DIRTY=$(git diff --name-only -- 'packages/*/package.json' 2>/dev/null || true)
+# Check git is clean (package.json files specifically). Release automation
+# intentionally bumps package.json before publishing and passes
+# --allow-dirty-package-json; direct ad-hoc publishes stay strict.
+PACKAGE_JSON_PATHS=()
+for pkg in "${PACKAGES[@]}"; do
+  PACKAGE_JSON_PATHS+=("$pkg/package.json")
+done
+PACKAGE_JSON_BASELINE=$(mktemp -t changedown-publish-package-json.XXXXXX)
+trap 'rm -f "$PACKAGE_JSON_BASELINE"' EXIT
+for file in "${PACKAGE_JSON_PATHS[@]}"; do
+  shasum -a 256 "$file" >> "$PACKAGE_JSON_BASELINE"
+done
+
+DIRTY=$(git diff --name-only -- "${PACKAGE_JSON_PATHS[@]}" 2>/dev/null || true)
 if [[ -n "$DIRTY" ]]; then
-  fail "Uncommitted changes in package.json files:"
-  echo "$DIRTY" | while read f; do info "  $f"; done
-  fail "Commit or stash before publishing"
-  exit 1
+  if $ALLOW_DIRTY_PACKAGE_JSON; then
+    info "Continuing with dirty package.json files because --allow-dirty-package-json was passed:"
+    echo "$DIRTY" | while read f; do info "  $f"; done
+  else
+    fail "Uncommitted changes in package.json files:"
+    echo "$DIRTY" | while read f; do info "  $f"; done
+    fail "Commit or stash before publishing, or pass --allow-dirty-package-json from release automation"
+    exit 1
+  fi
 fi
-ok "package.json files are clean in git"
+if [[ -z "$DIRTY" ]]; then ok "package.json files are clean in git"; fi
 
 # ── Read versions ───────────────────────────────────────────────────────────
 echo ""
@@ -117,10 +153,11 @@ for pkg in "${PACKAGES[@]}"; do
     const fs = require('fs');
     const path = require('path');
     const pkg = JSON.parse(fs.readFileSync('$pkg/package.json', 'utf8'));
-    const deps = pkg.dependencies || {};
     let changed = false;
-    for (const [dep, ver] of Object.entries(deps)) {
-      if (ver.startsWith('file:')) {
+    for (const field of ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies']) {
+      const deps = pkg[field] || {};
+      for (const [dep, ver] of Object.entries(deps)) {
+        if (typeof ver !== 'string' || !ver.startsWith('file:')) continue;
         const relPath = ver.replace('file:', '');
         const refPkgPath = path.resolve('$pkg', relPath, 'package.json');
         try {
@@ -132,17 +169,34 @@ for pkg in "${PACKAGES[@]}"; do
           process.exit(1);
         }
       }
+      if (Object.keys(deps).length > 0) pkg[field] = deps;
     }
-    if (changed) pkg.dependencies = deps;
     console.log(JSON.stringify(pkg, null, 2));
   ")
   echo "$REWRITTEN" > "$pkg/package.json"
 
-  # Show what changed
-  DIFF=$(diff "$pkg/package.json.bak" <(echo "$REWRITTEN") || true)
-  if [[ -n "$DIFF" ]]; then
+  # Show dependency rewrites only. The temporary package.json is pretty-printed
+  # for packing, so a raw diff would include unrelated formatting noise.
+  REWRITE_SUMMARY=$(node -e "
+    const fs = require('fs');
+    const before = JSON.parse(fs.readFileSync('$pkg/package.json.bak', 'utf8'));
+    const after = JSON.parse(fs.readFileSync('$pkg/package.json', 'utf8'));
+    const lines = [];
+    for (const field of ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies']) {
+      const b = before[field] || {};
+      const a = after[field] || {};
+      for (const [dep, oldValue] of Object.entries(b)) {
+        const newValue = a[dep];
+        if (typeof oldValue === 'string' && oldValue.startsWith('file:') && oldValue !== newValue) {
+          lines.push(field + '.' + dep + ': ' + oldValue + ' -> ' + newValue);
+        }
+      }
+    }
+    console.log(lines.join('\\n'));
+  ")
+  if [[ -n "$REWRITE_SUMMARY" ]]; then
     info "Rewrote dependencies:"
-    echo "$DIFF" | grep '^[<>]' | head -10 | while read line; do info "  $line"; done
+    echo "$REWRITE_SUMMARY" | while read line; do info "  $line"; done
   fi
 
   # Step B: Pack tarball
@@ -160,8 +214,13 @@ for pkg in "${PACKAGES[@]}"; do
 
   # Step E: Verify deps in tarball
   TARBALL_DEPS=$(tar xzf "$TARBALL" -O package/package.json | node -p "
-    const deps = JSON.parse(require('fs').readFileSync('/dev/stdin','utf8')).dependencies || {};
-    const bad = Object.entries(deps).filter(([,v]) => v.startsWith('file:'));
+    const pkg = JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));
+    const bad = [];
+    for (const field of ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies']) {
+      for (const [k,v] of Object.entries(pkg[field] || {})) {
+        if (typeof v === 'string' && v.startsWith('file:')) bad.push([field + ':' + k, v]);
+      }
+    }
     bad.length ? 'BROKEN: ' + bad.map(([k,v]) => k+'='+v).join(', ') : 'OK (no file: refs)'
   ")
   if [[ "$TARBALL_DEPS" == BROKEN* ]]; then
@@ -174,6 +233,11 @@ for pkg in "${PACKAGES[@]}"; do
   if $DRY_RUN; then
     info "DRY RUN — skipping publish"
   else
+    if npm view "$name@$version" version &>/dev/null; then
+      info "$name@$version is already on npm — skipping (npm versions are immutable)"
+      continue
+    fi
+
     echo ""
     read -p "  Publish $name@$version to npm? (y/N) " confirm
     if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
@@ -201,14 +265,14 @@ for tb in "${TARBALLS[@]}"; do
 done
 ok "Removed tarball files"
 
-# Verify git is still clean
-DIRTY_AFTER=$(git diff --name-only -- 'packages/*/package.json' 2>/dev/null || true)
-if [[ -n "$DIRTY_AFTER" ]]; then
-  fail "package.json files were not fully restored!"
-  echo "$DIRTY_AFTER"
-  info "Run: git checkout -- packages/*/package.json"
+# Verify package.json files returned to their exact pre-pack bytes. They may
+# have been dirty before this script (release version bumps), so a git-clean
+# check would be a false failure under --allow-dirty-package-json.
+if ! shasum -a 256 -c "$PACKAGE_JSON_BASELINE" --status; then
+  fail "package.json files were not fully restored to their pre-pack contents!"
+  info "Inspect: ${PACKAGE_JSON_PATHS[*]}"
 else
-  ok "package.json files unchanged"
+  ok "package.json files unchanged by publish script"
 fi
 
 echo ""
@@ -225,5 +289,5 @@ else
   done
   echo ""
   echo -e "  Test install:"
-  echo -e "    ${BOLD}npx changedown init${RESET}"
+  echo -e "    ${BOLD}npx @changedown/cli init${RESET}"
 fi

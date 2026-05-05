@@ -9,7 +9,7 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 
 // Dynamically import since we'll add the export in step 3
-const { handleResolveThread } = await import('changedown/engine');
+const { handleResolveThread } = await import('@changedown/cli/engine');
 
 const TODAY = new Date().toISOString().slice(0, 10);
 const TS_RE = '\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z';

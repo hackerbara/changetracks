@@ -1,5 +1,8 @@
 import { ChangeNode, ChangeType, ChangeStatus, OffsetRange } from '../model/types.js';
+import type { DiscussionComment, Revision, Resolution } from '../model/types.js';
 import { VirtualDocument } from '../model/document.js';
+import type { ChangeDownRecord } from '../model/document.js';
+import type { Diagnostic } from '../model/diagnostic.js';
 import { parseOp } from '../op-parser.js';
 import { parseTimestamp } from '../timestamp.js';
 import { computeLineHash } from '../hashline.js';
@@ -15,6 +18,42 @@ import { parseContextualEditOp } from './contextual-edit-op.js';
 
 export { parseContextualEditOp };
 
+function metadataFromUnknownLines(lines: readonly string[]): Record<string, string> {
+  const result: Record<string, string> = {};
+  for (const line of lines) {
+    const match = /^\s*([^:]+):\s*(.*)$/.exec(line);
+    if (match) result[match[1]!.trim()] = match[2]!.trim();
+  }
+  return result;
+}
+
+function isDocumentScopeAcceptedInsertion(fn: ParsedFootnote): boolean {
+  const metadata = metadataFromUnknownLines(fn.unknownBodyLines ?? []);
+  return fn.type === 'ins' &&
+    fn.status === 'accepted' &&
+    fn.author === '@base-document' &&
+    fn.lineNumber === undefined &&
+    fn.hash === undefined &&
+    fn.opString === undefined &&
+    metadata.source === 'initial-word-body' &&
+    metadata.scope === 'document' &&
+    metadata['body-hash'] !== undefined;
+}
+
+function toChangeDownRecord(fn: ParsedFootnote): ChangeDownRecord {
+  const bodyLines = fn.unknownBodyLines ?? [];
+  return {
+    id: fn.id,
+    author: fn.author,
+    date: fn.date,
+    type: fn.type,
+    status: fn.status,
+    reviewable: false,
+    metadata: metadataFromUnknownLines(bodyLines),
+    bodyLines,
+  };
+}
+
 /** Extract deletion context from the portion of opString after the CriticMarkup closer. */
 function parseDeletionContext(opString: string): { before: string; after: string } | null {
   // Find end of {--text--} in the opString
@@ -24,6 +63,11 @@ function parseDeletionContext(opString: string): { before: string; after: string
   const match = remainder.match(CTX_RE);
   if (!match) return null;
   return { before: unescapeCtxString(match[1]), after: unescapeCtxString(match[2]) };
+}
+
+/** Truncate a string to at most n characters, appending '…' if truncated. */
+function truncate(s: string, n: number): string {
+  return s.length > n ? s.slice(0, n) + '…' : s;
 }
 
 export interface ParsedFootnote {
@@ -56,34 +100,55 @@ export interface ParsedFootnote {
   imageMetadata?: Record<string, string>;
   /** Additional equation metadata key-value pairs from `equation-*:` lines */
   equationMetadata?: Record<string, string>;
+  /** Full discussion thread (not just count). */
+  discussion?: DiscussionComment[];
+  requestChanges?: Array<{ author: string; date: string; reason: string }>;
+  revisions?: Revision[];
+  resolution?: Resolution | null;
+  supersedes?: string;
+  supersededBy?: string[];
 }
 
 export class FootnoteNativeParser {
+  /** Diagnostics collected during the current parse() call. Drained onto the
+   *  VirtualDocument after construction. Reset at the top of each parse(). */
+  private pendingDiagnostics: Diagnostic[] = [];
+
   parse(text: string): VirtualDocument {
+    this.pendingDiagnostics = [];
+
     const lines = text.split('\n');
     const { bodyLines, footnoteLines } = splitBodyAndFootnotes(lines);
 
     const footnotes = this.parseFootnotes(lines);
     if (footnotes.length === 0) {
-      return new VirtualDocument([]);
+      const emptyDoc = new VirtualDocument([]);
+      for (const d of this.pendingDiagnostics) emptyDoc.addDiagnostic(d);
+      return emptyDoc;
     }
 
-    const changes = this.resolveChanges(footnotes, bodyLines);
+    const records = footnotes
+      .filter(isDocumentScopeAcceptedInsertion)
+      .map(toChangeDownRecord);
+    const recordIds = new Set(records.map(record => record.id));
+    const reviewableFootnotes = footnotes.filter(fn => !recordIds.has(fn.id));
+
+    const changes = this.resolveChanges(reviewableFootnotes, bodyLines);
 
     // freshAnchors: updated edit-op lines from the scrub replay, keyed by change ID.
     // Populated during the replay fallback below; used to compute resolvedText.
     let freshAnchors = new Map<string, string>();
 
-    // Resolution protocol fallback: if any changes are unanchored,
+    // Resolution protocol fallback: if any changes have unresolved positions,
     // run the scrub replay (backward+forward) using already-parsed footnote
     // data — avoids re-parsing the document through resolve().
-    if (changes.some(c => !c.anchored)) {
+    if (changes.some(c => c.resolved === false)) {
       try {
         const bodyText = bodyLines.join('\n');
 
         // Convert ParsedFootnote[] to ReplayFootnote[], reconstructing the
         // full indented LINE:HASH edit-op line from the parsed fields.
-        const replayFootnotes: ReplayFootnote[] = footnotes.map(fn => ({
+        const replayFootnotes: ReplayFootnote[] = reviewableFootnotes.map(fn => ({
           id: fn.id,
           type: fn.type,
           status: fn.status,
@@ -98,17 +163,23 @@ export class FootnoteNativeParser {
         const replay = resolveReplayFromParsedFootnotes(bodyText, replayFootnotes);
 
         for (const node of changes) {
-          if (node.anchored) continue;
+          if (node.resolved !== false) continue;
           const finalPos = replay.finalPositions.get(node.id);
           const isConsumed = replay.consumption.has(node.id);
-          // Only mark anchored if the protocol provides a valid body range.
-          // Consumed ops stay anchored:false but are visible to LSP consumers
+          // Only mark resolved if the protocol provides a valid body range.
+          // Consumed ops stay resolved:false but are visible to LSP consumers
           // via their footnote-block range (assigned below).
           if (finalPos && !isConsumed) {
-            node.anchored = true;
+            node.resolved = true;
             node.range = { start: finalPos.start, end: finalPos.end };
             node.contentRange = { ...node.range };
             node.resolutionPath = 'replay';
+            // Spec §3.2 Task 2.6: remove the coordinate_failed diagnostic that was
+            // emitted during the initial parse pass — recovery means the failure
+            // is no longer current and should not appear on the final document.
+            this.pendingDiagnostics = this.pendingDiagnostics.filter(
+              d => d.changeId !== node.id,
+            );
           }
           const freshAnchor = replay.freshAnchors.get(node.id);
           if (freshAnchor) node.freshAnchor = freshAnchor;
@@ -135,9 +206,9 @@ export class FootnoteNativeParser {
     }
 
     // Compute real coherence rate from resolved vs total changes.
-    // Ghost nodes (anchored:false) count as unresolved.
+    // Unresolved nodes (resolved:false) count against coherence unless consumed by another op.
     const resolvableCount = changes.length;
-    const resolvedCount = changes.filter(c => c.anchored || !!c.consumedBy).length;
+    const resolvedCount = changes.filter(c => c.resolved !== false || !!c.consumedBy).length;
     const coherenceRate = resolvableCount > 0
       ? Math.round((resolvedCount / resolvableCount) * 100)
       : 100;
@@ -182,7 +253,9 @@ export class FootnoteNativeParser {
       }
     }
 
-    return new VirtualDocument(changes, coherenceRate, [], resolvedText);
+    const doc = new VirtualDocument(changes, coherenceRate, [], resolvedText, records);
+    for (const d of this.pendingDiagnostics) doc.addDiagnostic(d);
+    return doc;
   }
 
   /**
@@ -243,6 +316,14 @@ export class FootnoteNativeParser {
       imageDimensions,
       imageMetadata: f.imageMetadata ? { ...f.imageMetadata } : undefined,
       equationMetadata: f.equationMetadata ? { ...f.equationMetadata } : undefined,
+      discussion: f.discussion.length > 0 ? [...f.discussion] : undefined,
+      requestChanges: f.requestChanges.length > 0
+        ? f.requestChanges.map(a => ({ author: a.author, date: a.date, reason: a.reason ?? '' }))
+        : undefined,
+      revisions: f.revisions.length > 0 ? [...f.revisions] : undefined,
+      resolution: f.resolution ?? undefined,
+      supersedes: f.supersedes,
+      supersededBy: f.supersededBy.length > 0 ? [...f.supersededBy] : undefined,
       unknownBodyLines: f.bodyLines.filter(l => l.kind === 'unknown').map(l => (l as { raw: string }).raw.trim()),
     };
   }
@@ -299,9 +380,12 @@ export class FootnoteNativeParser {
         bodyLines,
         lineOffsets,
       );
-      const { range, originalText, modifiedText, comment, anchored, resolutionPath } = rangeResult;
+      const { range, originalText, modifiedText, comment, anchored: positionResolved, resolved: rangeResolved, resolutionPath } = rangeResult;
 
       // Build the ChangeNode
+      // Per spec §3.2 (zombie-elimination): L3 nodes always have a footnote ref by construction,
+      // so anchored is unconditionally true here. The separate `resolved` axis carries the
+      // position-resolution result (was the edit-op text found on the target line?).
       const node: ChangeNode = {
         id: fn.id,
         type: changeType,
@@ -309,9 +393,8 @@ export class FootnoteNativeParser {
         range,
         contentRange: { ...range }, // L3: range === contentRange (no delimiters in body)
         level: 2,
-        // anchored:false means position could not be deterministically resolved (Invariant A).
-        // anchored:true (default) means either resolved uniquely or explicitly OK (deletion line-start).
-        anchored: anchored !== false,
+        anchored: true,                                                          // L3 nodes always have a footnote ref by construction
+        resolved: rangeResolved !== undefined ? rangeResolved : (positionResolved !== false),  // false only when edit-op text could not be located
         metadata: {
           author: fn.author,
           date: fn.date,
@@ -363,6 +446,35 @@ export class FootnoteNativeParser {
         }));
       }
 
+      // Discussion
+      if (fn.discussion && fn.discussion.length > 0) {
+        node.metadata!.discussion = fn.discussion;
+      }
+
+      // Request-changes
+      if (fn.requestChanges && fn.requestChanges.length > 0) {
+        node.metadata!.requestChanges = fn.requestChanges.map(a => ({
+          author: a.author,
+          date: a.date,
+          timestamp: parseTimestamp(a.date),
+          reason: a.reason || undefined,
+        }));
+      }
+
+      // Revisions
+      if (fn.revisions && fn.revisions.length > 0) {
+        node.metadata!.revisions = fn.revisions;
+      }
+
+      // Resolution
+      if (fn.resolution) {
+        node.metadata!.resolution = fn.resolution;
+      }
+
+      // Supersedes / superseded-by
+      if (fn.supersedes) node.supersedes = fn.supersedes;
+      if (fn.supersededBy && fn.supersededBy.length > 0) node.supersededBy = fn.supersededBy;
+
       changes.push(node);
     }
 
@@ -379,7 +491,7 @@ export class FootnoteNativeParser {
    *   `deletionSeamOffset` gives the byte offset within this span where the deletion occurred
    *   (equals contextBefore.length). The spec's Contextual Uniqueness Guarantee ensures this
    *   span appears exactly once on the target line (04-spec.md §"Contextual Embedding").
-   *   Zero-width ranges appear only as the {0,0} anchored:false sentinel (Invariant A).
+   *   Zero-width ranges appear only as the {0,0} resolved:false sentinel (Invariant A).
    *   This is deliberate — do NOT revert to zero-width seam without understanding
    *   the plan builder's ghost-text injection and accept-change.ts's seam-based removal.
    * - Substitution: search for newText (proposed/accepted) or oldText (rejected) on target line
@@ -391,18 +503,19 @@ export class FootnoteNativeParser {
    *
    * Invariant A — Non-deletion ops (ins, sub, highlight) MUST resolve uniquely via
    * findUniqueMatch on the hash-resolved line. If the match fails (text not found or
-   * ambiguous), the node is marked anchored:false. There is NO fallback to line-start
-   * for non-deletion ops. Silent fallback produces wrong decoration placement.
+   * ambiguous), the node is marked resolved:false (with anchored:true). There is NO
+   * fallback to line-start for non-deletion ops. Silent fallback produces wrong
+   * decoration placement.
    *
    * Invariant B — Deletion ops resolve via @ctx:"before"||"after" ONLY. The deleted
    * text is absent from the body so there is nothing to search for. Line-start fallback
    * when @ctx is missing is acceptable degradation (not a silent error).
    *
-   * Invariant C — anchored:false is an error path, not a silent default. Consumers
-   * must not render anchored:false nodes as correctly placed decorations.
+   * Invariant C — resolved:false is an error path, not a silent default. Consumers
+   * must not render resolved:false nodes as correctly placed decorations.
    *
    * Task 3 enforced Invariant A by removing the fallbackRange branches for
-   * ins/sub/highlight and setting anchored:false + sentinel range {0,0} instead.
+   * ins/sub/highlight and setting resolved:false + sentinel range {0,0} instead.
    */
   private resolveRangeAndContent(
     fn: ParsedFootnote,
@@ -418,6 +531,7 @@ export class FootnoteNativeParser {
     modifiedText?: string;
     comment?: string;
     anchored?: boolean;  // false = could not resolve position deterministically (Invariant A)
+    resolved?: boolean;  // false = position unresolved (no parsedOp); absent means resolved
     resolutionPath?: 'hash' | 'context' | 'rejected';
     deletionSeamOffset?: number;  // byte offset within range to the deletion seam
   } {
@@ -458,8 +572,16 @@ export class FootnoteNativeParser {
 
     if (!parsedOp) {
       // No op string — settled/ghost footnote. No deterministic position can be resolved.
-      // Mark anchored:false so consumers can filter these ghost nodes (Invariant A).
-      return { range: fallbackRange, anchored: false, comment: fn.unknownBodyLines?.[0], resolutionPath: 'rejected' };
+      // Emit a typed diagnostic so the failure is visible on Document.diagnostics
+      // (spec §3.2 Sites 2-4 / zombie-elimination Task 2.3).
+      // anchored:true because the footnote ref exists; resolved:false because position
+      // cannot be determined without an edit-op.
+      this.pendingDiagnostics.push({
+        kind: 'coordinate_failed',
+        changeId: fn.id,
+        message: `Footnote ${fn.id} has no parsedOp; cannot resolve position.`,
+      });
+      return { range: fallbackRange, anchored: true, resolved: false, comment: fn.unknownBodyLines?.[0], resolutionPath: 'rejected' };
     }
 
     // Unified matching: find search text on the target line via findUniqueMatch
@@ -583,9 +705,21 @@ export class FootnoteNativeParser {
         const match = findOnLine(text);
         if (!match) {
           // Invariant A: non-deletion op could not be uniquely resolved — signal unresolved.
-          // Use a zero-width sentinel range (not fallbackRange) so consumers can detect
+          // Emit a typed diagnostic so the failure is visible on Document.diagnostics
+          // (spec §3.2 Sites 2-4 / zombie-elimination Task 2.4).
+          // anchored:true because the footnote ref exists; resolved:false because the
+          // insertion text could not be uniquely located on the target line.
+          const targetLine = effectiveLineNumber ?? 1;
+          const matchCount = lineContent ? lineContent.split(text).length - 1 : 0;
+          this.pendingDiagnostics.push({
+            kind: 'coordinate_failed',
+            changeId: fn.id,
+            message: `Insertion text "${truncate(text, 40)}" not uniquely found on line ${targetLine} (found ${matchCount} match${matchCount === 1 ? '' : 'es'}).`,
+            evidence: { line: targetLine, expectedText: text, candidates: matchCount },
+          });
+          // Keep the zero-width sentinel range {0,0} so existing consumers can detect
           // the unresolved state without confusing it with a valid line-start position.
-          return { range: { start: 0, end: 0 }, modifiedText: text, anchored: false };
+          return { range: { start: 0, end: 0 }, modifiedText: text, anchored: true, resolved: false };
         }
         const range: OffsetRange = {
           start: lineOffset + match.index,
@@ -637,15 +771,45 @@ export class FootnoteNativeParser {
         // No fallback to line-start for non-deletion cases.
         const oldText = parsedOp.oldText;
         const newText = parsedOp.newText;
-        const searchText = newText;
-        const match = searchText ? findOnLine(searchText) : null;
+        // Rejected substitutions can be encountered in two valid body states:
+        // before settlement the body still contains newText; after settlement it
+        // contains oldText. Resolve either state so settled L3 remains coherent.
+        const searchTexts = status === ChangeStatus.Rejected
+          ? [newText, oldText].filter((t): t is string => Boolean(t))
+          : [newText].filter((t): t is string => Boolean(t));
+        let match: UniqueMatch | null = null;
+        let matchedText = '';
+        for (const candidate of searchTexts) {
+          match = findOnLine(candidate);
+          if (match) {
+            matchedText = candidate;
+            break;
+          }
+        }
         if (!match) {
           // Invariant A: non-deletion op could not be uniquely resolved — signal unresolved.
-          return { range: { start: 0, end: 0 }, originalText: oldText, modifiedText: newText, anchored: false };
+          // Emit a typed diagnostic so the failure is visible on Document.diagnostics
+          // (spec §3.2 Sites 2-4 / zombie-elimination Task 2.5).
+          // anchored:true because the footnote ref exists; resolved:false because neither
+          // valid substitution body state could be uniquely located on the target line.
+          const targetLine = effectiveLineNumber ?? 1;
+          const expectedText = searchTexts.join(' or ');
+          const matchCount = searchTexts.reduce((sum, candidate) => {
+            return sum + (lineContent ? lineContent.split(candidate).length - 1 : 0);
+          }, 0);
+          this.pendingDiagnostics.push({
+            kind: 'coordinate_failed',
+            changeId: fn.id,
+            message: `Substitution text "${truncate(expectedText, 40)}" not uniquely found on line ${targetLine} (found ${matchCount} match${matchCount === 1 ? '' : 'es'}).`,
+            evidence: { line: targetLine, expectedText, candidates: matchCount },
+          });
+          // Keep the zero-width sentinel range {0,0} so existing consumers can detect
+          // the unresolved state without confusing it with a valid line-start position.
+          return { range: { start: 0, end: 0 }, originalText: oldText, modifiedText: newText, anchored: true, resolved: false };
         }
         const range: OffsetRange = {
           start: lineOffset + match.index,
-          end: lineOffset + match.index + match.length,
+          end: lineOffset + match.index + matchedText.length,
         };
         return { range, originalText: oldText, modifiedText: newText, resolutionPath: hashMatched ? 'hash' : undefined };
       }

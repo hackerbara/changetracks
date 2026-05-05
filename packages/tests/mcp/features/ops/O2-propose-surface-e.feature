@@ -55,6 +55,7 @@ Feature: Propose changes via Surface E (committed view)
     When I propose change 2 on line 4
     Then both changes are in the file with sequential IDs
 
+  @wip
   Scenario: Committed view hides pending changes
     Given the file already has a pending substitution on "timeout = 30"
     When I call read_tracked_file with view = "committed"

@@ -5,6 +5,7 @@ import { FOOTNOTE_DEF_START, footnoteRefGlobal, isL3Format, splitBodyAndFootnote
 import { findCodeZones, CodeZone, isFenceCloserLine } from '../parser/code-zones.js';
 import { parseForFormat } from '../format-aware-parse.js';
 import { buildContextualL3EditOp } from './footnote-generator.js';
+import { assertResolved } from '../model/document.js';
 
 /**
  * Computes a TextEdit that "settles" a single CriticMarkup change node using
@@ -145,7 +146,7 @@ function computeCurrentTextL3(text: string): string {
 function revertChangesInBody(body: string, changes: ChangeNode[]): string {
   const sorted = [...changes].sort((a, b) => b.range.start - a.range.start);
   for (const change of sorted) {
-    if (change.anchored === false) continue;
+    if (change.resolved === false) continue;
     switch (change.type) {
       case ChangeType.Insertion:
         body = body.slice(0, change.range.start) + body.slice(change.range.end);
@@ -425,49 +426,44 @@ function recoverL2EditOpPayload(
   return { originalText: orig, currentText: cur };
 }
 
-/**
- * Settles only accepted changes: resolves their markup to clean text while
- * preserving footnote references and definitions. Proposed and rejected changes
- * are left untouched. Uses parser range information (no regex replacement) so
- * substitution text that looks like CriticMarkup is handled correctly.
- *
- * For L2: removes inline CriticMarkup delimiters but keeps footnote references
- * [^cn-N] and footnote definition blocks with their 'accepted' status.
- *
- * For L3: no-op. The body is already the Current projection (accepted text
- * present), and edit-op lines must be preserved per ADR-C §2.
- *
- * Synchronous: L2 edit-op generation uses `computeLineHash`, which requires
- * xxhash-wasm. Call `await initHashline()` once before the first L2 settlement
- * (CLI/LSP do this at startup; async callers such as DOCX export await
- * `initHashline` before calling this).
- */
-export function applyAcceptedChanges(text: string): { currentContent: string; appliedIds: string[] } {
-  if (isL3Format(text)) {
-    return { currentContent: text, appliedIds: [] };
+function settlementAnchorLength(
+  change: ChangeNode,
+  projection: 'accepted' | 'rejected',
+  payload: { originalText: string; currentText: string },
+): number {
+  if (projection === 'accepted') {
+    switch (change.type) {
+      case ChangeType.Insertion:
+      case ChangeType.Substitution:
+        return payload.currentText.length;
+      case ChangeType.Deletion:
+        return 0;
+      case ChangeType.Highlight:
+        return payload.originalText.length;
+      default:
+        return 0;
+    }
   }
 
-  const doc = parseForFormat(text, { skipCodeBlocks: false });
-  const accepted = doc.getChanges().filter((c) => c.status === ChangeStatus.Accepted);
-  const appliedIds = accepted.map((c) => c.id);
-
-  if (accepted.length === 0) {
-    return { currentContent: text, appliedIds: [] };
+  switch (change.type) {
+    case ChangeType.Insertion:
+      return 0;
+    case ChangeType.Deletion:
+    case ChangeType.Substitution:
+    case ChangeType.Highlight:
+    case ChangeType.Move:
+      return payload.originalText.length;
+    default:
+      return 0;
   }
+}
 
-  // Get parts (text + ref separated) for each accepted change
-  const parts = [...accepted]
-    .sort((a, b) => a.range.start - b.range.start)
-    .map(computeAcceptParts);
-
-  const zones = findCodeZones(text);
-  const rawCurrentContent = buildSegmentsWithZoneAwareness(text, parts, zones);
-
-  // ─── Edit-op generation ────────────────────────────────────────────────
-  // After settlement the body contains accepted text inline with [^cn-N] refs.
-  // We need to generate LINE:HASH edit-op lines and splice them into each
-  // accepted change's footnote block.
-
+function addL2SettlementEditOps(
+  rawCurrentContent: string,
+  changes: ChangeNode[],
+  sourceText: string,
+  projection: 'accepted' | 'rejected',
+): string {
   const { bodyLines, footnoteLines } = splitBodyAndFootnotes(rawCurrentContent.split('\n'));
 
   // Build ref-stripped body for column computation and hashing
@@ -493,33 +489,17 @@ export function applyAcceptedChanges(text: string): { currentContent: string; ap
 
   // Single regex for scanning preceding refs (reused across iterations)
   const scanRe = footnoteRefGlobal();
-
   const editOpInsertions: Array<{ headerLine: number; editOpLine: string }> = [];
 
-  for (const change of accepted) {
-    const { originalText: effOrig, currentText: effCur } = recoverL2EditOpPayload(change, text);
+  for (const change of changes) {
+    const payload = recoverL2EditOpPayload(change, sourceText);
 
     // Look up ref position from pre-built index
     const refPos = refIndex.get(`[^${change.id}]`);
     if (!refPos) continue;
     const { lineIdx, col: refColInLine } = refPos;
 
-    let anchorLen: number;
-    switch (change.type) {
-      case ChangeType.Insertion:
-      case ChangeType.Substitution:
-        anchorLen = effCur.length;
-        break;
-      case ChangeType.Deletion:
-        anchorLen = 0;
-        break;
-      case ChangeType.Highlight:
-        anchorLen = (change.originalText ?? '').length;
-        break;
-      default:
-        anchorLen = 0;
-        break;
-    }
+    const anchorLen = settlementAnchorLength(change, projection, payload);
 
     // Column on ref-stripped line: subtract bytes of preceding refs on this line
     scanRe.lastIndex = 0;
@@ -536,8 +516,8 @@ export function applyAcceptedChanges(text: string): { currentContent: string; ap
 
     const editOpLine = buildContextualL3EditOp({
       changeType: change.type,
-      originalText: effOrig,
-      currentText: effCur,
+      originalText: payload.originalText,
+      currentText: payload.currentText,
       lineContent: cleanBodyLines[lineIdx],
       lineNumber,
       hash,
@@ -557,8 +537,48 @@ export function applyAcceptedChanges(text: string): { currentContent: string; ap
     footnoteLines.splice(headerLine + 1, 0, editOpLine);
   }
 
-  // Reassemble: body + blank line + footnotes
-  const currentContent = [...bodyLines, '', ...footnoteLines].join('\n');
+  return [...bodyLines, '', ...footnoteLines].join('\n');
+}
+
+/**
+ * Settles only accepted changes: resolves their markup to clean text while
+ * preserving footnote references and definitions. Proposed and rejected changes
+ * are left untouched. Uses parser range information (no regex replacement) so
+ * substitution text that looks like CriticMarkup is handled correctly.
+ *
+ * For L2: removes inline CriticMarkup delimiters but keeps footnote references
+ * [^cn-N] and footnote definition blocks with their 'accepted' status.
+ *
+ * For L3: no-op. The body is already the Current projection (accepted text
+ * present), and edit-op lines must be preserved per ADR-C §2.
+ *
+ * Synchronous: L2 edit-op generation uses `computeLineHash`, which requires
+ * xxhash-wasm. Call `await initHashline()` once before the first L2 settlement
+ * (CLI/LSP do this at startup; async callers such as DOCX export await
+ * `initHashline` before calling this).
+ */
+export function applyAcceptedChanges(text: string): { currentContent: string; appliedIds: string[] } {
+  if (isL3Format(text)) {
+    return { currentContent: text, appliedIds: [] };
+  }
+
+  const doc = parseForFormat(text, { skipCodeBlocks: false });
+  assertResolved(doc);  // T3.2: flag-gated; throws UnresolvedChangesError on unresolved input
+  const accepted = doc.getChanges().filter((c) => c.status === ChangeStatus.Accepted);
+  const appliedIds = accepted.map((c) => c.id);
+
+  if (accepted.length === 0) {
+    return { currentContent: text, appliedIds: [] };
+  }
+
+  // Get parts (text + ref separated) for each accepted change
+  const parts = [...accepted]
+    .sort((a, b) => a.range.start - b.range.start)
+    .map(computeAcceptParts);
+
+  const zones = findCodeZones(text);
+  const rawCurrentContent = buildSegmentsWithZoneAwareness(text, parts, zones);
+  const currentContent = addL2SettlementEditOps(rawCurrentContent, accepted, text, 'accepted');
 
   return { currentContent, appliedIds };
 }
@@ -583,12 +603,20 @@ export function applyRejectedChanges(text: string): { currentContent: string; ap
   // fast-path exits and intermediate-state replay.
   if (isL3Format(text)) {
     const doc = parseForFormat(text);
+    assertResolved(doc);  // T3.2: flag-gated; throws UnresolvedChangesError on unresolved input
     const rejected = doc.getChanges().filter((c) => c.status === ChangeStatus.Rejected);
-    const appliedIds = rejected.map((c) => c.id);
     if (rejected.length === 0) return { currentContent: text, appliedIds: [] };
 
     const { bodyLines, footnoteLines } = splitBodyAndFootnotes(text.split('\n'));
     const body = revertChangesInBody(bodyLines.join('\n'), rejected);
+
+    // T3.3 (L3): only report IDs whose changes revertChangesInBody actually
+    // processed. revertChangesInBody skips changes where resolved===false
+    // (zombies whose position could not be located), so mirror that predicate
+    // here to avoid false-positive "settled" reports for zombie rejections.
+    const appliedIds = rejected
+      .filter((c) => c.resolved !== false)
+      .map((c) => c.id);
 
     const currentContent = footnoteLines.length > 0
       ? body + '\n\n' + footnoteLines.join('\n')
@@ -597,8 +625,8 @@ export function applyRejectedChanges(text: string): { currentContent: string; ap
   }
 
   const doc = parseForFormat(text, { skipCodeBlocks: false });
+  assertResolved(doc);  // T3.2: flag-gated; throws UnresolvedChangesError on unresolved input
   const rejected = doc.getChanges().filter((c) => c.status === ChangeStatus.Rejected);
-  const appliedIds = rejected.map((c) => c.id);
 
   if (rejected.length === 0) {
     return { currentContent: text, appliedIds: [] };
@@ -609,7 +637,19 @@ export function applyRejectedChanges(text: string): { currentContent: string; ap
     .map(computeRejectParts);
 
   const zones = findCodeZones(text);
-  const currentContent = buildSegmentsWithZoneAwareness(text, parts, zones);
+  const rawCurrentContent = buildSegmentsWithZoneAwareness(text, parts, zones);
+  const currentContent = addL2SettlementEditOps(rawCurrentContent, rejected, text, 'rejected');
+
+  // T3.3: only report IDs whose parts actually contributed bytes to the output.
+  // A part with length===0 and text==='' is a no-op (e.g. a zombie whose range
+  // was {0,0}) — those must not appear in appliedIds or MCP callers get false-positive
+  // "settled" reports.
+  const appliedIds: string[] = [];
+  for (const part of parts) {
+    if (!part.refId) continue;
+    if (part.length === 0 && part.text === '') continue;  // no-op zombie
+    appliedIds.push(part.refId);
+  }
 
   return { currentContent, appliedIds };
 }

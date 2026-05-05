@@ -1,9 +1,11 @@
 import * as fs from 'node:fs/promises';
+import { watch } from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import { initHashline } from '@changedown/core';
 import { handleReadTrackedFile } from '@changedown/mcp/internals';
 import { handleProposeChange } from '@changedown/mcp/internals';
+import { handleProposeBatch } from '@changedown/mcp/internals';
 import { handleReviewChanges } from '@changedown/mcp/internals';
 import { handleGetChange } from '@changedown/mcp/internals';
 import { handleAmendChange } from '@changedown/mcp/internals';
@@ -164,6 +166,25 @@ export class ScenarioContext {
     );
   }
 
+  /** Call propose_batch directly (atomic by default, pass partial:true for partial-success) */
+  async proposeBatch(file: string, opts: {
+    changes: Array<{
+      old_text?: string;
+      new_text?: string;
+      reason?: string;
+      insert_after?: string;
+    }>;
+    reason?: string;
+    author?: string;
+    partial?: boolean;
+  }): Promise<ToolResult> {
+    return handleProposeBatch(
+      { file, ...opts },
+      this.resolver,
+      this.state,
+    );
+  }
+
   /** Call review_changes */
   async review(file: string, opts: {
     reviews?: Array<{
@@ -251,6 +272,32 @@ export class ScenarioContext {
         throw new Error(`Found CriticMarkup delimiter "${d}" in document body`);
       }
     }
+  }
+
+  /**
+   * Watch a file and deliver debounced 'document_changed' events to the listener.
+   *
+   * Uses a 100ms debounce so rapid back-to-back fs.watch events from a single
+   * write coalesce into one notification — mirrors the debounce used by the
+   * real subscription infrastructure. Returns an unsubscribe function that
+   * closes the watcher; always call it in test cleanup to avoid open handles.
+   */
+  subscribeToFile(filePath: string, listener: (event: { kind: string }) => void): () => void {
+    let debounceTimer: ReturnType<typeof setTimeout> | undefined;
+    const watcher = watch(filePath, () => {
+      if (debounceTimer !== undefined) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        debounceTimer = undefined;
+        listener({ kind: 'document_changed' });
+      }, 100);
+    });
+    return () => {
+      if (debounceTimer !== undefined) {
+        clearTimeout(debounceTimer);
+        debounceTimer = undefined;
+      }
+      watcher.close();
+    };
   }
 
   /** Extract LINE:HASH from read output.

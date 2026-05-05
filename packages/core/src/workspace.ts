@@ -1,5 +1,5 @@
 import { ChangeNode, TextEdit, OffsetRange } from './model/types.js';
-import { VirtualDocument } from './model/document.js';
+import { VirtualDocument, assertResolved } from './model/document.js';
 import { CriticMarkupParser } from './parser/parser.js';
 import { SidecarParser } from './parser/sidecar-parser.js';
 import { FootnoteNativeParser } from './parser/footnote-native-parser.js';
@@ -127,6 +127,7 @@ export class Workspace {
    * Returns TextEdits in reverse document order to preserve ranges when applied sequentially.
    */
   acceptGroup(doc: VirtualDocument, groupId: string, text?: string): TextEdit[] {
+    assertResolved(doc);  // T3.7: flag-gated; throws UnresolvedChangesError on unresolved input
     const members = doc.getGroupMembers(groupId);
     const edits = [...members]
       .sort((a, b) => b.range.start - a.range.start)
@@ -143,6 +144,7 @@ export class Workspace {
    * Returns TextEdits in reverse document order to preserve ranges when applied sequentially.
    */
   rejectGroup(doc: VirtualDocument, groupId: string, text?: string): TextEdit[] {
+    assertResolved(doc);  // T3.7: flag-gated; throws UnresolvedChangesError on unresolved input
     const members = doc.getGroupMembers(groupId);
     const edits = [...members]
       .sort((a, b) => b.range.start - a.range.start)

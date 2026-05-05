@@ -10,12 +10,13 @@ import { ChangeType } from '@changedown/core';
  * Map from core ChangeType enum values to short string labels used in
  * tool responses (get_change, list_changes).
  */
-export const TYPE_MAP: Record<ChangeType, 'ins' | 'del' | 'sub' | 'highlight' | 'comment'> = {
+export const TYPE_MAP: Record<ChangeType, 'ins' | 'del' | 'sub' | 'highlight' | 'comment' | 'move'> = {
   [ChangeType.Insertion]: 'ins',
   [ChangeType.Deletion]: 'del',
   [ChangeType.Substitution]: 'sub',
   [ChangeType.Highlight]: 'highlight',
   [ChangeType.Comment]: 'comment',
+  [ChangeType.Move]: 'move',
 };
 
 /**

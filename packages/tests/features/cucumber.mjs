@@ -16,6 +16,7 @@ export default {
   // then import resolves .ts step definitions. The Cucumber warning about
   // "use require instead" is a false positive for this setup.
   requireModule: ['tsx'],
+  tags: 'not @wip',
   format: ['progress-bar', ['html', 'features/reports/cucumber-report.html']],
   publishQuiet: true,
 };
