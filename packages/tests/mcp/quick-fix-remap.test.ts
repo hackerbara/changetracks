@@ -220,7 +220,7 @@ describe('quick_fix field in hashline errors', () => {
       expect(data.quick_fix.file).toBeDefined();
     });
 
-    it('committed hash mismatch includes quick_fix', async () => {
+    it('decided hash mismatch includes quick_fix', async () => {
       const filePath = path.join(tmpDir, 'doc.md');
       const content = 'Line one\nLine two\nLine three';
       await fs.writeFile(filePath, content);
@@ -238,7 +238,7 @@ describe('quick_fix field in hashline errors', () => {
           old_text: '',
           new_text: 'replaced',
           start_line: 2,
-          start_hash: 'zz', // Wrong committed hash
+          start_hash: 'zz', // Wrong decided hash
           author: 'ai:test',
           reason: 'test',
         },

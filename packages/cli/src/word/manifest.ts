@@ -8,7 +8,6 @@ export const DEFAULT_HOSTED_MANIFEST_URL = 'https://changedown.com/word/manifest
 const DEV_PANE_URL = '127.0.0.1:3000';
 const HOSTED_TASKPANE_URL = 'https://changedown.com/word/taskpane.html';
 const LOCAL_TASKPANE_URL = 'https://127.0.0.1:3000/taskpane.html';
-const LOOPBACK_APP_DOMAIN = '<AppDomain>https://127.0.0.1:39990</AppDomain>';
 const HTTPS_LOOPBACK_APP_DOMAIN = '<AppDomain>https://127.0.0.1:39990</AppDomain>';
 
 interface ResolveManifestOptions {
@@ -39,7 +38,7 @@ export function validateHostedManifestText(manifest: string): void {
   if (!manifest.includes(HOSTED_TASKPANE_URL)) {
     throw new Error(`Hosted manifest missing ${HOSTED_TASKPANE_URL}`);
   }
-  if (!manifest.includes(LOOPBACK_APP_DOMAIN)) {
+  if (!manifest.includes(HTTPS_LOOPBACK_APP_DOMAIN)) {
     throw new Error('Hosted manifest is missing the loopback MCP AppDomain for https://127.0.0.1:39990');
   }
 }

@@ -106,7 +106,43 @@ async function main() {
     fs.writeFileSync(pkgJsonPath, JSON.stringify(pkgJson, null, 2) + '\n');
     bumpedFiles.push(pkgJsonPath);
     console.log(`  ${pkgJson.name} → ${version}`);
+
+    if (pkg === 'changedown-plugin/mcp-server') {
+      const versionTsPath = path.join(repoRoot, pkg, 'src/version.ts');
+      if (fs.existsSync(versionTsPath)) {
+        const original = fs.readFileSync(versionTsPath, 'utf8');
+        const versionLiteralRe = /version\s*=\s*['"][^'"]+['"]/;
+        if (!versionLiteralRe.test(original)) {
+          // The regex didn't match anything — the file's format has drifted
+          // from the expected `export const version = '...'` shape. That IS a
+          // real error worth halting on (silent miss would leave version.ts
+          // stale forever).
+          console.error(`  ERROR: failed to find version literal in ${versionTsPath}`);
+          process.exit(1);
+        }
+        const updated = original.replace(versionLiteralRe, `version = '${version}'`);
+        // Idempotent: if updated === original it just means the file was
+        // already at the target version (e.g. re-running the same release).
+        // Write unconditionally and stage; no need to error on no-op.
+        fs.writeFileSync(versionTsPath, updated);
+        bumpedFiles.push(versionTsPath);
+        console.log(`  ${pkg}/src/version.ts → ${version}`);
+      }
+    }
   }
+  // Bump the Claude Code plugin manifest too — Claude Code uses its `version`
+  // field as the cache key for `/plugin update`. Without bumping, end-user
+  // installs of the new release won't refresh their plugin cache and they'll
+  // keep running the previous build.
+  const pluginManifestPath = path.join(repoRoot, 'changedown-plugin/.claude-plugin/plugin.json');
+  if (fs.existsSync(pluginManifestPath)) {
+    const manifest = JSON.parse(fs.readFileSync(pluginManifestPath, 'utf8'));
+    manifest.version = version;
+    fs.writeFileSync(pluginManifestPath, JSON.stringify(manifest, null, 2) + '\n');
+    bumpedFiles.push(pluginManifestPath);
+    console.log(`  changedown-plugin (Claude Code plugin manifest) → ${version}`);
+  }
+
   console.log('  Updating package-lock.json...');
   run('npm install --package-lock-only --ignore-scripts');
   bumpedFiles.push(path.join(repoRoot, 'package-lock.json'));
@@ -124,6 +160,15 @@ async function main() {
   console.log('\nStep 2b: Packaging .app bundle...');
   run('node scripts/package-app.mjs --version=' + version);
 
+  // 2c. Lint
+  console.log('\nStep 2c: Linting...');
+  try {
+    run('npm run lint');
+  } catch {
+    console.log('  Lint failed. Fix before releasing.');
+    process.exit(1);
+  }
+
   // 3. Tests
   console.log('\nStep 3: Running tests...');
   try {
@@ -136,7 +181,7 @@ async function main() {
   // 4. npm publish. Use the pack/rewrite script so file: workspace deps are
   // rewritten to semver in tarballs before publishing.
   if (await confirm('\nStep 4: Publish npm packages?')) {
-    run('bash scripts/publish-npm.sh --allow-dirty-package-json --include-mcp');
+    run('bash scripts/publish-npm.sh --allow-dirty-package-json');
   }
 
   // 5. VS Code Marketplace

@@ -748,7 +748,7 @@ describe('handleReadTrackedFile', () => {
   // ─── View name aliases ──────────────────────────────────────────────────
 
   describe('view name aliases', () => {
-    it('view=review produces same output as view=meta', async () => {
+    it('view=meta adds an alias header above canonical working output', async () => {
       const filePath = path.join(tmpDir, 'alias-test.md');
       await fs.writeFile(filePath, 'Hello {++world++}[^cn-1].\n\n[^cn-1]: @ai | 2026-01-01 | ins | proposed');
 
@@ -756,18 +756,21 @@ describe('handleReadTrackedFile', () => {
         { file: filePath, view: 'meta' }, resolver, state);
       const reviewResult = await handleReadTrackedFile(
         { file: filePath, view: 'working' }, resolver, state);
-      expect(reviewResult.content[0].text).toBe(metaResult.content[0].text);
+      const metaText = metaResult.content[0].text;
+      expect(metaText).toContain('## alias-test.md | policy: safety-net | tracking: tracked');
+      expect(metaText.replace(/^## alias-test\.md \| policy: safety-net \| tracking: tracked\n/m, ''))
+        .toBe(reviewResult.content[0].text);
     });
 
-    it('view=changes produces same output as view=committed', async () => {
+    it('view=changes produces same output as view=simple', async () => {
       const filePath = path.join(tmpDir, 'alias-test.md');
       await fs.writeFile(filePath, '<!-- changedown.com/v1: tracked -->\nHello world.\n\n[^cn-1]: @ai | 2026-01-01 | ins | proposed');
 
-      const committedResult = await handleReadTrackedFile(
-        { file: filePath, view: 'committed' }, resolver, state);
+      const simpleResult = await handleReadTrackedFile(
+        { file: filePath, view: 'simple' }, resolver, state);
       const changesResult = await handleReadTrackedFile(
         { file: filePath, view: 'simple' }, resolver, state);
-      expect(changesResult.content[0].text).toBe(committedResult.content[0].text);
+      expect(changesResult.content[0].text).toBe(simpleResult.content[0].text);
     });
 
     it('view=all is alias for review (meta)', async () => {
@@ -779,7 +782,7 @@ describe('handleReadTrackedFile', () => {
       expect(result.isError).toBeUndefined();
     });
 
-    it('view=simple is alias for changes (committed)', async () => {
+    it('view=simple is the canonical changes view', async () => {
       const filePath = path.join(tmpDir, 'alias-test.md');
       await fs.writeFile(filePath, '<!-- changedown.com/v1: tracked -->\nHello world.');
 
@@ -805,13 +808,15 @@ describe('handleReadTrackedFile', () => {
         { file: filePath, view: 'raw' }, resolver, state);
       const contentResult = await handleReadTrackedFile(
         { file: filePath, view: 'content' }, resolver, state);
-      expect(rawResult.content[0].text).toBe(contentResult.content[0].text);
+      expect(rawResult.isError).toBeUndefined();
+      expect(contentResult.isError).toBeUndefined();
+      expect(contentResult.content[0].text).toContain('policy: safety-net');
     });
   });
 
-  // ─── Committed view trailing blank lines ──────────────────────────────
+  // ─── Decided view trailing blank lines ──────────────────────────────
 
-  it('committed view does not have trailing blank lines from footnote stripping', async () => {
+  it('decided view does not have trailing blank lines from footnote stripping', async () => {
     const filePath = path.join(tmpDir, 'doc.md');
     // Create file with footnotes that will be stripped — the blank line before
     // footnotes becomes a trailing blank line after stripping
@@ -826,7 +831,7 @@ describe('handleReadTrackedFile', () => {
     ].join('\n'));
 
     const result = await handleReadTrackedFile(
-      { file: filePath, view: 'committed' },
+      { file: filePath, view: 'decided' },
       resolver,
       state,
     );

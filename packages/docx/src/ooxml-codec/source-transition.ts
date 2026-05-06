@@ -6,6 +6,7 @@ import type { ApplyPackageDeltaInput, CodecDiagnostic, CodecProjection } from ".
 import type {
   OoxmlPackageSnapshot,
   OoxmlPart,
+  OoxmlPatchResult,
   OoxmlRegionProjection,
   OoxmlTableProjection,
   OoxmlToken,
@@ -172,8 +173,16 @@ export async function renderTransitionForCompare(
     const actualBody = normalizeBodyForProjectionComparison(
       expectedProjection.bodyMarkdown
     );
+    const mathDiagnostic = validateMathProjection(
+      newCurrentBody,
+      actualBody,
+      expectedProjection
+    );
+    if (mathDiagnostic) {
+      throw new Error(mathDiagnostic.message);
+    }
     if (
-      actualBody !== newCurrentBody &&
+      !projectionBodiesEquivalent(newCurrentBody, actualBody) &&
       !isInitialBlankBodyEquivalent({
         priorBody,
         expectedBody: newCurrentBody,
@@ -212,7 +221,15 @@ export async function renderTransitionForCompare(
     const actualBody = normalizeBodyForProjectionComparison(
       expectedProjection.bodyMarkdown
     );
-    if (actualBody !== newCurrentBody) {
+    const mathDiagnostic = validateMathProjection(
+      newCurrentBody,
+      actualBody,
+      expectedProjection
+    );
+    if (mathDiagnostic) {
+      throw new Error(mathDiagnostic.message);
+    }
+    if (!projectionBodiesEquivalent(newCurrentBody, actualBody)) {
       throw new Error(
         `Whole-body projection validation failed after source transition render:\nexpected:\n${newCurrentBody}\nactual:\n${actualBody}`
       );
@@ -224,11 +241,25 @@ export async function renderTransitionForCompare(
       diagnostics: [],
     };
   }
-  const region = findRegionForSourceOffset(workingProjection, topology.start);
-  const delta = topologyToOoxmlDelta(workingSnapshot, region, topology);
+  const boundaryInsertion = tryApplyStructuralBlockBoundaryInsertion(
+    workingSnapshot,
+    workingProjection,
+    topology
+  );
+  const region = boundaryInsertion
+    ? undefined
+    : findRegionForSourceOffset(workingProjection, topology.start);
+  const delta = region
+    ? topologyToOoxmlDelta(workingSnapshot, region, topology)
+    : undefined;
+  const witnessHints = boundaryInsertion?.witnessHints ??
+    (region ? sourceTransitionWitnessHints(region, topology) : []);
   let patch;
   try {
-    patch = await codec.applyDelta(delta);
+    patch = boundaryInsertion?.patch ?? (delta ? await codec.applyDelta(delta) : undefined);
+    if (!patch) {
+      throw new Error("Cannot render source transition without a patch");
+    }
   } catch (err) {
     if (
       err instanceof Error &&
@@ -252,9 +283,17 @@ export async function renderTransitionForCompare(
   const actualBody = normalizeBodyForProjectionComparison(
     expectedProjection.bodyMarkdown
   );
+  const mathDiagnostic = validateMathProjection(
+    newCurrentBody,
+    actualBody,
+    expectedProjection
+  );
+  if (mathDiagnostic) {
+    throw new Error(mathDiagnostic.message);
+  }
 
   if (
-    actualBody !== newCurrentBody &&
+    !projectionBodiesEquivalent(newCurrentBody, actualBody) &&
     !isInitialBlankBodyEquivalent({
       priorBody,
       expectedBody: newCurrentBody,
@@ -269,8 +308,88 @@ export async function renderTransitionForCompare(
   return {
     revisedPackage: patch.snapshot,
     expectedProjection,
-    witnessHints: sourceTransitionWitnessHints(region, topology),
+    witnessHints,
     diagnostics: [],
+  };
+}
+
+function tryApplyStructuralBlockBoundaryInsertion(
+  snapshot: OoxmlPackageSnapshot,
+  projection: CodecProjection,
+  topology: SourceTransitionTopology
+): { patch: OoxmlPatchResult; witnessHints: CompareWitnessHint[] } | undefined {
+  if (topology.kind !== "block-insert" || topology.blockKind !== "paragraphs") {
+    return undefined;
+  }
+
+  const blocks = projectionBlocks(projection);
+  for (let index = blocks.length - 1; index >= 0; index -= 1) {
+    const block = blocks[index];
+    if (!block) {
+      continue;
+    }
+    const next = blocks[index + 1];
+    const isAfterThisBlock =
+      topology.start >= block.end &&
+      (next === undefined || topology.start <= next.start);
+    if (!isAfterThisBlock || block.kind !== "table" || !block.table) {
+      continue;
+    }
+
+    const patch = insertMarkdownBlocksAtXmlOffset({
+      snapshot,
+      partName: block.table.partName,
+      xmlOffset: block.table.xmlEnd,
+      markdown: topology.insertedMarkdown,
+    });
+    return {
+      patch,
+      witnessHints: [{ kind: "paragraph", tableIndex: block.table.tableIndex }],
+    };
+  }
+
+  return undefined;
+}
+
+function insertMarkdownBlocksAtXmlOffset(input: {
+  snapshot: OoxmlPackageSnapshot;
+  partName: string;
+  xmlOffset: number;
+  markdown: string;
+}): OoxmlPatchResult {
+  const documentPart = input.snapshot.parts.get(input.partName);
+  if (!documentPart?.text) {
+    throw new Error(`Cannot insert OOXML block without text part: ${input.partName}`);
+  }
+  const insertedXml = markdownBlocksToOoxml(input.markdown);
+  if (insertedXml.length === 0) {
+    throw new Error("Cannot insert an empty OOXML block");
+  }
+  const nextDocumentXml =
+    documentPart.text.slice(0, input.xmlOffset) +
+    insertedXml +
+    documentPart.text.slice(input.xmlOffset);
+  const nextDocumentBytes = new TextEncoder().encode(nextDocumentXml);
+  const nextDocumentPart: OoxmlPart = {
+    ...documentPart,
+    text: nextDocumentXml,
+    bytes: nextDocumentBytes,
+    hash: stableBytesHash(nextDocumentBytes),
+  };
+  const parts = new Map(input.snapshot.parts);
+  const hashes = new Map(input.snapshot.hashes);
+  parts.set(input.partName, nextDocumentPart);
+  hashes.set(input.partName, nextDocumentPart.hash);
+  return {
+    snapshot: {
+      ...input.snapshot,
+      freshnessVersion: `${input.snapshot.freshnessVersion}:block-boundary-insert`,
+      parts,
+      hashes,
+    },
+    changedParts: [input.partName],
+    relationshipChanges: [],
+    validation: createEmptyOoxmlValidationResult(),
   };
 }
 
@@ -311,7 +430,42 @@ function classifyInsertion(
 
 function currentBodyFromWireSource(wireSource: string): string {
   const body = splitBodyAndFootnotes(wireSource.split("\n")).bodyLines.join("\n");
-  return computeCurrentText(body);
+  return normalizeWireCurrentBodyForOoxmlProjection(computeCurrentText(body));
+}
+
+function normalizeWireCurrentBodyForOoxmlProjection(bodyMarkdown: string): string {
+  if (bodyMarkdown === "") {
+    return bodyMarkdown;
+  }
+
+  const hasLeadingBlankAnchor = bodyMarkdown.startsWith("\n");
+  const hasTrailingNewline = bodyMarkdown.endsWith("\n");
+  const body = hasLeadingBlankAnchor ? bodyMarkdown.slice(1) : bodyMarkdown;
+  const lines = body.split("\n");
+  const blocks: string[] = [];
+
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i] ?? "";
+    if (line.trim() === "") {
+      continue;
+    }
+
+    if (isMarkdownTableRowLine(line)) {
+      const tableLines = [line];
+      while (i + 1 < lines.length && isMarkdownTableRowLine(lines[i + 1] ?? "")) {
+        i += 1;
+        tableLines.push(lines[i] ?? "");
+      }
+      blocks.push(tableLines.join("\n"));
+      continue;
+    }
+
+    blocks.push(line);
+  }
+
+  const normalizedBody = blocks.join("\n\n");
+  const trailing = hasTrailingNewline && normalizedBody !== "" ? "\n" : "";
+  return `${hasLeadingBlankAnchor ? "\n" : ""}${normalizedBody}${trailing}`;
 }
 
 function normalizeBodyForProjectionComparison(bodyMarkdown: string): string {
@@ -413,8 +567,141 @@ function markdownBlocks(markdown: string): string[] {
     .replace(/^\n/u, "")
     .trimEnd()
     .split(/\n\s*\n/u)
+    .flatMap(splitLeadingTableFromMarkdownBlock)
     .map((block) => block.trim())
     .filter(Boolean);
+}
+
+function splitLeadingTableFromMarkdownBlock(block: string): string[] {
+  const lines = block.trim().split(/\r?\n/u);
+  if (lines.length < 3 || !isMarkdownTableBlock(lines.slice(0, 2).join("\n"))) {
+    return [block];
+  }
+
+  let tableEnd = 2;
+  while (tableEnd < lines.length && isMarkdownTableRowLine(lines[tableEnd]!)) {
+    tableEnd += 1;
+  }
+  if (tableEnd >= lines.length) {
+    return [block];
+  }
+
+  return [lines.slice(0, tableEnd).join("\n"), lines.slice(tableEnd).join("\n")];
+}
+
+function isMarkdownTableRowLine(line: string): boolean {
+  return /^\s*\|.*\|\s*$/u.test(line);
+}
+
+function validateMathProjection(
+  expectedMarkdown: string,
+  actualMarkdown: string,
+  projection: CodecProjection
+): { message: string } | undefined {
+  const expectedMath = markdownMathSpans(expectedMarkdown);
+  if (expectedMath.length === 0) {
+    return undefined;
+  }
+  const actualMath = markdownMathSpans(actualMarkdown);
+  if (
+    actualMath.length < expectedMath.length ||
+    !expectedMath.every((span, index) =>
+      normalizeLatexForProjectionComparison(span.latex) ===
+      normalizeLatexForProjectionComparison(actualMath[index]?.latex ?? "")
+    )
+  ) {
+    return {
+      message: `Math projection failed: expected LaTeX math in projected body, got ${JSON.stringify(actualMarkdown)}`,
+    };
+  }
+
+  const mathTokens = projection.tokens.filter(
+    (token): token is Extract<OoxmlToken, { kind: "math" }> =>
+      token.kind === "math"
+  );
+  const fallback = expectedMath.find((span, index) =>
+    isRawLatexFallbackMathToken(span.latex, mathTokens[index])
+  );
+  if (fallback) {
+    return {
+      message: `Math projection unsupported: LaTeX ${JSON.stringify(fallback.latex)} rendered as raw math text`,
+    };
+  }
+
+  return undefined;
+}
+
+function projectionBodiesEquivalent(expectedMarkdown: string, actualMarkdown: string): boolean {
+  if (expectedMarkdown === actualMarkdown) {
+    return true;
+  }
+  const normalize = (markdown: string): string =>
+    normalizeSemanticFigureDestinations(
+      normalizeMathInMarkdownForProjectionComparison(markdown)
+    );
+  return normalize(expectedMarkdown) === normalize(actualMarkdown);
+}
+
+function normalizeSemanticFigureDestinations(markdown: string): string {
+  return markdown.replace(
+    /!\[([^\]\r\n]*(?:\\\][^\]\r\n]*)*)\]\((?:<media\/[^>\r\n]+>|data:image\/[^)\r\n]+)\)/gu,
+    (_match, alt: string) => `![${alt}](<media/__generated__>)`
+  );
+}
+
+function normalizeMathInMarkdownForProjectionComparison(markdown: string): string {
+  let index = 0;
+  return markdown.replace(
+    /\$\$([\s\S]+?)\$\$|\$([^$\n]+)\$/gu,
+    (_match, displayLatex: string | undefined, inlineLatex: string | undefined) =>
+      `@@MATH_${index++}:${normalizeLatexForProjectionComparison(displayLatex ?? inlineLatex ?? "")}@@`
+  );
+}
+
+function markdownMathSpans(markdown: string): Array<{ markdown: string; latex: string }> {
+  return [...markdown.matchAll(/\$\$([\s\S]+?)\$\$|\$([^$\n]+)\$/gu)].map(
+    (match) => ({
+      markdown: match[0],
+      latex: match[1] ?? match[2] ?? "",
+    })
+  );
+}
+
+function normalizeLatexForProjectionComparison(latex: string): string {
+  return latex.replace(/\s+/gu, "");
+}
+
+function isRawLatexFallbackMathToken(
+  expectedLatex: string,
+  token: Extract<OoxmlToken, { kind: "math" }> | undefined
+): boolean {
+  if (!token || !hasLatexSyntaxThatShouldNotProjectAsPlainRun(expectedLatex)) {
+    return false;
+  }
+  const textRuns = [...token.ommlXml.matchAll(/<m:t\b[^>]*>([\s\S]*?)<\/m:t>/gu)]
+    .map((match) => decodeXmlText(match[1] ?? ""));
+  return (
+    textRuns.length === 1 &&
+    normalizeLatexForProjectionComparison(textRuns[0] ?? "") ===
+      normalizeLatexForProjectionComparison(expectedLatex)
+  );
+}
+
+function hasLatexSyntaxThatShouldNotProjectAsPlainRun(latex: string): boolean {
+  // A single raw <m:t> can be legitimate for atomic identifiers/numbers like
+  // `$x$` or `$1$`. It is unsafe when the original LaTeX contains syntax that
+  // should have produced structured OMML (or a parse error), because
+  // math-builder's KaTeX failure path emits exactly one plaintext MathRun.
+  return /[\\_^{}]/u.test(latex);
+}
+
+function decodeXmlText(value: string): string {
+  return value
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&amp;/g, "&");
 }
 
 function needsPreserveSpace(text: string): boolean {

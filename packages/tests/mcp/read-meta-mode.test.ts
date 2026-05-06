@@ -495,4 +495,21 @@ describe('read_tracked_file meta mode', () => {
     expect(text).toContain(overText);
   });
 
+
+  it('reports config policy mode, not protocol mode, in legacy meta header', async () => {
+    await fs.writeFile(filePath, 'Hello {++world++}[^cn-1].\n\n[^cn-1]: @ai | 2026-01-01 | ins | proposed');
+    const resolver = await createTestResolver(tmpDir, config);
+
+    const result = await handleReadTrackedFile(
+      { file: filePath, view: 'meta' },
+      resolver,
+      state,
+    );
+
+    expect(result.isError).toBeUndefined();
+    const text = result.content[0].text;
+    expect(text).toContain('policy: safety-net');
+    expect(text).not.toContain('policy: classic');
+  });
+
 });

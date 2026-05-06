@@ -3,7 +3,7 @@ import { EventEmitter } from "node:events";
 import { randomUUID } from "node:crypto";
 
 // src/version.ts
-var version = "0.1.0";
+var version = "0.4.4";
 
 // src/transport/fixed-port-leader.ts
 import * as fs from "node:fs";
@@ -36,6 +36,10 @@ var CAPABILITY_MCP_STREAMABLE = "mcp-streamable";
 var HEALTH_RESPONSE = {
   service: SERVICE_NAME,
   version,
+  // Surface the leader's PID so port-conflict errors in fixed-port-leader can
+  // tell users exactly which process to kill when an incompatible (e.g.
+  // wrong-scheme, stale) leader is squatting the port.
+  pid: process.pid,
   capabilities: [CAPABILITY_BACKEND_REGISTER, CAPABILITY_MCP_STREAMABLE]
 };
 var SSE_GRACE_MS = 5e3;

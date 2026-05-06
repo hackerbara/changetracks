@@ -126,14 +126,14 @@ Then(
 // =============================================================================
 
 Given(
-  'a committed-view raw text:',
+  'a decided-view raw text:',
   function (this: ChangeDownWorld, rawText: string) {
     committedViewRawText.set(this, rawText);
   },
 );
 
 Given(
-  'a committed-view raw text {string}',
+  'a decided-view raw text {string}',
   function (this: ChangeDownWorld, rawText: string) {
     // Handle escape sequences for inline strings
     const unescaped = rawText.replace(/\\n/g, '\n');
@@ -146,19 +146,19 @@ Given(
 // =============================================================================
 
 When(
-  'I compute the committed view',
+  'I compute the decided view',
   function (this: ChangeDownWorld) {
     const rawText = committedViewRawText.get(this);
-    assert.ok(rawText !== undefined, 'No committed-view raw text set');
+    assert.ok(rawText !== undefined, 'No decided-view raw text set');
     committedViewResult.set(this, computeDecidedView(rawText));
   },
 );
 
 When(
-  'I format the committed output for {string} with tracking {string}',
+  'I format the decided output for {string} with tracking {string}',
   function (this: ChangeDownWorld, filePath: string, trackingStatus: string) {
     const view = committedViewResult.get(this);
-    assert.ok(view, 'No committed view result to format');
+    assert.ok(view, 'No decided view result to format');
     formattedCommittedOutput.set(
       this,
       formatDecidedOutput(view, { filePath, trackingStatus }),
@@ -171,19 +171,19 @@ When(
 // =============================================================================
 
 Then(
-  'the committed view has {int} lines',
+  'the decided view has {int} lines',
   function (this: ChangeDownWorld, expected: number) {
     const view = committedViewResult.get(this);
-    assert.ok(view, 'No committed view result');
+    assert.ok(view, 'No decided view result');
     assert.strictEqual(view.lines.length, expected);
   },
 );
 
 Then(
-  'committed view line numbers are sequential with no gaps',
+  'decided view line numbers are sequential with no gaps',
   function (this: ChangeDownWorld) {
     const view = committedViewResult.get(this);
-    assert.ok(view, 'No committed view result');
+    assert.ok(view, 'No decided view result');
     const lineNums = view.lines.map(l => l.decidedLineNum);
     for (let i = 1; i < lineNums.length; i++) {
       assert.strictEqual(
@@ -199,7 +199,7 @@ Then(
   'committed-to-raw mapping {int} is raw {int}',
   function (this: ChangeDownWorld, committedNum: number, rawNum: number) {
     const view = committedViewResult.get(this);
-    assert.ok(view, 'No committed view result');
+    assert.ok(view, 'No decided view result');
     assert.strictEqual(view.decidedToRaw.get(committedNum), rawNum);
   },
 );
@@ -208,16 +208,16 @@ Then(
   'raw-to-committed mapping {int} is committed {int}',
   function (this: ChangeDownWorld, rawNum: number, committedNum: number) {
     const view = committedViewResult.get(this);
-    assert.ok(view, 'No committed view result');
+    assert.ok(view, 'No decided view result');
     assert.strictEqual(view.rawToDecided.get(rawNum), committedNum);
   },
 );
 
 Then(
-  'all committed hashes are 2-char lowercase hex',
+  'all decided hashes are 2-char lowercase hex',
   function (this: ChangeDownWorld) {
     const view = committedViewResult.get(this);
-    assert.ok(view, 'No committed view result');
+    assert.ok(view, 'No decided view result');
     for (const line of view.lines) {
       assert.match(line.hash, /^[0-9a-f]{2}$/);
     }
@@ -228,7 +228,7 @@ Then(
   'the committed summary has {int} proposed',
   function (this: ChangeDownWorld, expected: number) {
     const view = committedViewResult.get(this);
-    assert.ok(view, 'No committed view result');
+    assert.ok(view, 'No decided view result');
     assert.strictEqual(view.summary.proposed, expected);
   },
 );
@@ -237,7 +237,7 @@ Then(
   'the committed summary has {int} accepted',
   function (this: ChangeDownWorld, expected: number) {
     const view = committedViewResult.get(this);
-    assert.ok(view, 'No committed view result');
+    assert.ok(view, 'No decided view result');
     assert.strictEqual(view.summary.accepted, expected);
   },
 );
@@ -246,7 +246,7 @@ Then(
   'the committed summary has {int} rejected',
   function (this: ChangeDownWorld, expected: number) {
     const view = committedViewResult.get(this);
-    assert.ok(view, 'No committed view result');
+    assert.ok(view, 'No decided view result');
     assert.strictEqual(view.summary.rejected, expected);
   },
 );
@@ -255,16 +255,16 @@ Then(
   'the committed summary has {int} clean lines',
   function (this: ChangeDownWorld, expected: number) {
     const view = committedViewResult.get(this);
-    assert.ok(view, 'No committed view result');
+    assert.ok(view, 'No decided view result');
     assert.strictEqual(view.summary.clean, expected);
   },
 );
 
 Then(
-  'no committed view line starts with a footnote ref',
+  'no decided view line starts with a footnote ref',
   function (this: ChangeDownWorld) {
     const view = committedViewResult.get(this);
-    assert.ok(view, 'No committed view result');
+    assert.ok(view, 'No decided view result');
     for (const line of view.lines) {
       assert.ok(
         !line.text.match(/^\[\^cn-/),
@@ -275,10 +275,10 @@ Then(
 );
 
 Then(
-  'no committed view line contains {string}',
+  'no decided view line contains {string}',
   function (this: ChangeDownWorld, unexpected: string) {
     const view = committedViewResult.get(this);
-    assert.ok(view, 'No committed view result');
+    assert.ok(view, 'No decided view result');
     for (const line of view.lines) {
       assert.ok(
         !line.text.includes(unexpected),
@@ -289,11 +289,11 @@ Then(
 );
 
 Then(
-  'the committed view line count equals the raw line count',
+  'the decided view line count equals the raw line count',
   function (this: ChangeDownWorld) {
     const view = committedViewResult.get(this);
     const rawText = committedViewRawText.get(this);
-    assert.ok(view, 'No committed view result');
+    assert.ok(view, 'No decided view result');
     assert.ok(rawText !== undefined, 'No raw text');
     const rawLineCount = rawText.split('\n').length;
     assert.strictEqual(view.lines.length, rawLineCount);
@@ -301,10 +301,10 @@ Then(
 );
 
 Then(
-  'all committed view lines have empty flag',
+  'all decided view lines have empty flag',
   function (this: ChangeDownWorld) {
     const view = committedViewResult.get(this);
-    assert.ok(view, 'No committed view result');
+    assert.ok(view, 'No decided view result');
     for (const line of view.lines) {
       assert.strictEqual(line.flag, '', `Line ${line.decidedLineNum} has non-empty flag "${line.flag}"`);
     }
@@ -312,10 +312,10 @@ Then(
 );
 
 Then(
-  'all committed view lines have empty changeIds',
+  'all decided view lines have empty changeIds',
   function (this: ChangeDownWorld) {
     const view = committedViewResult.get(this);
-    assert.ok(view, 'No committed view result');
+    assert.ok(view, 'No decided view result');
     for (const line of view.lines) {
       assert.deepStrictEqual(
         line.changeIds,
@@ -327,10 +327,10 @@ Then(
 );
 
 Then(
-  'each committed hash matches computeLineHash for its text and index',
+  'each decided hash matches computeLineHash for its text and index',
   function (this: ChangeDownWorld) {
     const view = committedViewResult.get(this);
-    assert.ok(view, 'No committed view result');
+    assert.ok(view, 'No decided view result');
     // Mirror the two-pass approach: collect all committed texts, then hash with allLines
     const allCommittedTexts = view.lines.map(l => l.text);
     for (const line of view.lines) {
@@ -345,20 +345,20 @@ Then(
 );
 
 Then(
-  'committed view line {int} has flag {string}',
+  'decided view line {int} has flag {string}',
   function (this: ChangeDownWorld, lineNum: number, expected: string) {
     const view = committedViewResult.get(this);
-    assert.ok(view, 'No committed view result');
+    assert.ok(view, 'No decided view result');
     assert.ok(lineNum >= 1 && lineNum <= view.lines.length, `Line ${lineNum} out of range`);
     assert.strictEqual(view.lines[lineNum - 1].flag, expected);
   },
 );
 
 Then(
-  'committed view line {int} changeIds include {string}',
+  'decided view line {int} changeIds include {string}',
   function (this: ChangeDownWorld, lineNum: number, expected: string) {
     const view = committedViewResult.get(this);
-    assert.ok(view, 'No committed view result');
+    assert.ok(view, 'No decided view result');
     assert.ok(lineNum >= 1 && lineNum <= view.lines.length, `Line ${lineNum} out of range`);
     assert.ok(
       view.lines[lineNum - 1].changeIds.includes(expected),
@@ -368,10 +368,10 @@ Then(
 );
 
 Then(
-  'committed view line {int} has text {string}',
+  'decided view line {int} has text {string}',
   function (this: ChangeDownWorld, lineNum: number, expected: string) {
     const view = committedViewResult.get(this);
-    assert.ok(view, 'No committed view result');
+    assert.ok(view, 'No decided view result');
     assert.ok(lineNum >= 1 && lineNum <= view.lines.length, `Line ${lineNum} out of range`);
     assert.strictEqual(view.lines[lineNum - 1].text, expected);
   },
@@ -382,10 +382,10 @@ Then(
 // =============================================================================
 
 Then(
-  'the formatted committed output line {int} is {string}',
+  'the formatted decided output line {int} is {string}',
   function (this: ChangeDownWorld, lineNum: number, expected: string) {
     const output = formattedCommittedOutput.get(this);
-    assert.ok(output, 'No formatted committed output');
+    assert.ok(output, 'No formatted decided output');
     const lines = output.split('\n');
     assert.ok(lineNum >= 1 && lineNum <= lines.length, `Line ${lineNum} out of range`);
     assert.strictEqual(lines[lineNum - 1], expected);
@@ -393,10 +393,10 @@ Then(
 );
 
 Then(
-  'the formatted committed output line {int} starts with {string}',
+  'the formatted decided output line {int} starts with {string}',
   function (this: ChangeDownWorld, lineNum: number, prefix: string) {
     const output = formattedCommittedOutput.get(this);
-    assert.ok(output, 'No formatted committed output');
+    assert.ok(output, 'No formatted decided output');
     const lines = output.split('\n');
     assert.ok(lineNum >= 1 && lineNum <= lines.length, `Line ${lineNum} out of range`);
     assert.ok(
@@ -407,10 +407,10 @@ Then(
 );
 
 Then(
-  'the formatted committed output has {int} hashline content lines',
+  'the formatted decided output has {int} hashline content lines',
   function (this: ChangeDownWorld, expected: number) {
     const output = formattedCommittedOutput.get(this);
-    assert.ok(output, 'No formatted committed output');
+    assert.ok(output, 'No formatted decided output');
     const lines = output.split('\n');
     const contentLines = lines.filter(l => l.match(/^\s*\d+:[0-9a-f]{2}/));
     assert.strictEqual(contentLines.length, expected);
@@ -418,10 +418,10 @@ Then(
 );
 
 Then(
-  'the formatted committed output contains {string}',
+  'the formatted decided output contains {string}',
   function (this: ChangeDownWorld, expected: string) {
     const output = formattedCommittedOutput.get(this);
-    assert.ok(output, 'No formatted committed output');
+    assert.ok(output, 'No formatted decided output');
     assert.ok(
       output.includes(expected),
       `Expected formatted output to contain "${expected}" but got:\n${output}`,
@@ -430,10 +430,10 @@ Then(
 );
 
 Then(
-  'the formatted committed output has a line containing {string} with flag {string}',
+  'the formatted decided output has a line containing {string} with flag {string}',
   function (this: ChangeDownWorld, text: string, flag: string) {
     const output = formattedCommittedOutput.get(this);
-    assert.ok(output, 'No formatted committed output');
+    assert.ok(output, 'No formatted decided output');
     const lines = output.split('\n');
     const matchingLine = lines.find(l => l.includes(text));
     assert.ok(matchingLine, `No formatted line contains "${text}"`);

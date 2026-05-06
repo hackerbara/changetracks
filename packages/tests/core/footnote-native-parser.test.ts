@@ -1288,6 +1288,31 @@ describe('L3 parser emits coordinate_failed diagnostic for missing parsedOp (Tas
 
   const parser = new FootnoteNativeParser();
 
+  it('does not emit coordinate_failed for rejected superseded archival records', () => {
+    const input = [
+      'Use plain text.',
+      '',
+      '[^cn-1]: @ai | 2026-05-05 | sub | rejected',
+      '    superseded-by: cn-2',
+    ].join('\n');
+
+    const doc = parser.parse(input);
+    const diagnostics = doc.getDiagnostics();
+    expect(diagnostics.filter((d) => d.kind === 'coordinate_failed' && d.changeId === 'cn-1')).toHaveLength(0);
+  });
+
+  it('still emits coordinate_failed for rejected records that are not archival', () => {
+    const input = [
+      'Use plain text.',
+      '',
+      '[^cn-1]: @ai | 2026-05-05 | sub | rejected',
+    ].join('\n');
+
+    const doc = parser.parse(input);
+    const diagnostics = doc.getDiagnostics();
+    expect(diagnostics.some((d) => d.kind === 'coordinate_failed')).toBe(true);
+  });
+
   it('emits coordinate_failed diagnostic when footnote has no edit-op line', () => {
     // Settled/compacted footnote: the edit-op line has been removed after acceptance.
     // Only the header and approval metadata remain — no `    N:HASH op` line.

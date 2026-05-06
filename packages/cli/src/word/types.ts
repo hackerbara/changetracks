@@ -20,7 +20,16 @@ export interface WordCommandOptions {
 
 export interface WordSessionState {
   manifestPath: string;
+  /** Reserved; not currently written. */
   mcpPid?: number;
-  mcpOwned: boolean;
+  /** Reserved; not currently written. */
+  mcpOwned?: boolean;
   startedAt: string;
+  /** PID of the foreground `word start` process. `word stop` SIGTERMs this to
+   * fire the cleanup handler that closes the pane server and un-sideloads. */
+  startPid?: number;
+  /** Port of the local HTTPS pane server, when started. */
+  panePort?: number;
+  /** Pane mode this session was started with. */
+  paneMode?: 'local' | 'hosted';
 }

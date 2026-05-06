@@ -694,9 +694,9 @@ describe('auto-relocation in compact single', () => {
   });
 });
 
-// ── Spec test case 2: committed-view batch ────────────────────────────────────
+// ── Spec test case 2: decided-view batch ────────────────────────────────────
 
-describe('committed-view batch (spec test case 2)', () => {
+describe('decided-view batch (spec test case 2)', () => {
   let tmpDir: string;
   let resolver: ConfigResolver;
   let state: SessionState;
@@ -711,7 +711,7 @@ describe('committed-view batch (spec test case 2)', () => {
     await fs.rm(tmpDir, { recursive: true, force: true });
   });
 
-  it('batch with committed-view read succeeds after prior proposals', async () => {
+  it('batch with decided-view read succeeds after prior proposals', async () => {
     // Step 1: Create a tracked file with some pending markup
     const filePath = path.join(tmpDir, 'test.md');
     await fs.writeFile(
@@ -729,14 +729,14 @@ describe('committed-view batch (spec test case 2)', () => {
     );
     expect(firstResult.isError).toBeFalsy();
 
-    // Step 3: Read with committed view (seeds session state with committed hashes)
+    // Step 3: Read with decided view (seeds session state with decided hashes)
     const readResult = await handleReadTrackedFile(
-      { file: filePath, view: 'committed' },
+      { file: filePath, view: 'decided' },
       resolver, state,
     );
     expect(readResult.isError).toBeFalsy();
 
-    // Step 4: Extract committed-view coordinates from the read result
+    // Step 4: Extract decided-view coordinates from the read result
     const readText = readResult.content[0].text;
     const readLines = readText.split('\n');
 
@@ -755,7 +755,7 @@ describe('committed-view batch (spec test case 2)', () => {
     const committedLineC = parseInt(matchC![1], 10);
     const committedHashC = matchC![2];
 
-    // Step 5: Submit batch using committed-view coordinates
+    // Step 5: Submit batch using decided-view coordinates
     const batchResult = await handleProposeChange(
       {
         file: filePath,
@@ -1231,7 +1231,7 @@ describe('Stage 3.5a — findUniqueMatch fallback', () => {
     const op = makeOp('1:ff', { type: 'ins', oldText: '', newText: 'inserted' });
 
     const state = new SessionState();
-    // Should throw (no oldText for 3.5a, 3.5b also fails — hash 'ff' not in committed view)
+    // Should throw (no oldText for 3.5a, 3.5b also fails — hash 'ff' not in decided view)
     expect(() =>
       resolveCoordinates(op, fileContent, fileLines, state, FILE_PATH, config)
     ).toThrow();
@@ -1241,10 +1241,10 @@ describe('Stage 3.5a — findUniqueMatch fallback', () => {
 // ── Stage 3.5b: committed/final view hash resolution ─────────────────────────
 
 describe('Stage 3.5b — committed/final view hash resolution', () => {
-  it('resolves stale insertion coordinate via committed view', () => {
+  it('resolves stale insertion coordinate via decided view', () => {
     // File with a pending substitution proposal at line 3.
     // The {~~old~>new~~} CriticMarkup is on ONE raw line.
-    // Committed view strips it, restoring 'Original line three'.
+    // Decided view strips it, restoring 'Original line three'.
     const fileLines = [
       'Line one',
       'Line two',
@@ -1257,10 +1257,10 @@ describe('Stage 3.5b — committed/final view hash resolution', () => {
     const state = new SessionState();
     state.recordAfterRead(FILE_PATH, 'raw', [], 'original-content');
 
-    // Committed view strips the pending proposal:
+    // Decided view strips the pending proposal:
     // committed lines = ['Line one', 'Line two', 'Original line three', 'Line four', 'Line five']
     // Agent wants to target 'Line four' which is at committed line 4, raw line 4.
-    // Compute hash of 'Line four' in the committed view context.
+    // Compute hash of 'Line four' in the decided view context.
     const committedLines = ['Line one', 'Line two', 'Original line three', 'Line four', 'Line five'];
     const committedHash = computeLineHash(3, 'Line four', committedLines);
 
@@ -1381,7 +1381,7 @@ describe('Chained proposal recovery — integration', () => {
     expect(secondResult.isError).toBeFalsy();
   });
 
-  it('insertion after prior proposal succeeds via committed view', async () => {
+  it('insertion after prior proposal succeeds via decided view', async () => {
     const header = '<!-- changedown.com/v1: tracked -->';
     const contentLines = Array.from({ length: 10 }, (_, i) => `Distinct content line ${i + 1}`);
     const allLines = [header, ...contentLines];

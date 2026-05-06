@@ -1,14 +1,24 @@
 {
   "name": "@changedown/lsp-server",
-  "version": "0.4.0",
+  "version": "0.4.4",
   "description": "Language Server Protocol server for CriticMarkup editing",
   "license": "MIT",
   "repository": {
     "type": "git",
     "url": "https://github.com/hackerbara/changedown.git"
   },
-  "keywords": ["lsp", "language-server", "criticmarkup", "change-tracking", "markdown"],
-  "files": ["dist/", "README.md", "LICENSE"],
+  "keywords": [
+    "lsp",
+    "language-server",
+    "criticmarkup",
+    "change-tracking",
+    "markdown"
+  ],
+  "files": [
+    "dist/",
+    "README.md",
+    "LICENSE"
+  ],
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "exports": {

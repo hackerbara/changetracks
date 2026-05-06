@@ -1,14 +1,26 @@
 {
   "name": "@changedown/core",
-  "version": "0.4.0",
+  "version": "0.4.4",
   "description": "CriticMarkup parser and operations engine",
   "license": "MIT",
   "repository": {
     "type": "git",
     "url": "https://github.com/hackerbara/changedown.git"
   },
-  "keywords": ["criticmarkup", "parser", "change-tracking", "markdown"],
-  "files": ["dist/", "!dist/test/", "!dist/src/", "dist-esm/", "README.md", "LICENSE"],
+  "keywords": [
+    "criticmarkup",
+    "parser",
+    "change-tracking",
+    "markdown"
+  ],
+  "files": [
+    "dist/",
+    "!dist/test/",
+    "!dist/src/",
+    "dist-esm/",
+    "README.md",
+    "LICENSE"
+  ],
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {

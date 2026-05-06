@@ -2,7 +2,7 @@
  * Step definitions for O3 (Review Surface B) and O4 (Review Surface E) feature files.
  *
  * Covers: approve, reject, request_changes, batch review, thread responses,
- * mixed reviews+responses, error cases, and committed view review workflows.
+ * mixed reviews+responses, error cases, and decided view review workflows.
  */
 import { Given, When, Then } from '@cucumber/cucumber';
 import assert from 'node:assert/strict';
@@ -310,11 +310,11 @@ Then(
 );
 
 // =============================================================================
-// O4: Review Surface E — committed view steps
+// O4: Review Surface E — decided view steps
 // =============================================================================
 
 Given(
-  'a tracked file with pending changes visible in committed view as [P] markers',
+  'a tracked file with pending changes visible in decided view as [P] markers',
   async function (this: ChangeDownWorld) {
     if (!this.ctx) await this.setupContext();
     const filePath = await this.ctx.createFile('doc.md', 'The API uses REST.\nAdd caching layer.');
@@ -333,14 +333,14 @@ Then(
   function (this: ChangeDownWorld) {
     assert.ok(this.lastResult, 'No MCP result available');
     const text = this.ctx.resultText(this.lastResult);
-    assert.match(text, /P\|/, 'Expected [P] flag in committed view');
+    assert.match(text, /P\|/, 'Expected [P] flag in decided view');
   },
 );
 
 Then(
   'accepted changes appear with [A] line annotations',
   function (this: ChangeDownWorld) {
-    // This step is a documentation step for the committed view format.
+    // This step is a documentation step for the decided view format.
     // In the current test setup, there are no accepted changes.
     // Skip assertion -- this is covered by O5.
   },
@@ -351,7 +351,7 @@ Then(
   function (this: ChangeDownWorld) {
     assert.ok(this.lastResult, 'No MCP result available');
     const text = this.ctx.resultText(this.lastResult);
-    assert.ok(text.includes('REST'), 'Expected original text "REST" in committed view');
+    assert.ok(text.includes('REST'), 'Expected original text "REST" in decided view');
   },
 );
 
@@ -387,13 +387,13 @@ Then(
 );
 
 Then(
-  'a subsequent committed view read shows cn-1 text as accepted \\(no [P] marker)',
+  'a subsequent decided view read shows cn-1 text as accepted \\(no [P] marker)',
   async function (this: ChangeDownWorld) {
     const filePath = this.files.values().next().value;
     assert.ok(filePath, 'No file in this scenario');
-    const result = await this.ctx.read(filePath, { view: 'committed' });
+    const result = await this.ctx.read(filePath, { view: 'decided' });
     const text = this.ctx.resultText(result);
-    // After approval without auto-settlement, the committed view shows the change
+    // After approval without auto-settlement, the decided view shows the change
     // with A flag instead of P flag
     assert.ok(!text.match(/P\|.*REST/), 'Expected no [P] marker for cn-1');
   },
@@ -465,8 +465,8 @@ Then(
   async function (this: ChangeDownWorld) {
     const filePath = this.files.values().next().value;
     assert.ok(filePath, 'No file in this scenario');
-    const result = await this.ctx.read(filePath, { view: 'committed' });
+    const result = await this.ctx.read(filePath, { view: 'decided' });
     const text = this.ctx.resultText(result);
-    assert.ok(!text.includes('{~~'), 'Expected no CriticMarkup in committed view');
+    assert.ok(!text.includes('{~~'), 'Expected no CriticMarkup in decided view');
   },
 );

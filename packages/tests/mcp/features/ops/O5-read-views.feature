@@ -32,8 +32,8 @@ Feature: Read tracked file views
     And no CriticMarkup delimiters appear in the content lines
     And footnote definitions are stripped
 
-  Scenario: Committed view shows accepted-applied, pending-reverted with flags
-    When I call read_tracked_file with view = "committed"
+  Scenario: Decided view shows accepted-applied, pending-reverted with flags
+    When I call read_tracked_file with view = "decided"
     Then accepted changes show their new text ("ALPHA")
     And pending changes show original text ("gamma", not "GAMMA")
     And A flag marks lines with accepted changes

@@ -308,13 +308,13 @@ When(
 );
 
 Then(
-  'the committed view shows the new text without markers',
+  'the decided view shows the new text without markers',
   async function (this: ChangeDownWorld) {
     const filePath = this.files.values().next().value;
     assert.ok(filePath, 'No file in this scenario');
-    const result = await this.ctx.read(filePath, { view: 'committed' });
+    const result = await this.ctx.read(filePath, { view: 'decided' });
     const text = this.ctx.resultText(result);
-    assert.ok(text.includes('Redis caching'), 'Expected new text in committed view');
+    assert.ok(text.includes('Redis caching'), 'Expected new text in decided view');
     assert.ok(!text.match(/P\|.*no caching/), 'Expected no P marker for old text');
   },
 );
@@ -932,7 +932,8 @@ When(
     const filePath = this.files.values().next().value;
     assert.ok(filePath, 'No file in this scenario');
     try {
-      this.lastResult = await this.ctx.amend(filePath, 'cn-1', {
+      this.lastResult = await this.ctx.supersede(filePath, 'cn-1', {
+        old_text: 'PostgreSQL',
         new_text: 'PostgreSQL with sharding',
         reason: 'I want to amend',
         author,
@@ -1170,12 +1171,12 @@ Then(
 // =============================================================================
 
 When(
-  'I read the committed view and record hashes',
+  'I read the decided view and record hashes',
   async function (this: ChangeDownWorld) {
     if (!this.ctx) await this.setupContext();
     const filePath = this.files.values().next().value;
     assert.ok(filePath, 'No file in this scenario');
-    this.lastResult = await this.ctx.read(filePath, { view: 'committed' });
+    this.lastResult = await this.ctx.read(filePath, { view: 'decided' });
     assert.notEqual(this.lastResult.isError, true);
   },
 );
@@ -1220,11 +1221,11 @@ Then(
 );
 
 When(
-  'I re-read the committed view to get fresh hashes',
+  'I re-read the decided view to get fresh hashes',
   async function (this: ChangeDownWorld) {
     const filePath = this.files.values().next().value;
     assert.ok(filePath, 'No file in this scenario');
-    this.lastResult = await this.ctx.read(filePath, { view: 'committed' });
+    this.lastResult = await this.ctx.read(filePath, { view: 'decided' });
     assert.notEqual(this.lastResult.isError, true);
   },
 );
@@ -2025,8 +2026,9 @@ Then(
     const filePath = this.files.values().next().value;
     assert.ok(filePath, 'No file in this scenario');
     const disk = await this.ctx.readDisk(filePath);
-    // cn-1 was an insertion -- after settlement, inline markup removed
-    assert.ok(!disk.includes('{++Added line'), 'Expected cn-1 inline markup to be removed');
+    const body = disk.split(/^\[\^[^\]]+\]:/m)[0] ?? disk;
+    // cn-1 was an insertion -- after settlement, inline markup removed from the body
+    assert.ok(!body.includes('{++Added line'), 'Expected cn-1 inline markup to be removed');
   },
 );
 

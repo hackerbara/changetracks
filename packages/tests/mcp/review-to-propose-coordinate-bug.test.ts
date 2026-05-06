@@ -29,7 +29,7 @@
  * FIX LOCATION:
  *   When compactViewResolved === 'working', re-record with RAW line numbers
  *   (i + 1) instead of decided line numbers (cl.decidedLineNum).
- *   The working case should NOT share the committed-view re-recording path.
+ *   The working case should NOT share the decided-view re-recording path.
  *   It should use the same pattern as the raw/default else-branch at
  *   propose-change.ts:1107-1113.
  *
@@ -278,7 +278,7 @@ describe('BUG: working view re-recording uses committed line numbers (compact mo
   });
 
   it('second highlight fails after first edit re-records with committed line numbers', async () => {
-    // Setup: file with a pending insertion (line 2) that gets collapsed in committed view.
+    // Setup: file with a pending insertion (line 2) that gets collapsed in decided view.
     // Working view shows raw lines: 1=Title, 2={++pending++}, 3=FirstSection, 4=SecondSection
     // After first edit at line 3, re-recording uses computeDecidedView which collapses line 2:
     //   Committed: 1=Title, 2=FirstSection(edited), 3=SecondSection

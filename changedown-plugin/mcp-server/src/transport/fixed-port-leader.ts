@@ -11,10 +11,10 @@ const DEV_CERT_REPAIR_COMMAND = 'npx office-addin-dev-certs install';
 export const SERVICE_NAME = 'changedown-mcp';
 
 /**
- * Load the local office-addin-dev-certs cert + key for explicit HTTPS fallback
- * mode. The normal hosted-pane npx path uses loopback HTTP so users do not need
- * local developer certificates. HTTPS remains available for dev/diagnostic
- * runs and environments whose WebView blocks public-origin → HTTP loopback.
+ * Load the local office-addin-dev-certs cert + key for Word pane HTTPS mode.
+ * Current Word WebViews block HTTPS task panes from calling HTTP loopback as
+ * mixed content, so the npx/plugin path requires HTTPS loopback by default.
+ * HTTP remains available only for explicit diagnostic runs.
  */
 function loadDevCertOptions(): { cert: Buffer; key: Buffer } | undefined {
   const dir = DEV_CERT_DIR;
@@ -37,10 +37,20 @@ function loadDevCertOptions(): { cert: Buffer; key: Buffer } | undefined {
 }
 
 export class PortConflictError extends Error {
-  constructor(public readonly port: number, public readonly service: string) {
+  constructor(
+    public readonly port: number,
+    public readonly service: string,
+    public readonly conflictPid?: number,
+    public readonly conflictScheme?: 'http' | 'https',
+    public readonly expectedScheme?: 'http' | 'https',
+  ) {
+    const pidPart = conflictPid != null ? ` (PID ${conflictPid})` : '';
+    const schemePart = conflictScheme && expectedScheme && conflictScheme !== expectedScheme
+      ? ` running on ${conflictScheme} but this process expects ${expectedScheme}`
+      : '';
+    const killHint = conflictPid != null ? ` Kill it: kill ${conflictPid}.` : ' Free the port or configure a different one.';
     super(
-      `PortConflictError: port ${port} is held by a different service ("${service}"). ` +
-      `Free the port or configure a different one.`
+      `PortConflictError: port ${port} is held by ${service}${pidPart}${schemePart}.${killHint}`
     );
     this.name = 'PortConflictError';
   }
@@ -60,8 +70,8 @@ export class HttpsRequiredError extends Error {
 export interface BindOrForwardOptions {
   /**
    * Require the fixed-port host/client URL to be HTTPS. This is an explicit
-   * fallback/dev mode; the hosted-pane npx path defaults to loopback HTTP to
-   * avoid local certificate installation. Defaults to CHANGEDOWN_MCP_REQUIRE_HTTPS.
+   * Word pane mode in the released plugin configs. Defaults to
+   * CHANGEDOWN_MCP_REQUIRE_HTTPS.
    */
   requireHttps?: boolean;
   /**
@@ -75,6 +85,31 @@ export interface HealthResponse {
   service: string;
   version: string;
   capabilities: string[];
+  /**
+   * PID of the leader process. Optional — older leaders (pre-0.4.x) did not
+   * expose this. When present, port-conflict errors include it so users can
+   * `kill` the offending process by name.
+   */
+  pid?: number;
+}
+
+/**
+ * Probe both schemes after EADDRINUSE. Returns the first successful response
+ * paired with its scheme so the caller can detect leader/wrong-scheme cases.
+ * Returns undefined when neither scheme responds.
+ */
+async function probeHealthBothSchemes(
+  port: number,
+  preferHttps: boolean,
+): Promise<{ health: HealthResponse; scheme: 'http' | 'https' } | undefined> {
+  const order: Array<'http' | 'https'> = preferHttps ? ['https', 'http'] : ['http', 'https'];
+  for (const scheme of order) {
+    try {
+      const health = await probeHealth(port, scheme === 'https');
+      return { health, scheme };
+    } catch { /* try next */ }
+  }
+  return undefined;
 }
 
 export type HostResult = {
@@ -91,10 +126,7 @@ export type ClientResult = {
 
 export type LeaderResult = HostResult | ClientResult;
 
-/**
- * HTTP is the default for the hosted-pane npx path. HTTPS remains available via
- * CHANGEDOWN_MCP_REQUIRE_HTTPS=1 or CHANGEDOWN_MCP_USE_HTTPS=1.
- */
+/** Default transport for bare MCP runs. Plugin configs set HTTPS explicitly. */
 const devCerts = loadDevCertOptions();
 
 function envRequiresHttps(): boolean {
@@ -136,6 +168,12 @@ async function probeHealth(port: number, probeWithHttps = false): Promise<Health
         timeout: 2000,
         // Self-signed dev cert — we trust the loopback address, not the chain.
         rejectUnauthorized: false,
+        // Don't reuse Node's default agent connection pool. Without this, when
+        // a same-port leader is killed and replaced (cross-version handover,
+        // test-suite rebinds), Node 24's pool can hand back a stale socket
+        // → ECONNRESET on the next probe. Each /health probe gets its own
+        // socket; probes are infrequent so the cost is negligible.
+        agent: false,
       },
       (res) => {
         let raw = '';
@@ -223,21 +261,31 @@ export async function bindOrForward(port: number, options: BindOrForwardOptions 
   const bindWithHttps = requireHttps ? true : resolveUseHttps(options);
 
   if (requireHttps && !devCerts) {
-    try {
-      const health = await probeHealth(port, true);
-      if (health.service !== SERVICE_NAME) {
-        throw new PortConflictError(port, health.service);
-      }
-      const hostUrl = `https://127.0.0.1:${port}`;
-      const startHeartbeat = makeHeartbeat(hostUrl, {
-        intervalMs: 2_000,
-        failThreshold: 2,
-      }, options);
-      return { mode: 'client', hostUrl, startHeartbeat };
-    } catch (err) {
-      if (err instanceof PortConflictError) throw err;
+    // We can't bind HTTPS ourselves, so we can only proceed by joining an
+    // existing HTTPS leader. Probe BOTH schemes so we can produce an
+    // actionable error when the port is held by an HTTP-only changedown-mcp
+    // (the common cross-version mismatch) instead of an opaque
+    // HttpsRequiredError.
+    const probed = await probeHealthBothSchemes(port, /* preferHttps */ true);
+    if (!probed) {
+      // Nothing answered on either scheme. Most likely no leader is up yet
+      // and we genuinely cannot proceed without dev certs.
       throw new HttpsRequiredError();
     }
+    if (probed.health.service !== SERVICE_NAME) {
+      throw new PortConflictError(port, probed.health.service, probed.health.pid, probed.scheme, 'https');
+    }
+    if (probed.scheme !== 'https') {
+      // Same service, wrong scheme — incompatible leader. Surface the PID so
+      // the user can kill the stale leader and let a fresh HTTPS one bind.
+      throw new PortConflictError(port, SERVICE_NAME, probed.health.pid, probed.scheme, 'https');
+    }
+    const hostUrl = `https://127.0.0.1:${port}`;
+    const startHeartbeat = makeHeartbeat(hostUrl, {
+      intervalMs: 2_000,
+      failThreshold: 2,
+    }, options);
+    return { mode: 'client', hostUrl, startHeartbeat };
   }
 
   try {
@@ -264,19 +312,24 @@ export async function bindOrForward(port: number, options: BindOrForwardOptions 
     const code = (err as NodeJS.ErrnoException).code;
     if (code !== 'EADDRINUSE') throw err;
 
-    // Port is taken — check who holds it
-    let health: HealthResponse;
-    try {
-      health = await probeHealth(port, requireHttps ? true : bindWithHttps);
-    } catch {
-      throw new PortConflictError(port, '<unreachable — not an HTTP server>');
+    // Port is taken — figure out who and on what scheme. Probe BOTH so a
+    // wrong-scheme same-service leader (the common cross-version mismatch)
+    // produces an actionable error instead of "<unreachable>".
+    const expectedScheme: 'http' | 'https' = requireHttps || bindWithHttps ? 'https' : 'http';
+    const probed = await probeHealthBothSchemes(port, expectedScheme === 'https');
+    if (!probed) {
+      throw new PortConflictError(port, '<unreachable on either http or https>');
+    }
+    if (probed.health.service !== SERVICE_NAME) {
+      throw new PortConflictError(port, probed.health.service, probed.health.pid, probed.scheme, expectedScheme);
+    }
+    if (probed.scheme !== expectedScheme) {
+      // Same service, wrong scheme — incompatible leader. Surface the PID so
+      // the user can kill the stale leader and restart cleanly.
+      throw new PortConflictError(port, SERVICE_NAME, probed.health.pid, probed.scheme, expectedScheme);
     }
 
-    if (health.service !== SERVICE_NAME) {
-      throw new PortConflictError(port, health.service);
-    }
-
-    const scheme = requireHttps || bindWithHttps ? 'https' : 'http';
+    const scheme = expectedScheme;
     const hostUrl = `${scheme}://127.0.0.1:${port}`;
     // Aggressive takeover: new MCP launches snap to leader role within ~5s of
     // previous leader exiting (2s poll × 2 misses = ~4s worst case).

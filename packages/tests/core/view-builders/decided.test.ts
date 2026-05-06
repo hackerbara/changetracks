@@ -43,14 +43,14 @@ describe('buildDecidedDocument', () => {
     expect(doc.lines[0].margin.flags).not.toContain('P');
   });
 
-  it('emits empty flags for lines with no accepted changes', () => {
+  it('emits P flags for proposed changes reverted from the decided projection', () => {
     const content = [
       'Hello world{++!++}[^cn-1]',
       '',
       '[^cn-1]: @alice | 2026-02-17 | ins | proposed',
     ].join('\n');
     const doc = buildDecidedDocument(content, baseOpts);
-    expect(doc.lines[0].margin.flags).toEqual([]);
+    expect(doc.lines[0].margin.flags).toEqual(['P']);
   });
 
   it('produces no metadata zone (empty array per line)', () => {

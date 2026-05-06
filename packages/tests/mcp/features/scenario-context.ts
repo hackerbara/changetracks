@@ -9,6 +9,7 @@ import { handleProposeBatch } from '@changedown/mcp/internals';
 import { handleReviewChanges } from '@changedown/mcp/internals';
 import { handleGetChange } from '@changedown/mcp/internals';
 import { handleAmendChange } from '@changedown/mcp/internals';
+import { handleSupersedeChange } from '@changedown/mcp/internals';
 import { SessionState } from '@changedown/mcp/internals';
 import { type ChangeDownConfig } from '@changedown/mcp/internals';
 import { createTestResolver } from '../test-resolver.js';
@@ -29,7 +30,12 @@ export const DEFAULT_CONFIG: ChangeDownConfig = {
   matching: { mode: 'normalized' },
   hashline: { enabled: true, auto_remap: false },
   settlement: { auto_on_approve: false, auto_on_reject: false },
-  policy: { mode: 'safety-net', creation_tracking: 'footnote' },
+  policy: {
+    mode: 'safety-net',
+    creation_tracking: 'footnote',
+    default_view: 'working',
+    view_policy: 'suggest',
+  },
   protocol: { mode: 'classic', level: 2, reasoning: 'optional', batch_reasoning: 'required' },
 };
 
@@ -225,6 +231,22 @@ export class ScenarioContext {
     author?: string;
   }): Promise<ToolResult> {
     return handleAmendChange(
+      { file, change_id: changeId, ...opts },
+      this.resolver,
+      this.state,
+    );
+  }
+
+
+  /** Call supersede_change */
+  async supersede(file: string, changeId: string, opts: {
+    old_text?: string;
+    new_text: string;
+    reason?: string;
+    author?: string;
+    insert_after?: string;
+  }): Promise<ToolResult> {
+    return handleSupersedeChange(
       { file, change_id: changeId, ...opts },
       this.resolver,
       this.state,

@@ -1086,19 +1086,25 @@ Then(
 
 When(
   'I settle accepted changes in:',
-  function (this: ChangeDownWorld, input: string) {
+  async function (this: ChangeDownWorld, input: string) {
+    await initHashline();
     const result = applyAcceptedChanges(input);
     this.currentContent = result.currentContent;
     this.appliedIds = result.appliedIds;
   },
 );
 
+function settledBody(content: string): string {
+  return content.split(/^\[\^[^\]]+\]:/m)[0] ?? content;
+}
+
 Then(
   'the settled content contains {string}',
   function (this: ChangeDownWorld, expected: string) {
+    const body = settledBody(this.currentContent);
     assert.ok(
-      this.currentContent.includes(expected),
-      `Expected settled content to contain "${expected}" but got:\n${this.currentContent}`,
+      body.includes(expected),
+      `Expected settled body to contain "${expected}" but got:\n${body}`,
     );
   },
 );
@@ -1106,9 +1112,10 @@ Then(
 Then(
   'the settled content does not contain {string}',
   function (this: ChangeDownWorld, unexpected: string) {
+    const body = settledBody(this.currentContent);
     assert.ok(
-      !this.currentContent.includes(unexpected),
-      `Expected settled content NOT to contain "${unexpected}" but it does`,
+      !body.includes(unexpected),
+      `Expected settled body NOT to contain "${unexpected}" but it does`,
     );
   },
 );

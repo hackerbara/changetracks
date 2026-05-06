@@ -88,7 +88,7 @@ export { computeAffectedLines } from './propose-utils.js';
 export type { AffectedLineEntry, ViewProjection } from './propose-utils.js';
 
 /**
- * Detect whether the recorded hashes came from a committed view (have `committed` field).
+ * Detect whether the recorded hashes came from a decided view (have `committed` field).
  */
 function hasCommittedHashes(
   filePath: string,
@@ -115,7 +115,7 @@ function hasSettledHashes(
  * Check for file staleness by comparing current file content against recorded hashes.
  * Returns a warning message if the file has changed since last read_tracked_file call.
  *
- * When recorded hashes have committed fields (from committed view), staleness is checked
+ * When recorded hashes have committed fields (from decided view), staleness is checked
  * against raw file hashes using the rawLineNum mapping.
  */
 function checkStaleness(
@@ -129,15 +129,15 @@ function checkStaleness(
   const lines = fileContent.split('\n');
 
   if (hasCommittedHashes(filePath, state)) {
-    // Committed-view staleness check: compare raw hashes at mapped raw line numbers
+    // Decided-view staleness check: compare raw hashes at mapped raw line numbers
     for (const entry of recorded) {
       const rawLine = entry.rawLineNum ?? entry.line;
       if (rawLine < 1 || rawLine > lines.length) {
-        return 'File has changed since last read_tracked_file: line count differs. Re-read with read_tracked_file view=committed for current hashes.';
+        return 'File has changed since last read_tracked_file: line count differs. Re-read with read_tracked_file view=decided for current hashes.';
       }
       const currentHash = computeLineHash(rawLine - 1, lines[rawLine - 1], lines);
       if (currentHash !== entry.raw) {
-        return `File has changed since last read_tracked_file: raw line ${rawLine} hash differs (recorded ${entry.raw}, current ${currentHash}). Re-read with read_tracked_file view=committed for current hashes.`;
+        return `File has changed since last read_tracked_file: raw line ${rawLine} hash differs (recorded ${entry.raw}, current ${currentHash}). Re-read with read_tracked_file view=decided for current hashes.`;
       }
     }
   } else if (hasSettledHashes(filePath, state)) {

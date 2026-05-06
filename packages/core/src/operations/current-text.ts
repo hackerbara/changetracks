@@ -202,7 +202,7 @@ function computeOriginalTextL3(text: string): string {
  * block. This gives SCM QuickDiff and all other consumers free L3 support.
  *
  * Per V1 view model design doc §5: settled = "document as it would be if all
- * proposals were approved". The committed view (separate function) handles
+ * proposals were approved". The decided view (separate function) handles
  * status-aware rendering.
  *
  * This is a pure function: it does not modify the input string.

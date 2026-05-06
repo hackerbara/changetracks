@@ -115,7 +115,7 @@ describe('findUniqueMatch decided-text cascade level', () => {
 
   it('finds text spanning a proposed insertion gap', () => {
     const text = 'Hello {++world ++}[^cn-1]there.\n\n[^cn-1]: @ai:test | 2026-01-01 | ins | proposed';
-    // In committed view: "Hello there." — "Hello there" should match
+    // In decided view: "Hello there." — "Hello there" should match
     const result = findUniqueMatch(text, 'Hello there');
     expect(result.wasCommittedMatch).toBe(true);
     // Raw range should span from 'H' to past the markup to 'there'

@@ -140,8 +140,18 @@ if [ $failed -eq 0 ]; then
     cat /tmp/sc-vsce.log | head -15
   fi
 
-  # Install CLI globally (provides cdown and changedown binaries on PATH)
+  # Install CLI globally (provides cdown and changedown binaries on PATH).
+  #
+  # Two cleanup steps before installing:
+  #   1. Uninstall any legacy unscoped `changedown` global install (this is
+  #      what shipped before the rename to @changedown/cli; npm install -g
+  #      was failing with EEXIST because that older alias still owned the
+  #      cdown/changedown bin symlinks).
+  #   2. Uninstall the scoped @changedown/cli too so npm doesn't choke on a
+  #      partial state from a previous failed install.
+  # Both `|| true` to avoid failing when neither was previously installed.
   printf "${BOLD}Installing CLI globally...${RESET} "
+  npm uninstall -g changedown @changedown/cli >/dev/null 2>&1 || true
   if npm install -g "$ROOT/packages/cli" >/tmp/sc-cli-install.log 2>&1; then
     printf "${GREEN}ok${RESET} (cdown, changedown)\n"
   else
@@ -188,15 +198,46 @@ if [ $failed -eq 0 ]; then
     printf "${DIM}skipped (install-skill.sh not found)${RESET}\n"
   fi
 
-  # Sync built artifacts to Cursor's plugin cache
-  PLUGIN_VERSION=$(node -p "require('$ROOT/changedown-plugin/mcp-server/package.json').version" 2>/dev/null || echo '0.1.0')
-  PLUGIN_CACHE="$HOME/.claude/plugins/cache/local/changedown/$PLUGIN_VERSION"
-  if [ -d "$PLUGIN_CACHE" ]; then
-    printf "${BOLD}Syncing to plugin cache...${RESET} "
-    rsync -a --delete "$ROOT/changedown-plugin/mcp-server/dist/" "$PLUGIN_CACHE/mcp-server/dist/"
-    rsync -a --delete "$ROOT/changedown-plugin/hooks-impl/dist/"  "$PLUGIN_CACHE/hooks-impl/dist/"
-    rsync -a "$ROOT/changedown-plugin/hooks/"                     "$PLUGIN_CACHE/hooks/"
-    rsync -a "$ROOT/changedown-plugin/skills/"                    "$PLUGIN_CACHE/skills/"
+  # Sync built artifacts to the Claude Code plugin cache so the freshly-built
+  # dist/ takes effect on the next session reload — without requiring a
+  # plugin.json version bump (which would force end users through `/plugin update`).
+  #
+  # Per Anthropic's plugin model, marketplace plugins (including local
+  # "directory" marketplaces) are COPIED to ~/.claude/plugins/cache/<marketplace>/<plugin>/<version>/.
+  # ${CLAUDE_PLUGIN_ROOT} resolves to that cache path. Editing workspace src
+  # alone does NOT propagate. /plugin update no-ops when the version string
+  # is unchanged. So for prod-fidelity dev iteration, we sync the just-built
+  # contents directly into whatever installPath Claude Code currently knows.
+  PLUGIN_INSTALL_PATHS=$(node -e "
+    const fs = require('fs');
+    const path = require('os').homedir() + '/.claude/plugins/installed_plugins.json';
+    if (!fs.existsSync(path)) process.exit(0);
+    const j = JSON.parse(fs.readFileSync(path, 'utf8'));
+    const plugins = j.plugins || {};
+    for (const key of Object.keys(plugins)) {
+      // Match any installed 'changedown@*' entry across marketplaces (hackerbara,
+      // local, future-renames). Multiple entries possible (e.g. dev + cached).
+      if (!key.startsWith('changedown@')) continue;
+      for (const inst of plugins[key]) {
+        if (inst.installPath && fs.existsSync(inst.installPath)) {
+          console.log(inst.installPath);
+        }
+      }
+    }
+  " 2>/dev/null)
+  if [ -n "$PLUGIN_INSTALL_PATHS" ]; then
+    while IFS= read -r PLUGIN_CACHE; do
+      [ -z "$PLUGIN_CACHE" ] && continue
+      printf "${BOLD}Syncing to plugin cache${RESET} ${DIM}($PLUGIN_CACHE)...${RESET} "
+      rsync -a --delete "$ROOT/changedown-plugin/mcp-server/dist/" "$PLUGIN_CACHE/mcp-server/dist/"
+      rsync -a --delete "$ROOT/changedown-plugin/hooks-impl/dist/" "$PLUGIN_CACHE/hooks-impl/dist/"
+      rsync -a "$ROOT/changedown-plugin/hooks/"                    "$PLUGIN_CACHE/hooks/"
+      rsync -a "$ROOT/changedown-plugin/skills/"                   "$PLUGIN_CACHE/skills/"
+      rsync -a "$ROOT/changedown-plugin/.mcp.json"                 "$PLUGIN_CACHE/.mcp.json"
+      rsync -a "$ROOT/changedown-plugin/.claude-plugin/"           "$PLUGIN_CACHE/.claude-plugin/"
+      printf "${GREEN}ok${RESET}\n"
+    done <<< "$PLUGIN_INSTALL_PATHS"
+    PLUGIN_CACHE=$(echo "$PLUGIN_INSTALL_PATHS" | head -1)
     for pkg in core cli; do
       SRC="$ROOT/packages/$pkg"
       if [ -d "$SRC" ]; then
@@ -214,11 +255,10 @@ if [ $failed -eq 0 ]; then
         done
       fi
     done
-    printf "${GREEN}ok${RESET}\n"
     echo "${DIM}Restart Cursor/Claude Code to pick up MCP server + hook changes.${RESET}"
   else
-    echo "${DIM}No plugin cache found at $PLUGIN_CACHE — skipping sync.${RESET}"
-    echo "${DIM}Restart Claude Code to pick up MCP server + hook changes.${RESET}"
+    echo "${DIM}No installed changedown plugin found in installed_plugins.json — skipping cache sync.${RESET}"
+    echo "${DIM}If you intended to test cached install, run \`claude plugin install changedown@<marketplace>\` first.${RESET}"
   fi
 else
   echo "${RED}${BOLD}$failed package(s) failed to build.${RESET}"

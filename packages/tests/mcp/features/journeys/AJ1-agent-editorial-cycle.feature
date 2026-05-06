@@ -52,9 +52,9 @@ Feature: Agent editorial cycle (orient -> propose -> review -> settle)
     And no CriticMarkup delimiters appear in the body
     And 3 footnotes persist with status "accepted"
 
-  Scenario: Editorial pass on committed view (Surface E)
-    # Phase 1: Orient via committed view
-    When I call read_tracked_file with view = "committed"
+  Scenario: Editorial pass on decided view (Surface E)
+    # Phase 1: Orient via decided view
+    When I call read_tracked_file with view = "decided"
     Then LINE:HASH coordinates are present
     And no CriticMarkup delimiters appear
 
@@ -62,14 +62,14 @@ Feature: Agent editorial cycle (orient -> propose -> review -> settle)
     When I propose a substitution using line:hash from the read
     Then the change is applied correctly
 
-    # Phase 3: Re-read committed view
-    When I call read_tracked_file with view = "committed"
+    # Phase 3: Re-read decided view
+    When I call read_tracked_file with view = "decided"
     Then the pending change appears with [P] marker
     And the original text is shown (pending reverted)
 
     # Phase 4: Approve and settle
     When I approve and settle the change
-    Then the committed view shows the new text without markers
+    Then the decided view shows the new text without markers
 
   Scenario: Sequential single changes (non-batch) across full cycle
     When I propose change 1 (substitution)

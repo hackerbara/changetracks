@@ -40,8 +40,7 @@ import {
   ChangeStatus,
   computeCurrentText,
   initHashline,
-  applyAcceptedChanges,
-  applyRejectedChanges,
+  materializeResolvedChangesForExport,
   type ChangeNode,
 } from '@changedown/core';
 
@@ -875,8 +874,7 @@ export async function changesToDocxParagraphs(
     // leaving only proposed changes as tracked changes in the output.
     // L2 settlement generates LINE:HASH edit-op lines; requires xxhash-wasm.
     await initHashline();
-    text = applyAcceptedChanges(markdown).currentContent;
-    text = applyRejectedChanges(text).currentContent;
+    text = materializeResolvedChangesForExport(markdown).text;
   }
 
   // Step 2: Parse with core parser

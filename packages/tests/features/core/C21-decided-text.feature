@@ -1,6 +1,6 @@
 @core @committed-text
 Feature: C21 - Committed Text View
-  The committed-text module computes a "committed view" of CriticMarkup documents.
+  The committed-text module computes a "decided view" of CriticMarkup documents.
   Per-line: accepted changes are applied, pending/unknown changes are reverted,
   rejected changes are reverted (no flag), highlights show content, comments removed.
   Document-level: parses footnotes, excludes footnote definitions, computes hashes,
@@ -174,7 +174,7 @@ Feature: C21 - Committed Text View
   # ── computeCommittedView: document-level ───────────────────────────
 
   Scenario: Sequential line numbers with no gaps when pending insertion removed
-    Given a committed-view raw text:
+    Given a decided-view raw text:
       """
       # Title
       {++This line is pending++}[^cn-1]
@@ -182,12 +182,12 @@ Feature: C21 - Committed Text View
 
       [^cn-1]: @alice | 2026-02-17 | ins | proposed
       """
-    When I compute the committed view
-    Then the committed view has 3 lines
-    And committed view line numbers are sequential with no gaps
+    When I compute the decided view
+    Then the decided view has 3 lines
+    And decided view line numbers are sequential with no gaps
 
   Scenario: Correct committed-to-raw line mapping
-    Given a committed-view raw text:
+    Given a decided-view raw text:
       """
       # Title
       {++pending insertion++}[^cn-1]
@@ -195,7 +195,7 @@ Feature: C21 - Committed Text View
 
       [^cn-1]: @alice | 2026-02-17 | ins | proposed
       """
-    When I compute the committed view
+    When I compute the decided view
     Then committed-to-raw mapping 1 is raw 1
     And committed-to-raw mapping 2 is raw 3
     And committed-to-raw mapping 3 is raw 4
@@ -204,12 +204,12 @@ Feature: C21 - Committed Text View
     And raw-to-committed mapping 4 is committed 3
 
   Scenario: Committed hashes are 2-char lowercase hex
-    Given a committed-view raw text "# Title\nSome content\nAnother line"
-    When I compute the committed view
-    Then all committed hashes are 2-char lowercase hex
+    Given a decided-view raw text "# Title\nSome content\nAnother line"
+    When I compute the decided view
+    Then all decided hashes are 2-char lowercase hex
 
   Scenario: Correct summary counts
-    Given a committed-view raw text:
+    Given a decided-view raw text:
       """
       # Title
       {++new text++}[^cn-1]
@@ -219,13 +219,13 @@ Feature: C21 - Committed Text View
       [^cn-1]: @alice | 2026-02-17 | ins | proposed
       [^cn-2]: @alice | 2026-02-17 | del | accepted
       """
-    When I compute the committed view
+    When I compute the decided view
     Then the committed summary has 1 proposed
     And the committed summary has 1 accepted
     And the committed summary has 0 rejected
 
-  Scenario: Footnote definitions excluded from committed output
-    Given a committed-view raw text:
+  Scenario: Footnote definitions excluded from decided output
+    Given a decided-view raw text:
       """
       # Title
       Some text {++added++}[^cn-1]
@@ -233,93 +233,93 @@ Feature: C21 - Committed Text View
       [^cn-1]: @alice | 2026-02-17 | ins | proposed
           reason: clarity improvement
       """
-    When I compute the committed view
-    Then no committed view line starts with a footnote ref
-    And no committed view line contains "reason: clarity improvement"
+    When I compute the decided view
+    Then no decided view line starts with a footnote ref
+    And no decided view line contains "reason: clarity improvement"
 
   Scenario: Clean file produces identical view
-    Given a committed-view raw text "# Title\nFirst line.\nSecond line.\n"
-    When I compute the committed view
-    Then the committed view line count equals the raw line count
-    And all committed view lines have empty flag
-    And all committed view lines have empty changeIds
+    Given a decided-view raw text "# Title\nFirst line.\nSecond line.\n"
+    When I compute the decided view
+    Then the decided view line count equals the raw line count
+    And all decided view lines have empty flag
+    And all decided view lines have empty changeIds
     And the committed summary has 0 proposed
     And the committed summary has 0 accepted
     And the committed summary has 0 rejected
 
   Scenario: Hashes match computeLineHash for committed text
-    Given a committed-view raw text "# Title\nSome content here\nThird line"
-    When I compute the committed view
-    Then each committed hash matches computeLineHash for its text and index
+    Given a decided-view raw text "# Title\nSome content here\nThird line"
+    When I compute the decided view
+    Then each decided hash matches computeLineHash for its text and index
 
   Scenario: P flag set for lines with proposed changes
-    Given a committed-view raw text:
+    Given a decided-view raw text:
       """
       Before {++added++}[^cn-1] after
 
       [^cn-1]: @alice | 2026-02-17 | ins | proposed
       """
-    When I compute the committed view
-    Then committed view line 1 has flag "P"
-    And committed view line 1 changeIds include "cn-1"
+    When I compute the decided view
+    Then decided view line 1 has flag "P"
+    And decided view line 1 changeIds include "cn-1"
 
   Scenario: A flag set for lines with accepted changes
-    Given a committed-view raw text:
+    Given a decided-view raw text:
       """
       Before {++added++}[^cn-1] after
 
       [^cn-1]: @alice | 2026-02-17 | ins | accepted
       """
-    When I compute the committed view
-    Then committed view line 1 has flag "A"
-    And committed view line 1 has text "Before added after"
+    When I compute the decided view
+    Then decided view line 1 has flag "A"
+    And decided view line 1 has text "Before added after"
 
   Scenario: Clean lines counted in summary
-    Given a committed-view raw text "# Title\nClean line one.\nClean line two."
-    When I compute the committed view
+    Given a decided-view raw text "# Title\nClean line one.\nClean line two."
+    When I compute the decided view
     Then the committed summary has 3 clean lines
     And the committed summary has 0 proposed
 
   # ── formatCommittedOutput ──────────────────────────────────────────
 
   Scenario: Formatted output includes header and aligned lines
-    Given a committed-view raw text "# Title\nClean line."
-    When I compute the committed view
-    And I format the committed output for "test.md" with tracking "tracked"
-    Then the formatted committed output line 1 is "## file: test.md"
-    And the formatted committed output line 2 starts with "## view: committed"
-    And the formatted committed output has 2 hashline content lines
+    Given a decided-view raw text "# Title\nClean line."
+    When I compute the decided view
+    And I format the decided output for "test.md" with tracking "tracked"
+    Then the formatted decided output line 1 is "## file: test.md"
+    And the formatted decided output line 2 starts with "## view: decided"
+    And the formatted decided output has 2 hashline content lines
 
   Scenario: Formatted output includes change summary
-    Given a committed-view raw text:
+    Given a decided-view raw text:
       """
       Before {++added++}[^cn-1] after
       Clean line.
 
       [^cn-1]: @alice | 2026-02-17 | ins | proposed
       """
-    When I compute the committed view
-    And I format the committed output for "test.md" with tracking "tracked"
-    Then the formatted committed output contains "1P"
+    When I compute the decided view
+    And I format the decided output for "test.md" with tracking "tracked"
+    Then the formatted decided output contains "1P"
 
   Scenario: Formatted output shows P flag on proposed change lines
-    Given a committed-view raw text:
+    Given a decided-view raw text:
       """
       Before {~~old~>new~~}[^cn-1] after
 
       [^cn-1]: @alice | 2026-02-17 | sub | proposed
       """
-    When I compute the committed view
-    And I format the committed output for "test.md" with tracking "tracked"
-    Then the formatted committed output has a line containing "Before old after" with flag "P"
+    When I compute the decided view
+    And I format the decided output for "test.md" with tracking "tracked"
+    Then the formatted decided output has a line containing "Before old after" with flag "P"
 
   Scenario: Formatted output shows A flag on accepted change lines
-    Given a committed-view raw text:
+    Given a decided-view raw text:
       """
       Before {++added++}[^cn-1] after
 
       [^cn-1]: @alice | 2026-02-17 | ins | accepted
       """
-    When I compute the committed view
-    And I format the committed output for "test.md" with tracking "tracked"
-    Then the formatted committed output has a line containing "Before added after" with flag "A"
+    When I compute the decided view
+    And I format the decided output for "test.md" with tracking "tracked"
+    Then the formatted decided output has a line containing "Before added after" with flag "A"

@@ -8,7 +8,7 @@
  * - Highlights always show content, comments always removed
  * - Footnote refs always removed
  *
- * Document-level: parses footnotes, computes committed text for whole file,
+ * Document-level: parses footnotes, computes decided text for whole file,
  * hashes each committed line, builds committed<->raw line mapping.
  */
 
@@ -122,7 +122,7 @@ function applyDecidedReplacementsOnce(
 const MAX_DECIDED_DEPTH = 3;
 
 /**
- * Compute the committed view of a single line.
+ * Compute the decided view of a single line.
  *
  * Processes CriticMarkup in this order:
  * 1. Substitutions (contain ~> separator)
@@ -177,8 +177,8 @@ export function computeDecidedLine(
 export interface DecidedLine {
   decidedLineNum: number;  // 1-indexed, sequential (no gaps)
   rawLineNum: number;        // 1-indexed, raw file line number
-  text: string;              // committed text (no CriticMarkup)
-  hash: string;              // committed hash (2 hex chars)
+  text: string;              // decided text (no CriticMarkup)
+  hash: string;              // decided hash (2 hex chars)
   flag: '' | 'P' | 'A';     // status flag
   changeIds: string[];       // cn-N IDs on this line
 }
@@ -249,7 +249,7 @@ function findFootnoteLineIndices(lines: string[]): Set<number> {
 // ─── Document-level computation ──────────────────────────────────────────────
 
 /**
- * Compute the committed view for an entire file.
+ * Compute the decided view for an entire file.
  *
  * 1. Parses footnotes to get statuses
  * 2. Identifies footnote definition lines (excluded from output)
@@ -273,7 +273,7 @@ export function computeDecidedView(rawText: string, preParsed?: ChangeNode[]): D
     });
   }
 
-  // 3. Find footnote definition line indices (excluded from committed view)
+  // 3. Find footnote definition line indices (excluded from decided view)
   const footnoteLineIndices = findFootnoteLineIndices(rawLines);
 
   // 4. Process each non-footnote raw line (two-pass: collect texts, then hash)
@@ -321,7 +321,7 @@ export function computeDecidedView(rawText: string, preParsed?: ChangeNode[]): D
     });
   }
 
-  //    Pass 2: extract all committed texts, then hash each with full context
+  //    Pass 2: extract all decided texts, then hash each with full context
   const allCommittedTexts = preLines.map(l => l.text);
   const decidedLines: DecidedLine[] = [];
   const decidedToRaw = new Map<number, number>();
@@ -359,7 +359,7 @@ export function computeDecidedView(rawText: string, preParsed?: ChangeNode[]): D
 // ─── Format output ──────────────────────────────────────────────────────────
 
 /**
- * Format a committed view as text output.
+ * Format a decided view as text output.
  *
  * Produces a header with file path, tracking status, and change summary,
  * followed by lines formatted as: `N:HHF|content`
@@ -382,7 +382,7 @@ export function formatDecidedOutput(
   const changeSummary = summaryParts.length > 0 ? summaryParts.join(' ') : 'clean';
 
   headerLines.push(
-    `## view: committed | tracking: ${options.trackingStatus} | changes: ${changeSummary}`,
+    `## view: decided | tracking: ${options.trackingStatus} | changes: ${changeSummary}`,
   );
 
   // Line 3: line range

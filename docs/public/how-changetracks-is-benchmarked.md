@@ -12,7 +12,7 @@ ChangeDown provides multiple ways for an AI agent to interact with a tracked fil
 | B | MCP Classic -- early protocol surface using [Model Context Protocol](glossary.md) (pre-V1) |
 | C | MCP Compact (early, pre-V1) |
 | D | CLI |
-| E | Committed view (agent sees clean prose with change-status flags) |
+| E | Decided view (agent sees clean prose with change-status flags) |
 | F | V1-Classic (`old_text`/`new_text` with [footnotes](glossary.md)) |
 | G | V1-Compact (hash-addressed coordinates (`at`+`op`) with [footnotes](glossary.md)) |
 | H | Patch wrapper |

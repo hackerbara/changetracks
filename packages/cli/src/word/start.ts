@@ -1,7 +1,7 @@
 import { setupAgentIntegrations } from '../agents/setup.js';
 import type { WordCommandContext, WordCommandOptions } from './types.js';
 import { resolveManifest } from './manifest.js';
-import { runTool } from './office-tools.js';
+import { runOfficeDebugStart, runOfficeDebugStop, runTool } from './office-tools.js';
 import { MCP_PORT, mcpStartGuidance, probeMcpHealth } from './mcp.js';
 import { clearWordSession, writeWordSession } from './state.js';
 import { startLocalPaneServer, type LocalPaneServerHandle } from './pane-server.js';
@@ -17,7 +17,7 @@ function mcpHealthUrl(useDevCerts: boolean): string {
 
 export async function runWordStart(ctx: WordCommandContext, options: WordCommandOptions): Promise<number> {
   const useDevCerts = shouldUseDevCerts(options);
-  const paneMode = options.paneMode ?? (options.manifest ? 'hosted' : 'local');
+  const paneMode = options.paneMode ?? 'hosted';
   const manifestPath = await resolveManifest(options.manifest, options.dryRun, {
     mcpScheme: useDevCerts ? 'https' : 'http',
     paneMode,
@@ -42,22 +42,21 @@ export async function runWordStart(ctx: WordCommandContext, options: WordCommand
     console.log('Skipping Office dev certificates; using diagnostic HTTP loopback mode. Hosted Word panes normally require HTTPS loopback.');
   }
 
-  let paneServer: LocalPaneServerHandle | undefined;
-  if (paneMode === 'local' && !options.manifest) {
-    try {
-      paneServer = await startLocalPaneServer(options.dryRun);
-    } catch (err) {
-      console.error(`Failed to start local Word pane server: ${err instanceof Error ? err.message : String(err)}`);
-      console.error('Try the hosted pane fallback: npx @changedown/cli@latest word start --pane hosted');
-      return 1;
-    }
-  }
-
   const healthUrl = mcpHealthUrl(useDevCerts);
   const health = await probeMcpHealth(1500, useDevCerts ? 'https' : 'http');
   if (health.ok) {
     console.log(`ChangeDown MCP bridge is already running at ${healthUrl}.`);
   } else {
+    if (useDevCerts) {
+      const httpHealth = await probeMcpHealth(800, 'http');
+      if (httpHealth.ok) {
+        console.error(
+          `ChangeDown MCP is already running on port ${MCP_PORT}, but it is using HTTP. ` +
+          'The Word pane now requires HTTPS loopback. Stop/restart old agent sessions so the updated ChangeDown MCP plugin can bind HTTPS, then rerun this command.',
+        );
+        return 1;
+      }
+    }
     console.log(`ChangeDown MCP bridge is not running yet. ${mcpStartGuidance(useDevCerts ? 'https' : 'http')}`);
   }
 
@@ -85,8 +84,11 @@ export async function runWordStart(ctx: WordCommandContext, options: WordCommand
   }
 
   if (options.dryRun) {
+    if (paneMode === 'local' && !options.manifest) {
+      await startLocalPaneServer(true);
+    }
     if (!options.noSideload) {
-      const startCode = runTool('office-addin-debugging', ['start', manifestPath, 'desktop'], {
+      const startCode = await runOfficeDebugStart(manifestPath, {
         cwd: ctx.cwd,
         dryRun: true,
       });
@@ -97,11 +99,32 @@ export async function runWordStart(ctx: WordCommandContext, options: WordCommand
     return 0;
   }
 
+  const startPid = process.pid;
   await writeWordSession({
     manifestPath,
-    mcpOwned: false,
     startedAt: new Date().toISOString(),
+    startPid,
+    paneMode,
   });
+
+  let paneServer: LocalPaneServerHandle | undefined;
+  if (paneMode === 'local' && !options.manifest) {
+    try {
+      paneServer = await startLocalPaneServer(false);
+      await writeWordSession({
+        manifestPath,
+        startedAt: new Date().toISOString(),
+        startPid,
+        paneMode,
+        panePort: 3000,
+      });
+    } catch (err) {
+      await clearWordSession();
+      console.error(`Failed to start local Word pane server: ${err instanceof Error ? err.message : String(err)}`);
+      console.error('Try the hosted pane fallback: npx @changedown/cli@latest word start --pane hosted');
+      return 1;
+    }
+  }
 
   let stopping = false;
   let handlersRegistered = false;
@@ -117,7 +140,7 @@ export async function runWordStart(ctx: WordCommandContext, options: WordCommand
     stopping = true;
     try {
       if (!options.noSideload) {
-        runTool('office-addin-debugging', ['stop', manifestPath], { cwd: ctx.cwd });
+        await runOfficeDebugStop(manifestPath, { cwd: ctx.cwd });
       }
       if (paneServer) await paneServer.close();
       await clearWordSession();
@@ -137,7 +160,7 @@ export async function runWordStart(ctx: WordCommandContext, options: WordCommand
   handlersRegistered = true;
 
   if (!options.noSideload) {
-    const startCode = runTool('office-addin-debugging', ['start', manifestPath, 'desktop'], {
+    const startCode = await runOfficeDebugStart(manifestPath, {
       cwd: ctx.cwd,
     });
     if (startCode !== 0) {

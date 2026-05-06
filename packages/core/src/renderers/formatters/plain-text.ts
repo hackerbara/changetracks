@@ -5,7 +5,7 @@ import type { BuiltinView } from '../../host/types.js';
  * Formats a ThreeZoneDocument as plain text for agent consumption.
  *
  * The header is view-sensitive: working and simple views emit a 2-line summary
- * (counts + thread count, then authors) followed by `---`; decided and raw views
+ * (counts + thread count, then authors) followed by `---`; raw views
  * emit no header. Each content line is rendered as `LINENUM:HASH FLAG| text`,
  * with bracket metadata appended for working and simple views (`[changeId @author type status…]`).
  * The decided view appends a bottom status footer (`── accepted N · rejected N · proposed N · threads N ──`)
@@ -37,9 +37,12 @@ export function formatPlainText(doc: ThreeZoneDocument): string {
 }
 
 function formatHeader(header: DeliberationHeader, view: BuiltinView): string {
-  if (view === 'decided' || view === 'raw') return '';
+  if (view === 'raw') return '';
 
   const lines: string[] = [];
+  if (view === 'decided') {
+    lines.push('## view: decided');
+  }
   const counts = `proposed: ${header.counts.proposed} | accepted: ${header.counts.accepted} | rejected: ${header.counts.rejected}`;
   const threads = header.threadCount > 0 ? ` | threads: ${header.threadCount}` : '';
   lines.push(`## ${counts}${threads}`);

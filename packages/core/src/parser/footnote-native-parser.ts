@@ -40,6 +40,11 @@ function isDocumentScopeAcceptedInsertion(fn: ParsedFootnote): boolean {
     metadata['body-hash'] !== undefined;
 }
 
+
+function isRejectedSupersededArchivalRecord(fn: ParsedFootnote): boolean {
+  return fn.status === 'rejected' && (fn.supersededBy?.length ?? 0) > 0;
+}
+
 function toChangeDownRecord(fn: ParsedFootnote): ChangeDownRecord {
   const bodyLines = fn.unknownBodyLines ?? [];
   return {
@@ -573,14 +578,17 @@ export class FootnoteNativeParser {
     if (!parsedOp) {
       // No op string — settled/ghost footnote. No deterministic position can be resolved.
       // Emit a typed diagnostic so the failure is visible on Document.diagnostics
-      // (spec §3.2 Sites 2-4 / zombie-elimination Task 2.3).
+      // (spec §3.2 Sites 2-4 / zombie-elimination Task 2.3), except for explicitly
+      // superseded archival records whose body span was consumed by a replacement.
       // anchored:true because the footnote ref exists; resolved:false because position
       // cannot be determined without an edit-op.
-      this.pendingDiagnostics.push({
-        kind: 'coordinate_failed',
-        changeId: fn.id,
-        message: `Footnote ${fn.id} has no parsedOp; cannot resolve position.`,
-      });
+      if (!isRejectedSupersededArchivalRecord(fn)) {
+        this.pendingDiagnostics.push({
+          kind: 'coordinate_failed',
+          changeId: fn.id,
+          message: `Footnote ${fn.id} has no parsedOp; cannot resolve position.`,
+        });
+      }
       return { range: fallbackRange, anchored: true, resolved: false, comment: fn.unknownBodyLines?.[0], resolutionPath: 'rejected' };
     }
 

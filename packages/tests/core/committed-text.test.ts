@@ -430,7 +430,7 @@ describe('formatDecidedOutput', () => {
     // Header lines
     const lines = output.split('\n');
     expect(lines[0]).toMatch(/^## file: test\.md$/);
-    expect(lines[1]).toMatch(/^## view: committed/);
+    expect(lines[1]).toMatch(/^## view: decided/);
 
     // Content lines should have line number, hash, flag, pipe, content
     const contentLines = lines.filter(l => l.match(/^\s*\d+:[0-9a-f]{2}/));

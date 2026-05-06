@@ -326,11 +326,11 @@ Then(
 // O2: Propose Surface E — hash-addressed steps
 // =============================================================================
 
-/** Extract line:hash from committed view output for a line containing target text */
+/** Extract line:hash from decided view output for a line containing target text */
 function extractLineHash(text: string, targetText: string): { line: number; hash: string } | null {
   for (const line of text.split('\n')) {
     if (line.includes(targetText)) {
-      // Committed view format: " 3:d7 |timeout = 30" or " 3:d7P|..."
+      // Decided view format: " 3:d7 |timeout = 30" or " 3:d7P|..."
       const m = line.match(/\s*(\d+):([0-9a-f]{2})/);
       if (m) return { line: parseInt(m[1], 10), hash: m[2] };
     }
@@ -338,7 +338,7 @@ function extractLineHash(text: string, targetText: string): { line: number; hash
   return null;
 }
 
-/** Store last committed view text for hash extraction in subsequent steps */
+/** Store last decided view text for hash extraction in subsequent steps */
 const lastCommittedView: WeakMap<ChangeDownWorld, string> = new WeakMap();
 
 When(
@@ -385,8 +385,8 @@ When(
     const filePath = this.files.values().next().value;
     assert.ok(filePath, 'No file in this scenario');
 
-    // Read committed view to get current hashes if we haven't already
-    const readResult = await this.ctx.read(filePath, { view: 'committed' });
+    // Read decided view to get current hashes if we haven't already
+    const readResult = await this.ctx.read(filePath, { view: 'decided' });
     const viewText = this.ctx.resultText(readResult);
     lastCommittedView.set(this, viewText);
 
@@ -398,7 +398,7 @@ When(
     const newText = newTexts[idx] ?? 'updated';
 
     const coords = extractLineHash(viewText, target);
-    assert.ok(coords, `Could not find "${target}" in committed view output`);
+    assert.ok(coords, `Could not find "${target}" in decided view output`);
 
     try {
       this.lastResult = await this.ctx.propose(filePath, {
@@ -420,7 +420,7 @@ Then(
   function (this: ChangeDownWorld) {
     assert.ok(this.lastResult, 'No MCP result available');
     const text = this.ctx.resultText(this.lastResult);
-    // Verify the committed view has LINE:HASH coordinates
+    // Verify the decided view has LINE:HASH coordinates
     assert.match(text, /\d+:[0-9a-f]{2}/, 'Expected LINE:HASH coordinates in updated view');
   },
 );
@@ -455,7 +455,7 @@ Then(
   function (this: ChangeDownWorld, original: string) {
     assert.ok(this.lastResult, 'No MCP result available');
     const text = this.ctx.resultText(this.lastResult);
-    assert.ok(text.includes(original), `Expected original text "${original}" in committed view`);
+    assert.ok(text.includes(original), `Expected original text "${original}" in decided view`);
   },
 );
 
@@ -464,14 +464,14 @@ Then(
   function (this: ChangeDownWorld) {
     assert.ok(this.lastResult, 'No MCP result available');
     const text = this.ctx.resultText(this.lastResult);
-    assert.match(text, /P\|/, 'Expected P flag in committed view');
+    assert.match(text, /P\|/, 'Expected P flag in decided view');
   },
 );
 
 Then(
   'accepted changes show their accepted text',
   function (this: ChangeDownWorld) {
-    // Documentation step -- verifies the committed view format
+    // Documentation step -- verifies the decided view format
     // In current test setup no accepted changes exist, assertion is trivially true
     assert.ok(this.lastResult, 'No MCP result available');
   },

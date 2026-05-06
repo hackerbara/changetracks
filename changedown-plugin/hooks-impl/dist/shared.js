@@ -3898,6 +3898,9 @@ function isDocumentScopeAcceptedInsertion(fn) {
   const metadata = metadataFromUnknownLines(fn.unknownBodyLines ?? []);
   return fn.type === "ins" && fn.status === "accepted" && fn.author === "@base-document" && fn.lineNumber === void 0 && fn.hash === void 0 && fn.opString === void 0 && metadata.source === "initial-word-body" && metadata.scope === "document" && metadata["body-hash"] !== void 0;
 }
+function isRejectedSupersededArchivalRecord(fn) {
+  return fn.status === "rejected" && (fn.supersededBy?.length ?? 0) > 0;
+}
 function toChangeDownRecord(fn) {
   const bodyLines = fn.unknownBodyLines ?? [];
   return {
@@ -4262,11 +4265,13 @@ var FootnoteNativeParser = class {
     const lineContent = lineIdx >= 0 && lineIdx < bodyLines.length ? bodyLines[lineIdx] : "";
     const fallbackRange = { start: lineOffset2, end: lineOffset2 };
     if (!parsedOp) {
-      this.pendingDiagnostics.push({
-        kind: "coordinate_failed",
-        changeId: fn.id,
-        message: `Footnote ${fn.id} has no parsedOp; cannot resolve position.`
-      });
+      if (!isRejectedSupersededArchivalRecord(fn)) {
+        this.pendingDiagnostics.push({
+          kind: "coordinate_failed",
+          changeId: fn.id,
+          message: `Footnote ${fn.id} has no parsedOp; cannot resolve position.`
+        });
+      }
       return { range: fallbackRange, anchored: true, resolved: false, comment: fn.unknownBodyLines?.[0], resolutionPath: "rejected" };
     }
     const findOnLine = (searchText) => {
@@ -5744,7 +5749,6 @@ var VIEW_KNOWN_NAMES = /* @__PURE__ */ new Map([
   ["all", "working"],
   ["content", "raw"],
   ["meta", "working"],
-  ["committed", "simple"],
   // VS Code settings compat
   ["all-markup", "working"],
   ["markup", "working"]
@@ -5843,10 +5847,10 @@ function parseConfigToml(raw) {
         if (raw2 === void 0)
           return DEFAULT_CONFIG2.policy.default_view;
         const resolved = resolveView(String(raw2));
-        if (resolved !== null)
+        const readViews = /* @__PURE__ */ new Set(["working", "simple", "decided", "raw"]);
+        if (resolved !== null && readViews.has(resolved))
           return resolved;
-        console.warn(`[changedown] Unknown default_view value: "${raw2}". Falling back to "${DEFAULT_CONFIG2.policy.default_view}".`);
-        return DEFAULT_CONFIG2.policy.default_view;
+        throw new Error(`[changedown] Unknown default_view value: "${raw2}". Valid views: working, simple, decided, raw.`);
       })(),
       view_policy: policy?.["view_policy"] === "suggest" || policy?.["view_policy"] === "require" ? policy["view_policy"] : DEFAULT_CONFIG2.policy.view_policy
     },
@@ -5894,7 +5898,11 @@ async function loadConfig(projectDir) {
   try {
     return parseConfigToml(raw);
   } catch (err) {
-    console.error(`changedown: ${configPath} contains invalid TOML (${err instanceof Error ? err.message : String(err)}), using defaults`);
+    const message = err instanceof Error ? err.message : String(err);
+    if (message.includes("Unknown default_view value")) {
+      throw err;
+    }
+    console.error(`changedown: ${configPath} contains invalid TOML (${message}), using defaults`);
     return structuredClone(DEFAULT_CONFIG2);
   }
 }

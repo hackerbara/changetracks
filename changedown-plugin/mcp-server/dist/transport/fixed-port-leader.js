@@ -22,12 +22,18 @@ function loadDevCertOptions() {
   }
 }
 var PortConflictError = class extends Error {
-  constructor(port, service) {
+  constructor(port, service, conflictPid, conflictScheme, expectedScheme) {
+    const pidPart = conflictPid != null ? ` (PID ${conflictPid})` : "";
+    const schemePart = conflictScheme && expectedScheme && conflictScheme !== expectedScheme ? ` running on ${conflictScheme} but this process expects ${expectedScheme}` : "";
+    const killHint = conflictPid != null ? ` Kill it: kill ${conflictPid}.` : " Free the port or configure a different one.";
     super(
-      `PortConflictError: port ${port} is held by a different service ("${service}"). Free the port or configure a different one.`
+      `PortConflictError: port ${port} is held by ${service}${pidPart}${schemePart}.${killHint}`
     );
     this.port = port;
     this.service = service;
+    this.conflictPid = conflictPid;
+    this.conflictScheme = conflictScheme;
+    this.expectedScheme = expectedScheme;
     this.name = "PortConflictError";
   }
 };
@@ -39,6 +45,17 @@ var HttpsRequiredError = class extends Error {
     this.name = "HttpsRequiredError";
   }
 };
+async function probeHealthBothSchemes(port, preferHttps) {
+  const order = preferHttps ? ["https", "http"] : ["http", "https"];
+  for (const scheme of order) {
+    try {
+      const health = await probeHealth(port, scheme === "https");
+      return { health, scheme };
+    } catch {
+    }
+  }
+  return void 0;
+}
 var devCerts = loadDevCertOptions();
 function envRequiresHttps() {
   const requireHttps = process.env.CHANGEDOWN_MCP_REQUIRE_HTTPS?.toLowerCase();
@@ -70,7 +87,13 @@ async function probeHealth(port, probeWithHttps = false) {
         path: "/health",
         timeout: 2e3,
         // Self-signed dev cert — we trust the loopback address, not the chain.
-        rejectUnauthorized: false
+        rejectUnauthorized: false,
+        // Don't reuse Node's default agent connection pool. Without this, when
+        // a same-port leader is killed and replaced (cross-version handover,
+        // test-suite rebinds), Node 24's pool can hand back a stale socket
+        // → ECONNRESET on the next probe. Each /health probe gets its own
+        // socket; probes are infrequent so the cost is negligible.
+        agent: false
       },
       (res) => {
         let raw = "";
@@ -150,21 +173,26 @@ async function bindOrForward(port, options = {}) {
   }
   const bindWithHttps = requireHttps ? true : resolveUseHttps(options);
   if (requireHttps && !devCerts) {
-    try {
-      const health = await probeHealth(port, true);
-      if (health.service !== SERVICE_NAME) {
-        throw new PortConflictError(port, health.service);
-      }
-      const hostUrl = `https://127.0.0.1:${port}`;
-      const startHeartbeat = makeHeartbeat(hostUrl, {
-        intervalMs: 2e3,
-        failThreshold: 2
-      }, options);
-      return { mode: "client", hostUrl, startHeartbeat };
-    } catch (err) {
-      if (err instanceof PortConflictError) throw err;
+    const probed = await probeHealthBothSchemes(
+      port,
+      /* preferHttps */
+      true
+    );
+    if (!probed) {
       throw new HttpsRequiredError();
     }
+    if (probed.health.service !== SERVICE_NAME) {
+      throw new PortConflictError(port, probed.health.service, probed.health.pid, probed.scheme, "https");
+    }
+    if (probed.scheme !== "https") {
+      throw new PortConflictError(port, SERVICE_NAME, probed.health.pid, probed.scheme, "https");
+    }
+    const hostUrl = `https://127.0.0.1:${port}`;
+    const startHeartbeat = makeHeartbeat(hostUrl, {
+      intervalMs: 2e3,
+      failThreshold: 2
+    }, options);
+    return { mode: "client", hostUrl, startHeartbeat };
   }
   try {
     assertCanBindHttps(bindWithHttps);
@@ -179,16 +207,18 @@ async function bindOrForward(port, options = {}) {
   } catch (err) {
     const code = err.code;
     if (code !== "EADDRINUSE") throw err;
-    let health;
-    try {
-      health = await probeHealth(port, requireHttps ? true : bindWithHttps);
-    } catch {
-      throw new PortConflictError(port, "<unreachable \u2014 not an HTTP server>");
+    const expectedScheme = requireHttps || bindWithHttps ? "https" : "http";
+    const probed = await probeHealthBothSchemes(port, expectedScheme === "https");
+    if (!probed) {
+      throw new PortConflictError(port, "<unreachable on either http or https>");
     }
-    if (health.service !== SERVICE_NAME) {
-      throw new PortConflictError(port, health.service);
+    if (probed.health.service !== SERVICE_NAME) {
+      throw new PortConflictError(port, probed.health.service, probed.health.pid, probed.scheme, expectedScheme);
     }
-    const scheme = requireHttps || bindWithHttps ? "https" : "http";
+    if (probed.scheme !== expectedScheme) {
+      throw new PortConflictError(port, SERVICE_NAME, probed.health.pid, probed.scheme, expectedScheme);
+    }
+    const scheme = expectedScheme;
     const hostUrl = `${scheme}://127.0.0.1:${port}`;
     const HEARTBEAT_INTERVAL_MS = 2e3;
     const HEARTBEAT_MISS_THRESHOLD = 2;

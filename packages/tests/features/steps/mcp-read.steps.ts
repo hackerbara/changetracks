@@ -1,7 +1,7 @@
 /**
  * Step definitions for O5 (Read tracked file views) feature file.
  *
- * Covers: meta view, content view, full view, final view, committed view,
+ * Covers: meta view, content view, full view, final view, decided view,
  * line range slicing, and include_meta flag.
  */
 import { Given, When, Then } from '@cucumber/cucumber';
@@ -242,14 +242,14 @@ Then(
   },
 );
 
-// --- Committed view ---
+// --- Decided view ---
 
 Then(
   'accepted changes show their new text \\({string})',
   function (this: ChangeDownWorld, expected: string) {
     assert.ok(this.lastResult, 'No MCP result available');
     const text = this.ctx.resultText(this.lastResult);
-    assert.ok(text.includes(expected), `Expected "${expected}" in committed view`);
+    assert.ok(text.includes(expected), `Expected "${expected}" in decided view`);
   },
 );
 
@@ -258,7 +258,7 @@ Then(
   function (this: ChangeDownWorld, original: string, _newText: string) {
     assert.ok(this.lastResult, 'No MCP result available');
     const text = this.ctx.resultText(this.lastResult);
-    assert.ok(text.includes(original), `Expected original "${original}" in committed view`);
+    assert.ok(text.includes(original), `Expected original "${original}" in decided view`);
   },
 );
 
@@ -285,7 +285,7 @@ Then(
   function (this: ChangeDownWorld, _example: string) {
     assert.ok(this.lastResult, 'No MCP result available');
     const text = this.ctx.resultText(this.lastResult);
-    // Committed view header uses "proposed: N | accepted: N" format
+    // Decided view header uses "proposed: N | accepted: N" format
     // The feature file example "1P 1A" is shorthand.
     const hasProposed = /proposed:\s*\d+/.test(text) || text.includes('1P');
     const hasAccepted = /accepted:\s*\d+/.test(text) || text.includes('1A');

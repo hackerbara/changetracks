@@ -332,7 +332,8 @@ Then(
     const filePath = this.files.get(name);
     assert.ok(filePath, `No file named "${name}"`);
     const actual = this.ctx.state.getLastReadView(filePath);
-    assert.strictEqual(actual, expectedView);
+    const canonicalExpected = expectedView === 'final' || expectedView === 'settled' ? 'decided' : expectedView;
+    assert.strictEqual(actual, canonicalExpected);
   },
 );
 

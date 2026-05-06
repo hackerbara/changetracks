@@ -524,12 +524,21 @@ enabled = true
       expect(config.policy.default_view).toBe('decided');
     });
 
-    it('defaults default_view for invalid value', async () => {
+    it('rejects invalid default_view values', async () => {
       const configDir = path.join(tmpDir, '.changedown');
       await fs.mkdir(configDir, { recursive: true });
       await fs.writeFile(path.join(configDir, 'config.toml'), '[policy]\ndefault_view = "garbage"\n', 'utf-8');
-      const config = await loadConfig(tmpDir);
-      expect(config.policy.default_view).toBe('working');
+      await expect(loadConfig(tmpDir)).rejects.toThrow(/Unknown default_view value: "garbage"/);
+    });
+
+    it('rejects committed and host-only original as default_view values', async () => {
+      const configDir = path.join(tmpDir, '.changedown');
+      await fs.mkdir(configDir, { recursive: true });
+      await fs.writeFile(path.join(configDir, 'config.toml'), '[policy]\ndefault_view = "committed"\n', 'utf-8');
+      await expect(loadConfig(tmpDir)).rejects.toThrow(/Unknown default_view value: "committed"/);
+
+      await fs.writeFile(path.join(configDir, 'config.toml'), '[policy]\ndefault_view = "original"\n', 'utf-8');
+      await expect(loadConfig(tmpDir)).rejects.toThrow(/Unknown default_view value: "original"/);
     });
 
     it('defaults view_policy for invalid value', async () => {

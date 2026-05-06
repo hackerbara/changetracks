@@ -149,7 +149,7 @@ ChangeDown exposes the same protocol through multiple surfaces -- different ways
 | B | MCP Classic | `propose_change` with old_text/new_text |
 | C | MCP Compact | `propose_change` with LINE:HASH coordinates + op grammar |
 | D | CLI | `sc` commands (status, diff, settle, publish) |
-| E | Committed view | `changes` view with P/A flags |
+| E | Decided view | `changes` view with P/A flags |
 | F | V1-Classic | V1 protocol surface, classic mode |
 | G | V1-Compact | V1 protocol surface, compact mode |
 | H | Patch wrapper | Patch-based change submission |

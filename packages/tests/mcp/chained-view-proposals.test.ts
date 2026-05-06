@@ -40,7 +40,7 @@ describe('working view cross-batch coordinate stability', () => {
     await fs.rm(tmpDir, { recursive: true, force: true });
   });
 
-  it('second batch resolves stale review-view coordinates via committed hash', async () => {
+  it('second batch resolves stale review-view coordinates via decided hash', async () => {
     // 1. Create a file with simple content
     const content = [
       '<!-- changedown.com/v1: tracked -->',

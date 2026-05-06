@@ -1,6 +1,6 @@
 {
   "name": "@changedown/cli",
-  "version": "0.4.2",
+  "version": "0.4.4",
   "description": "Durable change tracking for editors and AI agents",
   "type": "module",
   "main": "dist/index.js",
@@ -35,7 +35,8 @@
     "changedown": "./dist/cli-init.js"
   },
   "scripts": {
-    "build": "tsc"
+    "build": "tsc",
+    "prepublishOnly": "node -e \"if (!process.env.CHANGEDOWN_PUBLISH_OK) { console.error('Direct \\u0060npm publish\\u0060 is unsupported for @changedown/cli — use scripts/publish-npm.sh, which rewrites file: workspace refs to semver. Set CHANGEDOWN_PUBLISH_OK=1 to override.'); process.exit(1); }\""
   },
   "files": [
     "dist/",

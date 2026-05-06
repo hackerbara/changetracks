@@ -177,11 +177,14 @@ auto_on_reject = true
       );
     }
 
+    const port = String(41000 + Math.floor(Math.random() * 10000));
     state.serverProcess = spawn('node', [serverPath], {
       cwd: state.tmpDir,
       env: {
         ...process.env,
         CHANGEDOWN_PROJECT_DIR: state.tmpDir,
+        CHANGEDOWN_MCP_PORT: port,
+        CHANGEDOWN_MCP_USE_HTTP: 'true',
       },
       stdio: ['pipe', 'pipe', 'pipe'],
     });

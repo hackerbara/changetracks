@@ -172,7 +172,7 @@ describe('SessionState lifecycle', () => {
     expect(hashes?.[0]?.raw).toBe('b2');
   });
 
-  it('resolveHash uses committed hash for working view (backward compat, no suppliedHash)', () => {
+  it('resolveHash uses decided hash for working view (backward compat, no suppliedHash)', () => {
     state.recordAfterRead('test.md', 'working', [
       { line: 1, raw: 'r1', current: 's1', committed: 'c1', currentView: 'sv1', rawLineNum: 1 },
     ], 'content');
@@ -180,7 +180,7 @@ describe('SessionState lifecycle', () => {
     expect(resolved).toEqual({ match: true, rawLineNum: 1, view: 'working' });
   });
 
-  it('resolveHash uses committed hash for decided view (backward compat, no suppliedHash)', () => {
+  it('resolveHash uses decided hash for decided view (backward compat, no suppliedHash)', () => {
     state.recordAfterRead('test.md', 'decided', [
       { line: 1, raw: 'r1', current: 's1', committed: 'c1', currentView: 'sv1', rawLineNum: 1 },
     ], 'content');
@@ -196,7 +196,7 @@ describe('SessionState lifecycle', () => {
     expect(resolved).toEqual({ match: true, rawLineNum: 1, view: 'raw' });
   });
 
-  it('resolveHash returns match:true when suppliedHash matches working view committed hash', () => {
+  it('resolveHash returns match:true when suppliedHash matches working view decided hash', () => {
     state.recordAfterRead('test.md', 'working', [
       { line: 1, raw: 'r1', current: 's1', committed: 'c1', currentView: 'sv1', rawLineNum: 1 },
     ], 'content');
@@ -212,7 +212,7 @@ describe('SessionState lifecycle', () => {
     expect(resolved).toEqual({ match: false, expectedHash: 'r1', view: 'working' });
   });
 
-  it('resolveHash returns match:true when suppliedHash matches decided view committed hash', () => {
+  it('resolveHash returns match:true when suppliedHash matches decided view decided hash', () => {
     state.recordAfterRead('test.md', 'decided', [
       { line: 1, raw: 'r1', current: 's1', committed: 'c1', currentView: 'sv1', rawLineNum: 1 },
     ], 'content');
@@ -368,7 +368,7 @@ describe('per-view hash retention', () => {
   });
 });
 
-describe('rerecordState: working view computes committed hashes', () => {
+describe('rerecordState: working view computes decided hashes', () => {
   const config: ChangeDownConfig = {
     hashline: { enabled: true, auto_remap: false },
     tracking: { include: ['**/*.md'], exclude: [], default: 'tracked', auto_header: true },
@@ -385,7 +385,7 @@ describe('rerecordState: working view computes committed hashes', () => {
     'Line two is plain.',
   ].join('\n');
 
-  it('stores committed hashes for working view after rerecordState', async () => {
+  it('stores decided hashes for working view after rerecordState', async () => {
     await initHashline();
     const state = new SessionState();
 
@@ -410,7 +410,7 @@ describe('rerecordState: working view computes committed hashes', () => {
     }
   });
 
-  it('committed hash differs from raw hash for line with CriticMarkup', async () => {
+  it('decided hash differs from raw hash for line with CriticMarkup', async () => {
     await initHashline();
     const state = new SessionState();
 
@@ -421,7 +421,7 @@ describe('rerecordState: working view computes committed hashes', () => {
     const hashes = state.getRecordedHashes('test.md');
     expect(hashes).toBeDefined();
 
-    // Line 2 (1-indexed) has CriticMarkup — its committed hash should differ from raw hash
+    // Line 2 (1-indexed) has CriticMarkup — its decided hash should differ from raw hash
     // because committed strips the markup and reverts the pending insertion
     const line2 = hashes!.find(h => h.line === 2);
     expect(line2).toBeDefined();
@@ -429,11 +429,11 @@ describe('rerecordState: working view computes committed hashes', () => {
     expect(line2!.committed).not.toBe(line2!.raw);
   });
 
-  it('raw view does not compute committed hashes', async () => {
+  it('raw view does not compute decided hashes', async () => {
     await initHashline();
     const state = new SessionState();
 
-    // Record a read in raw view — committed hashes should NOT be computed
+    // Record a read in raw view — decided hashes should NOT be computed
     state.recordAfterRead('test.md', 'raw', [], 'original');
 
     await rerecordState(state, 'test.md', criticContent, config);

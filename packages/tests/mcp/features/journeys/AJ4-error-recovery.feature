@@ -14,11 +14,11 @@ Feature: Error recovery and resilience
     And the config has hashline.enabled = true
 
   Scenario: Stale hash -- re-read and retry
-    When I read the committed view and record hashes
+    When I read the decided view and record hashes
     And the file is externally rewritten (another agent replaces all content)
     And I try to propose a change with the recorded stale hashes
     Then the response is an error (old_text not found at stale line reference)
-    When I re-read the committed view to get fresh hashes
+    When I re-read the decided view to get fresh hashes
     And I retry the propose with updated coordinates
     Then the change is applied successfully
 

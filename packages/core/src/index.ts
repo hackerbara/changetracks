@@ -125,6 +125,7 @@ export { classifySignal } from './edit-boundary/index.js';
 export { processEvent } from './edit-boundary/index.js';
 export type { ProcessEventContext, ProcessEventResult } from './edit-boundary/index.js';
 export { validateStructuralIntegrity } from './operations/structural-integrity.js';
+export { materializeResolvedChangesForExport, type ExportSettlementResult } from './operations/export-settlement.js';
 export { findMarkupRangeById, removeMarkupById, type MarkupKind, type MarkupRangeById } from './operations/markup-by-id.js';
 export { parseForFormat, stripFootnoteBlocks } from './format-aware-parse.js';
 export { buildSessionHashes } from './renderers/view-builders/session-hashes.js';

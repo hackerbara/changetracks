@@ -200,11 +200,14 @@ export async function computeSupersedeResult(
   }
 
   // --- Standard path: revert body and re-propose ---
+  let preRevertContent: string | undefined;
   if (rejectedChange) {
+    preRevertContent = stripConsumedReferenceFromBody(fileContent, changeId);
     const rejectEdit = computeReject(rejectedChange);
     fileContent = fileContent.slice(0, rejectEdit.offset) +
       rejectEdit.newText +
       fileContent.slice(rejectEdit.offset + rejectEdit.length);
+    fileContent = stripConsumedReferenceFromBody(fileContent, changeId);
   }
 
   // --- 4. Allocate next ID ---
@@ -225,16 +228,31 @@ export async function computeSupersedeResult(
     }
   }
 
-  const proposeResult = await applyProposeChange({
-    text: fileContent,
-    oldText: proposeOldText,
-    newText,
-    changeId: newChangeId,
-    author,
-    reasoning: reason,
-    insertAfter,
-    level,
-  });
+  let proposeResult;
+  try {
+    proposeResult = await applyProposeChange({
+      text: fileContent,
+      oldText: proposeOldText,
+      newText,
+      changeId: newChangeId,
+      author,
+      reasoning: reason,
+      insertAfter,
+      level,
+    });
+  } catch (err) {
+    if (!preRevertContent) throw err;
+    proposeResult = await applyProposeChange({
+      text: preRevertContent,
+      oldText: proposeOldText,
+      newText,
+      changeId: newChangeId,
+      author,
+      reasoning: reason,
+      insertAfter,
+      level,
+    });
+  }
   fileContent = proposeResult.modifiedText;
 
   // --- 6. Add `supersedes: cn-N` to the new change's footnote ---
@@ -262,4 +280,18 @@ export async function computeSupersedeResult(
     newChangeId,
     originalChangeId: changeId,
   };
+}
+
+
+function stripConsumedReferenceFromBody(text: string, consumedId: string): string {
+  const footnoteStart = text.search(/(?:^|\n)\[\^[^\]]+\]:/);
+  const bodyEnd = footnoteStart >= 0 ? footnoteStart : text.length;
+  const body = text.slice(0, bodyEnd);
+  const footer = text.slice(bodyEnd);
+  return stripConsumedReference(body, consumedId) + footer;
+}
+
+function stripConsumedReference(text: string, consumedId: string): string {
+  const escaped = consumedId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return text.replace(new RegExp(`\\[\\^${escaped}\\]`, 'g'), '');
 }

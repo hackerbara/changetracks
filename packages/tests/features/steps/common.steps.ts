@@ -84,7 +84,7 @@ When(
     const params = Object.fromEntries(rows.map((r: string[]) => [r[0].trim(), r[1].trim()]));
     const filePath = this.files.get(params.file) ?? params.file;
 
-    // Resolve dynamic hash/line placeholders from committed view output
+    // Resolve dynamic hash/line placeholders from decided view output
     // (e.g., <line of "timeout = 30">, <hash of that line>)
     const resolveHashCoords = (p: Record<string, string>) => {
       const resolved: Record<string, string> = { ...p };
@@ -107,7 +107,7 @@ When(
           if (searchTarget) {
             for (const line of viewText.split('\n')) {
               if (line.includes(searchTarget)) {
-                // Committed view format: " 3:d7 |timeout = 30" or "3:d7|..."
+                // Decided view format: " 3:d7 |timeout = 30" or "3:d7|..."
                 const m = line.match(/\s*(\d+):([0-9a-f]{2})/);
                 if (m) {
                   if (resolved.start_line?.startsWith('<')) resolved.start_line = m[1];

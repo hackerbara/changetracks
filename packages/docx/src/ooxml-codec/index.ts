@@ -391,6 +391,15 @@ export type {
   ValidatePackagePatchInput,
 } from "./codec.js";
 export {
+  isChangedownCompareCommentMetadataText,
+  normalizeChangeDownAuthorHandle,
+  parseWordChangeDownCommentMetadata,
+  serializeWordChangeDownCommentMetadata,
+  toChangeDownDiscussion,
+  type WordChangeDownCommentMetadata,
+  type WordChangeDownCommentReply,
+} from "./comment-metadata.js";
+export {
   RelationshipAllocator,
   parseRelationshipGraph,
   parseRelationshipPartNameToSourcePartName,

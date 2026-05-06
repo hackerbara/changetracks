@@ -10,7 +10,7 @@ import {
   type ThreeZoneLine,
 } from '@changedown/core';
 import type { BuiltinView } from '@changedown/core/host';
-import { resolveView, CANONICAL_VIEWS } from '../../view-alias.js';
+import { resolveView, READ_VIEWS } from '../../view-alias.js';
 import { errorResult } from '../shared/error-result.js';
 import { optionalStrArg } from '../args.js';
 import { ConfigResolver } from '../config-resolver.js';
@@ -155,6 +155,38 @@ function findSafePaginationEnd(lines: ThreeZoneLine[], effectiveEnd: number): nu
   return end;
 }
 
+
+function prependAliasHeader(
+  output: string,
+  opts: {
+    displayPath: string;
+    policyMode: string;
+    trackingStatus: 'tracked' | 'untracked';
+    fileContent: string;
+  },
+): string {
+  const policyLine = `## ${opts.displayPath} | policy: ${opts.policyMode} | tracking: ${opts.trackingStatus}`;
+  if (/^---$/m.test(output)) {
+    return output.replace(/^---$/m, `${policyLine}\n---`);
+  }
+
+  const changes = parseForFormat(opts.fileContent).getChanges();
+  const counts = { proposed: 0, accepted: 0, rejected: 0 };
+  for (const change of changes) {
+    const status = change.metadata?.status ?? change.inlineMetadata?.status ?? change.status;
+    if (status === 'accepted') counts.accepted++;
+    else if (status === 'rejected') counts.rejected++;
+    else counts.proposed++;
+  }
+  return [
+    policyLine,
+    `## proposed: ${counts.proposed} | accepted: ${counts.accepted} | rejected: ${counts.rejected}`,
+    '---',
+    '',
+    output,
+  ].join('\n');
+}
+
 interface PipelineResult {
   output: string;
   paginatedDoc: ThreeZoneDocument;
@@ -230,9 +262,11 @@ export async function handleReadTrackedFile(
 
     // Resolve view to canonical name (or null for unknown)
     const resolved = requestedView !== undefined ? resolveView(requestedView) : null;
-    if (requestedView !== undefined && resolved === null) {
+    const isReadView = (view: BuiltinView): view is (typeof READ_VIEWS)[number] =>
+      (READ_VIEWS as readonly BuiltinView[]).includes(view);
+    if (requestedView !== undefined && (resolved === null || !isReadView(resolved))) {
       return errorResult(
-        `Unknown view '${requestedView}'. Valid views: ${CANONICAL_VIEWS.join(', ')}`,
+        `Unknown view '${requestedView}'. Valid views: ${READ_VIEWS.join(', ')}`,
       );
     }
 
@@ -298,6 +332,14 @@ export async function handleReadTrackedFile(
       );
 
       let output = rawOutput;
+      if (requestedView === 'meta' || requestedView === 'content' || requestedView === 'full') {
+        output = prependAliasHeader(output, {
+          displayPath,
+          policyMode: config.policy.mode,
+          trackingStatus: trackingStatus.status,
+          fileContent,
+        });
+      }
       const truncation = buildTruncationMessage(effectiveStart, adjustedEnd, totalLines);
       if (truncation) output += truncation;
 
@@ -321,6 +363,14 @@ export async function handleReadTrackedFile(
 
     // 7. Inject change levels line when include_meta is requested (before truncation message)
     let output = rawOutput;
+    if (requestedView === 'meta' || requestedView === 'content' || requestedView === 'full') {
+      output = prependAliasHeader(output, {
+        displayPath,
+        policyMode: config.policy.mode,
+        trackingStatus: trackingStatus.status,
+        fileContent,
+      });
+    }
     if (includeMeta) {
       const levelsLine = formatChangeLevelsLine(fileContent);
       if (levelsLine) {

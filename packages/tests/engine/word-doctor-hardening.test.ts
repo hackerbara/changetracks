@@ -16,6 +16,7 @@ vi.mock('../../../packages/cli/src/word/manifest.js', () => ({
 
 vi.mock('../../../packages/cli/src/word/office-tools.js', () => ({
   resolveBin: vi.fn(() => undefined),
+  resolvePackagedTool: vi.fn(() => ({ command: process.execPath, args: ['/repo/node_modules/office-tool/cli.js'] })),
   runTool: vi.fn(() => 0),
 }));
 
@@ -55,11 +56,12 @@ describe('word doctor hardening', () => {
     };
 
     try {
-      const code = await runWordDoctor({ cwd: '/repo' }, { dryRun: true, noDownload: true });
+      const code = await runWordDoctor({ cwd: '/repo' }, { dryRun: true, noDownload: true, paneMode: 'hosted' });
 
       expect(code).toBe(0);
       expect(mocks.resolveManifestForDoctor).toHaveBeenCalledWith(undefined, true);
-      expect(mocks.probeMcpHealth).toHaveBeenCalledOnce();
+      expect(mocks.probeMcpHealth).toHaveBeenCalledWith(1500, 'https');
+      expect(mocks.probeMcpHealth).toHaveBeenCalledWith(800, 'http');
       expect(mocks.preflightMcp).not.toHaveBeenCalled();
       expect(mocks.preflightMcpFromOrigin).not.toHaveBeenCalled();
       expect(logs.join('\n')).toContain('hosted manifest cache');
@@ -90,12 +92,36 @@ describe('word doctor hardening', () => {
     };
 
     try {
-      const code = await runWordDoctor({ cwd: '/repo' }, { dryRun: true, noDownload: true });
+      const code = await runWordDoctor({ cwd: '/repo' }, { dryRun: true, noDownload: true, paneMode: 'hosted' });
 
       expect(code).toBe(0);
       expect(mocks.preflightMcp).toHaveBeenCalledOnce();
       expect(mocks.preflightMcpFromOrigin).toHaveBeenCalledWith('https://evil.example', '/backend/register', 1500, 'https');
       expect(logs.join('\n')).toContain('MCP hostile-origin rejection');
+    } finally {
+      console.log = previousLog;
+      vi.restoreAllMocks();
+    }
+  });
+
+  it('fails doctor when HTTPS mode finds an old HTTP bridge on the fixed port', async () => {
+    mocks.resolveManifestForDoctor.mockResolvedValue('/cache/manifest.hosted.xml');
+    mocks.probeMcpHealth
+      .mockResolvedValueOnce({ ok: false, error: 'wrong version number' })
+      .mockResolvedValueOnce({ ok: true, service: 'changedown-mcp' });
+
+    const logs: string[] = [];
+    const previousLog = console.log;
+    console.log = (message?: unknown, ...optional: unknown[]) => {
+      logs.push([message, ...optional].map(String).join(' '));
+    };
+
+    try {
+      const code = await runWordDoctor({ cwd: '/repo' }, { dryRun: true, noDownload: true, paneMode: 'hosted' });
+
+      expect(code).toBe(1);
+      expect(logs.join('\n')).toContain('MCP HTTPS loopback');
+      expect(logs.join('\n')).toContain('HTTP bridge');
     } finally {
       console.log = previousLog;
       vi.restoreAllMocks();

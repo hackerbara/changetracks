@@ -7,7 +7,7 @@
  * This serves a different purpose from CriticMarkupParser.parseFootnoteDefinitions()
  * which builds a full AST FootnoteDefinition. This module provides lightweight
  * FootnoteInfo records with line positions, suitable for meta-rendering and
- * committed-view computation.
+ * decided-view computation.
  */
 
 /**

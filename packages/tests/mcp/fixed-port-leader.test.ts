@@ -2,7 +2,7 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import * as http from 'node:http';
 import { AddressInfo } from 'node:net';
-import { bindOrForward, HttpsRequiredError } from '@changedown/mcp/transport/fixed-port-leader';
+import { bindOrForward, HttpsRequiredError, PortConflictError } from '@changedown/mcp/transport/fixed-port-leader';
 
 // Helper: spin up a fake "other changedown-mcp" that owns a port
 function fakeChangedownHost(port: number): Promise<http.Server> {
@@ -99,6 +99,92 @@ describe('bindOrForward', () => {
     servers.push(fake);
 
     await expect(bindOrForward(TEST_PORT, { useHttps: false, requireHttps: false })).rejects.toThrow('PortConflictError');
+  });
+
+  // Helper: fake foreign service that exposes pid in /health
+  function fakeForeignWithPid(port: number, pid: number, service = 'some-other-app'): Promise<http.Server> {
+    return new Promise((resolve, reject) => {
+      const s = http.createServer((req, res) => {
+        if (req.url === '/health' && req.method === 'GET') {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ service, pid, version: '0.0.1', capabilities: [] }));
+        } else { res.writeHead(404); res.end(); }
+      });
+      s.listen(port, '127.0.0.1', () => resolve(s));
+      s.on('error', reject);
+    });
+  }
+
+  // Helper: fake same-service leader on a wrong-scheme (HTTP, when caller expects HTTPS)
+  function fakeChangedownHttpWithPid(port: number, pid: number): Promise<http.Server> {
+    return new Promise((resolve, reject) => {
+      const s = http.createServer((req, res) => {
+        if (req.url === '/health' && req.method === 'GET') {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({
+            service: 'changedown-mcp', version: '0.4.0', pid,
+            capabilities: ['backend-register', 'mcp-streamable'],
+          }));
+        } else { res.writeHead(404); res.end(); }
+      });
+      s.listen(port, '127.0.0.1', () => resolve(s));
+      s.on('error', reject);
+    });
+  }
+
+  it('PortConflictError message includes the foreign service PID when /health exposes it', async () => {
+    const fakePid = 99999;
+    const fake = await fakeForeignWithPid(TEST_PORT, fakePid);
+    servers.push(fake);
+
+    try {
+      await bindOrForward(TEST_PORT, { useHttps: false, requireHttps: false });
+      throw new Error('should have thrown PortConflictError');
+    } catch (err) {
+      expect((err as Error).name).toBe('PortConflictError');
+      expect((err as Error).message).toContain(String(fakePid));
+      expect((err as Error).message).toContain('some-other-app');
+      expect((err as Error).message).toMatch(/kill\s+99999/i);
+    }
+  });
+
+  it('PortConflictError reports scheme mismatch when same-service leader is on the wrong scheme', async () => {
+    // HTTP-only changedown-mcp leader; new spawn requires HTTPS.
+    const fakePid = 88888;
+    const fake = await fakeChangedownHttpWithPid(TEST_PORT, fakePid);
+    servers.push(fake);
+
+    try {
+      // requireHttps + !devCerts forces the no-bind probe path (line 222-237 region).
+      // No devCerts in test env → goes through that path. Probe HTTPS first → fails
+      // (server is HTTP). New code falls back to HTTP probe → identifies our service
+      // on wrong scheme → throws PortConflictError with pid + scheme info.
+      await bindOrForward(TEST_PORT, { useHttps: true, requireHttps: true });
+      throw new Error('should have thrown PortConflictError');
+    } catch (err) {
+      // Allow either PortConflictError (new behavior) or HttpsRequiredError (if dev
+      // certs are unexpectedly available in the test env and we go down the bind path
+      // — but then EADDRINUSE catch should ALSO produce PortConflictError).
+      expect((err as Error).name).toBe('PortConflictError');
+      const msg = (err as Error).message;
+      expect(msg).toContain(String(fakePid));
+      expect(msg).toMatch(/http/i);
+      expect(msg).toMatch(/https/i);
+      expect(msg).toContain('changedown-mcp');
+    }
+  });
+
+  it('PortConflictError constructor: structured fields are populated for callers', () => {
+    const err = new PortConflictError(39990, 'changedown-mcp', 12345, 'http', 'https');
+    expect(err.port).toBe(39990);
+    expect(err.service).toBe('changedown-mcp');
+    expect(err.conflictPid).toBe(12345);
+    expect(err.conflictScheme).toBe('http');
+    expect(err.expectedScheme).toBe('https');
+    expect(err.message).toContain('12345');
+    expect(err.message).toContain('http');
+    expect(err.message).toContain('https');
+    expect(err.message).toMatch(/kill\s+12345/i);
   });
 
   it('client heartbeat: two consecutive health failures trigger re-bind attempt', async () => {

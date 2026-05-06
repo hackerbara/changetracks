@@ -1,14 +1,24 @@
 {
   "name": "@changedown/mcp",
-  "version": "0.4.0",
+  "version": "0.4.4",
   "description": "MCP server for ChangeDown — durable change tracking for AI agents",
   "license": "MIT",
   "repository": {
     "type": "git",
     "url": "https://github.com/hackerbara/changedown.git"
   },
-  "keywords": ["mcp", "model-context-protocol", "criticmarkup", "ai-agents", "change-tracking"],
-  "files": ["dist/", "README.md", "LICENSE"],
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "criticmarkup",
+    "ai-agents",
+    "change-tracking"
+  ],
+  "files": [
+    "dist/",
+    "README.md",
+    "LICENSE"
+  ],
   "type": "module",
   "main": "dist/index.js",
   "exports": {
@@ -32,7 +42,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",
-        "@changedown/core": "file:../../packages/core",
+    "@changedown/core": "file:../../packages/core",
     "@changedown/cli": "file:../../packages/cli",
     "commander": "^13.1.0",
     "diff": "^8.0.3",

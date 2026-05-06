@@ -9924,6 +9924,9 @@ function isDocumentScopeAcceptedInsertion(fn) {
   const metadata = metadataFromUnknownLines(fn.unknownBodyLines ?? []);
   return fn.type === "ins" && fn.status === "accepted" && fn.author === "@base-document" && fn.lineNumber === void 0 && fn.hash === void 0 && fn.opString === void 0 && metadata.source === "initial-word-body" && metadata.scope === "document" && metadata["body-hash"] !== void 0;
 }
+function isRejectedSupersededArchivalRecord(fn) {
+  return fn.status === "rejected" && (fn.supersededBy?.length ?? 0) > 0;
+}
 function toChangeDownRecord(fn) {
   const bodyLines = fn.unknownBodyLines ?? [];
   return {
@@ -10305,11 +10308,13 @@ var init_footnote_native_parser = __esm({
         const lineContent = lineIdx >= 0 && lineIdx < bodyLines.length ? bodyLines[lineIdx] : "";
         const fallbackRange = { start: lineOffset2, end: lineOffset2 };
         if (!parsedOp) {
-          this.pendingDiagnostics.push({
-            kind: "coordinate_failed",
-            changeId: fn.id,
-            message: `Footnote ${fn.id} has no parsedOp; cannot resolve position.`
-          });
+          if (!isRejectedSupersededArchivalRecord(fn)) {
+            this.pendingDiagnostics.push({
+              kind: "coordinate_failed",
+              changeId: fn.id,
+              message: `Footnote ${fn.id} has no parsedOp; cannot resolve position.`
+            });
+          }
           return { range: fallbackRange, anchored: true, resolved: false, comment: fn.unknownBodyLines?.[0], resolutionPath: "rejected" };
         }
         const findOnLine = (searchText) => {
@@ -12148,9 +12153,12 @@ async function computeSupersedeResult(text, changeId, opts) {
       originalChangeId: changeId
     };
   }
+  let preRevertContent;
   if (rejectedChange) {
+    preRevertContent = stripConsumedReferenceFromBody(fileContent, changeId);
     const rejectEdit = computeReject(rejectedChange);
     fileContent = fileContent.slice(0, rejectEdit.offset) + rejectEdit.newText + fileContent.slice(rejectEdit.offset + rejectEdit.length);
+    fileContent = stripConsumedReferenceFromBody(fileContent, changeId);
   }
   const maxId = scanMaxCnId(fileContent);
   const newChangeId = `cn-${maxId + 1}`;
@@ -12162,16 +12170,32 @@ async function computeSupersedeResult(text, changeId, opts) {
       }
     }
   }
-  const proposeResult = await applyProposeChange({
-    text: fileContent,
-    oldText: proposeOldText,
-    newText,
-    changeId: newChangeId,
-    author,
-    reasoning: reason,
-    insertAfter,
-    level
-  });
+  let proposeResult;
+  try {
+    proposeResult = await applyProposeChange({
+      text: fileContent,
+      oldText: proposeOldText,
+      newText,
+      changeId: newChangeId,
+      author,
+      reasoning: reason,
+      insertAfter,
+      level
+    });
+  } catch (err) {
+    if (!preRevertContent)
+      throw err;
+    proposeResult = await applyProposeChange({
+      text: preRevertContent,
+      oldText: proposeOldText,
+      newText,
+      changeId: newChangeId,
+      author,
+      reasoning: reason,
+      insertAfter,
+      level
+    });
+  }
   fileContent = proposeResult.modifiedText;
   const modifiedLines = fileContent.split("\n");
   const newBlock = findFootnoteBlock(modifiedLines, newChangeId);
@@ -12193,6 +12217,17 @@ async function computeSupersedeResult(text, changeId, opts) {
     newChangeId,
     originalChangeId: changeId
   };
+}
+function stripConsumedReferenceFromBody(text, consumedId) {
+  const footnoteStart = text.search(/(?:^|\n)\[\^[^\]]+\]:/);
+  const bodyEnd = footnoteStart >= 0 ? footnoteStart : text.length;
+  const body = text.slice(0, bodyEnd);
+  const footer = text.slice(bodyEnd);
+  return stripConsumedReference(body, consumedId) + footer;
+}
+function stripConsumedReference(text, consumedId) {
+  const escaped = consumedId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return text.replace(new RegExp(`\\[\\^${escaped}\\]`, "g"), "");
 }
 var init_supersede = __esm({
   "../../packages/core/dist-esm/operations/supersede.js"() {
@@ -12699,9 +12734,12 @@ function formatPlainText(doc) {
   return parts.join("\n");
 }
 function formatHeader(header, view) {
-  if (view === "decided" || view === "raw")
+  if (view === "raw")
     return "";
   const lines = [];
+  if (view === "decided") {
+    lines.push("## view: decided");
+  }
   const counts = `proposed: ${header.counts.proposed} | accepted: ${header.counts.accepted} | rejected: ${header.counts.rejected}`;
   const threads = header.threadCount > 0 ? ` | threads: ${header.threadCount}` : "";
   lines.push(`## ${counts}${threads}`);
@@ -13207,20 +13245,14 @@ function buildDecidedDocument(rawContent, options) {
   const changes = parseForFormat(rawContent, { skipCodeBlocks: false }).getChanges();
   const sessionHashesResult = buildSessionHashes(rawContent, changes);
   const decidedResult = sessionHashesResult.decidedResult;
-  const footnoteMap = /* @__PURE__ */ new Map();
-  for (const node of changes)
-    footnoteMap.set(node.id, node);
   const decidedLines = [...decidedResult.lines];
   while (decidedLines.length > 0 && decidedLines[decidedLines.length - 1].text.trim() === "") {
     decidedLines.pop();
   }
-  const rawLines = rawContent.split("\n");
-  const lineRefMap = buildLineRefMap(rawLines);
   const continuations = computeContinuationLines(rawContent, changes);
   const lines = decidedLines.map((cl) => {
-    const refIds = lineRefMap.get(cl.rawLineNum - 1);
-    const flags = computeAFlagOnly(refIds, footnoteMap);
     const sh = sessionHashesResult.byRawLine.get(cl.rawLineNum);
+    const flags = cl.flag ? [cl.flag] : [];
     return {
       margin: {
         lineNumber: cl.decidedLineNum,
@@ -13249,24 +13281,10 @@ function buildDecidedDocument(rawContent, options) {
   });
   return { view: "decided", header, lines };
 }
-function computeAFlagOnly(refIds, footnoteMap) {
-  if (!refIds)
-    return [];
-  for (const id of refIds) {
-    const node = footnoteMap.get(id);
-    if (!node)
-      continue;
-    const status = nodeStatus(node);
-    if (status === "accepted")
-      return ["A"];
-  }
-  return [];
-}
 var init_decided = __esm({
   "../../packages/core/dist-esm/renderers/view-builders/decided.js"() {
     "use strict";
     init_format_aware_parse();
-    init_types();
     init_session_hashes();
     init_view_builder_utils();
   }
@@ -13536,6 +13554,14 @@ var init_structural_integrity = __esm({
   }
 });
 
+// ../../packages/core/dist-esm/operations/export-settlement.js
+var init_export_settlement = __esm({
+  "../../packages/core/dist-esm/operations/export-settlement.js"() {
+    "use strict";
+    init_current_text();
+  }
+});
+
 // ../../packages/core/dist-esm/operations/markup-by-id.js
 var init_markup_by_id = __esm({
   "../../packages/core/dist-esm/operations/markup-by-id.js"() {
@@ -13741,6 +13767,7 @@ var init_dist_esm = __esm({
     init_edit_boundary();
     init_edit_boundary();
     init_structural_integrity();
+    init_export_settlement();
     init_markup_by_id();
     init_format_aware_parse();
     init_session_hashes();
@@ -15525,10 +15552,6 @@ var init_file_ops2 = __esm({
     init_dist_esm();
   }
 });
-
-// src/index.ts
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
 
 // ../../node_modules/zod/v3/helpers/util.js
 var util;
@@ -29694,7 +29717,6 @@ var VIEW_KNOWN_NAMES = /* @__PURE__ */ new Map([
   ["all", "working"],
   ["content", "raw"],
   ["meta", "working"],
-  ["committed", "simple"],
   // VS Code settings compat
   ["all-markup", "working"],
   ["markup", "working"]
@@ -30427,7 +30449,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 
 // ../../packages/cli/dist/view-alias.js
-var CANONICAL_VIEWS = ["working", "simple", "decided", "original", "raw"];
+var READ_VIEWS = ["working", "simple", "decided", "raw"];
 
 // ../../packages/cli/dist/config/loader.js
 function asStringArray(value) {
@@ -30519,10 +30541,10 @@ function parseConfigToml(raw) {
         if (raw2 === void 0)
           return DEFAULT_CONFIG2.policy.default_view;
         const resolved = resolveView(String(raw2));
-        if (resolved !== null)
+        const readViews = /* @__PURE__ */ new Set(["working", "simple", "decided", "raw"]);
+        if (resolved !== null && readViews.has(resolved))
           return resolved;
-        console.warn(`[changedown] Unknown default_view value: "${raw2}". Falling back to "${DEFAULT_CONFIG2.policy.default_view}".`);
-        return DEFAULT_CONFIG2.policy.default_view;
+        throw new Error(`[changedown] Unknown default_view value: "${raw2}". Valid views: working, simple, decided, raw.`);
       })(),
       view_policy: policy?.["view_policy"] === "suggest" || policy?.["view_policy"] === "require" ? policy["view_policy"] : DEFAULT_CONFIG2.policy.view_policy
     },
@@ -30570,7 +30592,11 @@ async function loadConfig(projectDir) {
   try {
     return parseConfigToml(raw);
   } catch (err) {
-    console.error(`changedown: ${configPath} contains invalid TOML (${err instanceof Error ? err.message : String(err)}), using defaults`);
+    const message = err instanceof Error ? err.message : String(err);
+    if (message.includes("Unknown default_view value")) {
+      throw err;
+    }
+    console.error(`changedown: ${configPath} contains invalid TOML (${message}), using defaults`);
     return structuredClone(DEFAULT_CONFIG2);
   }
 }
@@ -32477,11 +32503,11 @@ function checkStaleness(fileContent, filePath, state) {
     for (const entry of recorded) {
       const rawLine = entry.rawLineNum ?? entry.line;
       if (rawLine < 1 || rawLine > lines.length) {
-        return "File has changed since last read_tracked_file: line count differs. Re-read with read_tracked_file view=committed for current hashes.";
+        return "File has changed since last read_tracked_file: line count differs. Re-read with read_tracked_file view=decided for current hashes.";
       }
       const currentHash = computeLineHash(rawLine - 1, lines[rawLine - 1], lines);
       if (currentHash !== entry.raw) {
-        return `File has changed since last read_tracked_file: raw line ${rawLine} hash differs (recorded ${entry.raw}, current ${currentHash}). Re-read with read_tracked_file view=committed for current hashes.`;
+        return `File has changed since last read_tracked_file: raw line ${rawLine} hash differs (recorded ${entry.raw}, current ${currentHash}). Re-read with read_tracked_file view=decided for current hashes.`;
       }
     }
   } else if (hasSettledHashes(filePath, state)) {
@@ -33811,6 +33837,31 @@ function findSafePaginationEnd(lines, effectiveEnd) {
   }
   return end;
 }
+function prependAliasHeader(output, opts) {
+  const policyLine = `## ${opts.displayPath} | policy: ${opts.policyMode} | tracking: ${opts.trackingStatus}`;
+  if (/^---$/m.test(output)) {
+    return output.replace(/^---$/m, `${policyLine}
+---`);
+  }
+  const changes = parseForFormat(opts.fileContent).getChanges();
+  const counts = { proposed: 0, accepted: 0, rejected: 0 };
+  for (const change of changes) {
+    const status = change.metadata?.status ?? change.inlineMetadata?.status ?? change.status;
+    if (status === "accepted")
+      counts.accepted++;
+    else if (status === "rejected")
+      counts.rejected++;
+    else
+      counts.proposed++;
+  }
+  return [
+    policyLine,
+    `## proposed: ${counts.proposed} | accepted: ${counts.accepted} | rejected: ${counts.rejected}`,
+    "---",
+    "",
+    output
+  ].join("\n");
+}
 function buildAndFormatPaginatedDoc(fileContent, canonicalView, opts, pagination, state, absolutePath) {
   const doc = buildViewDocument(fileContent, canonicalView, opts);
   const sessionHashes = doc.lines.map((l) => ({
@@ -33851,8 +33902,9 @@ async function handleReadTrackedFile(args, resolver, state) {
     const requestedLimit = args.limit;
     const requestedView = optionalStrArg(args, "view", "view");
     const resolved = requestedView !== void 0 ? resolveView(requestedView) : null;
-    if (requestedView !== void 0 && resolved === null) {
-      return errorResult3(`Unknown view '${requestedView}'. Valid views: ${CANONICAL_VIEWS.join(", ")}`);
+    const isReadView = (view) => READ_VIEWS.includes(view);
+    if (requestedView !== void 0 && (resolved === null || !isReadView(resolved))) {
+      return errorResult3(`Unknown view '${requestedView}'. Valid views: ${READ_VIEWS.join(", ")}`);
     }
     const includeMeta = args.include_meta === true;
     const includeGuide = args.include_guide === true;
@@ -33887,6 +33939,14 @@ async function handleReadTrackedFile(args, resolver, state) {
       const protocolMode2 = resolveProtocolMode(config2.protocol.mode);
       const { output: rawOutput2, effectiveStart: effectiveStart2, adjustedEnd: adjustedEnd2, totalLines: totalLines2 } = buildAndFormatPaginatedDoc(fileContent, canonicalView, { filePath: displayPath, trackingStatus: trackingStatus.status, protocolMode: protocolMode2, defaultView: "working", viewPolicy: config2.policy.view_policy ?? "suggest" }, { offset, requestedLimit }, state, filePath);
       let output2 = rawOutput2;
+      if (requestedView === "meta" || requestedView === "content" || requestedView === "full") {
+        output2 = prependAliasHeader(output2, {
+          displayPath,
+          policyMode: config2.policy.mode,
+          trackingStatus: trackingStatus.status,
+          fileContent
+        });
+      }
       const truncation2 = buildTruncationMessage(effectiveStart2, adjustedEnd2, totalLines2);
       if (truncation2)
         output2 += truncation2;
@@ -33901,6 +33961,14 @@ async function handleReadTrackedFile(args, resolver, state) {
     const protocolMode = resolveProtocolMode(config2.protocol.mode);
     const { output: rawOutput, effectiveStart, adjustedEnd, totalLines } = buildAndFormatPaginatedDoc(fileContent, canonicalView, { filePath: displayPath, trackingStatus: trackingStatus.status, protocolMode, defaultView: "working", viewPolicy: config2.policy.view_policy ?? "suggest" }, { offset, requestedLimit }, state, filePath);
     let output = rawOutput;
+    if (requestedView === "meta" || requestedView === "content" || requestedView === "full") {
+      output = prependAliasHeader(output, {
+        displayPath,
+        policyMode: config2.policy.mode,
+        trackingStatus: trackingStatus.status,
+        fileContent
+      });
+    }
     if (includeMeta) {
       const levelsLine = formatChangeLevelsLine(fileContent);
       if (levelsLine) {
@@ -35874,12 +35942,18 @@ function loadDevCertOptions() {
   }
 }
 var PortConflictError = class extends Error {
-  constructor(port, service) {
+  constructor(port, service, conflictPid, conflictScheme, expectedScheme) {
+    const pidPart = conflictPid != null ? ` (PID ${conflictPid})` : "";
+    const schemePart = conflictScheme && expectedScheme && conflictScheme !== expectedScheme ? ` running on ${conflictScheme} but this process expects ${expectedScheme}` : "";
+    const killHint = conflictPid != null ? ` Kill it: kill ${conflictPid}.` : " Free the port or configure a different one.";
     super(
-      `PortConflictError: port ${port} is held by a different service ("${service}"). Free the port or configure a different one.`
+      `PortConflictError: port ${port} is held by ${service}${pidPart}${schemePart}.${killHint}`
     );
     this.port = port;
     this.service = service;
+    this.conflictPid = conflictPid;
+    this.conflictScheme = conflictScheme;
+    this.expectedScheme = expectedScheme;
     this.name = "PortConflictError";
   }
 };
@@ -35891,6 +35965,17 @@ var HttpsRequiredError = class extends Error {
     this.name = "HttpsRequiredError";
   }
 };
+async function probeHealthBothSchemes(port, preferHttps) {
+  const order = preferHttps ? ["https", "http"] : ["http", "https"];
+  for (const scheme of order) {
+    try {
+      const health = await probeHealth(port, scheme === "https");
+      return { health, scheme };
+    } catch {
+    }
+  }
+  return void 0;
+}
 var devCerts = loadDevCertOptions();
 function envRequiresHttps() {
   const requireHttps = process.env.CHANGEDOWN_MCP_REQUIRE_HTTPS?.toLowerCase();
@@ -35921,7 +36006,13 @@ async function probeHealth(port, probeWithHttps = false) {
         path: "/health",
         timeout: 2e3,
         // Self-signed dev cert — we trust the loopback address, not the chain.
-        rejectUnauthorized: false
+        rejectUnauthorized: false,
+        // Don't reuse Node's default agent connection pool. Without this, when
+        // a same-port leader is killed and replaced (cross-version handover,
+        // test-suite rebinds), Node 24's pool can hand back a stale socket
+        // → ECONNRESET on the next probe. Each /health probe gets its own
+        // socket; probes are infrequent so the cost is negligible.
+        agent: false
       },
       (res) => {
         let raw = "";
@@ -36001,21 +36092,26 @@ async function bindOrForward(port, options = {}) {
   }
   const bindWithHttps = requireHttps ? true : resolveUseHttps(options);
   if (requireHttps && !devCerts) {
-    try {
-      const health = await probeHealth(port, true);
-      if (health.service !== SERVICE_NAME) {
-        throw new PortConflictError(port, health.service);
-      }
-      const hostUrl = `https://127.0.0.1:${port}`;
-      const startHeartbeat = makeHeartbeat(hostUrl, {
-        intervalMs: 2e3,
-        failThreshold: 2
-      }, options);
-      return { mode: "client", hostUrl, startHeartbeat };
-    } catch (err) {
-      if (err instanceof PortConflictError) throw err;
+    const probed = await probeHealthBothSchemes(
+      port,
+      /* preferHttps */
+      true
+    );
+    if (!probed) {
       throw new HttpsRequiredError();
     }
+    if (probed.health.service !== SERVICE_NAME) {
+      throw new PortConflictError(port, probed.health.service, probed.health.pid, probed.scheme, "https");
+    }
+    if (probed.scheme !== "https") {
+      throw new PortConflictError(port, SERVICE_NAME, probed.health.pid, probed.scheme, "https");
+    }
+    const hostUrl = `https://127.0.0.1:${port}`;
+    const startHeartbeat = makeHeartbeat(hostUrl, {
+      intervalMs: 2e3,
+      failThreshold: 2
+    }, options);
+    return { mode: "client", hostUrl, startHeartbeat };
   }
   try {
     assertCanBindHttps(bindWithHttps);
@@ -36030,16 +36126,18 @@ async function bindOrForward(port, options = {}) {
   } catch (err) {
     const code = err.code;
     if (code !== "EADDRINUSE") throw err;
-    let health;
-    try {
-      health = await probeHealth(port, requireHttps ? true : bindWithHttps);
-    } catch {
-      throw new PortConflictError(port, "<unreachable \u2014 not an HTTP server>");
+    const expectedScheme = requireHttps || bindWithHttps ? "https" : "http";
+    const probed = await probeHealthBothSchemes(port, expectedScheme === "https");
+    if (!probed) {
+      throw new PortConflictError(port, "<unreachable on either http or https>");
     }
-    if (health.service !== SERVICE_NAME) {
-      throw new PortConflictError(port, health.service);
+    if (probed.health.service !== SERVICE_NAME) {
+      throw new PortConflictError(port, probed.health.service, probed.health.pid, probed.scheme, expectedScheme);
     }
-    const scheme = requireHttps || bindWithHttps ? "https" : "http";
+    if (probed.scheme !== expectedScheme) {
+      throw new PortConflictError(port, SERVICE_NAME, probed.health.pid, probed.scheme, expectedScheme);
+    }
+    const scheme = expectedScheme;
     const hostUrl = `${scheme}://127.0.0.1:${port}`;
     const HEARTBEAT_INTERVAL_MS = 2e3;
     const HEARTBEAT_MISS_THRESHOLD = 2;
@@ -36203,6 +36301,17 @@ var requestPrototype = {
     }
   });
 });
+Object.defineProperty(requestPrototype, /* @__PURE__ */ Symbol.for("nodejs.util.inspect.custom"), {
+  value: function(depth, options, inspectFn) {
+    const props = {
+      method: this.method,
+      url: this.url,
+      headers: this.headers,
+      nativeRequest: this[requestCache]
+    };
+    return `Request (lightweight) ${inspectFn(props, { ...options, depth: depth == null ? null : depth - 1 })}`;
+  }
+});
 Object.setPrototypeOf(requestPrototype, Request.prototype);
 var newRequest = (incoming, defaultHostname) => {
   const req = Object.create(requestPrototype);
@@ -36306,6 +36415,17 @@ var Response2 = class _Response {
       return this[getResponseCache]()[k]();
     }
   });
+});
+Object.defineProperty(Response2.prototype, /* @__PURE__ */ Symbol.for("nodejs.util.inspect.custom"), {
+  value: function(depth, options, inspectFn) {
+    const props = {
+      status: this.status,
+      headers: this.headers,
+      ok: this.ok,
+      nativeResponse: this[responseCache]
+    };
+    return `Response (lightweight) ${inspectFn(props, { ...options, depth: depth == null ? null : depth - 1 })}`;
+  }
 });
 Object.setPrototypeOf(Response2, GlobalResponse);
 Object.setPrototypeOf(Response2.prototype, GlobalResponse.prototype);
@@ -37778,7 +37898,7 @@ import { EventEmitter as EventEmitter2 } from "node:events";
 import { randomUUID as randomUUID2 } from "node:crypto";
 
 // src/version.ts
-var version2 = "0.1.0";
+var version2 = "0.4.4";
 
 // src/transport/pane-endpoint.ts
 var CAPABILITY_BACKEND_REGISTER = "backend-register";
@@ -37786,6 +37906,10 @@ var CAPABILITY_MCP_STREAMABLE = "mcp-streamable";
 var HEALTH_RESPONSE = {
   service: SERVICE_NAME,
   version: version2,
+  // Surface the leader's PID so port-conflict errors in fixed-port-leader can
+  // tell users exactly which process to kill when an incompatible (e.g.
+  // wrong-scheme, stale) leader is squatting the port.
+  pid: process.pid,
   capabilities: [CAPABILITY_BACKEND_REGISTER, CAPABILITY_MCP_STREAMABLE]
 };
 var SSE_GRACE_MS = 5e3;
@@ -38530,7 +38654,6 @@ function normalizeDocumentTarget(input, baseDir) {
 }
 
 // src/index.ts
-var execFileAsync = promisify(execFile);
 var MAX_WORD_LIST_PREVIEW_LENGTH = 80;
 function paneRequestTimeoutMs() {
   const raw = process.env.CHANGEDOWN_PANE_REQUEST_TIMEOUT_MS;

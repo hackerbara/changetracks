@@ -1,8 +1,6 @@
 #!/usr/bin/env node
 
 import type { Server as HttpServer } from 'node:http';
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import {
@@ -79,9 +77,6 @@ import { version } from './version.js';
 import { applyWordReviewChanges } from './word-review.js';
 import { normalizeDocumentTarget } from './document-target.js';
 
-const execFileAsync = promisify(execFile);
-
-
 type WordListChangeSummary = {
   change_id: string;
   type: string;
@@ -123,63 +118,11 @@ type WordListChangeFullDetail = WordListChangeContext & {
 
 const MAX_WORD_LIST_PREVIEW_LENGTH = 80;
 
-type MacWordIdentitySnapshot = {
-  name: string;
-  initials: string;
-};
-
-function appleScriptString(value: string): string {
-  return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
-}
-
 function paneRequestTimeoutMs(): number {
   const raw = process.env.CHANGEDOWN_PANE_REQUEST_TIMEOUT_MS;
   if (!raw) return 600_000;
   const parsed = Number.parseInt(raw, 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 600_000;
-}
-
-function nativeDisplayAuthorForSpike(author: unknown): string {
-  const raw = typeof author === 'string' && author.trim() ? author.trim().replace(/^@/, '') : 'codex';
-  if (raw === 'ai:codex' || raw === 'codex') return 'Codex';
-  return raw.replace(/^ai:/, '');
-}
-
-async function runOsa(script: string): Promise<string> {
-  const { stdout } = await execFileAsync('osascript', ['-e', script], {
-    timeout: 8000,
-    maxBuffer: 1024 * 64,
-  });
-  return stdout.toString().trimEnd();
-}
-
-async function setMacWordIdentity(name: string, initials: string): Promise<MacWordIdentitySnapshot | undefined> {
-  if (process.platform !== 'darwin') return undefined;
-  const script = `
-with timeout of 8 seconds
-  tell application "Microsoft Word"
-    set oldName to («property RAun»)
-    set oldInitials to user initials
-    set «property RAun» to ${appleScriptString(name)}
-    set user initials to ${appleScriptString(initials)}
-    return oldName & linefeed & oldInitials
-  end tell
-end timeout`;
-  const out = await runOsa(script);
-  const [oldName = '', oldInitials = ''] = out.split(/\r?\n/);
-  return { name: oldName, initials: oldInitials };
-}
-
-async function restoreMacWordIdentity(snapshot: MacWordIdentitySnapshot | undefined): Promise<void> {
-  if (!snapshot || process.platform !== 'darwin') return;
-  const script = `
-with timeout of 8 seconds
-  tell application "Microsoft Word"
-    set «property RAun» to ${appleScriptString(snapshot.name)}
-    set user initials to ${appleScriptString(snapshot.initials)}
-  end tell
-end timeout`;
-  await runOsa(script);
 }
 
 function buildWordListPreview(change: ChangeNode): string {

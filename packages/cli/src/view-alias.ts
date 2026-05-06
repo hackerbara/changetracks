@@ -15,3 +15,4 @@ export { resolveView } from '@changedown/core/host';
 /** The canonical list of BuiltinView names, for help text and schema enums. */
 import type { BuiltinView } from '@changedown/core/host';
 export const CANONICAL_VIEWS: BuiltinView[] = ['working', 'simple', 'decided', 'original', 'raw'];
+export const READ_VIEWS: Array<Exclude<BuiltinView, 'original'>> = ['working', 'simple', 'decided', 'raw'];

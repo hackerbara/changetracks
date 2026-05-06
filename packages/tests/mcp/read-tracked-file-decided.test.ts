@@ -9,7 +9,7 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
 
-describe('read_tracked_file committed view', () => {
+describe('read_tracked_file decided view', () => {
   let tmpDir: string;
   let state: SessionState;
   let config: ChangeDownConfig;
@@ -20,7 +20,7 @@ describe('read_tracked_file committed view', () => {
   });
 
   beforeEach(async () => {
-    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'cn-committed-view-'));
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'cn-decided-view-'));
     state = new SessionState();
     config = {
       tracking: {
@@ -55,7 +55,7 @@ describe('read_tracked_file committed view', () => {
     await fs.rm(tmpDir, { recursive: true, force: true });
   });
 
-  it('returns committed view header and content', async () => {
+  it('returns decided view header and content', async () => {
     const filePath = path.join(tmpDir, 'test.md');
     await fs.writeFile(filePath, [
       '# Title',
@@ -63,20 +63,20 @@ describe('read_tracked_file committed view', () => {
     ].join('\n'));
 
     const result = await handleReadTrackedFile(
-      { file: filePath, view: 'committed' },
+      { file: filePath, view: 'decided' },
       resolver,
       state,
     );
 
     expect(result.isError).toBeUndefined();
     const text = result.content[0].text;
-    // Unified renderer: ## proposed: N | accepted: N | rejected: N
+    expect(text).toContain('## view: decided');
     expect(text).toMatch(/## proposed: \d+ \| accepted: \d+ \| rejected: \d+/);
     expect(text).toContain('# Title');
     expect(text).toContain('Clean line.');
   });
 
-  it('shows P flag for proposed changes', async () => {
+  it('shows P flag while reverting proposed insertion content', async () => {
     const filePath = path.join(tmpDir, 'test.md');
     await fs.writeFile(filePath, [
       'Before {++added text++}[^cn-1] after',
@@ -85,16 +85,16 @@ describe('read_tracked_file committed view', () => {
     ].join('\n'));
 
     const result = await handleReadTrackedFile(
-      { file: filePath, view: 'committed' },
+      { file: filePath, view: 'decided' },
       resolver,
       state,
     );
 
+    expect(result.isError).toBeUndefined();
     const text = result.content[0].text;
-    // Simple view (committed→simple alias): shows current projection — proposed insertion
-    // is visible in the text, with P flag and bracket-format metadata.
-    // Unified format: "N:HH P| content [cn-N @author type status: reason]"
-    expect(text).toMatch(/P\| Before added text after \[cn-1 @alice ins proposed\]/);
+    expect(text).toMatch(/P\| Before  after/);
+    expect(text).not.toContain('added text');
+    expect(text).not.toContain('[cn-1 @alice ins proposed]');
   });
 
   it('shows A flag for accepted changes', async () => {
@@ -106,7 +106,7 @@ describe('read_tracked_file committed view', () => {
     ].join('\n'));
 
     const result = await handleReadTrackedFile(
-      { file: filePath, view: 'committed' },
+      { file: filePath, view: 'decided' },
       resolver,
       state,
     );
@@ -127,7 +127,7 @@ describe('read_tracked_file committed view', () => {
     ].join('\n'));
 
     const result = await handleReadTrackedFile(
-      { file: filePath, view: 'committed' },
+      { file: filePath, view: 'decided' },
       resolver,
       state,
     );
@@ -137,7 +137,22 @@ describe('read_tracked_file committed view', () => {
     expect(text).not.toContain('reason: clarity improvement');
   });
 
-  it('records committed hashes in session state', async () => {
+  it('rejects committed as an unsupported view name', async () => {
+    const filePath = path.join(tmpDir, 'test.md');
+    await fs.writeFile(filePath, '# Title\nClean line.');
+
+    const result = await handleReadTrackedFile(
+      { file: filePath, view: 'committed' },
+      resolver,
+      state,
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("Unknown view 'committed'");
+    expect(result.content[0].text).toContain('decided');
+  });
+
+  it('records decided-coordinate hashes in session state', async () => {
     const filePath = path.join(tmpDir, 'test.md');
     await fs.writeFile(filePath, [
       '# Title',
@@ -145,7 +160,7 @@ describe('read_tracked_file committed view', () => {
     ].join('\n'));
 
     await handleReadTrackedFile(
-      { file: filePath, view: 'committed' },
+      { file: filePath, view: 'decided' },
       resolver,
       state,
     );
@@ -153,8 +168,6 @@ describe('read_tracked_file committed view', () => {
     const hashes = state.getRecordedHashes(filePath);
     expect(hashes).toBeDefined();
     expect(hashes!.length).toBe(2);
-    // Committed hashes should have the committed field
-    expect(hashes![0].committed).toBeDefined();
     expect(hashes![0].rawLineNum).toBeDefined();
     expect(hashes![0].committed).toMatch(/^[0-9a-f]{2}$/);
   });
@@ -171,7 +184,7 @@ describe('read_tracked_file committed view', () => {
     ].join('\n'));
 
     const result = await handleReadTrackedFile(
-      { file: filePath, view: 'committed' },
+      { file: filePath, view: 'decided' },
       resolver,
       state,
     );
@@ -182,7 +195,7 @@ describe('read_tracked_file committed view', () => {
     expect(text).toContain('accepted: 1');
   });
 
-  it('returns error when hashline is disabled', async () => {
+  it('returns decided output when hashline is disabled', async () => {
     const disabledConfig: ChangeDownConfig = {
       ...config,
       hashline: { enabled: false, auto_remap: false },
@@ -192,13 +205,14 @@ describe('read_tracked_file committed view', () => {
     await fs.writeFile(filePath, '# Title\n');
 
     const result = await handleReadTrackedFile(
-      { file: filePath, view: 'committed' },
+      { file: filePath, view: 'decided' },
       disabledResolver,
       state,
     );
 
-    expect(result.isError).toBe(true);
-    expect(result.content[0].text).toContain('Simple view requires hashline mode');
+    expect(result.isError).toBeUndefined();
+    expect(result.content[0].text).toContain('## view: decided');
+    expect(result.content[0].text).toContain('Hashline addressing is disabled');
   });
 
   it('shows clean summary for file without CriticMarkup', async () => {
@@ -206,7 +220,7 @@ describe('read_tracked_file committed view', () => {
     await fs.writeFile(filePath, '# Title\nSome text.\n');
 
     const result = await handleReadTrackedFile(
-      { file: filePath, view: 'committed' },
+      { file: filePath, view: 'decided' },
       resolver,
       state,
     );

@@ -6,7 +6,7 @@ import {
   findFootnoteBlock,
   type ThreeZoneDocument,
 } from '@changedown/core';
-import type { BuiltinView } from '@changedown/core/host';
+import { resolveView, type BuiltinView } from '@changedown/core/host';
 
 // ANSI codes used for thread rendering (subset of what formatAnsi uses)
 const RESET = '\x1b[0m';
@@ -226,7 +226,7 @@ export interface DiffOptions {
 export async function handleDiff(file: string, options?: DiffOptions): Promise<string> {
   await initHashline();
   const content = fs.readFileSync(file, 'utf-8');
-  const view: BuiltinView = options?.view ?? 'working';
+  const view: BuiltinView = options?.view ? (resolveView(options.view) ?? options.view) : 'working';
   const doc = buildViewDocument(content, view, {
     filePath: file,
     trackingStatus: 'tracked',

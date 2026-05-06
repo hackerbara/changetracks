@@ -217,17 +217,27 @@ export function applyOoxmlTableInsertion(
     relationships.get(input.handle.partName) ??
     emptyRelationshipTable(input.handle.partName);
   const allocator = new RelationshipAllocator(relationshipTable);
-  const emitted = markdownTableToOoxml(input.markdown, allocator);
+  const splitMarkdown = splitLeadingMarkdownTable(input.markdown);
+  const emitted = markdownTableToOoxml(splitMarkdown.tableMarkdown, allocator);
+  const relationshipsAdded = [...emitted.relationshipsAdded];
+  const trailingXml = splitMarkdown.trailingBlocks
+    .map((block) => formattingPlanToOoxmlRuns({ markdown: block, allocator }))
+    .map((emittedBlock) => {
+      relationshipsAdded.push(...emittedBlock.relationshipsAdded);
+      return `<w:p>${emittedBlock.xml}</w:p>`;
+    })
+    .join("");
+  const insertedXml = emitted.xml + trailingXml;
   const bounds = paragraphBounds(documentPart.text, input.handle.paragraphIndex);
   const paragraphPlainText = paragraphText(documentPart.text.slice(bounds.start, bounds.end));
   const column = Math.max(0, Math.min(input.column, paragraphPlainText.length));
   const patch =
     paragraphPlainText.length === 0 && column === 0
-      ? { start: bounds.start, end: bounds.end, xml: emitted.xml }
+      ? { start: bounds.start, end: bounds.end, xml: insertedXml }
       : column === 0
-      ? { start: bounds.start, end: bounds.start, xml: emitted.xml }
+      ? { start: bounds.start, end: bounds.start, xml: insertedXml }
       : column === paragraphPlainText.length
-      ? { start: bounds.end, end: bounds.end, xml: emitted.xml }
+      ? { start: bounds.end, end: bounds.end, xml: insertedXml }
       : undefined;
   if (!patch) {
     throw new Error("Cannot insert native OOXML table inside paragraph text");
@@ -248,7 +258,7 @@ export function applyOoxmlTableInsertion(
   hashes.set(input.handle.partName, stableBytesHash(nextDocumentBytes));
 
   const changedParts = [input.handle.partName];
-  if (emitted.relationshipsAdded.length > 0) {
+  if (relationshipsAdded.length > 0) {
     const nextRelationshipTable = allocator.toTable();
     relationships.set(input.handle.partName, nextRelationshipTable);
     const relationshipPartName = relationshipPartNameForSourcePartName(
@@ -313,7 +323,7 @@ export function applyOoxmlTableInsertion(
   return {
     snapshot,
     changedParts,
-    relationshipChanges: emitted.relationshipsAdded.map((relationship) => ({
+    relationshipChanges: relationshipsAdded.map((relationship) => ({
       partName: input.handle.partName,
       relationshipId: relationship.id,
       kind: "added",
@@ -321,6 +331,43 @@ export function applyOoxmlTableInsertion(
     })),
     validation,
   };
+}
+
+function splitLeadingMarkdownTable(markdown: string): {
+  tableMarkdown: string;
+  trailingBlocks: string[];
+} {
+  const normalized = markdown.trim();
+  const lines = normalized.split(/\r?\n/u);
+  if (lines.length < 2 || !isMarkdownTableHeader(lines[0] ?? "", lines[1] ?? "")) {
+    return { tableMarkdown: normalized, trailingBlocks: [] };
+  }
+
+  let tableEnd = 2;
+  while (tableEnd < lines.length && isMarkdownTableRowLine(lines[tableEnd]!)) {
+    tableEnd += 1;
+  }
+
+  return {
+    tableMarkdown: lines.slice(0, tableEnd).join("\n"),
+    trailingBlocks: lines
+      .slice(tableEnd)
+      .join("\n")
+      .split(/\n\s*\n/u)
+      .map((block) => block.trim())
+      .filter(Boolean),
+  };
+}
+
+function isMarkdownTableHeader(header: string, delimiter: string): boolean {
+  return (
+    isMarkdownTableRowLine(header) &&
+    /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/u.test(delimiter)
+  );
+}
+
+function isMarkdownTableRowLine(line: string): boolean {
+  return /^\s*\|.*\|\s*$/u.test(line);
 }
 
 export function applyOoxmlTableRowInsertion(

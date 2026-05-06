@@ -143,6 +143,10 @@ export interface PaneEndpointHandle {
 const HEALTH_RESPONSE = {
   service: SERVICE_NAME,
   version,
+  // Surface the leader's PID so port-conflict errors in fixed-port-leader can
+  // tell users exactly which process to kill when an incompatible (e.g.
+  // wrong-scheme, stale) leader is squatting the port.
+  pid: process.pid,
   capabilities: [CAPABILITY_BACKEND_REGISTER, CAPABILITY_MCP_STREAMABLE],
 };
 

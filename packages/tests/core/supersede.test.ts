@@ -4,6 +4,27 @@ import { computeSupersedeResult, initHashline } from '@changedown/core';
 beforeAll(async () => { await initHashline(); });
 
 describe('computeSupersedeResult', () => {
+
+  it('removes the consumed predecessor reference from the replacement body', async () => {
+    const input = [
+      'Use {~~Postgres~>PostgreSQL~~}[^cn-1] for storage.',
+      '',
+      '[^cn-1]: @ai | 2026-05-05 | sub | proposed',
+    ].join('\n');
+
+    const output = await computeSupersedeResult(input, 'cn-1', {
+      oldText: 'Use PostgreSQL for storage.',
+      newText: 'Use PostgreSQL 17 for storage.',
+      author: 'ai:reviewer',
+      reason: 'Pin the major version.',
+    });
+
+    expect(output.isError).toBe(false);
+    if (output.isError) return;
+    expect(output.text).toContain('{~~Use PostgreSQL for storage.~>Use PostgreSQL 17 for storage.~~}');
+    expect(output.text).not.toContain('~~}[^cn-2][^cn-1]');
+    expect(output.text).toContain('supersedes: cn-1');
+  });
   const baseDoc = [
     'Hello {~~old~>new~~}[^cn-1] more text',
     '',

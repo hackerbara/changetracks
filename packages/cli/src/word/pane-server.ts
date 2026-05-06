@@ -34,7 +34,12 @@ function contentType(filePath: string): string {
 }
 
 function safeResolveAsset(urlPath: string): string | undefined {
-  const decoded = decodeURIComponent(urlPath.split('?')[0] || '/');
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(urlPath.split('?')[0] || '/');
+  } catch {
+    return undefined;
+  }
   const relative = decoded === '/' ? 'taskpane.html' : decoded.replace(/^\/+/, '');
   const resolved = path.resolve(PACKAGED_WORD_PANE_DIR, relative);
   const root = path.resolve(PACKAGED_WORD_PANE_DIR);
@@ -42,13 +47,29 @@ function safeResolveAsset(urlPath: string): string | undefined {
   return resolved;
 }
 
-async function readDevCerts(): Promise<{ key: Buffer; cert: Buffer; ca?: Buffer }> {
-  const [key, cert, ca] = await Promise.all([
-    fs.readFile(path.join(CERT_DIR, 'localhost.key')),
-    fs.readFile(path.join(CERT_DIR, 'localhost.crt')),
-    fs.readFile(path.join(CERT_DIR, 'ca.crt')).catch(() => undefined),
-  ]);
-  return { key, cert, ca };
+async function readDevCerts(): Promise<{ key: Buffer; cert: Buffer }> {
+  try {
+    const [key, leaf, ca] = await Promise.all([
+      fs.readFile(path.join(CERT_DIR, 'localhost.key')),
+      fs.readFile(path.join(CERT_DIR, 'localhost.crt')),
+      fs.readFile(path.join(CERT_DIR, 'ca.crt')).catch(() => undefined),
+    ]);
+    // Serve the full chain (leaf + CA) as a PEM bundle. Word's WKWebView on
+    // macOS rejects leaf-only chains with a silent TLS handshake failure
+    // (openssl: "unable to verify the first certificate"). The Node `ca`
+    // option controls client-cert trust, not server chain — it must NOT be
+    // used here. See changedown-plugin/mcp-server/src/transport/fixed-port-leader.ts.
+    const cert = ca ? Buffer.concat([leaf, Buffer.from('\n'), ca]) : leaf;
+    return { key, cert };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    throw new Error(
+      `Office dev certificates were not found under ${CERT_DIR}. ` +
+      `Run \`npx office-addin-dev-certs install\` and trust the prompt, ` +
+      `or fall back to the hosted pane: \`changedown word start --pane hosted\`. ` +
+      message,
+    );
+  }
 }
 
 export async function startLocalPaneServer(dryRun = false): Promise<LocalPaneServerHandle | undefined> {
@@ -85,6 +106,14 @@ export async function startLocalPaneServer(dryRun = false): Promise<LocalPaneSer
       server.off('error', reject);
       resolve();
     });
+  }).catch((err) => {
+    if ((err as NodeJS.ErrnoException).code === 'EADDRINUSE') {
+      throw new Error(
+        `${LOCAL_PANE_ORIGIN} is already in use. Stop the existing process, run \`changedown word stop\`, ` +
+        'or use `changedown word start --pane hosted`.',
+      );
+    }
+    throw err;
   });
 
   console.log(`Serving local ChangeDown Word pane at ${LOCAL_PANE_ORIGIN}`);

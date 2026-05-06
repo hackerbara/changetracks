@@ -6,6 +6,8 @@ vi.mock('../../../packages/cli/src/word/manifest.js', () => ({
 
 vi.mock('../../../packages/cli/src/word/office-tools.js', () => ({
   runTool: vi.fn(() => 0),
+  runOfficeDebugStart: vi.fn(async () => 0),
+  runOfficeDebugStop: vi.fn(async () => 0),
 }));
 
 vi.mock('../../../packages/cli/src/word/state.js', () => ({
@@ -56,7 +58,7 @@ describe('word start MCP and agent setup', () => {
       );
 
       expect(code).toBe(0);
-      expect(resolveManifest).toHaveBeenCalledWith(undefined, true, { mcpScheme: 'https' });
+      expect(resolveManifest).toHaveBeenCalledWith(undefined, true, { mcpScheme: 'https', paneMode: 'hosted' });
       expect(probeMcpHealth).toHaveBeenCalledWith(1500, 'https');
       expect(runTool).toHaveBeenCalledWith('office-addin-dev-certs', ['install'], expect.objectContaining({
         cwd: '/repo',
@@ -120,12 +122,23 @@ describe('word start MCP and agent setup', () => {
     );
 
     expect(code).toBe(0);
-    expect(resolveManifest).toHaveBeenCalledWith(undefined, true, { mcpScheme: 'https' });
+    expect(resolveManifest).toHaveBeenCalledWith(undefined, true, { mcpScheme: 'https', paneMode: 'hosted' });
     expect(runTool).toHaveBeenCalledWith('office-addin-dev-certs', ['install'], expect.objectContaining({
       cwd: '/repo',
       dryRun: true,
     }));
     expect(probeMcpHealth).toHaveBeenCalledWith(1500, 'https');
+  });
+
+
+  it('still supports the packaged local pane when requested explicitly', async () => {
+    const code = await runWordStart(
+      { cwd: '/repo' },
+      { dryRun: true, noValidate: true, noSideload: true, noAgents: true, paneMode: 'local' },
+    );
+
+    expect(code).toBe(0);
+    expect(resolveManifest).toHaveBeenCalledWith(undefined, true, { mcpScheme: 'https', paneMode: 'local' });
   });
 
   it('uses HTTP loopback only with --no-dev-certs diagnostic mode', async () => {
@@ -135,9 +148,29 @@ describe('word start MCP and agent setup', () => {
     );
 
     expect(code).toBe(0);
-    expect(resolveManifest).toHaveBeenCalledWith(undefined, true, { mcpScheme: 'http' });
+    expect(resolveManifest).toHaveBeenCalledWith(undefined, true, { mcpScheme: 'http', paneMode: 'hosted' });
     expect(runTool).not.toHaveBeenCalledWith('office-addin-dev-certs', expect.anything(), expect.anything());
     expect(probeMcpHealth).toHaveBeenCalledWith(1500, 'http');
+  });
+
+  it('fails early when an old HTTP MCP bridge owns the HTTPS Word port', async () => {
+    vi.mocked(probeMcpHealth)
+      .mockResolvedValueOnce({ ok: false, error: 'wrong version number' })
+      .mockResolvedValueOnce({ ok: true, service: 'changedown-mcp' });
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const code = await runWordStart(
+        { cwd: '/repo' },
+        { dryRun: true, noValidate: true, noSideload: true, noAgents: true },
+      );
+
+      expect(code).toBe(1);
+      expect(probeMcpHealth).toHaveBeenCalledWith(1500, 'https');
+      expect(probeMcpHealth).toHaveBeenCalledWith(800, 'http');
+      expect(String(error.mock.calls[0]?.[0])).toContain('using HTTP');
+    } finally {
+      error.mockRestore();
+    }
   });
 
   it('fails require-agents when detected setup needs manual action', async () => {

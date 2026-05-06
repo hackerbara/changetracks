@@ -5,23 +5,25 @@
 # restores package.json immediately, then publishes the tarball.
 #
 # Usage:
-#   bash scripts/publish-npm.sh             # interactive publish
+#   bash scripts/publish-npm.sh             # interactive publish (includes @changedown/mcp)
 #   bash scripts/publish-npm.sh --dry-run   # pack only, don't publish
 #   bash scripts/publish-npm.sh --allow-dirty-package-json
-#   bash scripts/publish-npm.sh --include-mcp
+#   bash scripts/publish-npm.sh --no-mcp    # skip @changedown/mcp this run
+#   bash scripts/publish-npm.sh --include-mcp  # legacy no-op (mcp now publishes by default)
 #
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 DRY_RUN=false
 ALLOW_DIRTY_PACKAGE_JSON=false
-INCLUDE_MCP=false
+INCLUDE_MCP=true
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --dry-run) DRY_RUN=true; shift ;;
     --allow-dirty-package-json) ALLOW_DIRTY_PACKAGE_JSON=true; shift ;;
-    --include-mcp) INCLUDE_MCP=true; shift ;;
-    --help|-h) head -12 "$0" | tail -8; exit 0 ;;
+    --include-mcp) INCLUDE_MCP=true; shift ;;  # no-op kept for back-compat (default true)
+    --no-mcp) INCLUDE_MCP=false; shift ;;
+    --help|-h) head -13 "$0" | tail -9; exit 0 ;;
     *) echo "Unknown option: $1"; exit 1 ;;
   esac
 done
@@ -252,7 +254,7 @@ for pkg in "${PACKAGES[@]}"; do
       info "Skipped $name@$version"
       continue
     fi
-    npm publish "$TARBALL" --access public
+    CHANGEDOWN_PUBLISH_OK=1 npm publish "$TARBALL" --access public
     ok "Published $name@$version"
 
     # Step G: Verify on registry

@@ -18,7 +18,7 @@ export interface TaskConfig {
   surfaceB: string;
   surfaceC: string;
   surfaceD?: string; // sc CLI via Bash — undefined = skip
-  surfaceE?: string; // committed view — undefined = skip
+  surfaceE?: string; // decided view — undefined = skip
   surfaceF?: string; // V1-Classic protocol — undefined = skip
   surfaceG?: string; // V1-Compact protocol — undefined = skip
   surfaceH?: string; // V1 experimental patch-wrapper surface — undefined = skip

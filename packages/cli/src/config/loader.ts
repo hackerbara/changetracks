@@ -177,9 +177,11 @@ export function parseConfigToml(raw: string): ChangeDownConfig {
         const raw = policy?.['default_view'];
         if (raw === undefined) return DEFAULT_CONFIG.policy.default_view;
         const resolved = resolveView(String(raw));
-        if (resolved !== null) return resolved;
-        console.warn(`[changedown] Unknown default_view value: "${raw}". Falling back to "${DEFAULT_CONFIG.policy.default_view}".`);
-        return DEFAULT_CONFIG.policy.default_view;
+        const readViews = new Set(['working', 'simple', 'decided', 'raw']);
+        if (resolved !== null && readViews.has(resolved)) return resolved;
+        throw new Error(
+          `[changedown] Unknown default_view value: "${raw}". Valid views: working, simple, decided, raw.`
+        );
       })(),
       view_policy: policy?.['view_policy'] === 'suggest' || policy?.['view_policy'] === 'require'
         ? policy['view_policy']
@@ -280,8 +282,12 @@ export async function loadConfig(projectDir: string): Promise<ChangeDownConfig> 
   try {
     return parseConfigToml(raw);
   } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    if (message.includes('Unknown default_view value')) {
+      throw err;
+    }
     console.error(
-      `changedown: ${configPath} contains invalid TOML (${err instanceof Error ? err.message : String(err)}), using defaults`
+      `changedown: ${configPath} contains invalid TOML (${message}), using defaults`
     );
     return structuredClone(DEFAULT_CONFIG);
   }

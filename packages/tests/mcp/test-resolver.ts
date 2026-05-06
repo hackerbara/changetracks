@@ -65,8 +65,12 @@ function configToToml(config: ChangeDownConfig): string {
     lines.push('[policy]');
     lines.push(`mode = "${config.policy.mode}"`);
     lines.push(`creation_tracking = "${config.policy.creation_tracking}"`);
-    lines.push(`default_view = "${config.policy.default_view}"`);
-    lines.push(`view_policy = "${config.policy.view_policy}"`);
+    if (config.policy.default_view !== undefined) {
+      lines.push(`default_view = "${config.policy.default_view}"`);
+    }
+    if (config.policy.view_policy !== undefined) {
+      lines.push(`view_policy = "${config.policy.view_policy}"`);
+    }
     lines.push('');
   }
 

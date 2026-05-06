@@ -2,14 +2,14 @@ import { describe, it, expect } from 'vitest';
 import { SessionState } from '@changedown/mcp/internals';
 
 describe('resolveHash Stage 1 same-line cross-field fallback', () => {
-  it('resolves via primary committed hash on decided view', () => {
+  it('resolves via primary decided hash on decided view', () => {
     const state = new SessionState();
     state.recordAfterRead('/file.md', 'decided', [
       { line: 1, raw: 'r1', committed: 'c1', currentView: 'v1', rawLineNum: 1 },
       { line: 2, raw: 'r2', committed: 'c2', currentView: 'v2', rawLineNum: 2 },
     ], 'content');
 
-    // Supplying the committed hash on a decided-view session should resolve at line 1
+    // Supplying the decided hash on a decided-view session should resolve at line 1
     const result = state.resolveHash('/file.md', 1, 'c1');
     expect(result?.match).toBe(true);
     if (result?.match) {

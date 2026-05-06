@@ -29,7 +29,6 @@ const VIEW_KNOWN_NAMES = new Map<string, BuiltinView>([
   ['all', 'working'],
   ['content', 'raw'],
   ['meta', 'working'],
-  ['committed', 'simple'],
   // VS Code settings compat
   ['all-markup', 'working'],
   ['markup', 'working'],

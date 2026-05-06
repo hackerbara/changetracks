@@ -7,11 +7,9 @@
  */
 
 import { parseForFormat } from '../../format-aware-parse.js';
-import { nodeStatus, type ChangeNode } from '../../model/types.js';
 import { buildSessionHashes } from './session-hashes.js';
 import {
   buildDeliberationHeader,
-  buildLineRefMap,
   computeContinuationLines,
 } from '../view-builder-utils.js';
 import type { ThreeZoneDocument, ThreeZoneLine, LineFlag } from '../three-zone-types.js';
@@ -35,9 +33,6 @@ export function buildDecidedDocument(
   // Reuse the decidedResult already computed inside buildSessionHashes
   const decidedResult = sessionHashesResult.decidedResult;
 
-  const footnoteMap = new Map<string, ChangeNode>();
-  for (const node of changes) footnoteMap.set(node.id, node);
-
   // Trim trailing blank lines from the decided projection
   const decidedLines = [...decidedResult.lines];
   while (
@@ -47,15 +42,11 @@ export function buildDecidedDocument(
     decidedLines.pop();
   }
 
-  const rawLines = rawContent.split('\n');
-  const lineRefMap = buildLineRefMap(rawLines);
   const continuations = computeContinuationLines(rawContent, changes);
 
   const lines: ThreeZoneLine[] = decidedLines.map(cl => {
-    const refIds = lineRefMap.get(cl.rawLineNum - 1);
-    const flags = computeAFlagOnly(refIds, footnoteMap);
-
     const sh = sessionHashesResult.byRawLine.get(cl.rawLineNum)!;
+    const flags = cl.flag ? [cl.flag as LineFlag] : [];
 
     return {
       margin: {
@@ -86,18 +77,4 @@ export function buildDecidedDocument(
   });
 
   return { view: 'decided', header, lines };
-}
-
-function computeAFlagOnly(
-  refIds: Set<string> | undefined,
-  footnoteMap: Map<string, ChangeNode>,
-): LineFlag[] {
-  if (!refIds) return [];
-  for (const id of refIds) {
-    const node = footnoteMap.get(id);
-    if (!node) continue;
-    const status = nodeStatus(node);
-    if (status === 'accepted') return ['A'];
-  }
-  return [];
 }

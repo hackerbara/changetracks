@@ -39,7 +39,7 @@ export interface ChangeDownConfig {
         mode: PolicyMode;
         creation_tracking: CreationTracking;
         // Keep in sync with BuiltinView in @changedown/core/host/types.ts
-        default_view?: 'working' | 'simple' | 'decided' | 'original' | 'raw';
+        default_view?: 'working' | 'simple' | 'decided' | 'raw';
         view_policy?: 'suggest' | 'require';
     };
     protocol: {

@@ -52,10 +52,16 @@ describe('formatHeader 2-line compact format', () => {
     expect(text.split('\n')[0]).toBe('## proposed: 3 | accepted: 2 | rejected: 0');
   });
 
-  it('emits no top header for decided view', () => {
+  it('emits compact decided header for decided view', () => {
     const doc = mkDoc({ view: 'decided' });
     const text = formatPlainText(doc);
-    expect(text.startsWith('##')).toBe(false);
+    expect(text.split('\n').slice(0, 5)).toEqual([
+      '## view: decided',
+      '## proposed: 3 | accepted: 2 | rejected: 0 | threads: 1',
+      '## authors: @alice, @carol',
+      '---',
+      '',
+    ]);
   });
 
   it('emits no top header for raw view', () => {

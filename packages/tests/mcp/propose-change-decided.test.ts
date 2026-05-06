@@ -9,7 +9,7 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
 
-describe('propose_change with committed hashes', () => {
+describe('propose_change with decided hashes', () => {
   let tmpDir: string;
   let state: SessionState;
   let config: ChangeDownConfig;
@@ -19,7 +19,7 @@ describe('propose_change with committed hashes', () => {
   });
 
   beforeEach(async () => {
-    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'cn-propose-committed-'));
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'cn-propose-decided-'));
     state = new SessionState();
     config = {
       tracking: {
@@ -53,7 +53,7 @@ describe('propose_change with committed hashes', () => {
     await fs.rm(tmpDir, { recursive: true, force: true });
   });
 
-  it('accepts committed hash and maps to raw position for substitution', async () => {
+  it('accepts decided hash and maps to raw position for substitution', async () => {
     const filePath = path.join(tmpDir, 'test.md');
     await fs.writeFile(filePath, [
       '# Title',
@@ -65,21 +65,21 @@ describe('propose_change with committed hashes', () => {
 
     const resolver = await createTestResolver(tmpDir, config);
 
-    // 1. Read with committed view (records committed hashes in session state)
+    // 1. Read with decided view (records decided hashes in session state)
     const readResult = await handleReadTrackedFile(
-      { file: filePath, view: 'committed' },
+      { file: filePath, view: 'decided' },
       resolver,
       state,
     );
     expect(readResult.isError).toBeUndefined();
 
-    // Extract committed hash for "Clean line here." from output
+    // Extract decided hash for "Clean line here." from output
     const readText = readResult.content[0].text;
     const lines = readText.split('\n');
     const cleanLineEntry = lines.find(l => l.includes('Clean line here.'));
     expect(cleanLineEntry).toBeDefined();
 
-    // Parse the committed line format: "N:HH |content"
+    // Parse the decided line format: "N:HH |content"
     const match = cleanLineEntry!.match(/^\s*(\d+):([0-9a-f]{2})/);
     expect(match).toBeDefined();
     const decidedLineNum = parseInt(match![1], 10);
@@ -111,20 +111,20 @@ describe('propose_change with committed hashes', () => {
     expect(modifiedContent).toContain('{~~Clean line here.~>Updated line here.~~}');
   });
 
-  it('returns error for stale committed hash', async () => {
+  it('returns error for stale decided hash', async () => {
     const filePath = path.join(tmpDir, 'test.md');
     await fs.writeFile(filePath, '# Title\nSome text.\n');
 
     const resolver = await createTestResolver(tmpDir, config);
 
-    // 1. Read with committed view
+    // 1. Read with decided view
     await handleReadTrackedFile(
-      { file: filePath, view: 'committed' },
+      { file: filePath, view: 'decided' },
       resolver,
       state,
     );
 
-    // 2. Propose with wrong committed hash
+    // 2. Propose with wrong decided hash
     const proposeResult = await handleProposeChange(
       {
         file: filePath,
@@ -144,7 +144,7 @@ describe('propose_change with committed hashes', () => {
     expect(errorText).toContain('read_tracked_file');
   });
 
-  it('re-records committed hashes after edit for chained edits', async () => {
+  it('re-records decided hashes after edit for chained edits', async () => {
     const filePath = path.join(tmpDir, 'test.md');
     await fs.writeFile(filePath, [
       '# Title',
@@ -154,9 +154,9 @@ describe('propose_change with committed hashes', () => {
 
     const resolver = await createTestResolver(tmpDir, config);
 
-    // 1. Read with committed view
+    // 1. Read with decided view
     const readResult = await handleReadTrackedFile(
-      { file: filePath, view: 'committed' },
+      { file: filePath, view: 'decided' },
       resolver,
       state,
     );
@@ -183,14 +183,14 @@ describe('propose_change with committed hashes', () => {
     );
     expect(proposeResult.isError).toBeUndefined();
 
-    // 3. Verify committed hashes were re-recorded (should have committed field)
+    // 3. Verify decided hashes were re-recorded (should have committed field)
     const hashes = state.getRecordedHashes(filePath);
     expect(hashes).toBeDefined();
     expect(hashes!.some(h => h.committed !== undefined)).toBe(true);
 
-    // 4. Read committed view again to get fresh hashes for second edit
+    // 4. Read decided view again to get fresh hashes for second edit
     const readResult2 = await handleReadTrackedFile(
-      { file: filePath, view: 'committed' },
+      { file: filePath, view: 'decided' },
       resolver,
       state,
     );
@@ -201,7 +201,7 @@ describe('propose_change with committed hashes', () => {
     const secondLineNum = parseInt(secondMatch![1], 10);
     const secondHash = secondMatch![2];
 
-    // 5. Make second edit using committed coordinates
+    // 5. Make second edit using decided coordinates
     const proposeResult2 = await handleProposeChange(
       {
         file: filePath,
