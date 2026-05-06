@@ -78,6 +78,24 @@ export function normalizeSourceForWordTransition(source: string): string {
   return source.endsWith("\n") ? source : `${source}\n`;
 }
 
+
+export function normalizeWordMarkdownForSourceEquivalence(markdown: string): string {
+  // Narrow Word serializer drift: plain prose exclamation marks may round-trip
+  // from Word escaped as `\!`. Do not broadly unescape Markdown punctuation;
+  // escapes around emphasis, links, code, and hard-break whitespace are source
+  // meaningful and must still trip stale-source validation.
+  return markdown.replace(/\\!/gu, "!");
+}
+
+export function wordWireSourcesEquivalent(a: string, b: string): boolean {
+  if (a === b) return true;
+  const normalize = (source: string): string =>
+    normalizeWordMarkdownForSourceEquivalence(
+      source.endsWith("\n") ? source.slice(0, -1) : source
+    );
+  return normalize(a) === normalize(b);
+}
+
 export function classifySourceTransition(
   oldSourceInput: string,
   newSourceInput: string
@@ -156,7 +174,7 @@ export async function renderTransitionForCompare(
     oldCurrentBody = "";
   }
 
-  if (oldCurrentBody !== priorBody) {
+  if (!wordWireSourcesEquivalent(oldCurrentBody, priorBody)) {
     throw new Error(
       `stale oldWireSource for Word source-transition render:\nexpected prior body:\n${priorBody}\nactual old current body:\n${oldCurrentBody}`
     );

@@ -8,12 +8,18 @@ import { resolveProtocolMode } from './config.js';
  * Each section is conditionally included based on the resolved config.
  * The guide teaches: protocol syntax, identity, annotations, chaining, views.
  */
-export function composeGuide(config: ChangeDownConfig): string {
+export interface ComposeGuideOptions {
+  targetKind?: 'file' | 'word';
+}
+
+export function composeGuide(config: ChangeDownConfig, options: ComposeGuideOptions = {}): string {
   const sections: string[] = [];
   const protocolMode = resolveProtocolMode(config.protocol.mode);
 
   // --- Protocol section (always included) ---
   sections.push(composeProtocolSection(protocolMode, config));
+
+  if (options.targetKind === 'word') sections.push(composeWordSessionSection(protocolMode));
 
   // --- Author section (always included, content varies) ---
   sections.push(composeAuthorSection(config));
@@ -82,6 +88,19 @@ function composeProtocolSection(
   );
 
   return lines.join('\n');
+}
+
+
+function composeWordSessionSection(mode: 'classic' | 'compact'): string {
+  const preferred = mode === 'compact'
+    ? 'Preferred for word://: compact+hashline with `at: "LINE:HASH"` and `op`.'
+    : 'Preferred for word:// in this mode: classic `old_text` and `new_text`.';
+  return (
+    `**Word sessions**: ${preferred} ` +
+    'Word sessions also accept the other public ChangeDown proposal family when arguments are unambiguous: classic `old_text`/`new_text` and compact+hashline `LINE:HASH`. ' +
+    'Use exactly one proposal per call for `word://`; split multi-change edits into separate calls. ' +
+    'Do not pass public `oldL2` or `newL2`.'
+  );
 }
 
 function composeAuthorSection(config: ChangeDownConfig): string {

@@ -38,23 +38,26 @@ describe('getListedTools (MCP tool surface)', () => {
     expect(maxLen).toBeLessThanOrEqual(400);
   });
 
-  it('classic mode returns old_text/new_text schemas for propose_change', () => {
+  it('classic mode returns old_text/new_text schemas for propose_change and documents word compact fallback', () => {
     const tools = getListedTools('classic');
     const pc = tools.find(t => t.name === 'propose_change');
     expect(pc).toBeDefined();
     const props = (pc!.inputSchema as { properties: Record<string, unknown> }).properties;
     expect(props).toHaveProperty('old_text');
-    expect(props).not.toHaveProperty('at');
+    expect(props).toHaveProperty('new_text');
+    expect(props).toHaveProperty('at');
+    expect(props).toHaveProperty('op');
   });
 
-  it('compact mode returns at/op schemas for propose_change', () => {
+  it('compact mode returns at/op schemas for propose_change and documents word classic fallback', () => {
     const tools = getListedTools('compact');
     const pc = tools.find(t => t.name === 'propose_change');
     expect(pc).toBeDefined();
     const props = (pc!.inputSchema as { properties: Record<string, unknown> }).properties;
     expect(props).toHaveProperty('at');
     expect(props).toHaveProperty('op');
-    expect(props).not.toHaveProperty('old_text');
+    expect(props).toHaveProperty('old_text');
+    expect(props).toHaveProperty('new_text');
   });
 
   it('non-editing tools are the same in both modes', () => {
@@ -110,5 +113,32 @@ describe('getListedToolsWithConfig', () => {
     const proposeChange = withConfig.find((t) => t.name === 'propose_change');
     const authorDesc = (proposeChange!.inputSchema as { properties?: { author?: { description?: string } } }).properties?.author?.description ?? '';
     expect(authorDesc).toContain('In this project author is required');
+  });
+});
+
+
+describe('word-aware propose_change schema', () => {
+  it('compact mode still prefers at/op and documents word classic fallback', () => {
+    const tools = getListedTools('compact');
+    const pc = tools.find((t) => t.name === 'propose_change');
+    expect(pc).toBeDefined();
+    const schema = pc!.inputSchema as { properties: Record<string, { description?: string }> };
+    expect(schema.properties).toHaveProperty('at');
+    expect(schema.properties).toHaveProperty('op');
+    expect(schema.properties).toHaveProperty('old_text');
+    expect(schema.properties.old_text!.description).toMatch(/word:\/\//i);
+    expect(schema.properties.old_text!.description).toMatch(/classic/i);
+  });
+
+  it('classic mode still prefers old_text/new_text and documents word compact fallback', () => {
+    const tools = getListedTools('classic');
+    const pc = tools.find((t) => t.name === 'propose_change');
+    expect(pc).toBeDefined();
+    const schema = pc!.inputSchema as { properties: Record<string, { description?: string }> };
+    expect(schema.properties).toHaveProperty('old_text');
+    expect(schema.properties).toHaveProperty('new_text');
+    expect(schema.properties).toHaveProperty('at');
+    expect(schema.properties.at!.description).toMatch(/word:\/\//i);
+    expect(schema.properties.at!.description).toMatch(/compact/i);
   });
 });

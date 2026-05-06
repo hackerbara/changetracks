@@ -6,7 +6,7 @@ import {
 
 describe('tool schemas', () => {
   describe('classic mode', () => {
-    it('propose_change has old_text, new_text, changes, raw, no at/op', () => {
+    it('propose_change has old_text, new_text, changes, raw, and word-only at/op fallbacks', () => {
       const props = classicProposeChangeSchema.inputSchema.properties as Record<string, unknown>;
       expect(props).toHaveProperty('old_text');
       expect(props).toHaveProperty('new_text');
@@ -15,8 +15,9 @@ describe('tool schemas', () => {
       expect(props).toHaveProperty('author');
       expect(props).toHaveProperty('changes');
       expect(props).toHaveProperty('raw');
-      expect(props).not.toHaveProperty('at');
-      expect(props).not.toHaveProperty('op');
+      expect(props).toHaveProperty('at');
+      expect(props).toHaveProperty('op');
+      expect((props.at as { description?: string }).description).toMatch(/word:\/\//i);
       // No hashline params
       expect(props).not.toHaveProperty('start_line');
       expect(props).not.toHaveProperty('start_hash');
@@ -38,17 +39,18 @@ describe('tool schemas', () => {
   });
 
   describe('compact mode', () => {
-    it('propose_change has at, op, changes, raw, no old_text/new_text', () => {
+    it('propose_change has at, op, changes, raw, and word-only classic fallbacks', () => {
       const props = compactProposeChangeSchema.inputSchema.properties as Record<string, unknown>;
       expect(props).toHaveProperty('at');
       expect(props).toHaveProperty('op');
       expect(props).toHaveProperty('author');
       expect(props).toHaveProperty('changes');
       expect(props).toHaveProperty('raw');
-      expect(props).not.toHaveProperty('old_text');
-      expect(props).not.toHaveProperty('new_text');
-      expect(props).not.toHaveProperty('insert_after');
-      expect(props).not.toHaveProperty('reason');
+      expect(props).toHaveProperty('old_text');
+      expect(props).toHaveProperty('new_text');
+      expect(props).toHaveProperty('insert_after');
+      expect(props).toHaveProperty('reason');
+      expect((props.old_text as { description?: string }).description).toMatch(/word:\/\//i);
     });
 
     it('propose_change required fields are file only (at/op optional when changes array used)', () => {

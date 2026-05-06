@@ -160,6 +160,62 @@ describe('propose_change compact mode', () => {
     expect(result.content[0].text).toContain('compact');
   });
 
+
+  it('rejects mixed at/op and old_text/new_text params in compact mode for file-backed targets', async () => {
+    const content = 'content';
+    const filePath = path.join(tmpDir, 'doc.md');
+    await fs.writeFile(filePath, content);
+    const hash = hashForLine(content, 1);
+
+    const result = await handleProposeChange(
+      { file: filePath, at: `1:${hash}`, op: '{~~content~>changed~~}', old_text: 'content', new_text: 'changed' },
+      resolver,
+      state,
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('compact');
+    expect(result.content[0].text).toContain('at/op');
+  });
+
+  it('rejects compact changes-array items that also carry classic params for file-backed targets', async () => {
+    const content = 'content';
+    const filePath = path.join(tmpDir, 'doc.md');
+    await fs.writeFile(filePath, content);
+    const hash = hashForLine(content, 1);
+
+    const result = await handleProposeChange(
+      {
+        file: filePath,
+        changes: [{ at: `1:${hash}`, op: '{~~content~>changed~~}', old_text: 'content', new_text: 'changed' }],
+      },
+      resolver,
+      state,
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('compact');
+  });
+
+  it('rejects compact at/op params in classic mode even inside a changes array', async () => {
+    const classicConfig: ChangeDownConfig = {
+      ...compactConfig,
+      protocol: { ...compactConfig.protocol, mode: 'classic' as const },
+    };
+    const classicResolver = await createTestResolver(tmpDir, classicConfig);
+    const filePath = path.join(tmpDir, 'doc.md');
+    await fs.writeFile(filePath, 'content');
+
+    const result = await handleProposeChange(
+      { file: filePath, changes: [{ at: '1:ab', op: '{++text++}' }] },
+      classicResolver,
+      state,
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('classic');
+  });
+
   it('compact substitution generates response with document_state', async () => {
     const content = 'line one\nline two';
     const filePath = path.join(tmpDir, 'doc.md');

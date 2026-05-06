@@ -10,10 +10,6 @@ import {
   stripHashlinePrefixes,
   stripBoundaryEcho,
   defaultNormalizer,
-  CriticMarkupParser,
-  ChangeStatus,
-  applyAcceptedChanges,
-  applyRejectedChanges,
   reviewerType,
   splitBodyAndFootnotes,
   FOOTNOTE_L3_EDIT_OP,
@@ -36,6 +32,7 @@ import { parseOp, nowTimestamp } from '@changedown/core';
 import { resolveProtocolMode } from '../config.js';
 import { rerecordState } from '../state-utils.js';
 import { resolveAndApply, type NormalizedCompactOp } from './resolve-and-apply.js';
+import { settleOnDemandIfNeeded } from './settle-on-demand.js';
 export interface ProposeChangeResult {
   content: Array<{ type: 'text'; text: string }>;
   isError?: boolean;
@@ -234,75 +231,6 @@ function extractQuickFixFromError(
     }
   }
   return { staleLine: fallbackLine };
-}
-
-/**
- * Settle-on-demand: if `oldText` matches inside an accepted/rejected CriticMarkup
- * construct (either via exact match inside the markup, or via the current-text
- * fallback), settle those constructs first so the subsequent proposal operates on
- * clean prose.
- *
- * Returns the file content to use (settled if settlement happened) and whether
- * settlement occurred. When settlement occurs, the caller must write the settled
- * content to disk before applying the proposal.
- *
- * Only accepted and rejected changes are settled — proposed changes are never
- * auto-settled.
- */
-function settleOnDemandIfNeeded(
-  fileContent: string,
-  oldText: string,
-): { content: string; settled: boolean } {
-  // Quick path: no CriticMarkup in file, no settlement needed.
-  if (!oldText || !/\{\+\+|\{--|\{~~|\{==|\{>>/.test(fileContent)) {
-    return { content: fileContent, settled: false };
-  }
-
-  // Parse the document to find accepted/rejected changes.
-  const parser = new CriticMarkupParser();
-  const doc = parser.parse(fileContent, { skipCodeBlocks: false });
-  const changes = doc.getChanges();
-
-  // Filter to only accepted/rejected changes (these are candidates for settlement).
-  const settleableChanges = changes.filter(
-    (c) => c.status === ChangeStatus.Accepted || c.status === ChangeStatus.Rejected,
-  );
-
-  if (settleableChanges.length === 0) {
-    return { content: fileContent, settled: false };
-  }
-
-  // Try matching old_text in the content zone (without footnotes).
-  let match: ReturnType<typeof findUniqueMatch> | undefined;
-  try {
-    match = findUniqueMatch(contentZoneText(fileContent), oldText, defaultNormalizer);
-  } catch {
-    // Match not found or ambiguous — let the caller handle the error
-    return { content: fileContent, settled: false };
-  }
-
-  const matchStart = match.index;
-  const matchEnd = match.index + match.length;
-
-  // Check if the match range overlaps any accepted or rejected change range.
-  // This catches both:
-  // 1. Exact match landing inside CriticMarkup construct (e.g., `new` inside `{~~old~>new~~}`)
-  // 2. Settled-text match (wasSettledMatch=true) expanding to cover markup constructs
-  const overlapsSettleable = settleableChanges.some(
-    (c) => c.range.start < matchEnd && c.range.end > matchStart,
-  );
-
-  if (!overlapsSettleable) {
-    return { content: fileContent, settled: false };
-  }
-
-  // Settle accepted changes first, then rejected changes.
-  // applyAcceptedChanges and applyRejectedChanges preserve footnote refs
-  // inline adjacent to the settled text (the audit trail remains).
-  const { currentContent: afterAccepted } = applyAcceptedChanges(fileContent);
-  const { currentContent: afterRejected } = applyRejectedChanges(afterAccepted);
-
-  return { content: afterRejected, settled: true };
 }
 
 /**
@@ -589,9 +517,13 @@ export async function handleProposeChange(
 
     // ─── Protocol mode dispatch ───────────────────────────────────
     const protocolMode = resolveProtocolMode(config.protocol?.mode ?? 'classic');
-    const hasClassicParams = (typeof args.old_text === 'string' && args.old_text !== '') ||
-      (typeof args.new_text === 'string' && args.new_text !== '') ||
-      typeof args.insert_after === 'string';
+    const hasClassicParams =
+      Object.prototype.hasOwnProperty.call(args, 'old_text') ||
+      Object.prototype.hasOwnProperty.call(args, 'oldText') ||
+      Object.prototype.hasOwnProperty.call(args, 'new_text') ||
+      Object.prototype.hasOwnProperty.call(args, 'newText') ||
+      Object.prototype.hasOwnProperty.call(args, 'insert_after') ||
+      Object.prototype.hasOwnProperty.call(args, 'insertAfter');
 
     // Classic mode: reject compact params
     if (protocolMode === 'classic' && hasCompactParams) {
@@ -602,7 +534,7 @@ export async function handleProposeChange(
     }
 
     // Compact mode: reject classic params
-    if (protocolMode === 'compact' && hasClassicParams && !hasCompactParams) {
+    if (protocolMode === 'compact' && hasClassicParams) {
       return errorResult(
         'This project uses compact mode. Use at/op parameters instead of old_text/new_text.',
         'PROTOCOL_MODE_MISMATCH',

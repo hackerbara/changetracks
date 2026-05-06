@@ -15418,6 +15418,39 @@ async function handleProposeBatch(args, resolver, state) {
 // ../../packages/cli/dist/engine/handlers/propose-change.js
 init_file_ops2();
 init_dist_esm();
+
+// ../../packages/cli/dist/engine/handlers/settle-on-demand.js
+init_dist_esm();
+init_file_ops2();
+function settleOnDemandIfNeeded(fileContent, oldText) {
+  if (!oldText || !/\{\+\+|\{--|\{~~|\{==|\{>>/.test(fileContent)) {
+    return { content: fileContent, settled: false };
+  }
+  const parser = new CriticMarkupParser();
+  const doc = parser.parse(fileContent, { skipCodeBlocks: false });
+  const changes = doc.getChanges();
+  const settleableChanges = changes.filter((c) => c.status === ChangeStatus.Accepted || c.status === ChangeStatus.Rejected);
+  if (settleableChanges.length === 0) {
+    return { content: fileContent, settled: false };
+  }
+  let match;
+  try {
+    match = findUniqueMatch(contentZoneText(fileContent), oldText, defaultNormalizer);
+  } catch {
+    return { content: fileContent, settled: false };
+  }
+  const matchStart = match.index;
+  const matchEnd = match.index + match.length;
+  const overlapsSettleable = settleableChanges.some((c) => c.range.start < matchEnd && c.range.end > matchStart);
+  if (!overlapsSettleable) {
+    return { content: fileContent, settled: false };
+  }
+  const { currentContent: afterAccepted } = applyAcceptedChanges(fileContent);
+  const { currentContent: afterRejected } = applyRejectedChanges(afterAccepted);
+  return { content: afterRejected, settled: true };
+}
+
+// ../../packages/cli/dist/engine/handlers/propose-change.js
 function checkReasoningRequired(author, reasoning, config, compact2) {
   const participantType = reviewerType(author);
   if (!config.reasoning?.propose?.[participantType])
@@ -15523,33 +15556,6 @@ function extractQuickFixFromError(err, fallbackLine) {
     }
   }
   return { staleLine: fallbackLine };
-}
-function settleOnDemandIfNeeded(fileContent, oldText) {
-  if (!oldText || !/\{\+\+|\{--|\{~~|\{==|\{>>/.test(fileContent)) {
-    return { content: fileContent, settled: false };
-  }
-  const parser = new CriticMarkupParser();
-  const doc = parser.parse(fileContent, { skipCodeBlocks: false });
-  const changes = doc.getChanges();
-  const settleableChanges = changes.filter((c) => c.status === ChangeStatus.Accepted || c.status === ChangeStatus.Rejected);
-  if (settleableChanges.length === 0) {
-    return { content: fileContent, settled: false };
-  }
-  let match;
-  try {
-    match = findUniqueMatch(contentZoneText(fileContent), oldText, defaultNormalizer);
-  } catch {
-    return { content: fileContent, settled: false };
-  }
-  const matchStart = match.index;
-  const matchEnd = match.index + match.length;
-  const overlapsSettleable = settleableChanges.some((c) => c.range.start < matchEnd && c.range.end > matchStart);
-  if (!overlapsSettleable) {
-    return { content: fileContent, settled: false };
-  }
-  const { currentContent: afterAccepted } = applyAcceptedChanges(fileContent);
-  const { currentContent: afterRejected } = applyRejectedChanges(afterAccepted);
-  return { content: afterRejected, settled: true };
 }
 async function handleProposeChange(args, resolver, state) {
   try {
@@ -15731,11 +15737,11 @@ async function handleProposeChange(args, resolver, state) {
       }
     }
     const protocolMode = resolveProtocolMode(config.protocol?.mode ?? "classic");
-    const hasClassicParams = typeof args.old_text === "string" && args.old_text !== "" || typeof args.new_text === "string" && args.new_text !== "" || typeof args.insert_after === "string";
+    const hasClassicParams = Object.prototype.hasOwnProperty.call(args, "old_text") || Object.prototype.hasOwnProperty.call(args, "oldText") || Object.prototype.hasOwnProperty.call(args, "new_text") || Object.prototype.hasOwnProperty.call(args, "newText") || Object.prototype.hasOwnProperty.call(args, "insert_after") || Object.prototype.hasOwnProperty.call(args, "insertAfter");
     if (protocolMode === "classic" && hasCompactParams) {
       return errorResult2("This project uses classic mode. Use old_text/new_text parameters instead of at/op.", "PROTOCOL_MODE_MISMATCH");
     }
-    if (protocolMode === "compact" && hasClassicParams && !hasCompactParams) {
+    if (protocolMode === "compact" && hasClassicParams) {
       return errorResult2("This project uses compact mode. Use at/op parameters instead of old_text/new_text.", "PROTOCOL_MODE_MISMATCH");
     }
     if (protocolMode === "compact" && hasCompactParams) {
@@ -16589,10 +16595,12 @@ import * as fs8 from "node:fs/promises";
 import * as path7 from "node:path";
 
 // ../../packages/cli/dist/engine/guide-composer.js
-function composeGuide(config) {
+function composeGuide(config, options = {}) {
   const sections = [];
   const protocolMode = resolveProtocolMode(config.protocol.mode);
   sections.push(composeProtocolSection(protocolMode, config));
+  if (options.targetKind === "word")
+    sections.push(composeWordSessionSection(protocolMode));
   sections.push(composeAuthorSection(config));
   if (config.reasoning?.propose?.agent === true) {
     sections.push("**Annotations**: Required on every change. Append `{>>reason` to your `op` string, or include reasoning in your propose call.");
@@ -16624,6 +16632,10 @@ function composeProtocolSection(mode, config) {
   lines.push('Range replace: `at:"5:a1-20:b3"` + `op:"{~~~>new content~~}"` replaces the entire range.');
   lines.push("Multi-line ops: use real newlines in your op string \u2014 the MCP transport handles encoding.");
   return lines.join("\n");
+}
+function composeWordSessionSection(mode) {
+  const preferred = mode === "compact" ? 'Preferred for word://: compact+hashline with `at: "LINE:HASH"` and `op`.' : "Preferred for word:// in this mode: classic `old_text` and `new_text`.";
+  return `**Word sessions**: ${preferred} Word sessions also accept the other public ChangeDown proposal family when arguments are unambiguous: classic \`old_text\`/\`new_text\` and compact+hashline \`LINE:HASH\`. Use exactly one proposal per call for \`word://\`; split multi-change edits into separate calls. Do not pass public \`oldL2\` or \`newL2\`.`;
 }
 function composeAuthorSection(config) {
   if (config.author.enforcement === "required") {
@@ -17001,6 +17013,10 @@ async function handleRespondToThread(args, resolver, _state) {
 }
 
 // ../../packages/cli/dist/engine/index.js
+init_file_ops2();
+
+// ../../packages/cli/dist/engine/handlers/propose-classic-memory.js
+init_dist_esm();
 init_file_ops2();
 
 // ../../packages/cli/dist/engine/handlers/propose-compact-memory.js

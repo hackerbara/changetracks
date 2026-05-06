@@ -11551,8 +11551,8 @@ async function handleProposeBatch(args, resolver, state) {
     const footnoteCount = (currentText.match(/^\[\^cn-\d+(?:\.\d+)?\]:/gm) || []).length;
     const proposedCount = (currentText.match(/\|\s*proposed\s*$/gm) || []).length;
     const acceptedCount = (currentText.match(/\|\s*accepted\s*$/gm) || []).length;
-    const authorMatches = currentText.match(/^\[\^cn-\d+(?:\.\d+)?\]:\s*@([^\s|]+)/gm) || [];
-    const uniqueAuthors = new Set(authorMatches.map((m) => m.match(/@([^\s|]+)/)?.[1]).filter(Boolean));
+    const authorMatches2 = currentText.match(/^\[\^cn-\d+(?:\.\d+)?\]:\s*@([^\s|]+)/gm) || [];
+    const uniqueAuthors = new Set(authorMatches2.map((m) => m.match(/@([^\s|]+)/)?.[1]).filter(Boolean));
     const responseData = {
       group_id: groupId,
       file: relativePath,
@@ -11585,6 +11585,39 @@ async function handleProposeBatch(args, resolver, state) {
 // ../../packages/cli/dist/engine/handlers/propose-change.js
 init_file_ops2();
 init_dist_esm();
+
+// ../../packages/cli/dist/engine/handlers/settle-on-demand.js
+init_dist_esm();
+init_file_ops2();
+function settleOnDemandIfNeeded(fileContent, oldText) {
+  if (!oldText || !/\{\+\+|\{--|\{~~|\{==|\{>>/.test(fileContent)) {
+    return { content: fileContent, settled: false };
+  }
+  const parser = new CriticMarkupParser();
+  const doc = parser.parse(fileContent, { skipCodeBlocks: false });
+  const changes = doc.getChanges();
+  const settleableChanges = changes.filter((c) => c.status === ChangeStatus.Accepted || c.status === ChangeStatus.Rejected);
+  if (settleableChanges.length === 0) {
+    return { content: fileContent, settled: false };
+  }
+  let match;
+  try {
+    match = findUniqueMatch(contentZoneText(fileContent), oldText, defaultNormalizer);
+  } catch {
+    return { content: fileContent, settled: false };
+  }
+  const matchStart = match.index;
+  const matchEnd = match.index + match.length;
+  const overlapsSettleable = settleableChanges.some((c) => c.range.start < matchEnd && c.range.end > matchStart);
+  if (!overlapsSettleable) {
+    return { content: fileContent, settled: false };
+  }
+  const { currentContent: afterAccepted } = applyAcceptedChanges(fileContent);
+  const { currentContent: afterRejected } = applyRejectedChanges(afterAccepted);
+  return { content: afterRejected, settled: true };
+}
+
+// ../../packages/cli/dist/engine/handlers/propose-change.js
 function checkReasoningRequired(author, reasoning, config, compact2) {
   const participantType = reviewerType(author);
   if (!config.reasoning?.propose?.[participantType])
@@ -11690,33 +11723,6 @@ function extractQuickFixFromError(err, fallbackLine) {
     }
   }
   return { staleLine: fallbackLine };
-}
-function settleOnDemandIfNeeded(fileContent, oldText) {
-  if (!oldText || !/\{\+\+|\{--|\{~~|\{==|\{>>/.test(fileContent)) {
-    return { content: fileContent, settled: false };
-  }
-  const parser = new CriticMarkupParser();
-  const doc = parser.parse(fileContent, { skipCodeBlocks: false });
-  const changes = doc.getChanges();
-  const settleableChanges = changes.filter((c) => c.status === ChangeStatus.Accepted || c.status === ChangeStatus.Rejected);
-  if (settleableChanges.length === 0) {
-    return { content: fileContent, settled: false };
-  }
-  let match;
-  try {
-    match = findUniqueMatch(contentZoneText(fileContent), oldText, defaultNormalizer);
-  } catch {
-    return { content: fileContent, settled: false };
-  }
-  const matchStart = match.index;
-  const matchEnd = match.index + match.length;
-  const overlapsSettleable = settleableChanges.some((c) => c.range.start < matchEnd && c.range.end > matchStart);
-  if (!overlapsSettleable) {
-    return { content: fileContent, settled: false };
-  }
-  const { currentContent: afterAccepted } = applyAcceptedChanges(fileContent);
-  const { currentContent: afterRejected } = applyRejectedChanges(afterAccepted);
-  return { content: afterRejected, settled: true };
 }
 async function handleProposeChange(args, resolver, state) {
   try {
@@ -11898,11 +11904,11 @@ async function handleProposeChange(args, resolver, state) {
       }
     }
     const protocolMode = resolveProtocolMode(config.protocol?.mode ?? "classic");
-    const hasClassicParams = typeof args.old_text === "string" && args.old_text !== "" || typeof args.new_text === "string" && args.new_text !== "" || typeof args.insert_after === "string";
+    const hasClassicParams = Object.prototype.hasOwnProperty.call(args, "old_text") || Object.prototype.hasOwnProperty.call(args, "oldText") || Object.prototype.hasOwnProperty.call(args, "new_text") || Object.prototype.hasOwnProperty.call(args, "newText") || Object.prototype.hasOwnProperty.call(args, "insert_after") || Object.prototype.hasOwnProperty.call(args, "insertAfter");
     if (protocolMode === "classic" && hasCompactParams) {
       return errorResult2("This project uses classic mode. Use old_text/new_text parameters instead of at/op.", "PROTOCOL_MODE_MISMATCH");
     }
-    if (protocolMode === "compact" && hasClassicParams && !hasCompactParams) {
+    if (protocolMode === "compact" && hasClassicParams) {
       return errorResult2("This project uses compact mode. Use at/op parameters instead of old_text/new_text.", "PROTOCOL_MODE_MISMATCH");
     }
     if (protocolMode === "compact" && hasCompactParams) {
@@ -12206,8 +12212,8 @@ async function handleProposeChange(args, resolver, state) {
     const footnoteCount = (modifiedText.match(/^\[\^cn-\d+(?:\.\d+)?\]:/gm) || []).length;
     const proposedCount = (modifiedText.match(/\|\s*proposed\s*$/gm) || []).length;
     const acceptedCount = (modifiedText.match(/\|\s*accepted\s*$/gm) || []).length;
-    const authorMatches = modifiedText.match(/^\[\^cn-\d+(?:\.\d+)?\]:\s*@([^\s|]+)/gm) || [];
-    const uniqueAuthors = new Set(authorMatches.map((m) => m.match(/@([^\s|]+)/)?.[1]).filter(Boolean));
+    const authorMatches2 = modifiedText.match(/^\[\^cn-\d+(?:\.\d+)?\]:\s*@([^\s|]+)/gm) || [];
+    const uniqueAuthors = new Set(authorMatches2.map((m) => m.match(/@([^\s|]+)/)?.[1]).filter(Boolean));
     responseData.document_state = {
       total_changes: footnoteCount,
       proposed: proposedCount,
@@ -12341,8 +12347,8 @@ async function handleCompactProposeChange(args, filePath, relativePath, config, 
   const footnoteCount = (modifiedText.match(/^\[\^cn-\d+(?:\.\d+)?\]:/gm) || []).length;
   const proposedCount = (modifiedText.match(/\|\s*proposed\s*$/gm) || []).length;
   const acceptedCount = (modifiedText.match(/\|\s*accepted\s*$/gm) || []).length;
-  const authorMatches = modifiedText.match(/^\[\^cn-\d+(?:\.\d+)?\]:\s*@([^\s|]+)/gm) || [];
-  const uniqueAuthors = new Set(authorMatches.map((m) => m.match(/@([^\s|]+)/)?.[1]).filter(Boolean));
+  const authorMatches2 = modifiedText.match(/^\[\^cn-\d+(?:\.\d+)?\]:\s*@([^\s|]+)/gm) || [];
+  const uniqueAuthors = new Set(authorMatches2.map((m) => m.match(/@([^\s|]+)/)?.[1]).filter(Boolean));
   const responseData = {
     change_id: changeId,
     file: relativePath,
@@ -12818,10 +12824,12 @@ import * as fs8 from "node:fs/promises";
 import * as path7 from "node:path";
 
 // ../../packages/cli/dist/engine/guide-composer.js
-function composeGuide(config) {
+function composeGuide(config, options = {}) {
   const sections = [];
   const protocolMode = resolveProtocolMode(config.protocol.mode);
   sections.push(composeProtocolSection(protocolMode, config));
+  if (options.targetKind === "word")
+    sections.push(composeWordSessionSection(protocolMode));
   sections.push(composeAuthorSection(config));
   if (config.reasoning?.propose?.agent === true) {
     sections.push("**Annotations**: Required on every change. Append `{>>reason` to your `op` string, or include reasoning in your propose call.");
@@ -12853,6 +12861,10 @@ function composeProtocolSection(mode, config) {
   lines.push('Range replace: `at:"5:a1-20:b3"` + `op:"{~~~>new content~~}"` replaces the entire range.');
   lines.push("Multi-line ops: use real newlines in your op string \u2014 the MCP transport handles encoding.");
   return lines.join("\n");
+}
+function composeWordSessionSection(mode) {
+  const preferred = mode === "compact" ? 'Preferred for word://: compact+hashline with `at: "LINE:HASH"` and `op`.' : "Preferred for word:// in this mode: classic `old_text` and `new_text`.";
+  return `**Word sessions**: ${preferred} Word sessions also accept the other public ChangeDown proposal family when arguments are unambiguous: classic \`old_text\`/\`new_text\` and compact+hashline \`LINE:HASH\`. Use exactly one proposal per call for \`word://\`; split multi-change edits into separate calls. Do not pass public \`oldL2\` or \`newL2\`.`;
 }
 function composeAuthorSection(config) {
   if (config.author.enforcement === "required") {
@@ -13799,7 +13811,7 @@ init_file_ops2();
 // ../../packages/cli/dist/engine/tool-schemas.js
 var compactProposeChangeSchema = {
   name: "propose_change",
-  description: "Propose tracked changes to a document target (file path, file:// URI, or word:// session). Each change uses at (LINE:HASH coordinate) and op (edit operation). For multiple changes, pass a changes array \u2014 all applied atomically against the pre-change state.",
+  description: "Propose tracked changes to a document target (file path, file:// URI, or word:// session). Each change uses at (LINE:HASH coordinate) and op (edit operation). For word:// only, compact+hashline and classic families are accepted when unambiguous; files still follow project protocol mode. For multiple changes, pass a changes array \u2014 all applied atomically against the pre-change state.",
   inputSchema: {
     type: "object",
     properties: {
@@ -13807,6 +13819,10 @@ var compactProposeChangeSchema = {
       author: { type: "string", description: "Author identity (e.g., ai:claude-opus-4.6, human:alice). Required when project has author enforcement." },
       at: { type: "string", description: 'Target coordinate from read_tracked_file. Single line: "LINE:HASH". Range: "LINE:HASH-LINE:HASH".' },
       op: { type: "string", description: "Edit operation. Substitute: {~~old~>new~~}. Insert: {++text++}. Delete: {--text--}. Highlight: {==text==}. Comment: {>>reason. Append {>> to annotate any op." },
+      old_text: { type: "string", description: "word:// classic fallback only: text to replace. File-backed compact targets reject old_text; use at/op for files in compact mode." },
+      new_text: { type: "string", description: "word:// classic fallback only: replacement text. File-backed compact targets reject new_text; use at/op for files in compact mode." },
+      insert_after: { type: "string", description: "word:// classic fallback only: insertion anchor text when old_text is empty." },
+      reason: { type: "string", description: "Annotation for the change. In compact mode, a reason may also be appended to op with {>>reason." },
       changes: {
         type: "array",
         description: "Multiple changes applied atomically with grouped IDs. All coordinates reference the pre-change state.",
@@ -13826,7 +13842,7 @@ var compactProposeChangeSchema = {
 };
 var classicProposeChangeSchema = {
   name: "propose_change",
-  description: "Propose tracked changes to a document target (file path, file:// URI, or word:// session). Each change uses old_text/new_text for text matching. For multiple changes, pass a changes array \u2014 all applied atomically against the pre-change state.",
+  description: "Propose tracked changes to a document target (file path, file:// URI, or word:// session). Each change uses old_text/new_text for text matching. For word:// only, compact+hashline and classic families are accepted when unambiguous; files still follow project protocol mode. For multiple changes, pass a changes array \u2014 all applied atomically against the pre-change state.",
   inputSchema: {
     type: "object",
     properties: {
@@ -13836,6 +13852,8 @@ var classicProposeChangeSchema = {
       new_text: { type: "string", description: "Replacement text. Empty string for pure deletion." },
       reason: { type: "string", description: "Annotation for the change (adds a discussion comment to the change thread)." },
       insert_after: { type: "string", description: "For insertions: insert new text after this anchor text." },
+      at: { type: "string", description: 'word:// compact+hashline fallback only: target coordinate from read_tracked_file, such as "LINE:HASH". File-backed classic targets reject at/op; use old_text/new_text for files in classic mode.' },
+      op: { type: "string", description: "word:// compact+hashline fallback only: edit operation such as {~~old~>new~~}, {++text++}, or {--text--}." },
       changes: {
         type: "array",
         description: "Multiple changes applied atomically with grouped IDs.",
@@ -13887,8 +13905,395 @@ function getListedToolsWithConfig(config, mode = "classic") {
   });
 }
 
+// ../../packages/cli/dist/engine/handlers/propose-classic-memory.js
+init_dist_esm();
+init_file_ops2();
+function fail(message, code = "VALIDATION_ERROR", details) {
+  const content = [{ type: "text", text: message }];
+  content.push({ type: "text", text: JSON.stringify({ error: { message, code, ...details ?? {} } }) });
+  return { ok: false, toolResult: { content, isError: true } };
+}
+function documentState(modifiedText) {
+  const footnoteCount = (modifiedText.match(/^\[\^cn-\d+(?:\.\d+)?\]:/gm) || []).length;
+  const proposedCount = (modifiedText.match(/\|\s*proposed\s*$/gm) || []).length;
+  const acceptedCount = (modifiedText.match(/\|\s*accepted\s*$/gm) || []).length;
+  const authorMatches2 = modifiedText.match(/^\[\^cn-\d+(?:\.\d+)?\]:\s*@([^\s|]+)/gm) || [];
+  const uniqueAuthors = new Set(authorMatches2.map((m) => m.match(/@([^\s|]+)/)?.[1]).filter(Boolean));
+  return {
+    total_changes: footnoteCount,
+    proposed: proposedCount,
+    accepted: acceptedCount,
+    authors: uniqueAuthors.size
+  };
+}
+function normalizeSingleClassicChange(args) {
+  const changes = args.changes;
+  if (!Array.isArray(changes))
+    return args;
+  if (changes.length !== 1) {
+    return fail("word:// currently accepts one proposal per call; split multi-change arrays into separate calls.", "WORD_MULTI_CHANGE_UNSUPPORTED");
+  }
+  const change = changes[0];
+  return {
+    file: args.file,
+    author: args.author,
+    reason: change.reason ?? args.reason,
+    level: args.level,
+    old_text: change.old_text,
+    new_text: change.new_text,
+    insert_after: change.insert_after ?? change.after_text
+  };
+}
+function hasOnlyFootnoteRefDifference(oldText, newText) {
+  const strippedOld = oldText.replace(/\[\^?cn-\d+(?:\.\d+)?\]/g, "").trim();
+  const strippedNew = newText.replace(/\[\^?cn-\d+(?:\.\d+)?\]/g, "").trim();
+  return strippedOld === strippedNew;
+}
+async function prepareClassicProposeChange(input) {
+  const normalized = normalizeSingleClassicChange(input.args);
+  if (normalized.ok === false) {
+    return normalized;
+  }
+  const args = normalized;
+  if (typeof args.at === "string" || typeof args.op === "string") {
+    return fail("Mixed proposal families are not supported: use either old_text/new_text or at/op, not both.", "MIXED_PROPOSAL_FAMILY");
+  }
+  const oldText = strArg(args, "old_text", "oldText");
+  const newText = strArg(args, "new_text", "newText");
+  const insertAfter = optionalStrArg(args, "insert_after", "insertAfter");
+  const reasoning = args.reason;
+  const level = args.level ?? 2;
+  if (oldText === "" && newText === "") {
+    return fail("Both old_text and new_text are empty \u2014 nothing to change.", "VALIDATION_ERROR");
+  }
+  if (oldText && newText && hasOnlyFootnoteRefDifference(oldText, newText)) {
+    return fail("No prose changes detected (only footnote references differ). Use review_changes to manage change history.", "VALIDATION_ERROR");
+  }
+  const { author, error: authorError } = resolveAuthor(args.author, input.config, "propose_change");
+  if (authorError)
+    return fail(authorError.message, "AUTHOR_RESOLUTION_FAILED");
+  if (input.config.protocol.reasoning === "required" && !reasoning) {
+    return fail("This project requires reasoning on proposals. Include a reason parameter in your propose_change call.", "REASONING_REQUIRED");
+  }
+  try {
+    parseForFormat(input.fileContent, { skipCodeBlocks: false });
+  } catch (err) {
+    return fail(err instanceof Error ? err.message : String(err), "PARSE_FAILED");
+  }
+  const changeId = input.state.getNextId(input.filePath, input.fileContent);
+  let baseText = input.fileContent;
+  if (oldText && !insertAfter) {
+    const settleResult = settleOnDemandIfNeeded(baseText, oldText);
+    if (settleResult.settled) {
+      if (input.allowSettleOnDemand === false) {
+        return fail("This proposal would require settling accepted/rejected changes before applying the new proposal; word:// classic preparation requires an exact current-source match.", "SETTLE_ON_DEMAND_UNSUPPORTED");
+      }
+      baseText = settleResult.content;
+    }
+  }
+  try {
+    const applied = await applyProposeChange({
+      text: baseText,
+      oldText,
+      newText,
+      changeId,
+      author,
+      reasoning,
+      insertAfter,
+      level
+    });
+    let affectedLines = [];
+    try {
+      affectedLines = computeAffectedLines(applied.modifiedText, 1, applied.modifiedText.split("\n").length, {
+        hashlineEnabled: input.config.hashline.enabled
+      });
+    } catch {
+      affectedLines = [];
+    }
+    const responseData = {
+      change_id: changeId,
+      file: input.relativePath,
+      type: applied.changeType,
+      document_state: documentState(applied.modifiedText)
+    };
+    if (affectedLines.length > 0 && input.config.response?.affected_lines)
+      responseData.affected_lines = affectedLines;
+    const ds = responseData.document_state;
+    responseData.state_summary = `\u{1F4CB} ${ds.total_changes} tracked change(s) | ${ds.proposed} proposed, ${ds.accepted} accepted | ${ds.authors} author(s)`;
+    return {
+      ok: true,
+      changeId,
+      author,
+      reasoning,
+      oldL2: input.fileContent,
+      newL2: applied.modifiedText,
+      responseData,
+      toolResult: { content: [{ type: "text", text: JSON.stringify(responseData) }] },
+      changeType: applied.changeType
+    };
+  } catch (err) {
+    return fail(err instanceof Error ? err.message : String(err), "CLASSIC_PROPOSE_FAILED", { file: input.relativePath });
+  }
+}
+
 // ../../packages/cli/dist/engine/handlers/propose-compact-memory.js
 init_dist_esm();
+function fail2(message, code = "VALIDATION_ERROR", details) {
+  const content = [{ type: "text", text: message }];
+  content.push({ type: "text", text: JSON.stringify({ error: { message, code, ...details ?? {} } }) });
+  return { ok: false, toolResult: { content, isError: true } };
+}
+function checkReasoningRequired2(reasoning, config) {
+  if (config.protocol.reasoning !== "required")
+    return null;
+  if (reasoning)
+    return null;
+  return {
+    content: [{
+      type: "text",
+      text: "This project requires reasoning on proposals. Append {>>reason to your op string, or include a reason parameter in your propose_change call."
+    }],
+    isError: true
+  };
+}
+function documentState2(modifiedText) {
+  const footnoteCount = (modifiedText.match(/^\[\^cn-\d+(?:\.\d+)?\]:/gm) || []).length;
+  const proposedCount = (modifiedText.match(/\|\s*proposed\s*$/gm) || []).length;
+  const acceptedCount = (modifiedText.match(/\|\s*accepted\s*$/gm) || []).length;
+  const authorMatches2 = modifiedText.match(/^\[\^cn-\d+(?:\.\d+)?\]:\s*@([^\s|]+)/gm) || [];
+  const uniqueAuthors = new Set(authorMatches2.map((m) => m.match(/@([^\s|]+)/)?.[1]).filter(Boolean));
+  return {
+    total_changes: footnoteCount,
+    proposed: proposedCount,
+    accepted: acceptedCount,
+    authors: uniqueAuthors.size
+  };
+}
+function effectiveStatus(change) {
+  return change.metadata?.status ?? change.inlineMetadata?.status ?? change.status;
+}
+function authorMatches(a, b) {
+  if (!a)
+    return false;
+  return a.replace(/^@/, "") === b.replace(/^@/, "");
+}
+function replaceUnique2(haystack, needle, replacement) {
+  if (needle === "")
+    return void 0;
+  const first = haystack.indexOf(needle);
+  if (first < 0)
+    return void 0;
+  if (haystack.indexOf(needle, first + needle.length) !== -1)
+    return void 0;
+  return haystack.slice(0, first) + replacement + haystack.slice(first + needle.length);
+}
+async function trySupersedeContainingInsertion(input) {
+  if (input.op.type !== "sub" && input.op.type !== "del")
+    return void 0;
+  const doc = parseForFormat(input.fileContent, { skipCodeBlocks: false });
+  const containing = doc.getChanges().find((change) => {
+    if (change.type !== ChangeType.Insertion)
+      return false;
+    if (effectiveStatus(change) !== ChangeStatus.Proposed && effectiveStatus(change) !== "proposed")
+      return false;
+    if (!authorMatches(change.metadata?.author ?? change.inlineMetadata?.author, input.author))
+      return false;
+    const payload = change.modifiedText ?? "";
+    return payload.includes(input.op.oldText);
+  });
+  if (!containing)
+    return void 0;
+  const previous = containing.modifiedText ?? "";
+  const revised = input.op.type === "sub" ? replaceUnique2(previous, input.op.oldText, input.op.newText) : replaceUnique2(previous, input.op.oldText, "");
+  if (revised === void 0)
+    return void 0;
+  const supersede = await computeSupersedeResult(input.fileContent, containing.id, {
+    newText: revised,
+    reason: input.op.reasoning ?? `Revise ${containing.id} instead of nesting inside it`,
+    author: input.author
+  });
+  if (supersede.isError)
+    return void 0;
+  return {
+    modifiedText: supersede.text,
+    changeType: "ins",
+    supersededIds: [containing.id],
+    affectedStartLine: 1,
+    affectedEndLine: input.fileContent.split("\n").length,
+    relocations: [],
+    remaps: [],
+    settled: false
+  };
+}
+async function tryCommentOnContainingInsertion(input) {
+  if (input.op.type !== "comment")
+    return void 0;
+  const text = input.op.reasoning?.trim();
+  if (!text)
+    return void 0;
+  const fileLines = input.fileContent.split("\n");
+  let resolved;
+  try {
+    resolved = resolveCoordinates(input.op, input.fileContent, fileLines, input.state, input.filePath, input.config);
+  } catch {
+    return void 0;
+  }
+  const doc = parseForFormat(input.fileContent, { skipCodeBlocks: false });
+  const containing = doc.getChanges().find((change) => {
+    if (change.type !== ChangeType.Insertion)
+      return false;
+    if (effectiveStatus(change) !== ChangeStatus.Proposed && effectiveStatus(change) !== "proposed")
+      return false;
+    return change.range.start <= resolved.endOffset && change.range.end >= resolved.startOffset;
+  });
+  if (!containing)
+    return void 0;
+  const reply = computeReplyEdit(input.fileContent, containing.id, {
+    text,
+    author: input.author
+  });
+  if (reply.isError)
+    return void 0;
+  return {
+    targetChangeId: containing.id,
+    text,
+    applyResult: {
+      modifiedText: reply.text,
+      changeType: "comment",
+      supersededIds: [],
+      affectedStartLine: resolved.rawStartLine,
+      affectedEndLine: resolved.rawEndLine,
+      relocations: resolved.relocations,
+      remaps: resolved.remaps,
+      viewResolved: resolved.viewResolved,
+      settled: false
+    }
+  };
+}
+async function prepareCompactProposeChange(input) {
+  const { args, filePath, relativePath, fileContent, config, state } = input;
+  if (args.start_line || args.end_line || args.after_line) {
+    return fail2("Use at parameter for line addressing. start_line/end_line/after_line are not supported in compact mode.", "DEPRECATED_PARAMS");
+  }
+  const at = args.at;
+  const opText = args.op;
+  if (!at || !opText) {
+    return fail2('Compact mode requires both "at" and "op" parameters.', "MISSING_ARGUMENT");
+  }
+  let parsed;
+  try {
+    parsed = parseOp(opText);
+  } catch (err) {
+    return fail2(err instanceof Error ? err.message : String(err));
+  }
+  await initHashline();
+  const { author, error: authorError } = resolveAuthor(args.author, config, "propose_change");
+  if (authorError || !author) {
+    return fail2(authorError?.message ?? "Author resolution failed", "AUTHOR_RESOLUTION_FAILED");
+  }
+  const reasoning = parsed.reasoning ?? args.reason;
+  const reasoningError = checkReasoningRequired2(reasoning, config);
+  if (reasoningError)
+    return { ok: false, toolResult: reasoningError };
+  const compactOp = {
+    at,
+    type: parsed.type,
+    oldText: parsed.oldText,
+    newText: parsed.newText,
+    reasoning
+  };
+  const threadComment = await tryCommentOnContainingInsertion({
+    fileContent,
+    op: compactOp,
+    author,
+    state,
+    filePath,
+    config
+  });
+  if (threadComment) {
+    const responseData2 = {
+      change_id: threadComment.targetChangeId,
+      file: relativePath,
+      type: "comment",
+      comment_added: true,
+      threaded_on: threadComment.targetChangeId,
+      document_state: documentState2(threadComment.applyResult.modifiedText)
+    };
+    const ds2 = responseData2.document_state;
+    responseData2.state_summary = `\u{1F4CB} ${ds2.total_changes} tracked change(s) | ${ds2.proposed} proposed, ${ds2.accepted} accepted | ${ds2.authors} author(s)`;
+    return {
+      ok: true,
+      changeId: threadComment.targetChangeId,
+      author,
+      reasoning,
+      oldL2: fileContent,
+      newL2: threadComment.applyResult.modifiedText,
+      responseData: responseData2,
+      toolResult: { content: [{ type: "text", text: JSON.stringify(responseData2) }] },
+      normalizedOp: compactOp,
+      applyResult: threadComment.applyResult,
+      threadReply: {
+        changeId: threadComment.targetChangeId,
+        text: threadComment.text,
+        author
+      }
+    };
+  }
+  const changeId = state.getNextId(filePath, fileContent);
+  let applyResult;
+  try {
+    applyResult = resolveAndApply(compactOp, fileContent, fileContent.split("\n"), state, filePath, config, changeId, author);
+  } catch (err) {
+    const supersedeResult = await trySupersedeContainingInsertion({
+      fileContent,
+      op: compactOp,
+      changeId,
+      author
+    });
+    if (supersedeResult) {
+      applyResult = supersedeResult;
+    } else {
+      return fail2(err instanceof Error ? err.message : String(err), "HASHLINE_REFERENCE_UNRESOLVED", {
+        file: relativePath,
+        quick_fix: { action: "re_read", file: filePath }
+      });
+    }
+  }
+  let affectedLines = [];
+  try {
+    affectedLines = computeAffectedLines(applyResult.modifiedText, applyResult.affectedStartLine, applyResult.affectedEndLine, {
+      hashlineEnabled: config.hashline.enabled
+    });
+  } catch {
+    affectedLines = [];
+  }
+  const responseData = {
+    change_id: changeId,
+    file: relativePath,
+    type: applyResult.changeType,
+    ...applyResult.relocations.length > 0 ? { relocated: applyResult.relocations } : {},
+    ...applyResult.remaps.length > 0 ? { remaps: applyResult.remaps } : {},
+    ...applyResult.supersededIds.length > 0 ? { superseded: applyResult.supersededIds } : {},
+    document_state: documentState2(applyResult.modifiedText)
+  };
+  if (affectedLines.length > 0 && config.response?.affected_lines) {
+    responseData.affected_lines = affectedLines;
+  }
+  const ds = responseData.document_state;
+  responseData.state_summary = `\u{1F4CB} ${ds.total_changes} tracked change(s) | ${ds.proposed} proposed, ${ds.accepted} accepted | ${ds.authors} author(s)`;
+  return {
+    ok: true,
+    changeId,
+    author,
+    reasoning,
+    oldL2: fileContent,
+    newL2: applyResult.modifiedText,
+    responseData,
+    toolResult: { content: [{ type: "text", text: JSON.stringify(responseData) }] },
+    normalizedOp: compactOp,
+    applyResult
+  };
+}
 
 // ../../packages/cli/dist/engine/handlers/begin-change-group.js
 init_dist_esm();
@@ -14773,6 +15178,93 @@ function normalizeDocumentTarget(input, baseDir) {
   };
 }
 
+// src/word-propose.ts
+function fail3(message, code = "VALIDATION_ERROR") {
+  return {
+    ok: false,
+    toolResult: {
+      isError: true,
+      content: [
+        { type: "text", text: message },
+        { type: "text", text: JSON.stringify({ error: { message, code } }) }
+      ]
+    }
+  };
+}
+function hasCompactArgs(args) {
+  if (typeof args.at === "string" || typeof args.op === "string") return true;
+  const changes = args.changes;
+  return Array.isArray(changes) && changes.some((change) => {
+    const c = change;
+    return typeof c.at === "string" || typeof c.op === "string";
+  });
+}
+function hasClassicArgs(args) {
+  if (typeof args.old_text === "string" || typeof args.oldText === "string") return true;
+  if (typeof args.new_text === "string" || typeof args.newText === "string") return true;
+  if (typeof args.insert_after === "string" || typeof args.insertAfter === "string") return true;
+  const changes = args.changes;
+  return Array.isArray(changes) && changes.some((change) => {
+    const c = change;
+    return typeof c.old_text === "string" || typeof c.new_text === "string" || typeof c.insert_after === "string";
+  });
+}
+function changeCount(args) {
+  return Array.isArray(args.changes) ? args.changes.length : 1;
+}
+async function prepareWordProposeChange(input) {
+  if (changeCount(input.args) > 1) {
+    return fail3("word:// currently accepts one proposal per call; split multi-change arrays into separate calls.", "WORD_MULTI_CHANGE_UNSUPPORTED");
+  }
+  const compact2 = hasCompactArgs(input.args);
+  const classic = hasClassicArgs(input.args);
+  if (compact2 && classic) {
+    return fail3("Mixed proposal families are not supported for word://: use either compact at/op or classic old_text/new_text, not both.", "MIXED_PROPOSAL_FAMILY");
+  }
+  if (!compact2 && !classic) {
+    return fail3("propose_change for word:// requires compact at/op or classic old_text/new_text arguments.", "MISSING_ARGUMENT");
+  }
+  if (compact2) {
+    const prepared2 = await prepareCompactProposeChange({
+      args: input.args,
+      filePath: input.uri,
+      relativePath: input.uri,
+      fileContent: input.snapshotText,
+      config: input.config,
+      state: input.state
+    });
+    return prepared2.ok ? { ...prepared2, family: "compact" } : { ...prepared2, family: "compact" };
+  }
+  const prepared = await prepareClassicProposeChange({
+    args: input.args,
+    filePath: input.uri,
+    relativePath: input.uri,
+    fileContent: input.snapshotText,
+    config: input.config,
+    state: input.state,
+    allowSettleOnDemand: false
+  });
+  return prepared.ok ? { ...prepared, family: "classic" } : { ...prepared, family: "classic" };
+}
+async function applyPreparedWordProposeChange(backend, uri, prepared) {
+  const threadReply = prepared.threadReply;
+  const op = threadReply ? {
+    kind: "respond",
+    args: {
+      cnId: threadReply.changeId,
+      text: threadReply.text,
+      author: threadReply.author
+    }
+  } : {
+    kind: "propose",
+    args: {
+      oldL2: prepared.oldL2,
+      newL2: prepared.newL2
+    }
+  };
+  return backend.applyChange({ uri }, op);
+}
+
 // src/word-review.ts
 var VALID_DECISIONS2 = /* @__PURE__ */ new Set(["approve", "reject", "request_changes", "withdraw"]);
 function parseMaybeJsonArray(value, name) {
@@ -14883,6 +15375,7 @@ export {
   SubscriptionManager,
   applyAcceptedChanges2 as applyAcceptedChanges,
   applyCompactOp,
+  applyPreparedWordProposeChange,
   applyProposeChange,
   applyRejectedChanges2 as applyRejectedChanges,
   applyReview,
@@ -14920,6 +15413,9 @@ export {
   normalizeDocumentTarget,
   parseAt,
   parseOp,
+  prepareClassicProposeChange,
+  prepareCompactProposeChange,
+  prepareWordProposeChange,
   prepareWordReviewChanges,
   replaceUnique,
   rerecordState,

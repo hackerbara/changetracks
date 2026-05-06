@@ -199,3 +199,33 @@ describe('composeGuide', () => {
     });
   });
 });
+
+
+describe('word session guide', () => {
+  it('compact word guide teaches compact+hashline as preferred and classic as accepted fallback', () => {
+    const guide = composeGuide({
+      ...DEFAULT_CONFIG,
+      protocol: { ...DEFAULT_CONFIG.protocol, mode: 'compact' },
+      hashline: { enabled: true, auto_remap: false },
+    }, { targetKind: 'word' });
+
+    expect(guide).toContain('word://');
+    expect(guide).toContain('compact+hashline');
+    expect(guide).toContain('old_text');
+    expect(guide).toContain('new_text');
+    expect(guide).toMatch(/one proposal per call/i);
+  });
+
+  it('classic word guide still names compact+hashline as accepted for word sessions', () => {
+    const guide = composeGuide({
+      ...DEFAULT_CONFIG,
+      protocol: { ...DEFAULT_CONFIG.protocol, mode: 'classic' },
+      hashline: { enabled: true, auto_remap: false },
+    }, { targetKind: 'word' });
+
+    expect(guide).toContain('word://');
+    expect(guide).toContain('old_text');
+    expect(guide).toContain('compact+hashline');
+    expect(guide).toContain('LINE:HASH');
+  });
+});

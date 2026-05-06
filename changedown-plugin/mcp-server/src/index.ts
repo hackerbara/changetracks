@@ -47,7 +47,7 @@ import {
   handleSupersedeChange,
   handleProposeBatch,
   handleResolveThread,
-  prepareCompactProposeChange,
+  composeGuide,
   rerecordState,
   getListedToolsWithConfig,
   resolveProtocolMode,
@@ -76,6 +76,7 @@ import { ResourceReader } from './resources/resource-reader.js';
 import { version } from './version.js';
 import { applyWordReviewChanges } from './word-review.js';
 import { normalizeDocumentTarget } from './document-target.js';
+import { applyPreparedWordProposeChange, prepareWordProposeChange } from './word-propose.js';
 
 type WordListChangeSummary = {
   change_id: string;
@@ -655,7 +656,10 @@ async function startHostMode(port: number, httpServer: HttpServer): Promise<void
               output += `\n\n--- showing lines ${effectiveStart}-${adjustedEnd} of ${totalLines} | use offset/limit to paginate ---`;
             }
 
-            return { content: [{ type: 'text' as const, text: output }] } as CallToolResult;
+            const guide = mutableArgs.include_guide === true ? `\n\n${composeGuide(config, { targetKind: 'word' })}` : '';
+            const content: Array<{ type: 'text'; text: string }> = [{ type: 'text', text: output }];
+            if (guide) content.unshift({ type: 'text', text: guide });
+            return { content } as CallToolResult;
           } catch (err) {
             return errorResult(err instanceof Error ? err.message : String(err)) as CallToolResult;
           }
@@ -703,38 +707,16 @@ async function startHostMode(port: number, httpServer: HttpServer): Promise<void
 
               const snapshot = await backend.read({ uri });
               const config = await resolver.lastConfig();
-              const prepared = await prepareCompactProposeChange({
+              const prepared = await prepareWordProposeChange({
                 args: mutableArgs,
-                filePath: uri,
-                relativePath: uri,
-                fileContent: snapshot.text,
+                uri,
+                snapshotText: snapshot.text,
                 config,
                 state,
               });
               if (!prepared.ok) return prepared.toolResult as CallToolResult;
 
-              const result = prepared.threadReply
-                ? await backend.applyChange(
-                  { uri },
-                  {
-                    kind: 'respond',
-                    args: {
-                      cnId: prepared.threadReply.changeId,
-                      text: prepared.threadReply.text,
-                      author: prepared.threadReply.author,
-                    },
-                  },
-                )
-                : await backend.applyChange(
-                  { uri },
-                  {
-                    kind: 'propose',
-                    args: {
-                      oldL2: prepared.oldL2,
-                      newL2: prepared.newL2,
-                    },
-                  },
-                );
+              const result = await applyPreparedWordProposeChange(backend, uri, prepared);
               if (result.applied === false) {
                 return errorResult(result.text ?? 'Word adapter did not apply prepared proposal') as CallToolResult;
               }

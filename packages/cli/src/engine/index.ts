@@ -91,6 +91,12 @@ export type { ToolResult } from './shared/error-result.js';
 // ── Tool Handlers ──
 export { handleProposeChange } from './handlers/propose-change.js';
 export type { ProposeChangeResult } from './handlers/propose-change.js';
+export { prepareClassicProposeChange } from './handlers/propose-classic-memory.js';
+export type {
+  PrepareClassicProposeInput,
+  PreparedClassicPropose,
+  PrepareClassicProposeResult,
+} from './handlers/propose-classic-memory.js';
 export { prepareCompactProposeChange } from './handlers/propose-compact-memory.js';
 export type {
   PrepareCompactProposeInput,

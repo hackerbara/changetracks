@@ -10,10 +10,13 @@ describe('propose_change schema: compact mode', () => {
     expect((props.changes as any).items.properties.at).toBeDefined();
     expect((props.changes as any).items.properties.op).toBeDefined();
   });
-  it('does NOT have old_text', () => expect(props.old_text).toBeUndefined());
-  it('does NOT have new_text', () => expect(props.new_text).toBeUndefined());
-  it('does NOT have reason param', () => expect(props.reason).toBeUndefined());
-  it('does NOT have insert_after', () => expect(props.insert_after).toBeUndefined());
+  it('has word-only old_text fallback', () => {
+    expect(props.old_text).toBeDefined();
+    expect((props.old_text as any).description).toMatch(/word:\/\//i);
+  });
+  it('has word-only new_text fallback', () => expect(props.new_text).toBeDefined());
+  it('has reason param for word classic fallback', () => expect(props.reason).toBeDefined());
+  it('has word-only insert_after fallback', () => expect(props.insert_after).toBeDefined());
   it('does NOT have start_line/start_hash', () => {
     expect(props.start_line).toBeUndefined();
     expect(props.start_hash).toBeUndefined();
@@ -31,8 +34,11 @@ describe('propose_change schema: classic mode', () => {
   it('has old_text', () => expect(props.old_text).toBeDefined());
   it('has new_text', () => expect(props.new_text).toBeDefined());
   it('has reason', () => expect(props.reason).toBeDefined());
-  it('does NOT have at', () => expect(props.at).toBeUndefined());
-  it('does NOT have op', () => expect(props.op).toBeUndefined());
+  it('has word-only at fallback', () => {
+    expect(props.at).toBeDefined();
+    expect((props.at as any).description).toMatch(/word:\/\//i);
+  });
+  it('has word-only op fallback', () => expect(props.op).toBeDefined());
   it('changes items have old_text/new_text, not at/op', () => {
     const itemProps = (props.changes as any).items.properties;
     expect(itemProps.old_text).toBeDefined();

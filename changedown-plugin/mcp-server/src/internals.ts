@@ -75,14 +75,32 @@ export {
 } from './tool-schemas.js';
 
 // ── Coordinate Pipeline ──────────────────────────────────────────────
-export { resolveCoordinates, applyCompactOp, resolveAndApply } from '@changedown/cli/engine';
-export type { NormalizedCompactOp, ResolvedCoordinates, ApplyResult } from '@changedown/cli/engine';
+export {
+  prepareClassicProposeChange,
+  prepareCompactProposeChange,
+  resolveCoordinates,
+  applyCompactOp,
+  resolveAndApply,
+} from '@changedown/cli/engine';
+export type {
+  PrepareClassicProposeInput,
+  PreparedClassicPropose,
+  PrepareClassicProposeResult,
+  PrepareCompactProposeInput,
+  PreparedCompactPropose,
+  PrepareCompactProposeResult,
+  NormalizedCompactOp,
+  ResolvedCoordinates,
+  ApplyResult,
+} from '@changedown/cli/engine';
 
 // ── MCP Resources ───────────────────────────────────────────────────
 export { ResourceLister, ResourceReader, SubscriptionManager } from './resources/index.js';
 export type { ReadResourceResult, ResourceNotification, SubscriptionManagerOptions } from './resources/index.js';
 export { normalizeDocumentTarget } from './document-target.js';
 export type { NormalizedDocumentTarget } from './document-target.js';
+export { applyPreparedWordProposeChange, prepareWordProposeChange } from './word-propose.js';
+export type { PreparedWordPropose, PrepareWordProposeInput, WordProposalFamily } from './word-propose.js';
 // ── Word backend adapters ─────────────────────────────────────────
 export { prepareWordReviewChanges, applyWordReviewChanges } from './word-review.js';
 export type { PreparedWordReviewChanges, WordReviewOperation, WordReviewValidationError } from './word-review.js';
