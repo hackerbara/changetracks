@@ -14363,6 +14363,9 @@ ${JSON.stringify(message, null, 4)}`);
         const metadata = metadataFromUnknownLines(fn.unknownBodyLines ?? []);
         return fn.type === "ins" && fn.status === "accepted" && fn.author === "@base-document" && fn.lineNumber === void 0 && fn.hash === void 0 && fn.opString === void 0 && metadata.source === "initial-word-body" && metadata.scope === "document" && metadata["body-hash"] !== void 0;
       }
+      function isRejectedSupersededArchivalRecord(fn) {
+        return fn.status === "rejected" && (fn.supersededBy?.length ?? 0) > 0;
+      }
       function toChangeDownRecord(fn) {
         const bodyLines = fn.unknownBodyLines ?? [];
         return {
@@ -14727,11 +14730,13 @@ ${JSON.stringify(message, null, 4)}`);
           const lineContent = lineIdx >= 0 && lineIdx < bodyLines.length ? bodyLines[lineIdx] : "";
           const fallbackRange = { start: lineOffset, end: lineOffset };
           if (!parsedOp) {
-            this.pendingDiagnostics.push({
-              kind: "coordinate_failed",
-              changeId: fn.id,
-              message: `Footnote ${fn.id} has no parsedOp; cannot resolve position.`
-            });
+            if (!isRejectedSupersededArchivalRecord(fn)) {
+              this.pendingDiagnostics.push({
+                kind: "coordinate_failed",
+                changeId: fn.id,
+                message: `Footnote ${fn.id} has no parsedOp; cannot resolve position.`
+              });
+            }
             return { range: fallbackRange, anchored: true, resolved: false, comment: fn.unknownBodyLines?.[0], resolutionPath: "rejected" };
           }
           const findOnLine = (searchText) => {
@@ -16859,9 +16864,12 @@ Hint: Re-read the file for current content, or use LINE:HASH addressing.`);
             originalChangeId: changeId
           };
         }
+        let preRevertContent;
         if (rejectedChange) {
+          preRevertContent = stripConsumedReferenceFromBody(fileContent, changeId);
           const rejectEdit = (0, accept_reject_js_1.computeReject)(rejectedChange);
           fileContent = fileContent.slice(0, rejectEdit.offset) + rejectEdit.newText + fileContent.slice(rejectEdit.offset + rejectEdit.length);
+          fileContent = stripConsumedReferenceFromBody(fileContent, changeId);
         }
         const maxId = (0, footnote_generator_js_1.scanMaxCnId)(fileContent);
         const newChangeId = `cn-${maxId + 1}`;
@@ -16873,16 +16881,32 @@ Hint: Re-read the file for current content, or use LINE:HASH addressing.`);
             }
           }
         }
-        const proposeResult = await (0, file_ops_js_1.applyProposeChange)({
-          text: fileContent,
-          oldText: proposeOldText,
-          newText,
-          changeId: newChangeId,
-          author,
-          reasoning: reason,
-          insertAfter,
-          level
-        });
+        let proposeResult;
+        try {
+          proposeResult = await (0, file_ops_js_1.applyProposeChange)({
+            text: fileContent,
+            oldText: proposeOldText,
+            newText,
+            changeId: newChangeId,
+            author,
+            reasoning: reason,
+            insertAfter,
+            level
+          });
+        } catch (err) {
+          if (!preRevertContent)
+            throw err;
+          proposeResult = await (0, file_ops_js_1.applyProposeChange)({
+            text: preRevertContent,
+            oldText: proposeOldText,
+            newText,
+            changeId: newChangeId,
+            author,
+            reasoning: reason,
+            insertAfter,
+            level
+          });
+        }
         fileContent = proposeResult.modifiedText;
         const modifiedLines = fileContent.split("\n");
         const newBlock = (0, footnote_utils_js_1.findFootnoteBlock)(modifiedLines, newChangeId);
@@ -16904,6 +16928,17 @@ Hint: Re-read the file for current content, or use LINE:HASH addressing.`);
           newChangeId,
           originalChangeId: changeId
         };
+      }
+      function stripConsumedReferenceFromBody(text, consumedId) {
+        const footnoteStart = text.search(/(?:^|\n)\[\^[^\]]+\]:/);
+        const bodyEnd = footnoteStart >= 0 ? footnoteStart : text.length;
+        const body = text.slice(0, bodyEnd);
+        const footer = text.slice(bodyEnd);
+        return stripConsumedReference(body, consumedId) + footer;
+      }
+      function stripConsumedReference(text, consumedId) {
+        const escaped = consumedId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        return text.replace(new RegExp(`\\[\\^${escaped}\\]`, "g"), "");
       }
     }
   });
@@ -18742,7 +18777,7 @@ ${sidecarSection}
         if (view.summary.rejected > 0)
           summaryParts.push(`${view.summary.rejected}R`);
         const changeSummary = summaryParts.length > 0 ? summaryParts.join(" ") : "clean";
-        headerLines.push(`## view: committed | tracking: ${options.trackingStatus} | changes: ${changeSummary}`);
+        headerLines.push(`## view: decided | tracking: ${options.trackingStatus} | changes: ${changeSummary}`);
         const totalLines = view.lines.length;
         if (totalLines > 0) {
           headerLines.push(`## lines: 1-${totalLines} of ${totalLines}`);
@@ -18874,9 +18909,12 @@ ${sidecarSection}
         return parts.join("\n");
       }
       function formatHeader(header, view) {
-        if (view === "decided" || view === "raw")
+        if (view === "raw")
           return "";
         const lines = [];
+        if (view === "decided") {
+          lines.push("## view: decided");
+        }
         const counts = `proposed: ${header.counts.proposed} | accepted: ${header.counts.accepted} | rejected: ${header.counts.rejected}`;
         const threads = header.threadCount > 0 ? ` | threads: ${header.threadCount}` : "";
         lines.push(`## ${counts}${threads}`);
@@ -19620,27 +19658,20 @@ ${sidecarSection}
       Object.defineProperty(exports, "__esModule", { value: true });
       exports.buildDecidedDocument = buildDecidedDocument;
       var format_aware_parse_js_1 = require_format_aware_parse();
-      var types_js_1 = require_types();
       var session_hashes_js_1 = require_session_hashes();
       var view_builder_utils_js_1 = require_view_builder_utils();
       function buildDecidedDocument(rawContent, options) {
         const changes = (0, format_aware_parse_js_1.parseForFormat)(rawContent, { skipCodeBlocks: false }).getChanges();
         const sessionHashesResult = (0, session_hashes_js_1.buildSessionHashes)(rawContent, changes);
         const decidedResult = sessionHashesResult.decidedResult;
-        const footnoteMap = /* @__PURE__ */ new Map();
-        for (const node of changes)
-          footnoteMap.set(node.id, node);
         const decidedLines = [...decidedResult.lines];
         while (decidedLines.length > 0 && decidedLines[decidedLines.length - 1].text.trim() === "") {
           decidedLines.pop();
         }
-        const rawLines = rawContent.split("\n");
-        const lineRefMap = (0, view_builder_utils_js_1.buildLineRefMap)(rawLines);
         const continuations = (0, view_builder_utils_js_1.computeContinuationLines)(rawContent, changes);
         const lines = decidedLines.map((cl) => {
-          const refIds = lineRefMap.get(cl.rawLineNum - 1);
-          const flags = computeAFlagOnly(refIds, footnoteMap);
           const sh = sessionHashesResult.byRawLine.get(cl.rawLineNum);
+          const flags = cl.flag ? [cl.flag] : [];
           return {
             margin: {
               lineNumber: cl.decidedLineNum,
@@ -19668,19 +19699,6 @@ ${sidecarSection}
           lineRange: { start: 1, end: lines.length, total: lines.length }
         });
         return { view: "decided", header, lines };
-      }
-      function computeAFlagOnly(refIds, footnoteMap) {
-        if (!refIds)
-          return [];
-        for (const id of refIds) {
-          const node = footnoteMap.get(id);
-          if (!node)
-            continue;
-          const status = (0, types_js_1.nodeStatus)(node);
-          if (status === "accepted")
-            return ["A"];
-        }
-        return [];
       }
     }
   });
@@ -20436,6 +20454,52 @@ ${sidecarSection}
     }
   });
 
+  // ../core/dist/operations/export-settlement.js
+  var require_export_settlement = __commonJS({
+    "../core/dist/operations/export-settlement.js"(exports) {
+      "use strict";
+      Object.defineProperty(exports, "__esModule", { value: true });
+      exports.materializeResolvedChangesForExport = materializeResolvedChangesForExport;
+      var current_text_js_1 = require_current_text();
+      function materializeResolvedChangesForExport(input) {
+        const accepted = (0, current_text_js_1.applyAcceptedChanges)(input);
+        const rejected = (0, current_text_js_1.applyRejectedChanges)(accepted.currentContent);
+        const settledIds = [...accepted.appliedIds, ...rejected.appliedIds];
+        if (settledIds.length === 0) {
+          return { text: input, settledIds: [] };
+        }
+        const settledIdSet = new Set(settledIds);
+        let text = stripFootnoteBlocksForIds(rejected.currentContent, settledIdSet);
+        const refPattern = new RegExp(`\\[\\^(?:${settledIds.map(escapeRegExp).join("|")})\\]`, "g");
+        text = text.replace(refPattern, "");
+        return { text, settledIds };
+      }
+      function escapeRegExp(value) {
+        return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      }
+      function stripFootnoteBlocksForIds(text, ids) {
+        const lines = text.split("\n");
+        const kept = [];
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i];
+          const match = /^\[\^([^\]]+)\]:/.exec(line);
+          if (match && ids.has(match[1])) {
+            i++;
+            while (i < lines.length && (/^\s{4}/.test(lines[i]) || lines[i].trim() === "")) {
+              if (lines[i].trim() === "" && (i + 1 >= lines.length || !/^\s{4}/.test(lines[i + 1])))
+                break;
+              i++;
+            }
+            i--;
+            continue;
+          }
+          kept.push(line);
+        }
+        return kept.join("\n").replace(/\n{3,}/g, "\n\n");
+      }
+    }
+  });
+
   // ../core/dist/operations/markup-by-id.js
   var require_markup_by_id = __commonJS({
     "../core/dist/operations/markup-by-id.js"(exports) {
@@ -20909,7 +20973,7 @@ ${sidecarSection}
       exports.applyAcceptedChanges = exports.computeOriginalText = exports.computeCurrentText = exports.computeCurrentReplace = exports.tryDiagnosticConfusableMatch = exports.unicodeName = exports.diagnosticConfusableNormalize = exports.whitespaceCollapsedIsAmbiguous = exports.whitespaceCollapsedFind = exports.buildWhitespaceCollapseMap = exports.collapseWhitespace = exports.normalizedIndexOf = exports.defaultNormalizer = exports.insertTrackingHeader = exports.generateTrackingHeader = exports.parseTrackingHeader = exports.computeSidecarResolveAll = exports.computeSidecarReject = exports.computeSidecarAccept = exports.parseContextualEditOp = exports.FootnoteNativeParser = exports.SidecarParser = exports.annotateSidecar = exports.annotateMarkdown = exports.lineOffset = exports.escapeRegex = exports.stripLineComment = exports.wrapLineComment = exports.getCommentSyntax = exports.Workspace = exports.resolveReplayFromParsedFootnotes = exports.traceDependencies = exports.resolve = exports.scrubForward = exports.scrubBackward = exports.convertL3ToL2 = exports.offsetToLineNumber = exports.buildLineStarts = exports.bodyReplacement = exports.convertL2ToL3 = exports.checkSupersedesIntegrity = exports.compactL2 = exports.compact = exports.analyzeCompactionCandidates = exports.compactToLevel0 = exports.compactToLevel1 = exports.promoteToLevel2 = exports.promoteToLevel1 = exports.computeSupersedeResult = exports.computeAmendEdits = void 0;
       exports.FOOTNOTE_DEF_STATUS_VALUE = exports.FOOTNOTE_DEF_STATUS = exports.FOOTNOTE_DEF_STRICT = exports.FOOTNOTE_DEF_LENIENT = exports.FOOTNOTE_DEF_START_QUICK = exports.FOOTNOTE_DEF_START = exports.footnoteRefNumericGlobal = exports.footnoteRefGlobal = exports.FOOTNOTE_REF_ANCHORED = exports.FOOTNOTE_ID_NUMERIC_PATTERN = exports.FOOTNOTE_ID_PATTERN = exports.markupWithRef = exports.inlineMarkupAll = exports.hasCriticMarkup = exports.HAS_CRITIC_MARKUP = exports.multiLineComment = exports.multiLineHighlight = exports.multiLineDeletion = exports.multiLineInsertion = exports.multiLineSubstitution = exports.singleLineComment = exports.singleLineHighlight = exports.singleLineInsertion = exports.singleLineDeletion = exports.singleLineSubstitution = exports.findSidecarBlockStart = exports.SIDECAR_BLOCK_MARKER = exports.formatDecidedOutput = exports.computeDecidedView = exports.computeDecidedLine = exports.parseFootnotes = exports.findFootnoteBlockStart = exports.stripBoundaryEcho = exports.relocateHashRefMulti = exports.relocateHashRef = exports.detectNoOp = exports.stripHashlinePrefixes = exports.formatTrackedHeader = exports.formatTrackedHashLines = exports.computeCurrentLineHash = exports.currentLine = exports.HashlineMismatchError = exports.validateLineRef = exports.parseLineRef = exports.formatHashLines = exports.computeLineHash = exports.ensureHashlineReady = exports.initHashline = exports.computeCurrentView = exports.applyRejectedChanges = void 0;
       exports.bufferEnd = exports.isBufferEmpty = exports.DEFAULT_EDIT_BOUNDARY_CONFIG = exports.computeContinuationLines = exports.findFootnoteSectionRange = exports.buildLineRefMap = exports.buildDeliberationHeader = exports.buildRawDocument = exports.buildDecidedDocument = exports.buildSimpleDocument = exports.buildReviewDocument = exports.buildViewDocument = exports.formatHtml = exports.formatAnsi = exports.formatPlainText = exports.formatDocument = exports.parseOp = exports.resolveAt = exports.parseAt = exports.extractFootnoteStatuses = exports.resolveChangeById = exports.findChildFootnoteIds = exports.findReviewInsertionIndex = exports.findDiscussionInsertionIndex = exports.parseFootnoteHeader = exports.findFootnoteBlock = exports.countFootnoteHeadersWithStatus = exports.contentZoneText = exports.resolveOverlapWithAuthor = exports.findAllProposedOverlaps = exports.stripRefsFromContent = exports.guardOverlap = exports.checkCriticMarkupOverlap = exports.stripCriticMarkupToCommittedWithMap = exports.stripCriticMarkup = exports.stripCriticMarkupWithMap = exports.replaceUnique = exports.extractLineRange = exports.appendFootnote = exports.applySingleOperation = exports.applyProposeChange = exports.tryFindUniqueMatch = exports.findUniqueMatch = exports.viewAwareFind = exports.buildViewSurfaceMap = exports.splitBodyAndFootnotes = exports.isL3Format = exports.FOOTNOTE_L3_EDIT_OP = exports.FOOTNOTE_THREAD_REPLY = exports.FOOTNOTE_CONTINUATION = void 0;
-      exports.BackendRegistry = exports.parseUri = exports.StructuralIntegrityError = exports.UnresolvedChangesError = exports.changeNodesToL3Document = exports.serializeL3 = exports.serializeL2 = exports.parseL3 = exports.parseL2 = exports.buildSessionHashes = exports.stripFootnoteBlocks = exports.parseForFormat = exports.removeMarkupById = exports.findMarkupRangeById = exports.validateStructuralIntegrity = exports.processEvent = exports.classifySignal = exports.createBuffer = exports.spliceDelete = exports.spliceInsert = exports.appendOriginal = exports.prependOriginal = exports.extendBuffer = exports.bufferContainsOffset = void 0;
+      exports.BackendRegistry = exports.parseUri = exports.StructuralIntegrityError = exports.UnresolvedChangesError = exports.changeNodesToL3Document = exports.serializeL3 = exports.serializeL2 = exports.parseL3 = exports.parseL2 = exports.buildSessionHashes = exports.stripFootnoteBlocks = exports.parseForFormat = exports.removeMarkupById = exports.findMarkupRangeById = exports.materializeResolvedChangesForExport = exports.validateStructuralIntegrity = exports.processEvent = exports.classifySignal = exports.createBuffer = exports.spliceDelete = exports.spliceInsert = exports.appendOriginal = exports.prependOriginal = exports.extendBuffer = exports.bufferContainsOffset = void 0;
       var index_js_1 = require_config();
       Object.defineProperty(exports, "parseProjectConfig", { enumerable: true, get: function() {
         return index_js_1.parseProjectConfig;
@@ -21595,6 +21659,10 @@ ${sidecarSection}
       var structural_integrity_js_1 = require_structural_integrity();
       Object.defineProperty(exports, "validateStructuralIntegrity", { enumerable: true, get: function() {
         return structural_integrity_js_1.validateStructuralIntegrity;
+      } });
+      var export_settlement_js_1 = require_export_settlement();
+      Object.defineProperty(exports, "materializeResolvedChangesForExport", { enumerable: true, get: function() {
+        return export_settlement_js_1.materializeResolvedChangesForExport;
       } });
       var markup_by_id_js_1 = require_markup_by_id();
       Object.defineProperty(exports, "findMarkupRangeById", { enumerable: true, get: function() {
@@ -24615,7 +24683,6 @@ ${sidecarSection}
         ["all", "working"],
         ["content", "raw"],
         ["meta", "working"],
-        ["committed", "simple"],
         // VS Code settings compat
         ["all-markup", "working"],
         ["markup", "working"]
